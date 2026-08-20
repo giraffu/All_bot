@@ -8,12 +8,14 @@ import asyncio
 import hashlib
 import json
 import os
+import random
 import stat
 import sys
 import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
@@ -22,7 +24,13 @@ from typing import Any
 import asyncpg
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    ConnectTimeoutError,
+    ConnectionClosedError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -41,10 +49,17 @@ from scripts.media_archive_worker import (
 
 RETIREMENT_BATCH_SIZE = 1000
 MAX_DELETE_CONCURRENCY = 8
-MAX_RETIREMENT_HEAD_CONCURRENCY = 64
-DEFAULT_RETIREMENT_HEAD_CONCURRENCY = 32
+MAX_RETIREMENT_HEAD_CONCURRENCY = 128
+DEFAULT_RETIREMENT_HEAD_CONCURRENCY = 128
 DEFAULT_RETIREMENT_DELETE_CONCURRENCY = 8
-RETIREMENT_EXECUTION_SCHEDULER = "request-phases-v1"
+RETIREMENT_EXECUTION_SCHEDULER = "request-phases-adaptive-v2"
+RETIREMENT_HEAD_CONCURRENCY_LEVELS = (128, 64, 32)
+RETIREMENT_HEAD_MINIMUM_SAMPLES = 200
+RETIREMENT_HEAD_LOWER_ERROR_RATE = 0.005
+RETIREMENT_HEAD_RAISE_ERROR_RATE = 0.002
+RETIREMENT_HEAD_SYSTEMIC_ERROR_RATE = 0.10
+RETIREMENT_HEAD_HEALTHY_WINDOWS_TO_RAISE = 2
+RETIREMENT_HEAD_RETRY_ATTEMPTS = 5
 DURABILITY_NAS_ARCHIVE = "nas-archive"
 DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
 DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
@@ -54,6 +69,113 @@ BULK_RETIREMENT_DISPOSITIONS = (
     "deferred",
     "retained_target",
 )
+
+
+@dataclass(frozen=True)
+class RetirementHeadConcurrencyDecision:
+    action: str
+    reason: str
+    previous_concurrency: int
+    current_concurrency: int
+    error_rate: float
+    request_count: int
+
+
+class RetirementHeadConcurrencyController:
+    """Keep occasional HEAD failures local while adapting to sustained pressure."""
+
+    def __init__(self, *, initial_concurrency: int) -> None:
+        if not 1 <= initial_concurrency <= MAX_RETIREMENT_HEAD_CONCURRENCY:
+            raise ValueError("retirement HEAD concurrency is out of range")
+        self.maximum_concurrency = int(initial_concurrency)
+        adaptive_levels = tuple(
+            level for level in RETIREMENT_HEAD_CONCURRENCY_LEVELS
+            if level <= self.maximum_concurrency
+        )
+        self.levels = (
+            adaptive_levels
+            if self.maximum_concurrency in adaptive_levels
+            else (self.maximum_concurrency,)
+        )
+        self.current_concurrency = self.maximum_concurrency
+        self._healthy_windows = 0
+
+    def observe(
+        self,
+        *,
+        request_count: int,
+        transient_error_count: int,
+        rate_limit_count: int,
+    ) -> RetirementHeadConcurrencyDecision:
+        if request_count <= 0:
+            raise ValueError("retirement HEAD observation requires requests")
+        if not 0 <= rate_limit_count <= transient_error_count <= request_count:
+            raise ValueError("retirement HEAD error counts are invalid")
+        previous = self.current_concurrency
+        error_rate = transient_error_count / request_count
+        action = "hold"
+        reason = "within_error_budget"
+        observation_ready = request_count >= RETIREMENT_HEAD_MINIMUM_SAMPLES
+
+        if (
+            observation_ready
+            and error_rate >= RETIREMENT_HEAD_SYSTEMIC_ERROR_RATE
+        ):
+            action = "systemic"
+            reason = "systemic_transient_error_rate"
+            self._healthy_windows = 0
+        elif rate_limit_count:
+            self._healthy_windows = 0
+            index = self.levels.index(self.current_concurrency)
+            if index + 1 < len(self.levels):
+                self.current_concurrency = self.levels[index + 1]
+                action = "lower"
+            reason = "rate_limit"
+        elif observation_ready and error_rate > RETIREMENT_HEAD_LOWER_ERROR_RATE:
+            self._healthy_windows = 0
+            index = self.levels.index(self.current_concurrency)
+            if index + 1 < len(self.levels):
+                self.current_concurrency = self.levels[index + 1]
+                action = "lower"
+            reason = "sustained_transient_error_rate"
+        elif observation_ready and error_rate < RETIREMENT_HEAD_RAISE_ERROR_RATE:
+            self._healthy_windows += 1
+            index = self.levels.index(self.current_concurrency)
+            if (
+                self._healthy_windows >= RETIREMENT_HEAD_HEALTHY_WINDOWS_TO_RAISE
+                and index > 0
+            ):
+                self.current_concurrency = self.levels[index - 1]
+                self._healthy_windows = 0
+                action = "raise"
+                reason = "healthy_request_windows"
+            else:
+                reason = "building_healthy_request_windows"
+        else:
+            self._healthy_windows = 0
+
+        return RetirementHeadConcurrencyDecision(
+            action=action,
+            reason=reason,
+            previous_concurrency=previous,
+            current_concurrency=self.current_concurrency,
+            error_rate=error_rate,
+            request_count=request_count,
+        )
+
+
+def _retirement_head_controller(
+    args: argparse.Namespace, *, configured_concurrency: int
+) -> RetirementHeadConcurrencyController:
+    existing = getattr(args, "_retirement_head_concurrency_controller", None)
+    if existing is None:
+        existing = RetirementHeadConcurrencyController(
+            initial_concurrency=configured_concurrency
+        )
+        setattr(args, "_retirement_head_concurrency_controller", existing)
+    if existing.maximum_concurrency != configured_concurrency:
+        raise RuntimeError("retirement HEAD controller maximum changed")
+    return existing
 RETIREMENT_DDL = """
 create table if not exists analytics_history_media_r2_retirement_plans (
     plan_sha256 char(64) primary key,
@@ -941,6 +1063,16 @@ def _retirement_runtime_identity(
             "retirement_execution_policy": {
                 "scheduler": RETIREMENT_EXECUTION_SCHEDULER,
                 "head_concurrency": DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+                "head_concurrency_levels": list(
+                    RETIREMENT_HEAD_CONCURRENCY_LEVELS
+                ),
+                "head_retry_attempts": RETIREMENT_HEAD_RETRY_ATTEMPTS,
+                "head_lower_error_rate": RETIREMENT_HEAD_LOWER_ERROR_RATE,
+                "head_raise_error_rate": RETIREMENT_HEAD_RAISE_ERROR_RATE,
+                "head_systemic_error_rate": RETIREMENT_HEAD_SYSTEMIC_ERROR_RATE,
+                "head_healthy_windows_to_raise": (
+                    RETIREMENT_HEAD_HEALTHY_WINDOWS_TO_RAISE
+                ),
                 "delete_concurrency": DEFAULT_RETIREMENT_DELETE_CONCURRENCY,
             },
             "retirement_script_sha256": hashlib.sha256(
@@ -1150,6 +1282,127 @@ PRODUCTION_ARCHIVE_EVIDENCE_SQL = """select r.history_id,r.role,r.ordinal,
 """
 
 
+def _retirement_head_error_kind(error: BaseException) -> str:
+    if isinstance(error, ClientError):
+        code = str(error.response.get("Error", {}).get("Code") or "")
+        status = int(
+            error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0
+        )
+        if status == 429 or code in {
+            "429",
+            "SlowDown",
+            "Throttling",
+            "ThrottlingException",
+            "TooManyRequestsException",
+        }:
+            return "rate_limit"
+        if status >= 500 or code in {
+            "InternalError",
+            "RequestTimeout",
+            "RequestTimeoutException",
+            "ServiceUnavailable",
+        }:
+            return "transient"
+        return "fatal"
+    if isinstance(
+        error,
+        (
+            ConnectTimeoutError,
+            ConnectionClosedError,
+            EndpointConnectionError,
+            ReadTimeoutError,
+            TimeoutError,
+            ConnectionError,
+        ),
+    ):
+        return "transient"
+    return "fatal"
+
+
+async def _run_retirement_head_requests(
+    request_funcs: list[Callable[[], Any]],
+    *,
+    controller: RetirementHeadConcurrencyController,
+    retry_sleep: Callable[[float], Awaitable[None]],
+) -> tuple[list[Any], int]:
+    if not request_funcs:
+        return [], controller.current_concurrency
+    loop = asyncio.get_running_loop()
+    pending = list(range(len(request_funcs)))
+    results: list[Any] = [None] * len(request_funcs)
+    peak_concurrency = controller.current_concurrency
+    last_error: BaseException | None = None
+
+    for attempt in range(1, RETIREMENT_HEAD_RETRY_ATTEMPTS + 1):
+        attempt_concurrency = controller.current_concurrency
+        peak_concurrency = max(peak_concurrency, attempt_concurrency)
+        executor = ThreadPoolExecutor(
+            max_workers=attempt_concurrency,
+            thread_name_prefix="history-r2-retirement-head",
+        )
+        try:
+            outcomes = await asyncio.gather(
+                *(
+                    loop.run_in_executor(executor, request_funcs[index])
+                    for index in pending
+                ),
+                return_exceptions=True,
+            )
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
+
+        retry_indexes: list[int] = []
+        rate_limit_count = 0
+        fatal_error: BaseException | None = None
+        for index, outcome in zip(pending, outcomes):
+            if not isinstance(outcome, BaseException):
+                results[index] = outcome
+                continue
+            kind = _retirement_head_error_kind(outcome)
+            if kind == "fatal":
+                fatal_error = outcome
+                break
+            retry_indexes.append(index)
+            last_error = outcome
+            if kind == "rate_limit":
+                rate_limit_count += 1
+        if fatal_error is not None:
+            raise fatal_error
+
+        decision = controller.observe(
+            request_count=len(pending),
+            transient_error_count=len(retry_indexes),
+            rate_limit_count=rate_limit_count,
+        )
+        if decision.action in {"lower", "raise", "systemic"}:
+            print(
+                json.dumps(
+                    {
+                        "event": "retirement_head_concurrency_decision",
+                        "action": decision.action,
+                        "reason": decision.reason,
+                        "previous_concurrency": decision.previous_concurrency,
+                        "current_concurrency": decision.current_concurrency,
+                        "request_count": decision.request_count,
+                        "error_rate": round(decision.error_rate, 6),
+                        "rate_limit_count": rate_limit_count,
+                    },
+                    sort_keys=True,
+                )
+            )
+        if decision.action == "systemic":
+            raise RuntimeError("systemic retirement HEAD failure") from last_error
+        if not retry_indexes:
+            return results, peak_concurrency
+        if attempt >= RETIREMENT_HEAD_RETRY_ATTEMPTS:
+            raise RuntimeError("retirement HEAD retries exhausted") from last_error
+        pending = retry_indexes
+        delay = min(2 ** (attempt - 1), 16)
+        await retry_sleep(delay + random.uniform(0, delay * 0.2))
+
+    raise RuntimeError("retirement HEAD retry loop ended unexpectedly")
+
+
 async def _live_reference_counts(
     production: asyncpg.Connection, keys: list[str]
 ) -> dict[str, int]:
@@ -1179,9 +1432,16 @@ async def _head_candidates(
     concurrency: int,
     allow_source_missing: bool = False,
     phase: str = "head_gate",
+    controller: RetirementHeadConcurrencyController | None = None,
+    retry_sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> int:
     started = time.monotonic()
-    loop = asyncio.get_running_loop()
+    active_controller = controller or RetirementHeadConcurrencyController(
+        initial_concurrency=concurrency
+    )
+    if active_controller.maximum_concurrency != concurrency:
+        raise ValueError("retirement HEAD controller maximum changed")
+    sleep_func = retry_sleep or asyncio.sleep
 
     def head_source(candidate: dict[str, Any]) -> Any | None:
         try:
@@ -1199,65 +1459,63 @@ async def _head_candidates(
                 raise
             return None
 
-    executor = ThreadPoolExecutor(
-        max_workers=concurrency, thread_name_prefix="history-r2-retirement-head"
+    request_funcs: list[Callable[[], Any]] = []
+    source_request_indexes: list[int] = []
+    target_request_indexes: list[dict[str, int]] = []
+    nas_request_indexes: list[int | None] = []
+    for candidate in candidates:
+        source_request_indexes.append(len(request_funcs))
+        request_funcs.append(partial(head_source, candidate))
+        targets: dict[str, int] = {}
+        for target in candidate["targets"]:
+            target_key = str(target["target_key"])
+            targets[target_key] = len(request_funcs)
+            request_funcs.append(
+                partial(
+                    r2_client.head_object,
+                    Bucket=r2_bucket,
+                    Key=target_key,
+                )
+            )
+        target_request_indexes.append(targets)
+        durability_basis = str(
+            candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+        )
+        if durability_basis == DURABILITY_NAS_ARCHIVE:
+            if nas_client is None:
+                raise RuntimeError("NAS client is required for nas-archive durability")
+            nas_request_indexes.append(len(request_funcs))
+            request_funcs.append(
+                partial(
+                    nas_client.head_object,
+                    Bucket=str(candidate["nas_bucket"]),
+                    Key=str(candidate["nas_key"]),
+                )
+            )
+        elif durability_basis == DURABILITY_R2_PERSISTENT_TARGET:
+            nas_request_indexes.append(None)
+        else:
+            raise RuntimeError("unknown retirement durability basis")
+
+    results, peak_concurrency = await _run_retirement_head_requests(
+        request_funcs,
+        controller=active_controller,
+        retry_sleep=sleep_func,
     )
     try:
-        source_futures = [
-            loop.run_in_executor(executor, head_source, candidate)
-            for candidate in candidates
-        ]
-        target_futures: list[dict[str, asyncio.Future[Any]]] = []
-        nas_futures: list[asyncio.Future[Any] | None] = []
-        all_futures: list[asyncio.Future[Any]] = list(source_futures)
-        for candidate in candidates:
-            targets: dict[str, asyncio.Future[Any]] = {}
-            for target in candidate["targets"]:
-                target_key = str(target["target_key"])
-                future = loop.run_in_executor(
-                    executor,
-                    partial(
-                        r2_client.head_object,
-                        Bucket=r2_bucket,
-                        Key=target_key,
-                    ),
-                )
-                targets[target_key] = future
-                all_futures.append(future)
-            target_futures.append(targets)
-            durability_basis = str(
-                candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
-            )
-            if durability_basis == DURABILITY_NAS_ARCHIVE:
-                if nas_client is None:
-                    raise RuntimeError(
-                        "NAS client is required for nas-archive durability"
-                    )
-                nas_future = loop.run_in_executor(
-                    executor,
-                    partial(
-                        nas_client.head_object,
-                        Bucket=str(candidate["nas_bucket"]),
-                        Key=str(candidate["nas_key"]),
-                    ),
-                )
-                nas_futures.append(nas_future)
-                all_futures.append(nas_future)
-            elif durability_basis == DURABILITY_R2_PERSISTENT_TARGET:
-                nas_futures.append(None)
-            else:
-                raise RuntimeError("unknown retirement durability basis")
-
-        await asyncio.gather(*all_futures)
         missing = 0
         for index, candidate in enumerate(candidates):
-            source = source_futures[index].result()
+            source = results[source_request_indexes[index]]
             targets = {
-                key: future.result()
-                for key, future in target_futures[index].items()
+                key: results[request_index]
+                for key, request_index in target_request_indexes[index].items()
             }
-            nas_future = nas_futures[index]
-            nas = nas_future.result() if nas_future is not None else None
+            nas_request_index = nas_request_indexes[index]
+            nas = (
+                results[nas_request_index]
+                if nas_request_index is not None
+                else None
+            )
             if source is None:
                 validate_retirement_survivor_heads(
                     candidate, target_heads=targets, nas_head=nas
@@ -1274,9 +1532,10 @@ async def _head_candidates(
                     "event": "retirement_head_phase_completed",
                     "phase": phase,
                     "object_count": len(candidates),
-                    "request_count": len(all_futures),
+                    "request_count": len(request_funcs),
                     "source_missing_count": missing,
-                    "concurrency": concurrency,
+                    "concurrency": active_controller.current_concurrency,
+                    "peak_concurrency": peak_concurrency,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 },
                 sort_keys=True,
@@ -1284,7 +1543,7 @@ async def _head_candidates(
         )
         return missing
     finally:
-        executor.shutdown(wait=True, cancel_futures=True)
+        results.clear()
 
 
 async def _delete_sources(
@@ -2723,6 +2982,9 @@ async def _execute_delete(args: argparse.Namespace) -> None:
     head_concurrency = int(
         getattr(args, "head_concurrency", args.delete_concurrency)
     )
+    head_controller = _retirement_head_controller(
+        args, configured_concurrency=head_concurrency
+    )
     connection_pool_size = max(head_concurrency, args.delete_concurrency)
     r2_client = _s3_client(
         r2_config["target"], max_connections=connection_pool_size
@@ -2879,6 +3141,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             concurrency=head_concurrency,
             allow_source_missing=True,
             phase="pre_delete",
+            controller=head_controller,
         )
         await _delete_sources(
             objects,
@@ -2894,6 +3157,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             concurrency=head_concurrency,
             allow_source_missing=True,
             phase="post_delete",
+            controller=head_controller,
         )
         if verified_missing != len(objects):
             raise RuntimeError("old source still exists after delete")
@@ -3256,7 +3520,7 @@ def _bounded_retirement_head_concurrency(value: str) -> int:
     parsed = int(value)
     if not 1 <= parsed <= MAX_RETIREMENT_HEAD_CONCURRENCY:
         raise argparse.ArgumentTypeError(
-            "retirement HEAD concurrency must be between 1 and 64"
+            "retirement HEAD concurrency must be between 1 and 128"
         )
     return parsed
 

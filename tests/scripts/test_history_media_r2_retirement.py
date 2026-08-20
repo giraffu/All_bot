@@ -8,6 +8,7 @@ from argparse import Namespace
 from datetime import datetime, timezone
 
 import pytest
+from botocore.exceptions import ClientError
 
 from scripts.history_media_r2_retirement import (
     BULK_SOURCE_IDENTITY_POLICY,
@@ -17,6 +18,7 @@ from scripts.history_media_r2_retirement import (
     RETIREMENT_BLOCKER_SQL,
     RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
     RETIREMENT_DDL,
+    RetirementHeadConcurrencyController,
     _durability_archive_config,
     _delete_sources,
     _ensure_retirement_blocker_indexes,
@@ -26,8 +28,10 @@ from scripts.history_media_r2_retirement import (
     _mark_retirement_plan_paused,
     _missing_retirement_blocker_indexes,
     _retirement_has_blockers,
+    _retirement_head_controller,
     _retirement_object_identity,
     _retirement_runtime_identity,
+    _s3_client,
     _validate_retirement_execution_policy,
     build_bulk_retirement_plan,
     build_bulk_retirement_successor_manifest,
@@ -65,6 +69,52 @@ def _candidate(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_retirement_head_concurrency_uses_error_rate_and_clean_windows():
+    controller = RetirementHeadConcurrencyController(initial_concurrency=128)
+
+    single_error = controller.observe(
+        request_count=1000, transient_error_count=1, rate_limit_count=0
+    )
+    assert single_error.action == "hold"
+    assert controller.current_concurrency == 128
+
+    sustained_errors = controller.observe(
+        request_count=1000, transient_error_count=6, rate_limit_count=0
+    )
+    assert sustained_errors.action == "lower"
+    assert sustained_errors.reason == "sustained_transient_error_rate"
+    assert controller.current_concurrency == 64
+
+    first_clean = controller.observe(
+        request_count=1000, transient_error_count=0, rate_limit_count=0
+    )
+    second_clean = controller.observe(
+        request_count=1000, transient_error_count=0, rate_limit_count=0
+    )
+    assert first_clean.action == "hold"
+    assert second_clean.action == "raise"
+    assert controller.current_concurrency == 128
+
+    rate_limited = controller.observe(
+        request_count=1, transient_error_count=1, rate_limit_count=1
+    )
+    assert rate_limited.action == "lower"
+    assert rate_limited.reason == "rate_limit"
+    assert controller.current_concurrency == 64
+
+
+def test_retirement_head_concurrency_opens_circuit_on_systemic_errors():
+    controller = RetirementHeadConcurrencyController(initial_concurrency=128)
+
+    decision = controller.observe(
+        request_count=200, transient_error_count=20, rate_limit_count=0
+    )
+
+    assert decision.action == "systemic"
+    assert decision.reason == "systemic_transient_error_rate"
+    assert controller.current_concurrency == 128
 
 
 @pytest.mark.parametrize(
@@ -268,8 +318,14 @@ def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
     )
     assert identity["durability_basis"] == DURABILITY_R2_PERSISTENT_TARGET
     assert identity["retirement_execution_policy"] == {
-        "scheduler": "request-phases-v1",
-        "head_concurrency": 32,
+        "scheduler": "request-phases-adaptive-v2",
+        "head_concurrency": 128,
+        "head_concurrency_levels": [128, 64, 32],
+        "head_retry_attempts": 5,
+        "head_lower_error_rate": 0.005,
+        "head_raise_error_rate": 0.002,
+        "head_systemic_error_rate": 0.1,
+        "head_healthy_windows_to_raise": 2,
         "delete_concurrency": 8,
     }
     assert "nas_bucket" not in identity
@@ -277,12 +333,25 @@ def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
 
     manifest = {"runtime_identity": identity}
     _validate_retirement_execution_policy(
-        manifest, Namespace(head_concurrency=32, delete_concurrency=8)
+        manifest, Namespace(head_concurrency=128, delete_concurrency=8)
     )
     with pytest.raises(RuntimeError, match="execution policy"):
         _validate_retirement_execution_policy(
-            manifest, Namespace(head_concurrency=64, delete_concurrency=8)
+            manifest, Namespace(head_concurrency=32, delete_concurrency=8)
         )
+
+
+def test_retirement_head_controller_persists_across_phases_and_batches():
+    args = Namespace()
+    controller = _retirement_head_controller(args, configured_concurrency=128)
+    controller.observe(
+        request_count=1000, transient_error_count=6, rate_limit_count=0
+    )
+
+    assert controller.current_concurrency == 64
+    assert _retirement_head_controller(args, configured_concurrency=128) is controller
+    with pytest.raises(RuntimeError, match="maximum changed"):
+        _retirement_head_controller(args, configured_concurrency=64)
 
 
 @pytest.mark.asyncio
@@ -335,7 +404,7 @@ async def test_retirement_head_gate_uses_request_level_concurrency_above_delete_
                 }
             ],
         )
-        for index in range(64)
+        for index in range(128)
     ]
 
     class R2:
@@ -350,7 +419,7 @@ async def test_retirement_head_gate_uses_request_level_concurrency_above_delete_
             with self.lock:
                 self.active += 1
                 self.peak = max(self.peak, self.active)
-                if self.peak >= 16:
+                if self.peak >= 128:
                     self.release.set()
             assert self.release.wait(timeout=2)
             try:
@@ -375,15 +444,221 @@ async def test_retirement_head_gate_uses_request_level_concurrency_above_delete_
         r2_client=r2,
         r2_bucket="persistent",
         nas_client=None,
-        concurrency=32,
+        concurrency=128,
     )
 
     assert recovered == 0
-    assert 16 <= r2.peak <= 32
+    assert r2.peak == 128
     assert not any(
         thread.name.startswith("history-r2-retirement-head")
         for thread in threading.enumerate()
     )
+
+
+@pytest.mark.asyncio
+async def test_retirement_head_gate_retries_only_failures_and_lowers_on_error_rate():
+    candidates = [
+        _candidate(
+            source_key=f"private/source-{index}.png",
+            durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+            targets=[
+                {
+                    "target_key": f"task-results/task-{index}/primary.png",
+                    "copy_plan_sha256": "c" * 64,
+                    "target_etag": "source-etag",
+                }
+            ],
+        )
+        for index in range(100)
+    ]
+
+    class R2:
+        def __init__(self):
+            self.attempts = {}
+            self.lock = threading.Lock()
+
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            with self.lock:
+                attempt = self.attempts.get(Key, 0) + 1
+                self.attempts[Key] = attempt
+            if Key in {"private/source-0.png", "private/source-1.png"} and attempt == 1:
+                raise ClientError(
+                    {
+                        "Error": {"Code": "InternalError"},
+                        "ResponseMetadata": {"HTTPStatusCode": 500},
+                    },
+                    "HeadObject",
+                )
+            if Key.startswith("private/source-"):
+                return {
+                    "ContentLength": 100,
+                    "ETag": '"source-etag"',
+                    "LastModified": candidates[0]["source_last_modified"],
+                }
+            return {
+                "ContentLength": 100,
+                "ETag": '"source-etag"',
+                "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+            }
+
+    sleeps = []
+
+    async def no_sleep(delay):
+        sleeps.append(delay)
+
+    r2 = R2()
+    controller = RetirementHeadConcurrencyController(initial_concurrency=128)
+    recovered = await _head_candidates(
+        candidates,
+        r2_client=r2,
+        r2_bucket="persistent",
+        nas_client=None,
+        concurrency=128,
+        controller=controller,
+        retry_sleep=no_sleep,
+    )
+
+    assert recovered == 0
+    assert controller.current_concurrency == 64
+    assert sum(r2.attempts.values()) == 202
+    assert sorted(r2.attempts.values()).count(2) == 2
+    assert sleeps and sleeps[0] >= 1
+    assert not any(
+        thread.name.startswith("history-r2-retirement-head")
+        for thread in threading.enumerate()
+    )
+
+
+@pytest.mark.asyncio
+async def test_retirement_head_gate_lowers_immediately_on_rate_limit():
+    candidate = _candidate(durability_basis=DURABILITY_R2_PERSISTENT_TARGET)
+
+    class R2:
+        def __init__(self):
+            self.attempts = {}
+
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            attempt = self.attempts.get(Key, 0) + 1
+            self.attempts[Key] = attempt
+            if Key == candidate["source_key"] and attempt == 1:
+                raise ClientError(
+                    {
+                        "Error": {"Code": "SlowDown"},
+                        "ResponseMetadata": {"HTTPStatusCode": 429},
+                    },
+                    "HeadObject",
+                )
+            if Key == candidate["source_key"]:
+                return {
+                    "ContentLength": 100,
+                    "ETag": '"source-etag"',
+                    "LastModified": candidate["source_last_modified"],
+                }
+            return {
+                "ContentLength": 100,
+                "ETag": '"source-etag"',
+                "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+            }
+
+    async def no_sleep(_delay):
+        return None
+
+    r2 = R2()
+    controller = RetirementHeadConcurrencyController(initial_concurrency=128)
+    recovered = await _head_candidates(
+        [candidate],
+        r2_client=r2,
+        r2_bucket="persistent",
+        nas_client=None,
+        concurrency=128,
+        controller=controller,
+        retry_sleep=no_sleep,
+    )
+
+    assert recovered == 0
+    assert controller.current_concurrency == 64
+    assert sum(r2.attempts.values()) == 3
+
+
+@pytest.mark.asyncio
+async def test_retirement_head_gate_opens_circuit_and_releases_threads():
+    candidates = [
+        _candidate(
+            source_key=f"private/source-{index}.png",
+            durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+            targets=[
+                {
+                    "target_key": f"task-results/task-{index}/primary.png",
+                    "copy_plan_sha256": "c" * 64,
+                    "target_etag": "source-etag",
+                }
+            ],
+        )
+        for index in range(100)
+    ]
+
+    class R2:
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            if Key.startswith("private/source-") and int(Key.split("-")[-1][:-4]) < 20:
+                raise ClientError(
+                    {
+                        "Error": {"Code": "InternalError"},
+                        "ResponseMetadata": {"HTTPStatusCode": 500},
+                    },
+                    "HeadObject",
+                )
+            if Key.startswith("private/source-"):
+                return {
+                    "ContentLength": 100,
+                    "ETag": '"source-etag"',
+                    "LastModified": candidates[0]["source_last_modified"],
+                }
+            return {
+                "ContentLength": 100,
+                "ETag": '"source-etag"',
+                "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+            }
+
+    with pytest.raises(RuntimeError, match="systemic retirement HEAD failure"):
+        await _head_candidates(
+            candidates,
+            r2_client=R2(),
+            r2_bucket="persistent",
+            nas_client=None,
+            concurrency=128,
+            controller=RetirementHeadConcurrencyController(
+                initial_concurrency=128
+            ),
+        )
+    assert not any(
+        thread.name.startswith("history-r2-retirement-head")
+        for thread in threading.enumerate()
+    )
+
+
+def test_retirement_r2_connection_pool_covers_head_concurrency(monkeypatch):
+    captured = {}
+
+    def fake_client(*_args, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_retirement.boto3.client", fake_client
+    )
+    _s3_client(
+        {
+            "endpoint": "https://r2.invalid",
+            "access_key": "test",
+            "secret_key": "test",
+        },
+        max_connections=128,
+    )
+
+    assert captured["config"].max_pool_connections == 128
 
 
 @pytest.mark.asyncio
@@ -1080,7 +1355,7 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert plan.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
     assert execute.archive_config is None
     assert execute.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
-    assert execute.head_concurrency == 32
+    assert execute.head_concurrency == 128
     assert execute.delete_concurrency == 8
     assert bulk_plan.switch_plan_sha256 == ["a" * 64, "b" * 64]
     assert bulk_plan.expected_switch_asset_count == [
@@ -1090,8 +1365,24 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert bulk_plan.canary_size == 100
     assert bulk_execute.command == "execute-bulk-delete"
     assert bulk_execute.confirm == "DELETE_HISTORY_MEDIA_" + "a" * 64
-    assert bulk_execute.head_concurrency == 32
+    assert bulk_execute.head_concurrency == 128
     assert bulk_execute.delete_concurrency == 8
+    with pytest.raises(SystemExit):
+        _parser().parse_args(
+            [
+                "execute-bulk-delete",
+                "--plan-sha256",
+                "a" * 64,
+                "--confirm",
+                "DELETE_HISTORY_MEDIA_" + "a" * 64,
+                "--config",
+                "/secure/r2.json",
+                "--artifact-digest",
+                "sha256:" + "b" * 64,
+                "--head-concurrency",
+                "129",
+            ]
+        )
     assert bulk_successor.predecessor_plan_sha256 == "a" * 64
     assert bulk_successor.canary_size == 100
     assert "analytics_history_media_r2_retirement_plans" in RETIREMENT_DDL
