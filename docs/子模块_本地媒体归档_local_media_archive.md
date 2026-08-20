@@ -499,11 +499,16 @@ Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 
 
 真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`；不能复用 COPY、
 SWITCH、临时清理或通用冷归档令牌。Bulk v3 把每批调度为三个阶段：删前 HEAD、DELETE、
-删后 HEAD。计划身份固定 `request-phases-v1`，只读 HEAD 默认 32 路、硬上限 64，真实
-DELETE 默认及硬上限为 8；R2/NAS 连接池必须覆盖 HEAD 并发。删前仍重新扫描生产 History
+删后 HEAD。计划身份固定 `request-phases-adaptive-v2`；只读 HEAD 默认及硬上限为
+128，按 `128→64→32` 运行，真实 DELETE 默认及硬上限仍为 8。每个 HEAD
+请求最多尝试 5 次，只重试失败请求：429/SlowDown 立即降一档；至少
+200 个当前档位样本中 timeout/5xx 错误率超过 0.5% 才降档，低于 0.2%
+的两个健康窗口可回升，系统性错误率达到 10% 则打开 circuit breaker 并暂停
+计划。单个长尾不单独触发降档。R2/NAS 连接池必须覆盖配置的 HEAD 最高并发。
+删前仍重新扫描生产 History
 与迁移账本并复核旧源身份和全部耐久目标，删后仍确认旧源缺失且目标 marker/size/ETag
 未变；NAS 模式另外复核 NAS SHA。每阶段使用生命周期受控的专用线程池并输出对象数、
-请求数、并发与耗时等低基数指标，不输出 key。系统性网络、数据库、身份或行集变化把
+请求数、实际/峰值并发与耗时等低基数指标，不输出 key。系统性网络、数据库、身份或行集变化把
 计划置为 paused；旧源已经因本计划提交窗口消失时，也只有冻结的耐久副本仍完整才可
 幂等收口。R2 持久目标模式不等于完成 NAS 归档；待持久目录迁移验收后，从该目录到 NAS
 的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨 shadow

@@ -25,7 +25,8 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 - `plan-switch-completed` 只冻结终止 predecessor/当前 completed 批次；一次一份计划，
   仍需精确 SWITCH 令牌。
 - Bulk retirement 只接受精确 DELETE SHA；集合门禁将 blocker deferred、source-is-target
-  retained，只删旧源。删前/删后 HEAD 高并发，DELETE 低并发；换 artifact 时暂停
+  retained，只删旧源。删前/删后 HEAD 使用计划指纹绑定的自适应高并发、
+  失败请求级重试和系统性断路，DELETE 保持独立低并发；换 artifact 时暂停
   predecessor，successor 只冻 remaining planned 并重新授权。
 - predecessor marker/frontier 和 transient failed 只用 HEAD 对账后冻结 successor。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
