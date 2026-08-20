@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,10 @@ from scripts.media_archive_worker import (
 
 RETIREMENT_BATCH_SIZE = 1000
 MAX_DELETE_CONCURRENCY = 8
+MAX_RETIREMENT_HEAD_CONCURRENCY = 64
+DEFAULT_RETIREMENT_HEAD_CONCURRENCY = 32
+DEFAULT_RETIREMENT_DELETE_CONCURRENCY = 8
+RETIREMENT_EXECUTION_SCHEDULER = "request-phases-v1"
 DURABILITY_NAS_ARCHIVE = "nas-archive"
 DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
 DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
@@ -524,6 +529,104 @@ def build_bulk_retirement_plan(
     return manifest, frozen, batches
 
 
+def build_bulk_retirement_successor_manifest(
+    *,
+    predecessor_manifest: dict[str, Any],
+    predecessor_plan_sha256: str,
+    predecessor_completed_batches_sha256: str,
+    predecessor_retained_object_count: int,
+    predecessor_retained_asset_coordinate_count: int,
+    remaining_object_count: int,
+    remaining_asset_coordinate_count: int,
+    remaining_total_bytes: int,
+    remaining_rowset_sha256: str,
+    batches: list[dict[str, Any]],
+    disposition_summary: dict[str, dict[str, int]],
+    runtime_identity: dict[str, Any],
+) -> dict[str, Any]:
+    if predecessor_manifest.get("execution_mode") != "bulk":
+        raise RuntimeError("bulk retirement successor requires a bulk predecessor")
+    root_object_count = int(
+        predecessor_manifest.get("root_object_count")
+        or predecessor_manifest["object_count"]
+    )
+    root_asset_count = int(
+        predecessor_manifest.get("root_asset_coordinate_count")
+        or predecessor_manifest["asset_coordinate_count"]
+    )
+    if (
+        int(predecessor_retained_object_count) + int(remaining_object_count)
+        != root_object_count
+    ):
+        raise RuntimeError("bulk retirement successor object conservation failed")
+    if (
+        int(predecessor_retained_asset_coordinate_count)
+        + int(remaining_asset_coordinate_count)
+        != root_asset_count
+    ):
+        raise RuntimeError("bulk retirement successor asset conservation failed")
+    if remaining_object_count < 1 or not batches:
+        raise RuntimeError("bulk retirement successor has no remaining objects")
+    if len(predecessor_completed_batches_sha256) != 64:
+        raise RuntimeError("bulk retirement predecessor batch proof is invalid")
+
+    manifest: dict[str, Any] = {
+        "schema": "allbot-history-media-r2-bulk-retirement-plan/v3",
+        "execution_mode": "bulk",
+        "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
+        "run_id": str(predecessor_manifest["run_id"]),
+        "parent_copy_plan_sha256s": list(
+            predecessor_manifest["parent_copy_plan_sha256s"]
+        ),
+        "parent_switch_plan_sha256s": list(
+            predecessor_manifest["parent_switch_plan_sha256s"]
+        ),
+        "switch_scopes": list(predecessor_manifest["switch_scopes"]),
+        "asset_coordinate_count": int(remaining_asset_coordinate_count),
+        "root_asset_coordinate_count": root_asset_count,
+        "asset_scope_sha256": str(predecessor_manifest["asset_scope_sha256"]),
+        "asset_scope_algorithm": str(
+            predecessor_manifest["asset_scope_algorithm"]
+        ),
+        "source_identity_policy": str(
+            predecessor_manifest["source_identity_policy"]
+        ),
+        "predecessor_plan_sha256": str(predecessor_plan_sha256),
+        "predecessor_completed_batches_sha256": str(
+            predecessor_completed_batches_sha256
+        ),
+        "predecessor_retained_object_count": int(
+            predecessor_retained_object_count
+        ),
+        "predecessor_retained_asset_coordinate_count": int(
+            predecessor_retained_asset_coordinate_count
+        ),
+        "root_object_count": root_object_count,
+        "object_count": int(remaining_object_count),
+        "total_bytes": int(remaining_total_bytes),
+        "canary_object_count": int(batches[0]["object_count"]),
+        "batch_count": len(batches),
+        "batch_size": int(predecessor_manifest.get("batch_size") or 1000),
+        "rowset_sha256": str(remaining_rowset_sha256),
+        "batches_sha256": _sha256_json(batches),
+        "one_confirmation_covers_all_batches": True,
+        "object_keys_redacted": True,
+        "runtime_identity": dict(runtime_identity),
+    }
+    for disposition in BULK_RETIREMENT_DISPOSITIONS:
+        summary = disposition_summary.get(
+            disposition, {"object_count": 0, "asset_coordinate_count": 0}
+        )
+        manifest[f"{disposition}_object_count"] = int(summary["object_count"])
+        manifest[f"{disposition}_asset_coordinate_count"] = int(
+            summary["asset_coordinate_count"]
+        )
+    if manifest["retained_target_object_count"]:
+        raise RuntimeError("retained targets must stay with the predecessor plan")
+    manifest["plan_sha256"] = _sha256_json(manifest)
+    return manifest
+
+
 def validate_delete_gate(
     *, expected_plan_sha256: str, supplied_plan_sha256: str, confirmation: str
 ) -> None:
@@ -835,6 +938,11 @@ def _retirement_runtime_identity(
         {
             "retirement_protocol": "history-r2-old-source-retirement/v2",
             "durability_basis": durability_basis,
+            "retirement_execution_policy": {
+                "scheduler": RETIREMENT_EXECUTION_SCHEDULER,
+                "head_concurrency": DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+                "delete_concurrency": DEFAULT_RETIREMENT_DELETE_CONCURRENCY,
+            },
             "retirement_script_sha256": hashlib.sha256(
                 Path(__file__).read_bytes()
             ).hexdigest(),
@@ -856,6 +964,23 @@ def _retirement_runtime_identity(
     elif durability_basis != DURABILITY_R2_PERSISTENT_TARGET:
         raise ValueError("unknown retirement durability basis")
     return identity
+
+
+def _validate_retirement_execution_policy(
+    manifest: dict[str, Any], args: argparse.Namespace
+) -> None:
+    policy = dict(
+        manifest["runtime_identity"].get("retirement_execution_policy") or {}
+    )
+    if not policy:
+        return
+    if (
+        str(policy.get("scheduler") or "") != RETIREMENT_EXECUTION_SCHEDULER
+        or int(policy.get("head_concurrency") or 0) != int(args.head_concurrency)
+        or int(policy.get("delete_concurrency") or 0)
+        != int(args.delete_concurrency)
+    ):
+        raise RuntimeError("retirement execution policy changed")
 
 
 REPORT_SQL = """
@@ -1053,13 +1178,14 @@ async def _head_candidates(
     nas_client: Any | None,
     concurrency: int,
     allow_source_missing: bool = False,
+    phase: str = "head_gate",
 ) -> int:
+    started = time.monotonic()
     loop = asyncio.get_running_loop()
 
-    def check(candidate: dict[str, Any]) -> bool:
-        source = None
+    def head_source(candidate: dict[str, Any]) -> Any | None:
         try:
-            source = r2_client.head_object(
+            return r2_client.head_object(
                 Bucket=r2_bucket, Key=str(candidate["source_key"])
             )
         except ClientError as exc:
@@ -1071,43 +1197,141 @@ async def _head_candidates(
                 code not in {"404", "NoSuchKey", "NotFound"} and status != 404
             ):
                 raise
-        targets = {
-            str(item["target_key"]): r2_client.head_object(
-                Bucket=r2_bucket, Key=str(item["target_key"])
-            )
-            for item in candidate["targets"]
-        }
-        nas = None
-        durability_basis = str(
-            candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
-        )
-        if durability_basis == DURABILITY_NAS_ARCHIVE:
-            if nas_client is None:
-                raise RuntimeError("NAS client is required for nas-archive durability")
-            nas = nas_client.head_object(
-                Bucket=str(candidate["nas_bucket"]), Key=str(candidate["nas_key"])
-            )
-        elif durability_basis != DURABILITY_R2_PERSISTENT_TARGET:
-            raise RuntimeError("unknown retirement durability basis")
-        if source is None:
-            validate_retirement_survivor_heads(
-                candidate, target_heads=targets, nas_head=nas
-            )
-            candidate["_source_already_missing"] = True
-            return True
-        validate_retirement_object_heads(
-            candidate, source_head=source, target_heads=targets, nas_head=nas
-        )
-        return False
+            return None
 
     executor = ThreadPoolExecutor(
         max_workers=concurrency, thread_name_prefix="history-r2-retirement-head"
     )
     try:
-        outcomes = await asyncio.gather(
-            *(loop.run_in_executor(executor, check, item) for item in candidates)
+        source_futures = [
+            loop.run_in_executor(executor, head_source, candidate)
+            for candidate in candidates
+        ]
+        target_futures: list[dict[str, asyncio.Future[Any]]] = []
+        nas_futures: list[asyncio.Future[Any] | None] = []
+        all_futures: list[asyncio.Future[Any]] = list(source_futures)
+        for candidate in candidates:
+            targets: dict[str, asyncio.Future[Any]] = {}
+            for target in candidate["targets"]:
+                target_key = str(target["target_key"])
+                future = loop.run_in_executor(
+                    executor,
+                    partial(
+                        r2_client.head_object,
+                        Bucket=r2_bucket,
+                        Key=target_key,
+                    ),
+                )
+                targets[target_key] = future
+                all_futures.append(future)
+            target_futures.append(targets)
+            durability_basis = str(
+                candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+            )
+            if durability_basis == DURABILITY_NAS_ARCHIVE:
+                if nas_client is None:
+                    raise RuntimeError(
+                        "NAS client is required for nas-archive durability"
+                    )
+                nas_future = loop.run_in_executor(
+                    executor,
+                    partial(
+                        nas_client.head_object,
+                        Bucket=str(candidate["nas_bucket"]),
+                        Key=str(candidate["nas_key"]),
+                    ),
+                )
+                nas_futures.append(nas_future)
+                all_futures.append(nas_future)
+            elif durability_basis == DURABILITY_R2_PERSISTENT_TARGET:
+                nas_futures.append(None)
+            else:
+                raise RuntimeError("unknown retirement durability basis")
+
+        await asyncio.gather(*all_futures)
+        missing = 0
+        for index, candidate in enumerate(candidates):
+            source = source_futures[index].result()
+            targets = {
+                key: future.result()
+                for key, future in target_futures[index].items()
+            }
+            nas_future = nas_futures[index]
+            nas = nas_future.result() if nas_future is not None else None
+            if source is None:
+                validate_retirement_survivor_heads(
+                    candidate, target_heads=targets, nas_head=nas
+                )
+                candidate["_source_already_missing"] = True
+                missing += 1
+                continue
+            validate_retirement_object_heads(
+                candidate, source_head=source, target_heads=targets, nas_head=nas
+            )
+        print(
+            json.dumps(
+                {
+                    "event": "retirement_head_phase_completed",
+                    "phase": phase,
+                    "object_count": len(candidates),
+                    "request_count": len(all_futures),
+                    "source_missing_count": missing,
+                    "concurrency": concurrency,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                },
+                sort_keys=True,
+            )
         )
-        return sum(bool(value) for value in outcomes)
+        return missing
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+async def _delete_sources(
+    candidates: list[dict[str, Any]],
+    *,
+    r2_client: Any,
+    r2_bucket: str,
+    concurrency: int,
+) -> int:
+    started = time.monotonic()
+    selected = [
+        candidate
+        for candidate in candidates
+        if not candidate.get("_source_already_missing")
+    ]
+    if not selected:
+        return 0
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(
+        max_workers=concurrency, thread_name_prefix="history-r2-retirement-delete"
+    )
+    try:
+        await asyncio.gather(
+            *(
+                loop.run_in_executor(
+                    executor,
+                    partial(
+                        r2_client.delete_object,
+                        Bucket=r2_bucket,
+                        Key=str(candidate["source_key"]),
+                    ),
+                )
+                for candidate in selected
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "retirement_delete_phase_completed",
+                    "object_count": len(selected),
+                    "concurrency": concurrency,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                },
+                sort_keys=True,
+            )
+        )
+        return len(selected)
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
 
@@ -1901,6 +2125,342 @@ async def _bulk_staged_identity(
     return global_hasher.hexdigest(), batches, object_count, total_bytes
 
 
+async def _completed_retirement_batch_proof(
+    ledger: asyncpg.Connection,
+    plan_sha256: str,
+) -> tuple[str, int, int]:
+    rows = await ledger.fetch(
+        """select batch_no,object_count,asset_coordinate_count,total_bytes,
+                  rowset_sha256,disposition,is_retained,outcome_counts
+             from analytics_history_media_r2_retirement_batches
+            where plan_sha256=$1 and status='completed' order by batch_no""",
+        plan_sha256,
+    )
+    identities = [
+        {
+            "batch_no": int(row["batch_no"]),
+            "object_count": int(row["object_count"]),
+            "asset_coordinate_count": int(row["asset_coordinate_count"]),
+            "total_bytes": int(row["total_bytes"]),
+            "rowset_sha256": str(row["rowset_sha256"]),
+            "disposition": str(row["disposition"]),
+            "is_retained": bool(row["is_retained"]),
+            "outcome_counts": (
+                json.loads(row["outcome_counts"])
+                if isinstance(row["outcome_counts"], str)
+                else dict(row["outcome_counts"])
+            ),
+        }
+        for row in rows
+    ]
+    return (
+        _sha256_json(identities),
+        sum(item["object_count"] for item in identities),
+        sum(item["asset_coordinate_count"] for item in identities),
+    )
+
+
+async def _bulk_predecessor_retained_counts(
+    ledger: asyncpg.Connection,
+    plan_sha256: str,
+) -> tuple[int, int]:
+    row = await ledger.fetchrow(
+        """select count(*) filter(where status<>'planned') object_count,
+                  coalesce(sum(scope_asset_count)
+                    filter(where status<>'planned'),0) asset_coordinate_count
+             from analytics_history_media_r2_retirement_objects
+            where plan_sha256=$1""",
+        plan_sha256,
+    )
+    return int(row["object_count"]), int(row["asset_coordinate_count"])
+
+
+async def _validate_bulk_successor_predecessor(
+    ledger: asyncpg.Connection,
+    manifest: dict[str, Any],
+) -> None:
+    predecessor_sha = str(manifest.get("predecessor_plan_sha256") or "")
+    if not predecessor_sha:
+        return
+    row = await ledger.fetchrow(
+        """select manifest,status from analytics_history_media_r2_retirement_plans
+            where plan_sha256=$1""",
+        predecessor_sha,
+    )
+    if row is None or str(row["status"]) != "paused":
+        raise RuntimeError("bulk retirement predecessor is not safely paused")
+    predecessor_manifest = (
+        json.loads(row["manifest"])
+        if isinstance(row["manifest"], str)
+        else dict(row["manifest"])
+    )
+    if (
+        str(predecessor_manifest.get("plan_sha256") or "") != predecessor_sha
+        or _sha256_json(
+            {
+                key: value
+                for key, value in predecessor_manifest.items()
+                if key != "plan_sha256"
+            }
+        )
+        != predecessor_sha
+    ):
+        raise RuntimeError("bulk retirement predecessor identity changed")
+    proof_sha, batch_objects, batch_assets = (
+        await _completed_retirement_batch_proof(ledger, predecessor_sha)
+    )
+    if proof_sha != str(manifest["predecessor_completed_batches_sha256"]):
+        raise RuntimeError("bulk retirement predecessor completed batches changed")
+    direct_objects, direct_assets = await _bulk_predecessor_retained_counts(
+        ledger, predecessor_sha
+    )
+    if direct_objects != batch_objects or direct_assets != batch_assets:
+        raise RuntimeError("bulk retirement predecessor receipt coverage changed")
+    inherited_objects = int(
+        predecessor_manifest.get("predecessor_retained_object_count") or 0
+    )
+    inherited_assets = int(
+        predecessor_manifest.get("predecessor_retained_asset_coordinate_count") or 0
+    )
+    if (
+        direct_objects + inherited_objects
+        != int(manifest["predecessor_retained_object_count"])
+        or direct_assets + inherited_assets
+        != int(manifest["predecessor_retained_asset_coordinate_count"])
+    ):
+        raise RuntimeError("bulk retirement predecessor retained scope changed")
+
+
+async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
+    r2_config = _load_secure_config(Path(args.config))
+    clear_proxy_environment()
+    validate_endpoint_route(r2_config["target"])
+    runtime_identity = _retirement_runtime_identity(
+        artifact_digest=args.artifact_digest,
+        r2_config=r2_config,
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_config=None,
+    )
+    ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
+    try:
+        await ledger.execute(RETIREMENT_DDL)
+        predecessor = await ledger.fetchrow(
+            """select run_id,manifest,status
+                 from analytics_history_media_r2_retirement_plans
+                where plan_sha256=$1""",
+            args.predecessor_plan_sha256,
+        )
+        if predecessor is None or str(predecessor["status"]) not in {
+            "running",
+            "paused",
+        }:
+            raise RuntimeError("bulk retirement predecessor is not replaceable")
+        predecessor_manifest = (
+            json.loads(predecessor["manifest"])
+            if isinstance(predecessor["manifest"], str)
+            else dict(predecessor["manifest"])
+        )
+        if (
+            str(predecessor_manifest.get("plan_sha256") or "")
+            != args.predecessor_plan_sha256
+            or _sha256_json(
+                {
+                    key: value
+                    for key, value in predecessor_manifest.items()
+                    if key != "plan_sha256"
+                }
+            )
+            != args.predecessor_plan_sha256
+            or predecessor_manifest.get("execution_mode") != "bulk"
+        ):
+            raise RuntimeError("bulk retirement predecessor identity changed")
+
+        direct_retained_objects, direct_retained_assets = (
+            await _bulk_predecessor_retained_counts(
+                ledger, args.predecessor_plan_sha256
+            )
+        )
+        inherited_objects = int(
+            predecessor_manifest.get("predecessor_retained_object_count") or 0
+        )
+        inherited_assets = int(
+            predecessor_manifest.get(
+                "predecessor_retained_asset_coordinate_count"
+            )
+            or 0
+        )
+        retained_objects = inherited_objects + direct_retained_objects
+        retained_assets = inherited_assets + direct_retained_assets
+        completed_proof_sha, completed_objects, completed_assets = (
+            await _completed_retirement_batch_proof(
+                ledger, args.predecessor_plan_sha256
+            )
+        )
+        if (
+            direct_retained_objects != completed_objects
+            or direct_retained_assets != completed_assets
+        ):
+            raise RuntimeError(
+                "bulk retirement predecessor completed receipt coverage changed"
+            )
+
+        await ledger.execute(
+            """create temporary table bulk_retirement_candidates
+                 on commit preserve rows as
+                 select source_name,source_key,byte_size,source_etag,
+                        source_last_modified,asset_count,scope_asset_count,
+                        scope_facts,target_facts,
+                        1::bigint byte_size_variants,
+                        1::bigint source_etag_variants,
+                        1::bigint source_time_variants,
+                        retirement_disposition
+                   from analytics_history_media_r2_retirement_objects
+                  where plan_sha256=$1 and status='planned'""",
+            args.predecessor_plan_sha256,
+            timeout=3600,
+        )
+        live_ref_count = int(
+            predecessor_manifest.get("deferred_live_history_ref_object_count") or 0
+        )
+        await _materialize_bulk_retirement_order(
+            ledger,
+            canary_size=args.canary_size,
+            batch_size=args.batch_size,
+        )
+        rowset_sha, batches, object_count, total_bytes = (
+            await _bulk_staged_identity(ledger)
+        )
+        asset_count = int(
+            await ledger.fetchval(
+                "select coalesce(sum(scope_asset_count),0) "
+                "from bulk_retirement_ordered"
+            )
+        )
+        disposition_rows = await ledger.fetch(
+            """select retirement_disposition,count(*) object_count,
+                      coalesce(sum(scope_asset_count),0) asset_coordinate_count
+                 from bulk_retirement_ordered group by retirement_disposition"""
+        )
+        disposition_summary = {
+            str(row["retirement_disposition"]): {
+                "object_count": int(row["object_count"]),
+                "asset_coordinate_count": int(row["asset_coordinate_count"]),
+            }
+            for row in disposition_rows
+        }
+        manifest = build_bulk_retirement_successor_manifest(
+            predecessor_manifest=predecessor_manifest,
+            predecessor_plan_sha256=args.predecessor_plan_sha256,
+            predecessor_completed_batches_sha256=completed_proof_sha,
+            predecessor_retained_object_count=retained_objects,
+            predecessor_retained_asset_coordinate_count=retained_assets,
+            remaining_object_count=object_count,
+            remaining_asset_coordinate_count=asset_count,
+            remaining_total_bytes=total_bytes,
+            remaining_rowset_sha256=rowset_sha,
+            batches=batches,
+            disposition_summary=disposition_summary,
+            runtime_identity=runtime_identity,
+        )
+        manifest["deferred_live_history_ref_object_count"] = live_ref_count
+        manifest["plan_sha256"] = _sha256_json(
+            {key: value for key, value in manifest.items() if key != "plan_sha256"}
+        )
+
+        async with ledger.transaction():
+            locked = await ledger.fetchrow(
+                """select status from analytics_history_media_r2_retirement_plans
+                    where plan_sha256=$1 for update""",
+                args.predecessor_plan_sha256,
+            )
+            if locked is None or str(locked["status"]) not in {"running", "paused"}:
+                raise RuntimeError("bulk retirement predecessor state changed")
+            await ledger.execute(
+                """update analytics_history_media_r2_retirement_plans
+                      set status='paused',updated_at=now()
+                    where plan_sha256=$1""",
+                args.predecessor_plan_sha256,
+            )
+            await ledger.execute(
+                """update analytics_history_media_r2_retirement_batches
+                      set status='paused',updated_at=now()
+                    where plan_sha256=$1 and status<>'completed'""",
+                args.predecessor_plan_sha256,
+            )
+            await ledger.execute(
+                """insert into analytics_history_media_r2_retirement_plans(
+                     plan_sha256,run_id,parent_copy_plan_sha256,rowset_sha256,
+                     manifest,execution_mode,asset_coordinate_count)
+                   values($1,$2,null,$3,$4::jsonb,'bulk',$5)""",
+                manifest["plan_sha256"],
+                uuid.UUID(manifest["run_id"]),
+                manifest["rowset_sha256"],
+                json.dumps(manifest),
+                asset_count,
+            )
+            await ledger.executemany(
+                """insert into analytics_history_media_r2_retirement_batches(
+                     plan_sha256,batch_no,object_count,total_bytes,rowset_sha256,
+                     is_canary,asset_coordinate_count,disposition,is_retained,
+                     status,outcome_counts)
+                   values($1,$2,$3,$4,$5,$6,$7,$8,false,'pending','{}'::jsonb)""",
+                [
+                    (
+                        manifest["plan_sha256"],
+                        item["batch_no"],
+                        item["object_count"],
+                        item["total_bytes"],
+                        item["rowset_sha256"],
+                        item["is_canary"],
+                        item["asset_coordinate_count"],
+                        item["disposition"],
+                    )
+                    for item in batches
+                ],
+            )
+            await ledger.execute(
+                """insert into analytics_history_media_r2_retirement_objects(
+                     plan_sha256,batch_no,object_no,source_name,source_key,
+                     source_key_sha256,byte_size,source_etag,source_last_modified,
+                     asset_count,archive_sha256,nas_bucket,nas_key,target_facts,
+                     scope_asset_count,scope_facts,retirement_disposition,
+                     status,error_code)
+                   select $1,batch_no,object_no,source_name,source_key,
+                          encode(sha256(
+                            convert_to(source_name,'UTF8')||decode('00','hex')||
+                            convert_to(source_key,'UTF8')),'hex'),
+                          byte_size,source_etag,source_last_modified,asset_count,
+                          '', '', '',target_facts,scope_asset_count,scope_facts,
+                          retirement_disposition,'planned',null
+                     from bulk_retirement_ordered order by object_no""",
+                manifest["plan_sha256"],
+                timeout=3600,
+            )
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(_canonical_json(manifest) + b"\n")
+        os.chmod(output, 0o600)
+        print(
+            json.dumps(
+                {
+                    "plan_sha256": manifest["plan_sha256"],
+                    "predecessor_plan_sha256": args.predecessor_plan_sha256,
+                    "predecessor_retained_object_count": retained_objects,
+                    "predecessor_retained_asset_coordinate_count": retained_assets,
+                    "object_count": object_count,
+                    "asset_coordinate_count": asset_count,
+                    "batch_count": len(batches),
+                    "rowset_sha256": rowset_sha,
+                    "batches_sha256": manifest["batches_sha256"],
+                    "manifest": str(output),
+                },
+                sort_keys=True,
+            )
+        )
+    finally:
+        await ledger.close()
+
+
 async def _plan_bulk_delete(args: argparse.Namespace) -> None:
     switch_plans = [str(value) for value in args.switch_plan_sha256]
     if len(switch_plans) != len(set(switch_plans)):
@@ -2149,20 +2709,6 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         await ledger.close()
 
 
-async def _source_missing(client: Any, bucket: str, key: str) -> bool:
-    try:
-        await asyncio.to_thread(client.head_object, Bucket=bucket, Key=key)
-        return False
-    except ClientError as exc:
-        code = str(exc.response.get("Error", {}).get("Code") or "")
-        status = int(
-            exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0
-        )
-        if code in {"404", "NoSuchKey", "NotFound"} or status == 404:
-            return True
-        raise
-
-
 async def _execute_delete(args: argparse.Namespace) -> None:
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
     production = await _connect("PRODUCTION_DATABASE_URL")
@@ -2174,9 +2720,15 @@ async def _execute_delete(args: argparse.Namespace) -> None:
     validate_endpoint_route(r2_config["target"])
     if archive_config is not None:
         validate_endpoint_route(archive_config["nas"])
-    r2_client = _s3_client(r2_config["target"], max_connections=args.delete_concurrency)
+    head_concurrency = int(
+        getattr(args, "head_concurrency", args.delete_concurrency)
+    )
+    connection_pool_size = max(head_concurrency, args.delete_concurrency)
+    r2_client = _s3_client(
+        r2_config["target"], max_connections=connection_pool_size
+    )
     nas_client = (
-        _s3_client(archive_config["nas"], max_connections=args.delete_concurrency)
+        _s3_client(archive_config["nas"], max_connections=connection_pool_size)
         if archive_config is not None
         else None
     )
@@ -2228,6 +2780,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
         )
         if actual_runtime != manifest["runtime_identity"]:
             raise RuntimeError("retirement runtime identity changed")
+        _validate_retirement_execution_policy(manifest, args)
         await ledger.execute(
             """update analytics_history_media_r2_retirement_plans
                  set status='running',updated_at=now()
@@ -2323,58 +2876,27 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             r2_client=r2_client,
             r2_bucket=str(r2_config["target"]["bucket"]),
             nas_client=nas_client,
-            concurrency=args.delete_concurrency,
+            concurrency=head_concurrency,
             allow_source_missing=True,
+            phase="pre_delete",
         )
-        semaphore = asyncio.Semaphore(args.delete_concurrency)
-
-        async def delete_one(item: dict[str, Any]) -> None:
-            async with semaphore:
-                if not item.get("_source_already_missing"):
-                    await asyncio.to_thread(
-                        r2_client.delete_object,
-                        Bucket=str(r2_config["target"]["bucket"]),
-                        Key=str(item["source_key"]),
-                    )
-                if not await _source_missing(
-                    r2_client,
-                    str(r2_config["target"]["bucket"]),
-                    str(item["source_key"]),
-                ):
-                    raise RuntimeError("old source still exists after delete")
-                target_heads = {
-                    str(target["target_key"]): await asyncio.to_thread(
-                        r2_client.head_object,
-                        Bucket=str(r2_config["target"]["bucket"]),
-                        Key=str(target["target_key"]),
-                    )
-                    for target in item["targets"]
-                }
-                nas_head = None
-                if manifest_durability_basis == DURABILITY_NAS_ARCHIVE:
-                    if nas_client is None:
-                        raise RuntimeError(
-                            "NAS client is required for nas-archive durability"
-                        )
-                    nas_head = await asyncio.to_thread(
-                        nas_client.head_object,
-                        Bucket=str(item["nas_bucket"]),
-                        Key=str(item["nas_key"]),
-                    )
-                for target in item["targets"]:
-                    head = target_heads[str(target["target_key"])]
-                    if str(
-                        (head.get("Metadata") or {}).get("allbot-copy-plan-sha256")
-                        or ""
-                    ) != str(target["copy_plan_sha256"]):
-                        raise RuntimeError(
-                            "verified target marker changed after delete"
-                        )
-                validate_retirement_survivor_heads(
-                    item, target_heads=target_heads, nas_head=nas_head
-                )
-
-        await asyncio.gather(*(delete_one(item) for item in objects))
+        await _delete_sources(
+            objects,
+            r2_client=r2_client,
+            r2_bucket=str(r2_config["target"]["bucket"]),
+            concurrency=args.delete_concurrency,
+        )
+        verified_missing = await _head_candidates(
+            objects,
+            r2_client=r2_client,
+            r2_bucket=str(r2_config["target"]["bucket"]),
+            nas_client=nas_client,
+            concurrency=head_concurrency,
+            allow_source_missing=True,
+            phase="post_delete",
+        )
+        if verified_missing != len(objects):
+            raise RuntimeError("old source still exists after delete")
         async with ledger.transaction():
             await ledger.execute(
                 """update analytics_history_media_r2_retirement_objects
@@ -2497,6 +3019,7 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
         )
         if actual_runtime != manifest["runtime_identity"]:
             raise RuntimeError("bulk retirement runtime identity changed")
+        _validate_retirement_execution_policy(manifest, args)
         switch_plans = [str(value) for value in manifest["parent_switch_plan_sha256s"]]
         scope_sha, counts, copy_plans = await _bulk_scope_fingerprint(
             ledger, switch_plans
@@ -2587,6 +3110,7 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
             or int(retained_summary["retained_error_count"]) != retained_count
         ):
             raise RuntimeError("bulk retirement retained target evidence changed")
+        await _validate_bulk_successor_predecessor(ledger, manifest)
         await ledger.execute(
             """update analytics_history_media_r2_retirement_plans
                  set status='running',updated_at=now()
@@ -2615,6 +3139,7 @@ async def _finalize_bulk_delete(
 ) -> None:
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
     try:
+        await _validate_bulk_successor_predecessor(ledger, manifest)
         summary = await ledger.fetchrow(
             """select count(*) object_count,
                       count(*) filter(where status='deleted') deleted_count,
@@ -2727,6 +3252,15 @@ def _bounded_delete_concurrency(value: str) -> int:
     return parsed
 
 
+def _bounded_retirement_head_concurrency(value: str) -> int:
+    parsed = int(value)
+    if not 1 <= parsed <= MAX_RETIREMENT_HEAD_CONCURRENCY:
+        raise argparse.ArgumentTypeError(
+            "retirement HEAD concurrency must be between 1 and 64"
+        )
+    return parsed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -2761,6 +3295,13 @@ def _parser() -> argparse.ArgumentParser:
     bulk_plan.add_argument("--canary-size", type=int, default=100)
     bulk_plan.add_argument("--batch-size", type=int, default=1000)
     bulk_plan.add_argument("--output", required=True)
+    bulk_successor = commands.add_parser("plan-bulk-delete-successor")
+    bulk_successor.add_argument("--predecessor-plan-sha256", required=True)
+    bulk_successor.add_argument("--config", required=True)
+    bulk_successor.add_argument("--artifact-digest", required=True)
+    bulk_successor.add_argument("--canary-size", type=int, default=100)
+    bulk_successor.add_argument("--batch-size", type=int, default=1000)
+    bulk_successor.add_argument("--output", required=True)
     execute = commands.add_parser("execute-delete")
     execute.add_argument("--plan-sha256", required=True)
     execute.add_argument("--confirm", required=True)
@@ -2771,7 +3312,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     execute.add_argument("--artifact-digest", required=True)
     execute.add_argument(
-        "--delete-concurrency", type=_bounded_delete_concurrency, default=4
+        "--head-concurrency",
+        type=_bounded_retirement_head_concurrency,
+        default=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+    )
+    execute.add_argument(
+        "--delete-concurrency",
+        type=_bounded_delete_concurrency,
+        default=DEFAULT_RETIREMENT_DELETE_CONCURRENCY,
     )
     bulk_execute = commands.add_parser("execute-bulk-delete")
     bulk_execute.add_argument("--plan-sha256", required=True)
@@ -2779,7 +3327,14 @@ def _parser() -> argparse.ArgumentParser:
     bulk_execute.add_argument("--config", required=True)
     bulk_execute.add_argument("--artifact-digest", required=True)
     bulk_execute.add_argument(
-        "--delete-concurrency", type=_bounded_delete_concurrency, default=4
+        "--head-concurrency",
+        type=_bounded_retirement_head_concurrency,
+        default=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+    )
+    bulk_execute.add_argument(
+        "--delete-concurrency",
+        type=_bounded_delete_concurrency,
+        default=DEFAULT_RETIREMENT_DELETE_CONCURRENCY,
     )
     bulk_execute.set_defaults(
         durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
@@ -2805,6 +3360,10 @@ async def _main(args: argparse.Namespace) -> None:
         if not 1 <= args.canary_size <= args.batch_size <= RETIREMENT_BATCH_SIZE:
             raise ValueError("bulk retirement batch sizes are invalid")
         await _plan_bulk_delete(args)
+    elif args.command == "plan-bulk-delete-successor":
+        if not 1 <= args.canary_size <= args.batch_size <= RETIREMENT_BATCH_SIZE:
+            raise ValueError("bulk retirement successor batch sizes are invalid")
+        await _plan_bulk_delete_successor(args)
     elif args.command == "execute-delete":
         await _execute_delete(args)
     elif args.command == "execute-bulk-delete":
