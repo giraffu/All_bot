@@ -6,17 +6,6 @@
     },
     "class_type": "UNETLoader"
   },
-  "8": {
-    "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
-      "strength_model": 1.0
-    },
-    "class_type": "LoraLoaderModelOnly"
-  },
   "2": {
     "inputs": {
       "model": [
@@ -234,6 +223,17 @@
       ]
     },
     "class_type": "SaveImage"
+  },
+  "8": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "strength_model": 1.0
+    },
+    "class_type": "LoraLoaderModelOnly"
   },
   "20": {
     "inputs": {

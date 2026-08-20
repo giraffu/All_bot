@@ -44,7 +44,7 @@ type SubmitHarness = {
   resolution: Ref<string>
   duration: Ref<string>
   selectedCharacterIds: Ref<string[]>
-  minimaxH3Mode: Ref<'t2v' | 'i2v' | 'flf2v'>
+  minimaxH3Mode: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
   minimaxH3ResolutionPreset: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions: Ref<string[]>
@@ -97,7 +97,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const resolution = ref('512')
   const duration = ref('5')
   const selectedCharacterIds = ref<string[]>([])
-  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v'>('t2v')
+  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
@@ -134,7 +134,6 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3Mode,
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
-    minimaxH3ReferenceDescriptions,
     minimaxH3AddonItems,
     isTemplateApplied,
     isTemplatePromptLocked,

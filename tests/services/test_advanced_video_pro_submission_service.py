@@ -29,13 +29,28 @@ def test_builds_all_pro_video_modes(mode, images, descriptions, task_type, cost)
     assert plan.cost == cost
 
 
-def test_ref2v_is_not_available_for_new_submission_plans():
-    with pytest.raises(AdvancedVideoProSubmissionError, match="有效"):
+@pytest.mark.parametrize("image_count", [1, 4])
+def test_ref2v_accepts_one_to_four_ordered_images(image_count):
+    images = [f"reference-{index}.png" for index in range(image_count)]
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="Alice waves",
+        images=images,
+        reference_descriptions=[f"reference {index}" for index in range(image_count)],
+    )
+
+    assert plan.task_type == "minimax_h3_ref2v"
+    assert plan.images == tuple(images)
+    assert plan.cost == 15
+
+
+@pytest.mark.parametrize("image_count", [0, 5])
+def test_ref2v_rejects_zero_or_five_images(image_count):
+    with pytest.raises(AdvancedVideoProSubmissionError, match="1 至 4"):
         build_advanced_video_pro_submission_plan(
             mode="ref2v",
             prompt="Alice waves",
-            images=["alice.png"],
-            reference_descriptions=["Alice, red hair"],
+            images=[f"reference-{index}.png" for index in range(image_count)],
         )
 
 

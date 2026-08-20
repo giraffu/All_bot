@@ -41,9 +41,60 @@ from src.services.qqcc_config_service import (
     save_qqcc_config_payload,
     validate_qqcc_scene_credit_costs,
     validate_qqcc_scene_resolutions,
+    validate_qqcc_ref2v_scenes,
     QqccSceneCreditCostError,
     QqccSceneResolutionError,
+    QqccRef2vSceneError,
 )
+
+
+@pytest.mark.parametrize("reference_count", [1, 4])
+def test_qqcc_ref2v_scene_derives_read_only_price_and_preserves_reference_order(reference_count):
+    references = [
+        f"qqcc/config/ref2v/ai_video/scene/reference-{index}/input"
+        for index in range(reference_count)
+    ]
+    raw = {
+        "ai_video_scenes": [
+            {
+                "id": "scene",
+                "name": "REF",
+                "prompt": "<Picture 1> and <Picture 2>",
+                "mode": "ref2v",
+                "reference_images": references,
+                "aspect_ratio": "9:16",
+                "duration": 15,
+                "resolution": "hd",
+                "credit_cost": 1,
+            }
+        ]
+    }
+
+    validate_qqcc_ref2v_scenes(raw)
+    scene = normalize_qqcc_config(raw)["ai_video_scenes"][0]
+
+    assert scene["reference_images"] == references
+    assert scene["credit_cost"] == 135
+    assert scene["aspect_ratio"] == "9:16"
+    assert scene["next_scene_id"] is None
+
+
+@pytest.mark.parametrize("reference_count", [0, 5])
+def test_qqcc_ref2v_scene_rejects_missing_or_excess_admin_references(reference_count):
+    raw = {
+        "ai_video_scenes": [
+            {
+                "mode": "ref2v",
+                "reference_images": [
+                    f"qqcc/config/ref2v/ai_video/scene/reference-{index}/input"
+                    for index in range(reference_count)
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(QqccRef2vSceneError):
+        validate_qqcc_ref2v_scenes(raw)
 from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 
 
@@ -382,7 +433,10 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "negative_prompt": "blur, jitter",
                 "duration": 10,
                 "resolution": "preview",
-            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "mode": "i2v",
+                "reference_images": [],
+                "aspect_ratio": "16:9",
             "lora_items": [
                 {"name": "motion_booster", "strength": 0.75},
                 {"name": "mystic_xxx", "strength": 0.75},
@@ -398,7 +452,10 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "negative_prompt": "",
                 "duration": 5,
                 "resolution": "preview",
-            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "mode": "i2v",
+                "reference_images": [],
+                "aspect_ratio": "16:9",
             "lora_items": [],
             "credit_cost": None,
             "end_frame_draw_scene_id": "",

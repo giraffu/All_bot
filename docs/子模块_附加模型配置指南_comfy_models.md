@@ -18,7 +18,8 @@
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
 - LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
-- MiniMax H3 三个公开模式的固定基础链（10Eros Beta2 + LightX2V 8-step）、
+- MiniMax H3 四个公开模式的固定基础链（普通模式为 10Eros Beta2 + LightX2V 8-step，
+  REF2V 为 TURBO Ref2VA + er_sde/ManualSigmas）、
   十三个可选 LoRA、API workflow、模型 bundle、镜像与 LAN canary 契约见
   [`子模块_MiniMaxH3视频服务_minimax_h3.md`](子模块_MiniMaxH3视频服务_minimax_h3.md)。
 
@@ -190,6 +191,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO 与 `image_to_video` 保持各自 `2026-07-18-lora5` key；v2 使用独立的 pruned key，旧 6 月 key 均不覆盖。所有候选 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
 - `AI视频` 使用独立 `ai_video_scenes`，底层固定 `minimax_h3`。配置层与主 Bot/Web 共用 `src/domain_config/minimax_h3.py` 的 13 项目录，保存最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`、步长 `0.05`；无尾帧引用走 H3 I2V，有引用时复用同一绘图链生成尾帧后走 H3 FLF2V。`build_qqcc_config_options()` 下发稳定 ID、中文标签、默认强度和 `supports_lora=true`，Vue 不硬编码目录。
+- 官方 QQCC `ai_video_scenes[].mode=ref2v` 时只接受 1 张用户主体图与 1–4 张管理员参考图；主体在前、参考图按配置顺序拼接。该模式固定 TURBO Ref2VA，不加载 LightX2V，私有 Bot 不执行。
 - 旧 QQCC LTX `{path,strength}` 只在读取时丢弃，不映射为同名或相似 H3 资产。QQCC 配置保存、官方/私有 Bot、durable continuation、场景多段链和后台示例统一透传 H3 `lora_items`；物理文件路径和触发词只由 H3 Worker 目录解析，不能进入配置 JSON。
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型；`negative_prompt` 写入 single edit workflow 的 `254.text`。
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength；旧 Qwen workflow 负面提示词写入 `4.prompt`。

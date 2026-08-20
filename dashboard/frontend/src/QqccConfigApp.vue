@@ -10,6 +10,7 @@ import {
   generateQqccDemoMedia,
   getQqccDemoGeneration,
   uploadQqccDemoMedia,
+  uploadQqccReferenceImage,
   updateQqccConfig,
 } from './api/qqccConfigApi'
 import { useQqccConfigAuth } from './composables/useQqccConfigAuth'
@@ -59,6 +60,8 @@ const handleLogout = () => {
           :fetch-config="fetchQqccConfig"
           :update-config="updateQqccConfig"
           :upload-demo-media="uploadQqccDemoMedia"
+          :upload-reference-image="uploadQqccReferenceImage"
+          ref2v-enabled
           :generate-demo-media="generateQqccDemoMedia"
           :get-demo-generation="getQqccDemoGeneration"
         />

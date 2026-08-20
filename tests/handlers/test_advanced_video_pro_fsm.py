@@ -59,7 +59,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     assert context.user_data[fsm.DATA_KEY]["addon_models"] == []
     assert "高级图生视频pro" in reply.await_args.args[1]
     mode_callbacks = [button.callback_data for row in reply.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
-    assert "avp_mode_ref2v" not in mode_callbacks
+    assert "avp_mode_ref2v" in mode_callbacks
 
 
 @pytest.mark.asyncio

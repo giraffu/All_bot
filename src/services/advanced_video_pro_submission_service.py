@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
     MINIMAX_H3_T2V,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
@@ -22,6 +23,7 @@ MODE_TASK_TYPES = {
     "t2v": MINIMAX_H3_T2V,
     "i2v": MINIMAX_H3_I2V,
     "flf2v": MINIMAX_H3_FLF2V,
+    "ref2v": MINIMAX_H3_REF2V,
 }
 
 
@@ -73,6 +75,8 @@ def build_advanced_video_pro_submission_plan(
     normalized_prompt = str(prompt or "").strip()
     if not normalized_prompt:
         raise AdvancedVideoProSubmissionError("请输入视频提示词。")
+    if normalized_mode == "ref2v" and not 1 <= len(images) <= 4:
+        raise AdvancedVideoProSubmissionError("ref2v 必须提供 1 至 4 张有序参考图。")
     normalized_aspect_ratio = (
         "source" if normalized_mode in {"i2v", "flf2v"} else aspect_ratio
     )

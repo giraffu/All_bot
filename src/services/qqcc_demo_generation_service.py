@@ -12,7 +12,11 @@ from src.constants import (
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
 from src.lora_catalog import get_lora_default_strength
-from src.domain_config.minimax_h3 import MINIMAX_H3_I2V, build_minimax_h3_spec
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
+    build_minimax_h3_spec,
+)
 from src.services.image_service import image_service
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
@@ -156,14 +160,24 @@ async def _submit_scene(
         )
 
     if scene_kind == "ai_video":
+        mode = str(scene.get("mode") or "i2v")
+        reference_input_keys = list(scene.get("_reference_input_keys") or [])
+        if mode == "ref2v" and not 1 <= len(reference_input_keys) <= 4:
+            raise QqccDemoGenerationError(
+                "REF2V demo generation requires one to four reference images"
+            )
         spec = build_minimax_h3_spec(
-            MINIMAX_H3_I2V,
+            MINIMAX_H3_REF2V if mode == "ref2v" else MINIMAX_H3_I2V,
             {
                 "prompt": prompt,
-                "images": [input_key],
+                "images": [input_key, *reference_input_keys],
                 "duration": int(scene.get("duration") or 5),
                 "resolution_preset": str(scene.get("resolution") or "preview"),
-                "aspect_ratio": "source",
+                "aspect_ratio": (
+                    str(scene.get("aspect_ratio") or "16:9")
+                    if mode == "ref2v"
+                    else "source"
+                ),
                 "lora_items": scene.get("lora_items") or [],
             },
         )
@@ -259,20 +273,58 @@ async def submit_qqcc_demo_generation(
     )
     if not uploaded:
         raise RuntimeError("Generation input storage is unavailable")
+    input_keys = [minio_input_key]
+    scene_for_submit = dict(scene)
+    if scene_kind == "ai_video" and str(scene.get("mode") or "i2v") == "ref2v":
+        reference_images = scene.get("reference_images")
+        if (
+            not isinstance(reference_images, list)
+            or not 1 <= len(reference_images) <= 4
+            or any(
+                not isinstance(reference_key, str)
+                or not reference_key.startswith("qqcc/config/ref2v/ai_video/")
+                for reference_key in reference_images
+            )
+        ):
+            _cleanup_generation_inputs(storage_service, generation_id)
+            raise QqccDemoGenerationError(
+                "REF2V demo generation requires one to four reference images"
+            )
+        reference_input_keys: list[str] = []
+        for index, reference_key in enumerate(reference_images, start=1):
+            reference_content = await asyncio.to_thread(
+                _read_r2_bytes,
+                storage_service,
+                str(reference_key),
+            )
+            reference_input_key = (
+                f"{GENERATION_INPUT_PREFIX}/{generation_id}/reference_{index}.png"
+            )
+            reference_uploaded = await asyncio.to_thread(
+                storage_service.upload_bytes,
+                reference_content,
+                reference_input_key,
+                "image/png",
+                MINIO_BUCKET,
+            )
+            if not reference_uploaded:
+                _cleanup_generation_inputs(storage_service, generation_id)
+                raise RuntimeError("Generation reference storage is unavailable")
+            reference_input_keys.append(reference_input_key)
+            input_keys.append(reference_input_key)
+        scene_for_submit["_reference_input_keys"] = reference_input_keys
     try:
         first_task_id = generation_id if len(scene_chain) == 1 else f"{generation_id}-0"
         backend_id = await _submit_scene(
             image_service_instance=image_service_instance,
             scene_kind=scene_kind,
-            scene=scene,
+            scene=scene_for_submit,
             task_id=first_task_id,
             input_key=minio_input_key,
         )
     except Exception:
         if storage_service.client:
-            await asyncio.to_thread(
-                storage_service.client.remove_object, MINIO_BUCKET, minio_input_key
-            )
+            _cleanup_generation_inputs(storage_service, generation_id)
         raise
     if backend_id != first_task_id:
         raise RuntimeError("Generation backend returned an unexpected task id")
@@ -287,7 +339,7 @@ async def submit_qqcc_demo_generation(
             "scenes": scene_chain,
             "current_index": 0,
             "current_task_id": first_task_id,
-            "input_keys": [minio_input_key],
+            "input_keys": input_keys,
             "segment_keys": [],
         }
         await redis_conn.set(
@@ -365,11 +417,20 @@ async def get_qqcc_demo_generation(
     }
 
 
-def _cleanup_generation_input(storage_service, generation_id: str) -> None:
+def _cleanup_generation_inputs(storage_service, generation_id: str) -> None:
     if storage_service.client:
         storage_service.client.remove_object(
             MINIO_BUCKET, f"{GENERATION_INPUT_PREFIX}/{generation_id}/input.png"
         )
+        for index in range(1, 5):
+            storage_service.client.remove_object(
+                MINIO_BUCKET,
+                f"{GENERATION_INPUT_PREFIX}/{generation_id}/reference_{index}.png",
+            )
+
+
+def _cleanup_generation_input(storage_service, generation_id: str) -> None:
+    _cleanup_generation_inputs(storage_service, generation_id)
 
 
 def _cleanup_demo_chain_objects(storage_service, state: dict[str, Any]) -> None:

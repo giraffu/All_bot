@@ -11,6 +11,7 @@ import type {
   QqccBotConfigResponse,
   QqccDemoGenerationResponse,
   QqccDemoMediaUploadResponse,
+  QqccReferenceImageUploadResponse,
   SceneConfig,
   SceneConfigKind,
 } from '../types/qqccConfig'
@@ -106,6 +107,24 @@ export const uploadQqccDemoMedia = async (
       },
     )
     .then(unwrapData) as Promise<QqccDemoMediaUploadResponse>
+}
+
+export const uploadQqccReferenceImage = async (
+  sceneId: string,
+  index: number,
+  file: File,
+): Promise<QqccReferenceImageUploadResponse> => {
+  const contentBase64 = await fileToBase64(file)
+  return qqccConfigApi
+    .put(
+      `/api/qqcc/ref2v-reference-json/${encodeURIComponent(sceneId)}/${index}`,
+      {
+        file_name: file.name,
+        mime_type: file.type,
+        content_base64: contentBase64,
+      },
+    )
+    .then(unwrapData) as Promise<QqccReferenceImageUploadResponse>
 }
 
 export const generateQqccDemoMedia = async (

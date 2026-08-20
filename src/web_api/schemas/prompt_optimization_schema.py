@@ -18,6 +18,10 @@ class PromptMediaInput(BaseModel):
         "reference_character_1",
         "reference_character_2",
         "scene_background",
+        "reference_image_1",
+        "reference_image_2",
+        "reference_image_3",
+        "reference_image_4",
     ]
     object_key: str
 
@@ -48,7 +52,7 @@ class PromptOptimizationTaskRequest(BaseModel):
     template: PromptTemplateRef
     prompt: str = Field(min_length=1, max_length=2000)
     context: dict[str, Any]
-    media: list[PromptMediaInput] = Field(default_factory=list, max_length=3)
+    media: list[PromptMediaInput] = Field(default_factory=list, max_length=4)
     character_ids: list[str] = Field(default_factory=list, max_length=2)
     character_refs: list[CharacterAssetRef] | None = Field(default=None, max_length=2)
     environment_ref: EnvironmentAssetRef | None = None

@@ -857,7 +857,7 @@
       "minimax_h3_description": "参考图 {index} 的角色身份与外观说明",
       "minimax_h3_first_frame_ratio": "画面比例按首帧自动推导",
       "minimax_h3_resolution_presets": {"preview": "极速（约 512p）", "small": "清晰（约 600p）", "standard": "标准（约 720p）", "hd": "高清（约 810p）"},
-      "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧"},
+      "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧", "ref2v": "参考图生视频"},
       "minimax_h3_addons": "效果增强（可多选）",
       "minimax_h3_addon_strength": "效果强度",
       "minimax_h3_addon_options": {

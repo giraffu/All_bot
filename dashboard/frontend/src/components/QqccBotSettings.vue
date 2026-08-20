@@ -48,6 +48,8 @@ type AiVideoDurationKey = 5 | 10 | 15
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'minimax_h3'
+type AiVideoMode = 'i2v' | 'ref2v'
+type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
 type DemoMediaSlot = 'input' | 'output'
@@ -124,6 +126,10 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   duration: AiVideoDurationKey
   resolution: AiVideoResolutionKey
   engine: AiVideoSceneEngine
+  mode: AiVideoMode
+  reference_images: string[]
+  reference_image_previews?: string[]
+  aspect_ratio: AiVideoAspectRatio
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
   jump_draw_scene_id?: string
@@ -230,6 +236,11 @@ interface QqccDemoMediaUploadResponse {
   preview_url: string
 }
 
+interface QqccReferenceImageUploadResponse {
+  media: SceneDemoMedia
+  preview_url: string
+}
+
 interface QqccDemoGenerationResponse extends Partial<QqccDemoMediaUploadResponse> {
   generation_id: string
   status: string
@@ -248,6 +259,11 @@ const props = defineProps<{
     slot: DemoMediaSlot,
     file: File,
   ) => Promise<QqccDemoMediaUploadResponse>
+  uploadReferenceImage?: (
+    sceneId: string,
+    index: number,
+    file: File,
+  ) => Promise<QqccReferenceImageUploadResponse>
   generateDemoMedia: (
     sceneKind: SceneConfigKind,
     scene: SceneConfig,
@@ -258,6 +274,7 @@ const props = defineProps<{
     generationId: string,
   ) => Promise<QqccDemoGenerationResponse>
   demoMediaObjectPrefixes?: string[]
+  ref2vEnabled?: boolean
 }>()
 
 const emptyOptions = (): QqccBotConfigOptions => ({
@@ -433,6 +450,16 @@ const aiVideoResolutionOptions: readonly AiVideoResolutionKey[] = [
 ]
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
 const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15]
+const ref2vBaseCredits: Record<AiVideoResolutionKey, number> = {
+  preview: 15,
+  small: 23,
+  standard: 30,
+  hd: 45,
+}
+const calculateRef2vCreditCost = (
+  resolution: AiVideoResolutionKey,
+  duration: AiVideoDurationKey,
+) => ref2vBaseCredits[resolution] * (duration / 5)
 const demoSlots: DemoMediaSlot[] = ['input', 'output']
 
 const videoEngineLabels: Record<VideoSceneEngine, string> = {
@@ -520,6 +547,7 @@ const copywritingOptions: Array<{
 ]
 
 const uploadingDemoKeys = ref<ReadonlySet<string>>(new Set())
+const uploadingReferenceKeys = ref<ReadonlySet<string>>(new Set())
 const generatingDemoKeys = ref<ReadonlySet<string>>(new Set())
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
@@ -561,6 +589,7 @@ const sceneConfig = reactive({
   duration: '5s' as DurationKey | AiVideoDurationKey,
   resolution: '720p' as ResolutionKey | AiVideoResolutionKey,
   engine: 'image_to_video',
+  mode: 'i2v' as AiVideoMode,
   aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
   video_lora_items: [] as VideoLoraItem[],
@@ -675,6 +704,15 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
   value === '9:16' || value === '16:9' || value === '1:1' ? value : 'source'
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'minimax_h3'
+const normalizeAiVideoMode = (value: unknown): AiVideoMode => value === 'ref2v' ? 'ref2v' : 'i2v'
+const normalizeAiVideoAspectRatio = (value: unknown): AiVideoAspectRatio =>
+  value === '9:16' || value === '1:1' ? value : '16:9'
+const normalizeReferenceImages = (value: unknown) =>
+  Array.isArray(value)
+    ? value.filter((item): item is string =>
+        typeof item === 'string' && item.startsWith('qqcc/config/ref2v/ai_video/'),
+      ).slice(0, 4)
+    : []
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
   value === 'free_edit' || value === 'free_edit_v2_5' || value === 'free_edit_v3' ? value : 'free_edit_v2'
@@ -1333,6 +1371,12 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             ? scene.resolution as AiVideoResolutionKey
             : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
+          mode: normalizeAiVideoMode(scene?.mode),
+          reference_images: normalizeReferenceImages(scene?.reference_images),
+          reference_image_previews: Array.isArray(scene?.reference_image_previews)
+            ? scene.reference_image_previews.filter((item): item is string => typeof item === 'string')
+            : [],
+          aspect_ratio: normalizeAiVideoAspectRatio(scene?.aspect_ratio),
           lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
           end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
             scene?.end_frame_draw_scene_id,
@@ -1413,6 +1457,10 @@ const addAiVideoScene = () => {
     duration: 5,
     resolution: modelOptions.default_ai_video_resolution,
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
+    mode: 'i2v',
+    reference_images: [],
+    reference_image_previews: [],
+    aspect_ratio: '16:9',
     lora_items: [],
     end_frame_draw_scene_id: '',
     jump_draw_scene_id: '',
@@ -1638,6 +1686,64 @@ const setDemoOperationLoading = (
 
 const isDemoUploadLoading = (key: string) => uploadingDemoKeys.value.has(key)
 const isDemoGenerationLoading = (key: string) => generatingDemoKeys.value.has(key)
+const isReferenceUploadLoading = (key: string) => uploadingReferenceKeys.value.has(key)
+
+const uploadReferenceImage = async (
+  sceneIndex: number,
+  referenceIndex: number,
+  uploadFile: DemoUploadFile,
+) => {
+  const scene = config.ai_video_scenes[sceneIndex]
+  if (!scene?.id || referenceIndex < 0 || referenceIndex > 3) return false
+  const file = uploadFile.originFileObj instanceof File ? uploadFile.originFileObj : uploadFile
+  const validationError = validateDemoUploadFile('ai_video', 'input', file)
+  if (validationError) {
+    message.error(`参考图上传失败：${validationError}`)
+    return false
+  }
+  const uploadKey = `${scene.id}:${referenceIndex}`
+  setDemoOperationLoading(uploadingReferenceKeys, uploadKey, true)
+  try {
+    if (!props.uploadReferenceImage) {
+      throw new Error('QQCC REF2V is available only in the official control panel')
+    }
+    const uploaded = await props.uploadReferenceImage(scene.id, referenceIndex, file)
+    const objectKey = String(uploaded?.media?.object_key || '')
+    if (!objectKey.startsWith('qqcc/config/ref2v/ai_video/')) {
+      throw new Error('QQCC_REF2V_REFERENCE_INVALID_RESPONSE')
+    }
+    scene.reference_images.splice(referenceIndex, 1, objectKey)
+    const previews = [...(scene.reference_image_previews || [])]
+    previews.splice(referenceIndex, 1, uploaded.preview_url)
+    scene.reference_image_previews = previews
+    message.success(referenceIndex < scene.reference_images.length - 1 ? '参考图已替换' : '参考图已添加')
+  } catch (error: unknown) {
+    message.error(`参考图上传失败：${resolveDemoUploadError(error)}`)
+  } finally {
+    setDemoOperationLoading(uploadingReferenceKeys, uploadKey, false)
+  }
+  return false
+}
+
+const removeReferenceImage = (scene: AiVideoSceneConfig, referenceIndex: number) => {
+  scene.reference_images.splice(referenceIndex, 1)
+  scene.reference_image_previews?.splice(referenceIndex, 1)
+}
+
+const moveReferenceImage = (
+  scene: AiVideoSceneConfig,
+  referenceIndex: number,
+  direction: -1 | 1,
+) => {
+  const target = referenceIndex + direction
+  if (target < 0 || target >= scene.reference_images.length) return
+  ;[scene.reference_images[referenceIndex], scene.reference_images[target]] =
+    [scene.reference_images[target], scene.reference_images[referenceIndex]]
+  if (scene.reference_image_previews) {
+    ;[scene.reference_image_previews[referenceIndex], scene.reference_image_previews[target]] =
+      [scene.reference_image_previews[target], scene.reference_image_previews[referenceIndex]]
+  }
+}
 
 const uploadSceneDemo = async (
   kind: SceneConfigKind,
@@ -1725,7 +1831,11 @@ const validateVideoScenes = () =>
   config.video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
 
 const validateAiVideoScenes = () =>
-  config.ai_video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
+  config.ai_video_scenes.every((scene) =>
+    Boolean(scene.name.trim())
+    && Boolean(scene.prompt.trim())
+    && (scene.mode !== 'ref2v' || scene.reference_images.length >= 1),
+  )
 
 const validateDrawScenes = () =>
   config.draw_scenes.every(
@@ -1746,7 +1856,8 @@ const validateSceneCreditCosts = () =>
     ...config.draw_scenes_v1,
     ...config.filter_scenes,
   ].every(
-    scene => scene.credit_cost === null
+    scene => ('mode' in scene && scene.mode === 'ref2v')
+      || scene.credit_cost === null
       || (Number.isInteger(scene.credit_cost) && scene.credit_cost >= 1),
   )
 
@@ -1867,7 +1978,11 @@ const buildPayload = (): QqccBotConfig => {
     .filter(scene => scene.name || scene.prompt)
   payload.ai_video_scenes = payload.ai_video_scenes
     .map((scene) => {
-      const { jump_draw_scene_id: rawJumpDrawSceneId, ...aiVideoScene } = scene
+      const {
+        jump_draw_scene_id: rawJumpDrawSceneId,
+        reference_image_previews: _referenceImagePreviews,
+        ...aiVideoScene
+      } = scene
       return {
       ...aiVideoScene,
       id: scene.id.trim(),
@@ -1875,16 +1990,19 @@ const buildPayload = (): QqccBotConfig => {
       prompt: scene.prompt.trim(),
       negative_prompt: scene.negative_prompt.trim(),
       engine: normalizeAiVideoEngine(scene.engine),
+      mode: normalizeAiVideoMode(scene.mode),
+      reference_images: normalizeReferenceImages(scene.reference_images),
+      aspect_ratio: normalizeAiVideoAspectRatio(scene.aspect_ratio),
       duration: aiVideoDurationOptions.includes(scene.duration) ? scene.duration : 5,
       lora_items: normalizeAiVideoLoraItems(scene.lora_items),
-      end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
-        scene.end_frame_draw_scene_id,
-        payload.draw_scenes,
-      ),
+      end_frame_draw_scene_id: scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
+          scene.end_frame_draw_scene_id,
+          payload.draw_scenes,
+        ),
       ...(normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes)
         ? { jump_draw_scene_id: normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes) }
         : {}),
-      next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
+      next_scene_id: scene.mode !== 'ref2v' && typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
         ? scene.next_scene_id.trim()
         : null,
       }
@@ -1935,9 +2053,14 @@ const openSceneConfig = (
       ? (scene as AiVideoSceneConfig).resolution
       : modelOptions.default_video_resolution
   sceneConfig.engine = scene.engine
+  sceneConfig.mode = kind === 'ai_video'
+    ? normalizeAiVideoMode((scene as AiVideoSceneConfig).mode)
+    : 'i2v'
   sceneConfig.aspect_ratio = kind === 'video' || kind === 'video_v1'
     ? normalizeVideoAspectRatio((scene as VideoSceneConfig).aspect_ratio)
-    : 'source'
+    : kind === 'ai_video'
+      ? normalizeAiVideoAspectRatio((scene as AiVideoSceneConfig).aspect_ratio)
+      : 'source'
   sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
   sceneConfig.video_lora_items = kind === 'video' || kind === 'video_v1'
     ? normalizeVideoLoraItems(
@@ -1983,6 +2106,7 @@ const closeSceneConfig = () => {
   sceneConfig.duration = '5s'
   sceneConfig.resolution = modelOptions.default_video_resolution
   sceneConfig.lora_items = []
+  sceneConfig.mode = 'i2v'
   sceneConfig.video_lora_items = []
   sceneConfig.aspect_ratio = 'source'
   sceneConfig.end_frame_draw_scene_id = ''
@@ -2026,16 +2150,20 @@ const confirmSceneConfig = () => {
   } else if (sceneConfig.kind === 'ai_video') {
     const scene = config.ai_video_scenes[sceneConfig.index]
     if (!scene) return
-    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
+    scene.mode = normalizeAiVideoMode(sceneConfig.mode)
+    scene.aspect_ratio = normalizeAiVideoAspectRatio(sceneConfig.aspect_ratio)
     scene.duration = sceneConfig.duration as AiVideoDurationKey
     scene.resolution = sceneConfig.resolution as AiVideoResolutionKey
+    scene.credit_cost = scene.mode === 'ref2v'
+      ? calculateRef2vCreditCost(scene.resolution, scene.duration)
+      : normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
     scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items)
-    scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
-      sceneConfig.end_frame_draw_scene_id,
-    )
-    scene.jump_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.jump_draw_scene_id)
-    scene.next_scene_id = sceneConfig.next_scene_id || null
+    scene.end_frame_draw_scene_id = scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
+        sceneConfig.end_frame_draw_scene_id,
+      )
+    scene.jump_draw_scene_id = scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(sceneConfig.jump_draw_scene_id)
+    scene.next_scene_id = scene.mode === 'ref2v' ? null : sceneConfig.next_scene_id || null
   } else if (sceneConfig.kind === 'draw' || sceneConfig.kind === 'draw_v1') {
     const scene = (sceneConfig.kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes)[sceneConfig.index]
     if (!scene) return
@@ -2363,6 +2491,30 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
                   </div>
                 </div>
               </div>
+              <div v-if="scene.mode === 'ref2v'" class="md:col-span-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3" :data-testid="`ref2v-reference-manager-${index}`">
+                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div class="text-sm font-medium text-slate-700">管理员参考图（{{ scene.reference_images.length }}/4）</div>
+                    <div class="text-xs text-slate-500">用户主体固定为 &lt;Picture 1&gt;；这里依次对应 &lt;Picture 2&gt;–&lt;Picture 5&gt;。</div>
+                  </div>
+                  <a-upload v-if="scene.reference_images.length < 4" :show-upload-list="false" accept="image/png,image/jpeg,.png,.jpg,.jpeg" :before-upload="(file: File) => uploadReferenceImage(index, scene.reference_images.length, file)">
+                    <a-button size="small" :loading="isReferenceUploadLoading(`${scene.id}:${scene.reference_images.length}`)" :data-testid="`add-ref2v-reference-${index}`"><template #icon><UploadOutlined /></template>添加参考图</a-button>
+                  </a-upload>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                  <div v-for="(objectKey, referenceIndex) in scene.reference_images" :key="objectKey" class="w-32 rounded-md border border-slate-200 bg-white p-2">
+                    <a-image v-if="scene.reference_image_previews?.[referenceIndex]" :src="scene.reference_image_previews[referenceIndex]" :width="112" :height="88" class="object-cover" />
+                    <div v-else class="flex h-[88px] items-center justify-center bg-slate-100 text-xs text-slate-400">参考图 {{ referenceIndex + 1 }}</div>
+                    <div class="mt-1 text-center text-xs text-slate-500">&lt;Picture {{ referenceIndex + 2 }}&gt;</div>
+                    <div class="mt-2 flex justify-center gap-1">
+                      <a-button size="small" :disabled="referenceIndex === 0" @click="moveReferenceImage(scene, referenceIndex, -1)"><template #icon><UpOutlined /></template></a-button>
+                      <a-button size="small" :disabled="referenceIndex === scene.reference_images.length - 1" @click="moveReferenceImage(scene, referenceIndex, 1)"><template #icon><DownOutlined /></template></a-button>
+                      <a-upload :show-upload-list="false" accept="image/png,image/jpeg,.png,.jpg,.jpeg" :before-upload="(file: File) => uploadReferenceImage(index, referenceIndex, file)"><a-button size="small" :loading="isReferenceUploadLoading(`${scene.id}:${referenceIndex}`)"><template #icon><UploadOutlined /></template></a-button></a-upload>
+                      <a-button size="small" danger @click="removeReferenceImage(scene, referenceIndex)"><template #icon><DeleteOutlined /></template></a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div v-if="config.ai_video_scenes.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div>
             <div v-else class="scene-pagination-bar"><span>共 {{ config.ai_video_scenes.length }} 个场景</span><a-pagination v-model:current="scenePages.ai_video" :total="config.ai_video_scenes.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" show-less-items data-testid="ai-video-scenes-pagination" /></div>
@@ -2544,7 +2696,13 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
           <h3>基础配置</h3>
           <div class="scene-config-grid">
             <a-form-item label="灵石消耗" class="mb-0">
-              <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" data-testid="scene-config-credit-cost" class="w-full" />
+              <a-input-number v-model:value="sceneConfig.credit_cost" :disabled="sceneConfig.kind === 'ai_video' && sceneConfig.mode === 'ref2v'" :min="1" :step="1" :precision="0" :placeholder="sceneConfig.kind === 'ai_video' && sceneConfig.mode === 'ref2v' ? '由服务端价格矩阵派生' : '未配置/沿用旧规则'" data-testid="scene-config-credit-cost" class="w-full" />
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="场景模式" class="mb-0">
+              <a-select v-model:value="sceneConfig.mode" data-testid="scene-config-ai-video-mode" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option value="i2v">图生视频</a-select-option>
+                <a-select-option v-if="props.ref2vEnabled" value="ref2v">参考生视频 REF2V</a-select-option>
+              </a-select>
             </a-form-item>
             <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="分辨率" class="mb-0">
               <a-select v-model:value="sceneConfig.resolution" data-testid="scene-config-resolution" :get-popup-container="getSceneSelectPopupContainer">
@@ -2569,6 +2727,13 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
             <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="画面比例" class="mb-0">
               <a-select v-model:value="sceneConfig.aspect_ratio" data-testid="scene-video-aspect-ratio-select" :get-popup-container="getSceneSelectPopupContainer">
                 <a-select-option v-for="item in modelOptions.video_aspect_ratios" :key="item" :value="item">{{ videoAspectRatioLabels[item] }}</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'ai_video' && sceneConfig.mode === 'ref2v'" label="固定画面比例" class="mb-0">
+              <a-select v-model:value="sceneConfig.aspect_ratio" data-testid="scene-config-ref2v-aspect-ratio" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option value="16:9">16:9</a-select-option>
+                <a-select-option value="9:16">9:16</a-select-option>
+                <a-select-option value="1:1">1:1</a-select-option>
               </a-select>
             </a-form-item>
           </div>

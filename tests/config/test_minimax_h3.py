@@ -243,9 +243,36 @@ def test_minimax_h3_accepts_ordered_mode_inputs(task_type, images):
     assert (spec.width, spec.height) == (0, 0)
 
 
-def test_minimax_h3_ref2v_is_historical_only_and_rejects_new_specs():
-    with pytest.raises(MiniMaxH3ValidationError, match="未知"):
-        build_minimax_h3_spec(MINIMAX_H3_REF2V, {"images": ["a.png"]})
+@pytest.mark.parametrize(
+    "count",
+    [1, 4, 5],
+)
+def test_minimax_h3_ref2v_accepts_ordered_reference_images(count):
+    images = [f"ref-{index}.png" for index in range(count)]
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": images,
+            "aspect_ratio": "16:9",
+            "resolution_preset": "preview",
+        },
+    )
+
+    assert spec.mode == "ref2v"
+    assert spec.images == tuple(images)
+    assert spec.model_name == (
+        "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
+    )
+    assert (spec.width, spec.height) != (0, 0)
+
+
+@pytest.mark.parametrize("count", [0, 6])
+def test_minimax_h3_ref2v_rejects_worker_image_count_outside_one_to_five(count):
+    with pytest.raises(MiniMaxH3ValidationError, match="1 至 5"):
+        build_minimax_h3_spec(
+            MINIMAX_H3_REF2V,
+            {"images": [f"ref-{index}.png" for index in range(count)]},
+        )
 
 
 @pytest.mark.parametrize(
@@ -256,6 +283,27 @@ def test_minimax_h3_resolution_price_matrix(preset, normal):
     assert build_minimax_h3_spec(
         MINIMAX_H3_T2V, {"resolution_preset": preset}
     ).cost == normal
+
+
+@pytest.mark.parametrize(
+    "preset,duration,cost",
+    [
+        ("preview", 5, 15),
+        ("small", 5, 23),
+        ("standard", 10, 60),
+        ("hd", 15, 135),
+    ],
+)
+def test_minimax_h3_ref2v_uses_premium_price_matrix(preset, duration, cost):
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": ["ref.png"],
+            "resolution_preset": preset,
+            "duration": duration,
+        },
+    )
+    assert spec.cost == cost
 
 
 def test_minimax_h3_image_modes_require_source_aspect():

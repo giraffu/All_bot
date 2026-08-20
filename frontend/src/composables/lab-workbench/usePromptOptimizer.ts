@@ -34,7 +34,7 @@ type PromptOptimizerOptions = {
   useT2VReferences?: Ref<boolean>
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
-  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v'>
+  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
   captureOriginDraft?: () => PromptOptimizationOriginDraft
   applyOriginDraft?: (draft: PromptOptimizationOriginDraft) => void | Promise<void>
 }
@@ -69,6 +69,10 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
   })
   const mediaContractReady = computed(() => {
     if (options.currentModeId.value === 'minimax_h3') {
+      if (options.minimaxH3Mode?.value === 'ref2v') {
+        return options.uploadedReferences.value.length >= 1
+          && options.uploadedReferences.value.length <= 4
+      }
       const expected = options.minimaxH3Mode?.value === 'flf2v'
         ? 2
         : options.minimaxH3Mode?.value === 'i2v' ? 1 : 0
@@ -150,6 +154,7 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
     const clientRequestId = crypto.randomUUID()
     try {
       const isT2vIc = targetTaskType.value === 'ltx_t2v_ic'
+      const isH3Ref2v = targetTaskType.value === 'minimax_h3_ref2v'
       const response = await api.post('/prompt-optimizations/tasks', {
         client_request_id: clientRequestId,
         target_task_type: targetTaskType.value,
@@ -160,7 +165,9 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
           : targetTaskType.value === 'ltx_t2v'
             ? []
             : options.uploadedReferences.value.map((item, index) => ({
-                role: index === 0 ? 'start_image' : 'end_image',
+                role: isH3Ref2v
+                  ? `reference_image_${index + 1}`
+                  : index === 0 ? 'start_image' : 'end_image',
                 object_key: item.key,
               })),
         character_refs: isT2vIc ? options.selectedCharacterIds.value.map((value) => {

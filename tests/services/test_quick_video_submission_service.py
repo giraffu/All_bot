@@ -549,6 +549,63 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
     ]
 
 
+@pytest.mark.asyncio
+async def test_qqcc_ref2v_keeps_subject_first_and_admin_references_ordered():
+    references = [
+        "qqcc/config/ref2v/ai_video/ref-scene/reference-a/input",
+        "qqcc/config/ref2v/ai_video/ref-scene/reference-b/input",
+    ]
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "ref-scene"},
+        qqcc_config=normalize_qqcc_config(
+            {
+                "main_buttons": {"ai_video": True},
+                "ai_video_scenes": [
+                    {
+                        "id": "ref-scene",
+                        "name": "参考运镜",
+                        "prompt": "<Picture 1> follows <Picture 2> styling",
+                        "mode": "ref2v",
+                        "reference_images": references,
+                        "aspect_ratio": "9:16",
+                        "duration": 10,
+                        "resolution": "small",
+                        "credit_cost": 999,
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=[],
+    )
+    generation_task = AsyncMock(return_value={"output": "history/result.mp4"})
+    downloads = AsyncMock(side_effect=["/tmp/ref-a.png", "/tmp/ref-b.png"])
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/subject.png",
+        status_msg_id=77,
+        process_generation_task_func=generation_task,
+        download_reference_image_func=downloads,
+        adapt_video_frame_file_func=lambda path, **_kwargs: path,
+    )
+
+    assert plan.kind == QuickVideoSubmissionKind.H3_REF2V
+    assert plan.total_cost == 46
+    assert plan.fixed_credit_cost == 46
+    assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
+    assert generation_task.await_args.kwargs["images"] == [
+        "/tmp/subject.png",
+        "/tmp/ref-a.png",
+        "/tmp/ref-b.png",
+    ]
+    assert generation_task.await_args.kwargs["aspect_ratio"] == "9:16"
+    assert generation_task.await_args.kwargs["allow_contribute"] is False
+
+
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     config = normalize_qqcc_config(
         {

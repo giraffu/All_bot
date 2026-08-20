@@ -61,6 +61,35 @@ def test_resolver_selects_i2v_or_flf2v_profile_from_media_roles():
     assert flf2v.template.content_hash
 
 
+def test_resolver_selects_ordered_h3_ref2v_profile_for_one_to_four_images():
+    for count in (1, 4):
+        resolved = resolve_prompt_optimization(
+            target_task_type="minimax_h3_ref2v",
+            template_id="minimax_h3_ref2v",
+            template_version=1,
+            media=_media(*(f"reference_image_{index}" for index in range(1, count + 1))),
+            context={"duration_seconds": 5},
+        )
+        assert resolved.profile.ref == f"minimax_h3_ref2v_prompt@{count}"
+        system, user = render_prompt_messages(
+            profile=resolved.profile,
+            template=resolved.template,
+            context=resolved.normalized_context,
+            prompt="keep identity",
+        )
+        assert "six-part" in system
+        assert "<Picture 1>" in user
+
+    with pytest.raises(PromptOptimizerRegistryError):
+        resolve_prompt_optimization(
+            target_task_type="minimax_h3_ref2v",
+            template_id="minimax_h3_ref2v",
+            template_version=1,
+            media=_media("reference_image_2"),
+            context={"duration_seconds": 5},
+        )
+
+
 def test_t2v_capabilities_and_profiles_use_v4_without_frame_semantics():
     pure_capability = get_prompt_optimizer_capability("ltx_t2v")
     ic_capability = get_prompt_optimizer_capability("ltx_t2v_ic")

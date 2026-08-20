@@ -59,7 +59,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | canonical Worker、workflow JSON、mapping、patcher | current | 模型/workflow |
-| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 三个公开模式、固定 10Eros/LightX2V 基础链、十三个可选 LoRA、测试云 agent 与正式 GPU 边界、模型包与 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
+| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 四个公开模式、TURBO REF2V/ManualSigmas、十三个可选 LoRA、分阶段入口与 LAN GPU 边界、19 文件模型包和 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |

@@ -68,5 +68,5 @@ async def test_runtime_keyboard_uses_ltx_label_in_prod_and_h3_label_in_test(monk
     test_labels = sum(_texts(test_keyboard), [])
     assert get_text("menu.ltx_video", "zh") in prod_labels
     assert get_text("menu.advanced_video_pro", "zh") not in prod_labels
-    assert get_text("menu.advanced_video_pro", "zh") in test_labels
-    assert get_text("menu.ltx_video", "zh") not in test_labels
+    assert get_text("menu.advanced_video_pro", "zh") not in test_labels
+    assert get_text("menu.ltx_video", "zh") in test_labels

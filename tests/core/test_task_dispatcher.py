@@ -124,21 +124,22 @@ def test_face_swap_versions_share_two_credit_price():
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_ref2v_strategy_is_historical_but_rejects_new_submissions(monkeypatch):
+async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
     submit = AsyncMock(return_value="backend-h3")
     _patch_dispatch_image_service(monkeypatch, submit_minimax_h3_task=submit)
     strategy = StrategyFactory.get_strategy(MODE_MINIMAX_H3_REF2V)
 
-    with pytest.raises(CoreDomainError, match="未知"):
-        await strategy.submit_task(
-            "task-h3",
-            {
-                "prompt": "historical ref2v request",
-                "saved_input_images": ["ref/a.png"],
-            },
-            priority=6,
-        )
-    submit.assert_not_awaited()
+    result = await strategy.submit_task(
+        "task-h3",
+        {
+            "prompt": "<Picture 1> walks through a city",
+            "saved_input_images": ["ref/a.png"],
+            "aspect_ratio": "16:9",
+        },
+        priority=6,
+    )
+    assert result == "backend-h3"
+    submit.assert_awaited_once()
 
 
 def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
@@ -165,10 +166,6 @@ def test_minimax_h3_metadata_only_enables_gallery_for_image_modes(
 ):
     strategy = MiniMaxH3Strategy(task_type, seed_provider=lambda: 123)
     inputs = {"prompt": "scene", "saved_input_images": images}
-    if task_type == MODE_MINIMAX_H3_REF2V:
-        with pytest.raises(CoreDomainError):
-            strategy.get_metadata(inputs)
-        return
     assert strategy.get_metadata(inputs)["gallery_supported"] is gallery_supported
 
 

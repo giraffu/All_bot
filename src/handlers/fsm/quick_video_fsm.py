@@ -349,12 +349,23 @@ def _sync_qqcc_scene_to_quick_video_data(
             "scene_kind": scene_kind,
         }
     )
+    if scene_kind == "ai_video":
+        fsm_data.update(
+            {
+                "ai_video_mode": str(scene.get("mode") or "i2v"),
+                "reference_images": list(scene.get("reference_images") or []),
+                "aspect_ratio": str(scene.get("aspect_ratio") or "16:9"),
+            }
+        )
     fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
     if fixed_credit_cost is None:
         fsm_data.pop("credit_cost", None)
     else:
         fsm_data["credit_cost"] = fixed_credit_cost
     if scene_kind != "ai_video":
+        fsm_data.pop("ai_video_mode", None)
+        fsm_data.pop("reference_images", None)
+        fsm_data.pop("aspect_ratio", None)
         fsm_data.pop("lora_items", None)
         fsm_data.pop("scene_kind", None)
     if include_scene_id:

@@ -68,3 +68,34 @@ async def test_bot_optimizer_preserves_staged_media_until_terminal_result():
 
     assert get_result.await_count == 2
     remove.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_bot_optimizer_uses_ordered_ref2v_media_roles():
+    submit = AsyncMock(return_value={"task_id": "optimizer-ref"})
+    get_result = AsyncMock(return_value={"result_text": "<Picture 1> meets <Picture 2>"})
+    uploads = iter(["staging/ref1.png", "staging/ref2.png"])
+
+    await optimize_advanced_video_prompt(
+        internal_user_id=7,
+        username="alice",
+        mode="ref2v",
+        prompt="keep both people",
+        images=["/tmp/ref1.png", "/tmp/ref2.png"],
+        duration_seconds=5,
+        client_request_id="761206f6-50ed-437c-855a-af14544352f9",
+        upload_image=lambda _path: next(uploads),
+        submit_func=submit,
+        get_result_func=get_result,
+        remove_object_func=AsyncMock(),
+        sleep_func=AsyncMock(),
+        get_balance=AsyncMock(return_value=9),
+    )
+
+    request = submit.await_args.kwargs["request"]
+    assert request.target_task_type == "minimax_h3_ref2v"
+    assert request.template.model_dump() == {"id": "minimax_h3_ref2v", "version": 1}
+    assert [item.role for item in request.media] == [
+        "reference_image_1",
+        "reference_image_2",
+    ]

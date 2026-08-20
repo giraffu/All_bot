@@ -22,7 +22,12 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
-from src.domain_config.minimax_h3 import MINIMAX_H3_FLF2V, MINIMAX_H3_I2V
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
+    build_minimax_h3_spec,
+)
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.video_frame_aspect_service import validate_video_frame_aspects
 from src.services.qqcc_config_service import (
@@ -80,6 +85,7 @@ from src.services.qqcc_video_chain_stitch_service import (
     stitch_qqcc_video_segments,
 )
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
+from src.services.storage import storage
 from src.utils import robust_send_message
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.task_service_entrypoints_specialized import (
@@ -101,6 +107,7 @@ class QuickVideoSubmissionKind(str, Enum):
     TAIL_FRAME_VIDEO = "tail_frame_video"
     LTX_VIDEO = "ltx_video"
     LTX_TAIL_FRAME_VIDEO = "ltx_tail_frame_video"
+    H3_REF2V = "h3_ref2v"
 
 
 class QuickVideoSubmissionRejectReason(str, Enum):
@@ -157,6 +164,7 @@ class QuickVideoSubmissionPlan:
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
     qqcc_chain_segments: tuple[QqccVideoChainSegment, ...] = ()
+    reference_images: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -181,6 +189,25 @@ AdaptVideoFrameFile = Callable[..., str]
 StitchVideoSegments = Callable[[list[bytes]], Awaitable[bytes] | bytes]
 ExtractVideoLastFrame = Callable[[bytes], Awaitable[bytes] | bytes]
 PersistChainResult = Callable[..., Awaitable[Any] | Any]
+DownloadReferenceImage = Callable[[str, int], Awaitable[str] | str]
+
+
+async def download_qqcc_ref2v_reference_image(object_key: str, index: int) -> str:
+    key = str(object_key or "").strip()
+    if not key.startswith("qqcc/config/ref2v/ai_video/"):
+        raise ValueError("invalid QQCC REF2V reference object key")
+    if not storage.r2_client or not storage.r2_bucket:
+        raise RuntimeError("R2 storage is unavailable")
+    temp_dir = Path(FSM_TEMP_DIR)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    local_path = temp_dir / f"{uuid4().hex}_qqcc_ref2v_{index}.png"
+    await asyncio.to_thread(
+        storage.r2_client.download_file,
+        storage.r2_bucket,
+        key,
+        str(local_path),
+    )
+    return str(local_path)
 
 
 QUICK_VIDEO_MODE_CONFIG_KEYS = {
@@ -386,7 +413,12 @@ def _build_qqcc_ai_video_chain_segment(
         duration_seconds = 5
     if duration_seconds not in {5, 10, 15}:
         duration_seconds = 5
-    tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(config, scene)
+    scene_mode = str(scene.get("mode") or "i2v")
+    tail_draw_scene = (
+        None
+        if scene_mode == "ref2v"
+        else _resolve_qqcc_video_end_frame_draw_scene(config, scene)
+    )
     tail_draw_chain = (
         resolve_qqcc_draw_scene_chain(config, tail_draw_scene)
         if tail_draw_scene is not None
@@ -404,14 +436,33 @@ def _build_qqcc_ai_video_chain_segment(
         scene_id=scene_id,
         scene_kind="ai_video",
         kind=(
+            QuickVideoSubmissionKind.H3_REF2V
+            if scene_mode == "ref2v"
+            else
             QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
             if tail_draw_chain
             else QuickVideoSubmissionKind.LTX_VIDEO
         ),
-        mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+        mode=(
+            MINIMAX_H3_REF2V
+            if scene_mode == "ref2v"
+            else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V
+        ),
         resolution=str(scene.get("resolution") or "preview"),
         duration=f"{duration_seconds}s",
-        cost=(10 * (duration_seconds // 5))
+        cost=(
+            build_minimax_h3_spec(
+                MINIMAX_H3_REF2V,
+                {
+                    "images": ["subject", *scene.get("reference_images", [])],
+                    "duration": duration_seconds,
+                    "resolution_preset": str(scene.get("resolution") or "preview"),
+                    "aspect_ratio": str(scene.get("aspect_ratio") or "16:9"),
+                },
+            ).cost
+            if scene_mode == "ref2v"
+            else 10 * (duration_seconds // 5)
+        )
         + calculate_qqcc_draw_chain_cost(tail_draw_chain),
         default_prompt_key=MINIMAX_H3_I2V,
         default_prompt_text=prompt,
@@ -420,13 +471,14 @@ def _build_qqcc_ai_video_chain_segment(
         display_mode_name=display_name,
         result_meta=build_qqcc_regenerate_result_meta(
             kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-            mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+            mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
             scene_id=scene_id,
             scene_kind="ai_video",
             display_mode_name=display_name,
         ),
         lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
+        aspect_ratio=str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE,
     )
 
 
@@ -542,7 +594,8 @@ def build_quick_video_submission_plan(
         if duration_seconds not in {5, 10, 15}:
             duration_seconds = 5
         duration = f"{duration_seconds}s"
-        tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+        scene_mode = str(scene.get("mode") or "i2v")
+        tail_draw_scene = None if scene_mode == "ref2v" else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
         tail_draw_chain = (
             resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
             if tail_draw_scene is not None
@@ -559,11 +612,14 @@ def build_quick_video_submission_plan(
         ]
         return QuickVideoSubmissionPlan(
             kind=(
+                QuickVideoSubmissionKind.H3_REF2V
+                if scene_mode == "ref2v"
+                else
                 QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
                 if tail_draw_chain
                 else QuickVideoSubmissionKind.LTX_VIDEO
             ),
-            mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+            mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
             resolution=str(scene.get("resolution") or "preview"),
             duration=duration,
             total_cost=(
@@ -579,7 +635,7 @@ def build_quick_video_submission_plan(
             display_mode_name=display_mode_name,
             result_meta=build_qqcc_regenerate_result_meta(
                 kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-                mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+                mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
                 scene_id=scene_id,
                 scene_kind="ai_video",
                 display_mode_name=display_mode_name,
@@ -589,6 +645,8 @@ def build_quick_video_submission_plan(
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
             fixed_credit_cost=fixed_credit_cost,
+            reference_images=list(scene.get("reference_images") or []),
+            aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
         )
 
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
@@ -853,6 +911,7 @@ async def run_quick_video_submission_plan(
     persist_chain_result_func: PersistChainResult = persist_and_send_qqcc_video_chain_result,
     refund_credits_func: RefundCredits | None = None,
     billing_state: QqccSceneBillingState | None = None,
+    download_reference_image_func: DownloadReferenceImage = download_qqcc_ref2v_reference_image,
 ) -> Any:
     if billing_state is None:
         billing_state = QqccSceneBillingState(
@@ -1111,6 +1170,45 @@ async def run_quick_video_submission_plan(
             refund_credits_func=refund_credits_func,
             billing_state=billing_state,
         )
+
+    if plan.kind == QuickVideoSubmissionKind.H3_REF2V:
+        if not 1 <= len(plan.reference_images) <= 4:
+            raise ValueError("QQCC REF2V requires one to four administrator references")
+        downloaded_refs: list[str] = []
+        try:
+            for index, object_key in enumerate(plan.reference_images, start=1):
+                downloaded_refs.append(
+                    str(await _maybe_await(download_reference_image_func(object_key, index)))
+                )
+            task_kwargs = billing_state.allocate_task_billing()
+            result = await _maybe_await(
+                process_generation_task_func(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    username=username,
+                    prompt=plan.prompt_override or plan.default_prompt_text,
+                    images=[image_path, *downloaded_refs],
+                    is_video=True,
+                    task_type=MINIMAX_H3_REF2V,
+                    resolution_preset=plan.resolution,
+                    aspect_ratio=plan.aspect_ratio,
+                    duration=plan.duration,
+                    cleanup=True,
+                    allow_contribute=False,
+                    display_mode_name_override=plan.display_mode_name,
+                    result_meta=plan.result_meta,
+                    status_msg_id=status_msg_id,
+                    lora_items=plan.lora_items or None,
+                    **task_kwargs,
+                )
+            )
+            if _task_result_has_output(result):
+                billing_state.mark_task_succeeded()
+            return result
+        except BaseException:
+            cleanup_temp_files_func(downloaded_refs)
+            raise
 
     if plan.kind == QuickVideoSubmissionKind.LTX_VIDEO:
         task_kwargs = billing_state.allocate_task_billing()

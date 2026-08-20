@@ -81,13 +81,16 @@ RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     pip_install_with_retry -r /opt/allbot/runtime/runpod_worker/requirements.txt; rm -rf /tmp/allbot-pip-cache; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
+    grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
+    grep -q 'class ManualSigmas' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_custom_sampler.py"; \
+    grep -R -q 'er_sde' "${COMFYUI_INSTALL_DIR}/comfy"; \
     grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
     grep -q 'ModelAttentionBackend' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_model_advanced.py"; \
     grep -q 'ReservedVRAMSetter' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-ReservedVRAM/nodes.py"; \
     grep -R -q 'DaSiWa_ResolutionScaleCalculator' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
-    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json"]; assert all(isinstance(json.loads((root/n).read_text()),dict) for n in names)'; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v","minimax_h3_ref2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
+    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json","MiniMax H3 REF2V.api.json"]; workflows=[json.loads((root/n).read_text()) for n in names]; ref=workflows[-1]; assert all(isinstance(item,dict) for item in workflows); assert ref["33"]["inputs"]["sampler_name"]=="er_sde"; assert ref["34"]["class_type"]=="ManualSigmas"; assert not any(node.get("class_type")=="BasicScheduler" for node in ref.values())'; \
     if find "${COMFYUI_INSTALL_DIR}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then \
       echo "MiniMax H3 model files must stay out of the image" >&2; exit 1; \
     fi; \
@@ -95,7 +98,7 @@ RUN set -euo pipefail; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
-      org.opencontainers.image.description="Pinned 10Eros Beta2, LightX2V 8-step and NaughtyTimes v2 T2V/I2V/FLF2V runtime with external model manifest" \
+      org.opencontainers.image.description="Pinned 10Eros Beta2 FL2VA plus TURBO Ref2VA runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \

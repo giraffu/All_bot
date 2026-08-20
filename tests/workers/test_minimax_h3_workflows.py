@@ -15,12 +15,15 @@ TASKS = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
+    "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
 TEN_EROS_BETA2_MODEL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
+TURBO_REF2VA_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
+REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 
 
 def test_minimax_h3_api_workflows_are_deterministic():
@@ -30,8 +33,36 @@ def test_minimax_h3_api_workflows_are_deterministic():
         main = Path("workers/comfy_agent/workflows") / filename
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
-        assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
+        expected_model = (
+            TURBO_REF2VA_MODEL
+            if task_type == "minimax_h3_ref2v"
+            else TEN_EROS_BETA2_MODEL
+        )
+        assert workflow["1"]["inputs"]["unet_name"] == expected_model
         assert "nodes" not in workflow
+        if task_type == "minimax_h3_ref2v":
+            assert "8" not in workflow
+            assert workflow["2"]["inputs"] == {
+                "model": ["1", 0],
+                "attention": "pytorch attention",
+            }
+            assert workflow["3"]["inputs"] == {
+                "model": ["2", 0],
+                "shift_video": 11.0,
+                "shift_audio": 4.0,
+            }
+            assert workflow["30"]["class_type"] == "MiniMaxH3ReferenceToVideo"
+            assert workflow["30"]["inputs"]["ref_image_size"] == "match"
+            assert workflow["33"]["inputs"]["sampler_name"] == "er_sde"
+            assert workflow["34"] == {
+                "inputs": {"sigmas": REF2V_SIGMAS},
+                "class_type": "ManualSigmas",
+            }
+            assert not any(
+                node.get("class_type") == "BasicScheduler"
+                for node in workflow.values()
+            )
+            continue
         assert workflow["8"]["inputs"] == {
             "model": ["1", 0],
             "lora_name": LIGHTX2V_LORA,
@@ -268,6 +299,39 @@ def test_minimax_h3_worker_uses_prompt_without_trigger_injection():
     )
     assert workflow["30"]["inputs"]["prompt"] == "scene"
     assert workflow["30"]["inputs"]["length"] == 243
+
+
+def test_minimax_h3_ref2v_patcher_orders_five_images_and_addons_without_lightx2v():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+    images = [f"ref-{index}.png" for index in range(1, 6)]
+    result = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {
+            "prompt": "<Picture 1> walks beside <Picture 2>",
+            "image": images[0],
+            "image2": images[1],
+            "image3": images[2],
+            "image4": images[3],
+            "image5": images[4],
+            "duration": 10,
+            "lora_items": [
+                {"name": "motion_booster", "strength": 0.7},
+                {"name": "pussy", "strength": 0.35},
+            ],
+        },
+    )
+
+    assert result["100"]["inputs"]["model"] == ["1", 0]
+    assert result["101"]["inputs"]["model"] == ["100", 0]
+    assert result["2"]["inputs"]["model"] == ["101", 0]
+    assert "8" not in result
+    assert result["30"]["inputs"]["length"] == 243
+    for index, image in enumerate(images):
+        node_id = str(20 + index)
+        assert result[node_id]["inputs"]["image"] == image
+        assert result["30"]["inputs"][f"ref_images.ref_image_{index}"] == [node_id, 0]
 
 
 def test_minimax_h3_output_prefix_is_unique_per_execution():

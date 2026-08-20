@@ -1404,7 +1404,7 @@ _MINIMAX_H3_COUNTS = {
     "minimax_h3_t2v": (0, 0),
     "minimax_h3_i2v": (1, 1),
     "minimax_h3_flf2v": (2, 2),
-    "minimax_h3_ref2v": (1, 4),
+    "minimax_h3_ref2v": (1, 5),
 }
 _MINIMAX_H3_PRECISION_PRESETS = {
     "preview": "0.26 MP - Preview",
@@ -1445,7 +1445,11 @@ def patch_minimax_h3_workflow(
         raise ValueError("invalid MiniMax H3 task type")
     if any(
         params.get(key) not in (None, "", [], ())
-        for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "scheduler", "steps")
+        for key in (
+            "model_name", "checkpoint", "timeline_data", "sampler_name",
+            "scheduler", "steps", "sigmas", "ref_image_size", "ref_videos",
+            "ref_video_audios", "ref_audios",
+        )
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
@@ -1454,7 +1458,7 @@ def patch_minimax_h3_workflow(
         addon_items = normalize_minimax_h3_addon_items(params)
     except MiniMaxH3ValidationError as exc:
         raise ValueError(f"invalid MiniMax H3 addon configuration: {exc}") from exc
-    model_input = ["8", 0]
+    model_input = ["1", 0] if task_type == "minimax_h3_ref2v" else ["8", 0]
     prompt_parts: list[str] = []
     for offset, selection in enumerate(addon_items):
         addon = MINIMAX_H3_ADDON_MODELS[selection.name]
@@ -1472,7 +1476,10 @@ def patch_minimax_h3_workflow(
         }
         model_input = [node_id, 0]
     workflow["2"]["inputs"]["model"] = model_input
-    names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
+    names = [
+        str(params.get(key) or "").strip()
+        for key in ("image", "image2", "image3", "image4", "image5")
+    ]
     count = sum(bool(name) for name in names)
     minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
     if not minimum <= count <= maximum or any(not names[index] for index in range(count)):
@@ -1499,8 +1506,7 @@ def patch_minimax_h3_workflow(
     guide_inputs["prompt"] = (
         f"{prompt_prefix}, {base_prompt}" if prompt_prefix else base_prompt
     )
-    if task_type != "minimax_h3_ref2v":
-        guide_inputs["length"] = _minimax_h3_frame_count(params)
+    guide_inputs["length"] = _minimax_h3_frame_count(params)
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")
@@ -1511,11 +1517,13 @@ def patch_minimax_h3_workflow(
                 f"<Picture {index}>: {str(description).strip()}"
                 for index, description in enumerate(descriptions, start=1)
             )
-            workflow["30"]["inputs"]["prompt"] = f"{prefix}\n\n{str(params.get('prompt') or '').strip()}"
+            workflow["30"]["inputs"]["prompt"] = (
+                f"{prefix}\n\n{workflow['30']['inputs']['prompt']}"
+            )
     elif descriptions:
         raise ValueError("reference descriptions are only supported by ref2v")
 
-    for index in range(1, 5):
+    for index in range(1, 6):
         node_id = str(19 + index)
         if index <= count:
             workflow[node_id]["inputs"]["image"] = names[index - 1]

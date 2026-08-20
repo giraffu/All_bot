@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -84,7 +85,16 @@ async def load_qqcc_config_for_context(
     if callable(context_loader):
         load_config_func = context_loader
     try:
-        return await load_config_func()
+        config = await load_config_func()
+        if is_private_qqcc_bot_context(context):
+            config = copy.deepcopy(config)
+            if "ai_video_scenes" in config:
+                config["ai_video_scenes"] = [
+                    scene
+                    for scene in config.get("ai_video_scenes", [])
+                    if str(scene.get("mode") or "i2v") != "ref2v"
+                ]
+        return config
     except Exception:
         if logger is not None:
             logger.exception("Failed to load QQCC lazy bot config; using defaults.")

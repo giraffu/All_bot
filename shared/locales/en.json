@@ -856,7 +856,7 @@
       "minimax_h3_description": "Identity and appearance for reference {index}",
       "minimax_h3_first_frame_ratio": "Aspect ratio follows the first frame",
       "minimax_h3_resolution_presets": {"preview": "Fast (about 512p)", "small": "Clear (about 600p)", "standard": "Standard (about 720p)", "hd": "HD (about 810p)"},
-      "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last"},
+      "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last", "ref2v": "Reference images"},
       "minimax_h3_addons": "Enhancements (multi-select)",
       "minimax_h3_addon_strength": "Effect strength",
       "minimax_h3_addon_options": {

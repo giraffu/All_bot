@@ -89,6 +89,7 @@ tokens 起步。并发数、实际显存占用和模型是否已加载属于运�
 | `minimax_h3_t2v` | `minimax_h3_t2v_prompt@5` | 无图，只依据原始提示词；直接输出官方三字段音画时间线，不得声称看到了画面。 |
 | `minimax_h3_i2v` | `minimax_h3_i2v_prompt@5` | `start_image` 是精确首帧；先输出官方 `<Picture 1>` 0.00 秒对齐句，再从首帧连续发展。 |
 | `minimax_h3_flf2v` | `minimax_h3_flf2v_prompt@5` | 首尾帧都是硬约束；先输出包含动态结束时间和实际最终 Shot 的官方 Picture 1/2 对齐句，再描述连续过渡。 |
+| `minimax_h3_ref2v` | `minimax_h3_ref2v_prompt@1..4` | 接受有序 `reference_image_1..4`，按 `<Picture N>` 与六段式参考描述生成完整提示词；不接收参考视频/音频。 |
 | SCAIL2 动作迁移（短/长） | `scail2_action_transfer` | driving video 拥有动作、节奏、镜头；参考图拥有人物身份、服装和风格。提示词只写必要的风格或例外约束，不重新发明动作。 |
 | SCAIL2 视频替换 | `scail2_video_replacement` | driving video 拥有背景、灯光、镜头和运动；参考图提供替换主体。强调自然融入和需保留项。 |
 | SCAIL2 换脸 v2 | `scail2_face_swap_append_only` | 不重写 domain config 的固定换脸契约，只把用户要求压缩成狭窄的 additional guidance。不得从人脸参考图引入身体、服装、姿势或背景。 |

@@ -17,14 +17,15 @@ def test_test_environment_keeps_h3_pro_entry(monkeypatch):
     monkeypatch.setenv("ALLBOT_ENV", "test")
     monkeypatch.delenv("MINIMAX_H3_BACKEND_ENABLED", raising=False)
 
-    assert minimax_h3_advanced_video_entry_enabled() is True
-    assert active_advanced_video_menu_key() == "menu.advanced_video_pro"
+    assert minimax_h3_advanced_video_entry_enabled() is False
+    assert active_advanced_video_menu_key() == "menu.ltx_video"
 
 
 def test_explicit_backend_gate_overrides_environment_default(monkeypatch):
     monkeypatch.setenv("ALLBOT_ENV", "prod")
     monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
 
+    monkeypatch.setenv("MINIMAX_H3_ENTRY_ENABLED", "true")
     assert minimax_h3_advanced_video_entry_enabled() is True
 
 
