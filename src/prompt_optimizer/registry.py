@@ -10,6 +10,7 @@ from typing import Any
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
     MINIMAX_H3_T2V,
 )
 from src.prompt_optimizer.minimax_h3_prompt import (
@@ -23,6 +24,8 @@ from src.prompt_optimizer.minimax_h3_prompt import (
     MINIMAX_H3_OFFICIAL_BASE_USER,
     MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM,
     MINIMAX_H3_OPTIONAL_ADDONS_USER,
+    MINIMAX_H3_REF2V_SYSTEM,
+    MINIMAX_H3_REF2V_USER,
 )
 from src.prompt_optimizer.dialogue_language import build_dialogue_language_contract
 
@@ -387,6 +390,9 @@ _MINIMAX_H3_V5_PROFILE_REFS = frozenset(
         "minimax_h3_flf2v_prompt@5",
     }
 )
+_MINIMAX_H3_REF2V_PROFILE_REFS = frozenset(
+    f"minimax_h3_ref2v_prompt@{count}" for count in range(1, 5)
+)
 
 _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
     {
@@ -549,6 +555,22 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
             ),
             compatible_profile_refs=_MINIMAX_H3_V5_PROFILE_REFS,
         ),
+        "minimax_h3_ref2v@1": PromptOptimizationTemplate(
+            id="minimax_h3_ref2v",
+            version=1,
+            label="H3 参考图生视频",
+            description="按 <Picture N> 和六段式音画结构组织参考生成提示词",
+            system_template=MINIMAX_H3_REF2V_SYSTEM,
+            user_template=MINIMAX_H3_REF2V_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "original_prompt",
+                "dialogue_language_instructions",
+            ),
+            compatible_profile_refs=_MINIMAX_H3_REF2V_PROFILE_REFS,
+        ),
     }
 )
 
@@ -560,6 +582,26 @@ _I2V_ALLOWED_TEMPLATE_REFS = frozenset(
         "ltx_scene_script_cinematic@3",
     }
 )
+
+
+def _minimax_h3_ref2v_profile(count: int) -> PromptOptimizationProfile:
+    roles = tuple(f"reference_image_{index}" for index in range(1, count + 1))
+    return PromptOptimizationProfile(
+        id="minimax_h3_ref2v_prompt",
+        version=count,
+        supported_target_task_types=frozenset({MINIMAX_H3_REF2V}),
+        required_media_roles=roles,
+        optional_media_roles=(),
+        allowed_durations=frozenset({5, 10, 15}),
+        output_fields=("positive_prompt",),
+        primary_field="positive_prompt",
+        model_route="ltx-prompt-optimizer",
+        allowed_template_refs=frozenset({"minimax_h3_ref2v@1"}),
+        default_template_ref="minimax_h3_ref2v@1",
+        max_output_characters=7000,
+    )
+
+
 _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
     {
         "ltx_eros_v14_i2v@1": PromptOptimizationProfile(
@@ -840,6 +882,10 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             default_template_ref="minimax_h3_10eros_naughtytimes@4",
             max_output_characters=7000,
         ),
+        **{
+            f"minimax_h3_ref2v_prompt@{count}": _minimax_h3_ref2v_profile(count)
+            for count in range(1, 5)
+        },
     }
 )
 
@@ -900,6 +946,10 @@ def _resolve_profile(
         "end_image",
     ):
         profile_ref = "minimax_h3_flf2v_prompt@5"
+    elif target_task_type == MINIMAX_H3_REF2V and 1 <= len(roles) <= 4 and roles == tuple(
+        f"reference_image_{index}" for index in range(1, len(roles) + 1)
+    ):
+        profile_ref = f"minimax_h3_ref2v_prompt@{len(roles)}"
     profile = _PROFILES.get(profile_ref)
     if (
         profile is None
@@ -990,6 +1040,10 @@ def get_prompt_optimizer_capability(target_task_type: str) -> dict[str, Any]:
         "reference_character_1",
         "reference_character_2",
         "scene_background",
+        "reference_image_1",
+        "reference_image_2",
+        "reference_image_3",
+        "reference_image_4",
     ]
     return {
         "target_task_type": target_task_type,
@@ -1089,6 +1143,11 @@ def build_prompt_variables(
         media_frame_instructions = (
             "Image 1 is start_image and is the exact first frame.\n"
             "Image 2 is end_image and is the exact final frame. Describe a continuous transition."
+        )
+    elif profile.id == "minimax_h3_ref2v_prompt":
+        media_frame_instructions = "\n".join(
+            f"Image {index} is reference_image_{index} and must be cited as <Picture {index}>; it is a reference, not a video frame."
+            for index in range(1, len(profile.required_media_roles) + 1)
         )
     elif profile.ref == "ltx_eros_t2v@1":
         media_frame_instructions = (

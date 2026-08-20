@@ -18,6 +18,7 @@ import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
 import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
+import { WEB_MINIMAX_H3_REF2V_ENABLED } from '@/features/generation/labModeConfig'
 
 const { t } = useI18n()
 const {
@@ -197,6 +198,9 @@ const promptLockedHint = computed(() => (
                 { label: t('lab.workbench.minimax_h3_modes.t2v'), value: 't2v' },
                 { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
                 { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
+                ...(WEB_MINIMAX_H3_REF2V_ENABLED
+                  ? [{ label: t('lab.workbench.minimax_h3_modes.ref2v'), value: 'ref2v' }]
+                  : []),
               ]"
             />
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -207,7 +211,7 @@ const promptLockedHint = computed(() => (
                 { value: 'standard', label: t('lab.workbench.minimax_h3_resolution_presets.standard') },
                 { value: 'hd', label: t('lab.workbench.minimax_h3_resolution_presets.hd') },
               ]" />
-              <a-select v-if="minimaxH3Mode === 't2v'" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
+              <a-select v-if="minimaxH3Mode === 't2v' || minimaxH3Mode === 'ref2v'" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
               <div v-else class="flex min-h-8 items-center rounded-md border border-white/10 px-3 text-xs text-slate-400">
                 {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}
               </div>

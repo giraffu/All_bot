@@ -8,6 +8,7 @@ import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from src.services.storage import storage
 from telegram import InputMediaPhoto, InputMediaVideo
@@ -213,8 +214,15 @@ def build_qqcc_demo_object_key(
         raise QqccDemoMediaValidationError("Invalid scene id")
     resolve_qqcc_demo_media_type(scene_kind=scene_kind, slot=slot)
     normalized_prefix = object_prefix.strip().strip("/")
-    if normalized_prefix != "qqcc/demo" and not re.fullmatch(
-        r"qqcc/private/[1-9][0-9]*/demo", normalized_prefix
+    is_ref2v_config_reference = (
+        normalized_prefix == "qqcc/config/ref2v"
+        and scene_kind == "ai_video"
+        and slot == "input"
+    )
+    if (
+        normalized_prefix != "qqcc/demo"
+        and not is_ref2v_config_reference
+        and not re.fullmatch(r"qqcc/private/[1-9][0-9]*/demo", normalized_prefix)
     ):
         raise QqccDemoMediaValidationError("Invalid demo media namespace")
     return f"{normalized_prefix}/{scene_kind}/{scene_id}/{slot}"
@@ -342,6 +350,28 @@ async def upload_qqcc_demo_media(
         "content_sha256": hashlib.sha256(content).hexdigest(),
         "telegram_file_ids": {},
     }
+
+
+async def upload_qqcc_ref2v_reference_image(
+    *,
+    scene_id: str,
+    index: int,
+    upload,
+    storage_service=storage,
+) -> dict[str, Any]:
+    if not 0 <= int(index) < 4:
+        raise QqccDemoMediaValidationError("Reference image index must be between 0 and 3")
+    normalized_scene_id = str(scene_id or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", normalized_scene_id) is None:
+        raise QqccDemoMediaValidationError("Invalid REF2V scene id")
+    return await upload_qqcc_demo_media(
+        scene_kind="ai_video",
+        scene_id=f"{normalized_scene_id[:15]}-r-{uuid4().hex[:12]}",
+        slot="input",
+        upload=upload,
+        object_prefix="qqcc/config/ref2v",
+        storage_service=storage_service,
+    )
 
 
 def build_qqcc_demo_preview_url(

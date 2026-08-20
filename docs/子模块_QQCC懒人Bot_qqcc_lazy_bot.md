@@ -1,12 +1,17 @@
 # 子模块: QQCC 懒人 Bot (QQCC Lazy Bot)
 
-AI 视频场景面向用户统一称为“高级图生视频pro”。当前普通场景提交 H3 I2V，配置
-尾帧生成链的场景提交 H3 FLF2V。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
+AI 视频场景面向用户统一称为“高级图生视频pro”。`ai_video_scenes[].mode` 为
+`i2v|ref2v`，缺失时兼容为 I2V；旧普通场景提交 H3 I2V，配置尾帧生成链的旧场景提交
+H3 FLF2V。REF2V 场景由用户上传 1 张主体图，拼接管理员配置的 1–4 张有序参考图，
+固定画幅并由服务端派生价格。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
 清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 13 个可选附加模型，配置
 后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
 值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
-权威覆盖模型分辨率价格，官方与私有 Bot 保持相同规范化行为。
+权威覆盖模型分辨率价格。REF2V 只在官方 Bot/管理后台显示和执行；私有 Bot 过滤该
+场景并拒绝旧 callback。参考图对象只保存受限 `qqcc/config/ref2v/` key，配置响应才附加
+短签预览；替换、删除和排序在保存时清理已失去引用的对象。“生成示例”使用当前 demo
+input 作为 `<Picture 1>` 并读取最新参考图，不扣费、不写 History。
 
 ## 1. 范围与定位
 

@@ -18,6 +18,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchQqccConfig: vi.fn(),
   updateQqccConfig: vi.fn(),
   uploadQqccDemoMedia: vi.fn(),
+  uploadQqccReferenceImage: vi.fn(),
   generateQqccDemoMedia: vi.fn(),
   getQqccDemoGeneration: vi.fn(),
 }))

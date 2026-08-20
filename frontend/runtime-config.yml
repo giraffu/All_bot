@@ -12,7 +12,9 @@
     "enable_ltx_t2v": false,
     "enable_ltx_t2v_msr": false,
     "enable_ltx_video_v2": false,
-    "enable_minimax_h3": true
+    "enable_minimax_h3": true,
+    "enable_minimax_h3_entry": false,
+    "enable_minimax_h3_ref2v": true
   },
   "prod": {
     "api_base_url": "https://api.aivison.it.com/api",
@@ -26,6 +28,8 @@
     "enable_ltx_t2v": false,
     "enable_ltx_t2v_msr": false,
     "enable_ltx_video_v2": false,
-    "enable_minimax_h3": false
+    "enable_minimax_h3": false,
+    "enable_minimax_h3_entry": false,
+    "enable_minimax_h3_ref2v": false
   }
 }

@@ -322,8 +322,8 @@ class MiniMaxH3Request(BaseModel):
 
     task_id: str
     prompt: str
-    images: list[str] = Field(default_factory=list, max_length=4)
-    reference_descriptions: list[str] = Field(default_factory=list, max_length=4)
+    images: list[str] = Field(default_factory=list, max_length=5)
+    reference_descriptions: list[str] = Field(default_factory=list, max_length=5)
     duration: int = Field(default=5)
     resolution_preset: str = "preview"
     aspect_ratio: str = "16:9"
@@ -336,7 +336,7 @@ class MiniMaxH3Request(BaseModel):
     seed: Optional[int] = Field(default=None, ge=0, le=MINIMAX_H3_MAX_SEED)
     lora_name: Optional[str] = ""
     lora_strength: Optional[float] = None
-    lora_items: Optional[list[LoraItem]] = Field(default=None, max_length=6)
+    lora_items: Optional[list[LoraItem]] = Field(default=None, max_length=13)
     extract_last_frame: bool = True
     priority: int = 0
 

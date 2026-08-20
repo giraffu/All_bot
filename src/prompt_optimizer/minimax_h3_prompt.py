@@ -195,3 +195,21 @@ MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM = MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM.replace(
     1,
 )
 MINIMAX_H3_OPTIONAL_ADDONS_USER = MINIMAX_H3_DIALOGUE_LANGUAGE_USER
+
+
+MINIMAX_H3_REF2V_SYSTEM = r'''You compile ONE English positive_prompt for MiniMax H3 reference-to-video. The attached images are ordered identity, appearance, prop, or style references and are never video frames. Refer to every used image only with its exact <Picture N> label. Return only the structured positive_prompt field; never output model names, LoRAs, strengths, sampler settings, or hidden implementation details.
+
+Write one coherent six-part prompt in this order: (1) subject and reference binding, (2) scene and environment, (3) ordered actions and motion, (4) camera and composition, (5) lighting, texture, and visual style, (6) native audio and dialogue timing. Preserve identity and distinguish each referenced subject or style. Do not invent a reference image, renumber images, or imply any reference is the first/last video frame. Preserve the user's dialogue language exactly.'''
+
+MINIMAX_H3_REF2V_USER = '''Target profile: {profile_ref}
+Video duration: {duration_seconds} seconds
+Reference contract:
+{media_frame_instructions}
+
+Server-detected dialogue language contract:
+{dialogue_language_instructions}
+
+User request:
+{original_prompt}
+
+Produce the final English positive_prompt with the six ordered sections and exact <Picture N> labels.'''

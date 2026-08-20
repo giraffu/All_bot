@@ -2,21 +2,27 @@
 
 ## 能力与边界
 
-`minimax_h3` 是独立 GPU profile，不是 LTX alias。用户只开放三个任务：
-`minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`。Web 使用一个“高级图生
-视频pro”工作台切换三种模式，主 Bot 使用同一组模式。两端均可从
+`minimax_h3` 是独立 GPU profile，不是 LTX alias。执行面支持四个任务：
+`minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v` 和
+`minimax_h3_ref2v`。测试 Web 与主 Bot 在同一“高级图生视频pro”工作台切换四种模式。
+两端均可从
 十三个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
 QQCC 配置 Web 同样从这一领域目录下发 13 项，场景保存有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
-历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
-Worker pool、RunPod/LAN 支持任务列表或新建入口。
+REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
+官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图；Worker 防御上限为 5 张。私有
+QQCC Bot 过滤 REF2V 场景并拒绝已失效 callback。
 
 Bot/Web 的终端用户界面只展示“效果增强”和用途标签，不展示 MiniMax H3、基础链、
 checkpoint、LoRA 术语、作者资产名或物理文件名。Web 不渲染基础链说明；Bot 设置
 摘要只显示启用数量。下文模型名、目录 ID、强度和文件路径均是内部运行契约，不是
 用户文案；展示脱敏不得改变提交 payload 或 Worker 注入顺序。
 
-Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控制。
+Web 由 `enable_minimax_h3` 控制，普通导航另由 `enable_minimax_h3_entry` 控制；
+REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
+`MINIMAX_H3_BACKEND_ENABLED`、`MINIMAX_H3_ENTRY_ENABLED` 和
+`MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不阻止测试深链或
+`/advanced_video_pro` 命令测试。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard
 可分别维护共享场景配置 `minimax_h3`，但开关关闭时 Web/Bot 不展示优化入口。
 
@@ -26,6 +32,9 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
   `resolution_preset=preview|small|standard|hd` 和可选 `seed`。四档普通模式每 5 秒
   分别计 10/15/20/30 点。
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
+- REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
+  REF2V 每 5 秒的 `preview/small/standard/hd` 价格为 `15/23/30/45`，10/15 秒按
+  2/3 倍计算。
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
 - `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
@@ -39,7 +48,7 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 
 ## Gallery 与模板应用
 
-- 只有 `minimax_h3_i2v` 与 `minimax_h3_flf2v` 可投稿；T2V、历史 REF2V 和
+- 只有 `minimax_h3_i2v` 与 `minimax_h3_flf2v` 可投稿；T2V、REF2V 和
   QQCC 自生成结果不开放投稿。Web 与主 Bot 新生成的 I2V/FLF2V 都写入
   `allow_contribute=true`，模板派生结果固定为 `false`。
 - 两种可投稿类型在 Gallery 统一显示为“高级图生视频pro”，筛选值
@@ -73,6 +82,10 @@ Web 与 Bot 从 capability 选择 template v4；Web 提交时把管理端当前�
 可见前复验结构、对齐和时长。本地 Optimizer 生成的是兼容官方 Base 的提示词，不调用
 未开源的托管 H3-Context-IR，因此不宣称复现官方 Context-IR 的完整推理质量。
 
+REF2V 使用 `minimax_h3_ref2v_prompt@1..4` 与 `minimax_h3_ref2v@1`。媒体角色严格为
+`reference_image_1..4`，按 `<Picture N>` 和六段式参考描述组织完整提示词；QQCC
+管理员固定场景提示词不经过用户侧优化。
+
 ## 固定基础链与可选作者资产
 
 T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
@@ -103,28 +116,37 @@ Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连�
 24fps，但公开 workflow guidance 为 1，因此只视为待 canary 候选。POV Missionary
 作者仍标记为早期实验版。五个新模型在实机 canary 完成前均不得标记为已验证。
 
-三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
+T2V/I2V/FLF2V 三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
 LoraLoaderModelOnly(LightX2V, 1.0) → [用户选中 LoRA 有序链] →
 ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift(12/3) →
 ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → MiniMaxH3ImageToVideo →
 Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再回退到
 25 steps。输出继续解码 H3 原生同步音轨。
 
-镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包不包含
-REF2VA 或 RedMix，但包含上述十三个可选 LoRA。旧 checkpoint、
+REF2V 独立固定
+`10Eros_Max_h3_TURBO_ref2va_beta2.safetensors`（revision
+`7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3`，40,228,444,088 bytes，SHA256
+`6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4`），不加载
+LightX2V。其链路为 PyTorch attention、video/audio sigma shift `11/4`、
+`MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("er_sde") →
+ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
+SamplerCustomAdvanced`；禁止 `BasicScheduler`。十三个可选 LoRA 仍按选择顺序注入。
+
+镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
+FL2VA、TURBO Ref2VA 和上述十三个可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
-实际速度必须通过后续三模式 GPU canary 才能定论。
+实际速度必须通过后续四模式 GPU canary 才能定论。
 
-三份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
-`workers/comfy_agent/workflows/` 与 baked RunPod runtime。历史 REF2V workflow 仅保留
-解析能力，不进入新镜像 smoke、capability 或新提交入口。
+四份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
+`workers/comfy_agent/workflows/` 与 LAN GPU runtime。REF2V 模板预建 5 个稳定图片槽，
+patcher 删除未使用节点和连接并保持剩余图片顺序。
 
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2`、18 个文件的字节数与
-SHA256，总计 69,631,057,639 bytes（64.85 GiB）。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2`、19 个文件的字节数与
+SHA256，总计 109,859,501,727 bytes。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或
@@ -134,8 +156,9 @@ SHA256，总计 69,631,057,639 bytes（64.85 GiB）。脚本复用已有内容�
 revision、filename/modelVersion/fileId、SHA256 和 size。新版本必须使用新 bundle version，
 不能覆盖旧 manifest；完整校验、focused tests 与 GPU canary 通过后才可单独更新部署指针。
 
-镜像模块仍为 `minimax_h3`，基础镜像从 LAN registry 的精确 digest 读取，不依赖
-GHCR 或构建时访问 Docker Hub；同时固定支持 Comfy Kitchen Attention 的 ComfyUI、
+镜像模块仍为 `minimax_h3`。本次 GPU artifact 只写入 LAN registry，不推送 GHCR，
+也不修改 RunPod profile、autoscaler 或 RunPod artifact；ComfyUI revision 固定为
+`7fe8a6138504f90ff7be82f3babf416da32876b1`，并保留
 DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安装
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
@@ -149,8 +172,9 @@ SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 
 ## 测试 Worker 与正式 GPU 边界
 
-H3 测试 Worker 是测试云主机上的专用 `worker-agent`，与 `worker-relay` 一起运行，
-只连接 test Central 和测试存储，并只声明 T2V/I2V/FLF2V 三种公开类型。普通“启动
+H3 测试 Worker 是测试云主机上的专用 `worker-agent`，只连接 test Central 和测试
+存储，并声明 T2V/I2V/FLF2V/REF2V 四种公开类型。`worker-relay` 协议未变化时不重建。
+普通“启动
 H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 cloud-test
 RunPod；LAN/RunPod runtime 在该语境中都保持正式 Worker 身份。测试 agent 可以经
 受限私网或测试主机 loopback 传输调用已经运行的 H3 ComfyUI，但不得启停、重启、
@@ -161,7 +185,9 @@ revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，�
 Central `/system/workers` 中目标 agent 为 `enabled`、`idle` 且 profile/types 精确。
 这只能证明测试 Worker 可接单，不等于 GPU artifact canary 已通过。
 
-验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，逐条检查：Central task type、
+执行测试任务前必须 drain 正式 Worker，测试 agent 停止后才恢复正式 intake，避免两个
+agent 并发访问同一 ComfyUI。验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，
+并覆盖 REF2V 1/4/5 图、单个 addon 和 13 addon 有序组合，逐条检查：Central task type、
 Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
 黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。
 `scripts/minimax_h3_prod_smoke.py` 使用 FFmpeg `signalstats` 扫描全部帧；所有帧的
@@ -178,7 +204,6 @@ history/evidence，不回写本文。
   tests/services/test_minimax_h3_history_context_service.py \
   tests/web_api/test_gallery_apply_context.py \
   tests/workers/test_minimax_h3_workflows.py \
-  tests/ops/test_runpod_minimax_h3_profile.py \
   tests/scripts/test_prepare_minimax_h3_model_bundle.py
 cd frontend && npm test -- --run \
   src/composables/lab-workbench/useLabSubmitPayload.test.ts \

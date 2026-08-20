@@ -91,7 +91,7 @@ export function useLabWorkbench() {
   const useT2VReferences = ref(false)
   const environmentSource = ref<'official' | 'upload'>('official')
   const selectedEnvironmentId = ref('')
-  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v'>('t2v')
+  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
@@ -167,8 +167,8 @@ export function useLabWorkbench() {
     useT2VReferences.value = Boolean(settings.useT2VReferences)
     environmentSource.value = settings.environmentSource === 'official' ? 'official' : 'upload'
     selectedEnvironmentId.value = String(settings.selectedEnvironmentId ?? '')
-    minimaxH3Mode.value = ['t2v', 'i2v', 'flf2v'].includes(String(settings.minimaxH3Mode))
-      ? settings.minimaxH3Mode as 't2v' | 'i2v' | 'flf2v'
+    minimaxH3Mode.value = ['t2v', 'i2v', 'flf2v', 'ref2v'].includes(String(settings.minimaxH3Mode))
+      ? settings.minimaxH3Mode as 't2v' | 'i2v' | 'flf2v' | 'ref2v'
       : 't2v'
     minimaxH3ResolutionPreset.value = ['preview', 'small', 'standard', 'hd'].includes(String(settings.minimaxH3ResolutionPreset))
       ? settings.minimaxH3ResolutionPreset as 'preview' | 'small' | 'standard' | 'hd'
@@ -346,12 +346,10 @@ export function useLabWorkbench() {
     hasCharacter: useT2VReferences.value,
   }))
   const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
-      ? ({
-        preview: 10,
-        small: 15,
-        standard: 20,
-        hd: 30,
-      }[minimaxH3ResolutionPreset.value]) * Number(duration.value) / 5
+      ? ((minimaxH3Mode.value === 'ref2v'
+        ? { preview: 15, small: 23, standard: 30, hd: 45 }
+        : { preview: 10, small: 15, standard: 20, hd: 30 }
+      )[minimaxH3ResolutionPreset.value]) * Number(duration.value) / 5
     : cost.value)
 
   const costHint = computed(() => {
@@ -369,7 +367,10 @@ export function useLabWorkbench() {
         ? references.uploadedReferences.value.length === 0
         : minimaxH3Mode.value === 'i2v'
           ? references.uploadedReferences.value.length === 1
-          : references.uploadedReferences.value.length === 2
+          : minimaxH3Mode.value === 'flf2v'
+            ? references.uploadedReferences.value.length === 2
+            : references.uploadedReferences.value.length >= 1
+              && references.uploadedReferences.value.length <= 4
       : currentMode.value.id === 'ltx_t2v'
       ? !useT2VReferences.value
         ? references.uploadedReferences.value.length === 0
@@ -453,6 +454,17 @@ export function useLabWorkbench() {
     references.clearReferences()
   })
 
+  const hydrateLabRoute = () => {
+    template.hydrateFromRoute()
+    const routeTaskType = String(route.query.type ?? '')
+    const routeMode = routeTaskType.startsWith('minimax_h3_')
+      ? routeTaskType.slice('minimax_h3_'.length)
+      : ''
+    if (['t2v', 'i2v', 'flf2v', 'ref2v'].includes(routeMode)) {
+      minimaxH3Mode.value = routeMode as 't2v' | 'i2v' | 'flf2v' | 'ref2v'
+    }
+  }
+
   watch(
     () => [
       route.query.type,
@@ -464,7 +476,7 @@ export function useLabWorkbench() {
       route.query.ltx_extend_task_id,
       route.query.ltx_chain_task_ids,
     ],
-    template.hydrateFromRoute,
+    hydrateLabRoute,
     { immediate: true },
   )
 
@@ -558,7 +570,6 @@ export function useLabWorkbench() {
     minimaxH3Mode,
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
-    minimaxH3ReferenceDescriptions,
     minimaxH3AddonItems,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,

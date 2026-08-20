@@ -40,6 +40,7 @@ from src.services.advanced_video_pro_submission_service import (
 from src.services.advanced_video_prompt_task_service import (
     start_advanced_video_prompt_task,
 )
+from src.services.advanced_video_entry_policy import minimax_h3_ref2v_enabled
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_user_data,
     download_telegram_file_to_fsm_temp,
@@ -50,7 +51,7 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 DATA_KEY = "advanced_video_pro_data"
 TAG = "ADVANCED_VIDEO_PRO"
 logger = logging.getLogger("fsm.advanced_video_pro")
-MODES = ("t2v", "i2v", "flf2v")
+MODES = ("t2v", "i2v", "flf2v", "ref2v")
 DURATIONS = (5, 10, 15)
 PRESETS = ("preview", "small", "standard", "hd")
 ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4")
@@ -86,11 +87,13 @@ def _text(context, zh: str, en: str) -> str:
 
 
 def _mode_keyboard(context) -> InlineKeyboardMarkup:
-    labels = (
+    labels = [
         ("t2v", "文生视频", "Text to Video"),
         ("i2v", "首帧图生视频", "First-frame Video"),
         ("flf2v", "首尾帧视频", "First/Last-frame Video"),
-    )
+    ]
+    if minimax_h3_ref2v_enabled():
+        labels.append(("ref2v", "参考图生视频", "Reference-to-Video"))
     return InlineKeyboardMarkup(
         [
             [
@@ -311,7 +314,7 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     value = str(query.data or "")
     if value.startswith("avp_mode_"):
         mode = value.removeprefix("avp_mode_")
-        if mode in MODES:
+        if mode in MODES and (mode != "ref2v" or minimax_h3_ref2v_enabled()):
             data["mode"] = mode
     elif value.startswith("avp_duration_"):
         duration = int(value.removeprefix("avp_duration_"))
@@ -393,13 +396,32 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await robust_reply_text(update.message, str(exc))
             return AdvancedVideoProState.WAIT_MEDIA
     if mode == "ref2v":
+        count = len(data["images"])
+        if count >= 4:
+            await robust_reply_text(
+                update.message, _prompt_request_text(context, data, media_received=True)
+            )
+            return AdvancedVideoProState.WAIT_PROMPT
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(
+                    _text(context, "继续添加参考图", "Add another reference"),
+                    callback_data="avp_refs_more",
+                )],
+                [InlineKeyboardButton(
+                    _text(context, "完成并填写提示词", "Finish and enter prompt"),
+                    callback_data="avp_refs_done",
+                )],
+            ]
+        )
         await robust_reply_text(
             update.message,
             _text(
                 context,
-                "请描述该角色的身份与外观。",
-                "Describe this character's identity and appearance.",
+                f"已收到 {count} 张参考图。可继续添加，最多 4 张。",
+                f"Received {count} reference image(s). You may add up to 4.",
             ),
+            reply_markup=keyboard,
         )
         return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
     await robust_reply_text(
@@ -455,8 +477,8 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             query.message,
             _text(
                 context,
-                "请上传下一张角色参考图。",
-                "Upload the next character reference.",
+                "请上传下一张参考图。",
+                "Upload the next reference image.",
             ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
@@ -764,9 +786,6 @@ def get_advanced_video_pro_fsm_handler() -> ConversationHandler:
             ],
             AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION: [
                 CallbackQueryHandler(reference_callback, pattern=r"^avp_refs_"),
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, receive_reference_description
-                ),
             ],
             AdvancedVideoProState.WAIT_PROMPT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)

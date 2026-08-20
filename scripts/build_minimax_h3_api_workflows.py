@@ -15,10 +15,13 @@ AUDIO_VAE = "MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors"
 LIGHTX2V_LORA = (
     "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 )
+REF_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
+REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
+    "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
 
 
@@ -29,24 +32,24 @@ def _node(class_type: str, **inputs):
 def build(task_type: str) -> dict:
     if task_type not in FILENAMES:
         raise ValueError("unsupported public MiniMax H3 task type")
+    is_ref2v = task_type == "minimax_h3_ref2v"
+    base_model_input = ["1", 0] if is_ref2v else ["8", 0]
     workflow = {
-        "1": _node("UNETLoader", unet_name=FL_MODEL, weight_dtype="default"),
-        "8": _node(
-            "LoraLoaderModelOnly",
-            model=["1", 0],
-            lora_name=LIGHTX2V_LORA,
-            strength_model=1.0,
+        "1": _node(
+            "UNETLoader",
+            unet_name=REF_MODEL if is_ref2v else FL_MODEL,
+            weight_dtype="default",
         ),
         "2": _node(
             "ModelAttentionBackend",
-            model=["8", 0],
-            attention="comfy kitchen attention",
+            model=base_model_input,
+            attention="pytorch attention" if is_ref2v else "comfy kitchen attention",
         ),
         "3": _node(
             "MiniMaxH3SigmaShift",
             model=["2", 0],
-            shift_video=12.0,
-            shift_audio=3.0,
+            shift_video=11.0 if is_ref2v else 12.0,
+            shift_audio=4.0 if is_ref2v else 3.0,
         ),
         "7": _node(
             "ReservedVRAMSetter",
@@ -61,9 +64,10 @@ def build(task_type: str) -> dict:
         "5": _node("VAELoader", vae_name=VIDEO_VAE),
         "6": _node("VAELoader", vae_name=AUDIO_VAE),
         "30": _node(
-            "MiniMaxH3ImageToVideo",
+            "MiniMaxH3ReferenceToVideo" if is_ref2v else "MiniMaxH3ImageToVideo",
             clip=["4", 0],
             vae=["5", 0],
+            **({"audio_vae": ["6", 0], "ref_image_size": "match"} if is_ref2v else {}),
             prompt="",
             width=736,
             height=416,
@@ -71,13 +75,14 @@ def build(task_type: str) -> dict:
         ),
         "31": _node("RandomNoise", noise_seed=1),
         "32": _node("BasicGuider", model=["7", 0], conditioning=["30", 0]),
-        "33": _node("KSamplerSelect", sampler_name="euler"),
+        "33": _node("KSamplerSelect", sampler_name="er_sde" if is_ref2v else "euler"),
         "34": _node(
-            "BasicScheduler",
-            model=["7", 0],
-            scheduler="simple",
-            steps=8,
-            denoise=1.0,
+            "ManualSigmas" if is_ref2v else "BasicScheduler",
+            **(
+                {"sigmas": REF2V_SIGMAS}
+                if is_ref2v
+                else {"model": ["7", 0], "scheduler": "simple", "steps": 8, "denoise": 1.0}
+            ),
         ),
         "35": _node(
             "SamplerCustomAdvanced",
@@ -112,7 +117,14 @@ def build(task_type: str) -> dict:
             images=["39", 0],
         ),
     }
-    count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2}[
+    if not is_ref2v:
+        workflow["8"] = _node(
+            "LoraLoaderModelOnly",
+            model=["1", 0],
+            lora_name=LIGHTX2V_LORA,
+            strength_model=1.0,
+        )
+    count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2, "minimax_h3_ref2v": 5}[
         task_type
     ]
     for index in range(1, count + 1):
@@ -120,9 +132,12 @@ def build(task_type: str) -> dict:
         workflow[node_id] = _node(
             "LoadImage", image=f"minimax_h3_reference_{index}.png"
         )
-        workflow["30"]["inputs"][
-            "first_frame" if index == 1 else "last_frame"
-        ] = [node_id, 0]
+        if is_ref2v:
+            workflow["30"]["inputs"][f"ref_images.ref_image_{index - 1}"] = [node_id, 0]
+        else:
+            workflow["30"]["inputs"][
+                "first_frame" if index == 1 else "last_frame"
+            ] = [node_id, 0]
     if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
         workflow["41"] = _node(
             "DaSiWa_ResolutionScaleCalculator",

@@ -35,6 +35,29 @@ async def test_private_qqcc_context_uses_injected_tenant_config_loader():
     loader.assert_awaited_once_with()
 
 
+@pytest.mark.asyncio
+async def test_private_qqcc_context_filters_ref2v_scenes_and_keeps_legacy_i2v():
+    loader = AsyncMock(
+        return_value={
+            "ai_video_scenes": [
+                {"id": "legacy", "name": "I2V"},
+                {"id": "reference", "name": "REF2V", "mode": "ref2v"},
+            ]
+        }
+    )
+    context = SimpleNamespace(
+        bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+            "qqcc_config_loader": loader,
+        }
+    )
+
+    config = await load_qqcc_config_for_context(context)
+
+    assert config["ai_video_scenes"] == [{"id": "legacy", "name": "I2V"}]
+
+
 def test_private_qqcc_context_rejects_mismatched_instance_identity():
     context = SimpleNamespace(
         bot_data={

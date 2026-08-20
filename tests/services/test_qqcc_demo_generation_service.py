@@ -173,8 +173,9 @@ async def test_done_generation_uploads_output_to_draft_demo_slot_and_cleans_inpu
     assert result["media"]["object_key"].endswith("/output")
     assert result["preview_url"] == "https://preview.example/output.png"
     assert upload.await_args.kwargs["generated_object_id"] == "task-1"
-    storage.client.remove_object.assert_called_once_with(
-        MINIO_BUCKET, "qqcc/demo-generation/task-1/input.png"
+    assert storage.client.remove_object.call_args_list[0].args == (
+        MINIO_BUCKET,
+        "qqcc/demo-generation/task-1/input.png",
     )
 
 
@@ -366,11 +367,53 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
         height=0,
         frame_count=362,
         fps=24,
-            seed=None,
-            lora_items=({"name": "deepthroat", "strength": 0.75},),
-            priority=0,
+        seed=None,
+        lora_items=({"name": "deepthroat", "strength": 0.75},),
+        priority=0,
     )
 
+
+@pytest.mark.asyncio
+async def test_submit_ref2v_demo_copies_latest_references_after_subject_in_order():
+    storage = FakeStorage()
+    image = Mock()
+    image.submit_minimax_h3_task = AsyncMock(return_value="task-ref")
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/reference-a/input",
+        "qqcc/config/ref2v/ai_video/ref/reference-b/input",
+    ]
+
+    result = await submit_qqcc_demo_generation(
+        scene_kind="ai_video",
+        scene={
+            "id": "ref",
+            "prompt": "<Picture 1> uses <Picture 2>",
+            "mode": "ref2v",
+            "reference_images": references,
+            "aspect_ratio": "16:9",
+            "duration": 5,
+            "resolution": "preview",
+            "demo_input_media": {
+                "object_key": "qqcc/demo/ai_video/ref/input",
+                "mime_type": "image/png",
+            },
+        },
+        task_id="task-ref",
+        storage_service=storage,
+        image_service_instance=image,
+    )
+
+    assert result["status"] == "pending"
+    assert image.submit_minimax_h3_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
+    assert image.submit_minimax_h3_task.await_args.kwargs["images"] == (
+        "qqcc/demo-generation/task-ref/input.png",
+        "qqcc/demo-generation/task-ref/reference_1.png",
+        "qqcc/demo-generation/task-ref/reference_2.png",
+    )
+    assert [call.kwargs["Key"] for call in storage.r2_client.get_object.call_args_list] == [
+        "qqcc/demo/ai_video/ref/input",
+        *references,
+    ]
 
 @pytest.mark.asyncio
 async def test_failed_generation_reports_terminal_error_and_cleans_input():
@@ -391,4 +434,7 @@ async def test_failed_generation_reports_terminal_error_and_cleans_input():
         "status": "failed",
         "error": "worker failed",
     }
-    storage.client.remove_object.assert_called_once()
+    assert storage.client.remove_object.call_args_list[0].args == (
+        MINIO_BUCKET,
+        "qqcc/demo-generation/task-1/input.png",
+    )

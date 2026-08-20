@@ -58,6 +58,12 @@ def _assert_task_access(
         and not env_enabled("MINIMAX_H3_BACKEND_ENABLED")
     ):
         raise CoreDomainError("高级视频生成功能当前未开放。")
+    if (
+        task_type == "minimax_h3_ref2v"
+        and not operator_canary_authorized
+        and not env_enabled("MINIMAX_H3_REF2V_ENABLED")
+    ):
+        raise CoreDomainError("参考图生视频功能当前未开放。")
 
 
 async def _resolve_ltx_character_inputs(

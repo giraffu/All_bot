@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchQqccBotConfig: vi.fn(),
   updateQqccBotConfig: vi.fn(),
   uploadQqccDemoMedia: vi.fn(),
+  uploadQqccReferenceImage: vi.fn(),
   generateQqccDemoMedia: vi.fn(),
   getQqccDemoGeneration: vi.fn(),
 }))
@@ -159,6 +160,7 @@ const mountSettings = (props = {}) =>
       fetchConfig: apiMocks.fetchQqccBotConfig,
       updateConfig: apiMocks.updateQqccBotConfig,
       uploadDemoMedia: apiMocks.uploadQqccDemoMedia,
+      uploadReferenceImage: apiMocks.uploadQqccReferenceImage,
       generateDemoMedia: apiMocks.generateQqccDemoMedia,
       getDemoGeneration: apiMocks.getQqccDemoGeneration,
       ...props,
@@ -970,6 +972,44 @@ describe('QqccBotSettings', () => {
     expect(apiMocks.updateQqccBotConfig).toHaveBeenCalledOnce()
     expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0].resolution)
       .toBe('small')
+  })
+
+  it('opens official REF2V scenes with ordered reference previews and omits signed URLs on save', async () => {
+    const references = [
+      'qqcc/config/ref2v/ai_video/ref/reference-a/input',
+      'qqcc/config/ref2v/ai_video/ref/reference-b/input',
+    ]
+    apiMocks.fetchQqccBotConfig.mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        scene_preset_version: 1,
+        global_enabled: true,
+        video_scenes: [],
+        ai_video_scenes: [{
+          id: 'ref', name: '参考视频', prompt: '<Picture 1> follows <Picture 2>',
+          negative_prompt: '', duration: 10, resolution: 'small', engine: 'minimax_h3',
+          mode: 'ref2v', reference_images: references,
+          reference_image_previews: ['https://signed/a', 'https://signed/b'],
+          aspect_ratio: '9:16', lora_items: [], credit_cost: 46,
+          end_frame_draw_scene_id: '', next_scene_id: null,
+        }],
+        draw_scenes: [], filter_scenes: [],
+      },
+    })
+
+    const wrapper = mountSettings({ ref2vEnabled: true })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ref2v-reference-manager-0"]').text()).toContain('<Picture 2>')
+    expect(wrapper.get('[data-testid="ref2v-reference-manager-0"]').text()).toContain('<Picture 3>')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const saved = apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0]
+    expect(saved.reference_images).toEqual(references)
+    expect(saved.reference_image_previews).toBeUndefined()
+    expect(saved.credit_cost).toBe(46)
   })
 
   it('adds and removes dynamic video scenes before saving', async () => {

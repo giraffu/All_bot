@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import logging
 import math
 import re
 from typing import Any
@@ -10,7 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import IMAGE_LORA_MODELS
-from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_ASPECT_RATIOS,
+    MINIMAX_H3_REF2V,
+    build_minimax_h3_spec,
+)
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
     QQCC_VIDEO_LORA_MODELS,
@@ -26,6 +32,8 @@ from src.services.qqcc_video_scene_chain_service import (
     normalize_qqcc_video_scene_links,
     validate_qqcc_video_scene_chain_config,
 )
+
+logger = logging.getLogger(__name__)
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 SCENE_PRESET_VERSION = 1
@@ -148,6 +156,10 @@ class QqccSceneResolutionError(ValueError):
     """Raised when an explicitly configured scene resolution is unsupported."""
 
 
+class QqccRef2vSceneError(ValueError):
+    """Raised when an official QQCC REF2V scene violates its fixed contract."""
+
+
 def _normalize_scene_credit_cost(raw_cost: Any) -> int | None:
     return (
         raw_cost
@@ -168,6 +180,11 @@ def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
         for raw_scene in raw_scenes:
             if not isinstance(raw_scene, dict) or "credit_cost" not in raw_scene:
                 continue
+            if (
+                section == "ai_video_scenes"
+                and str(raw_scene.get("mode") or "i2v").strip() == "ref2v"
+            ):
+                continue
             raw_cost = raw_scene.get("credit_cost")
             if raw_cost is None:
                 continue
@@ -175,6 +192,48 @@ def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
                 raise QqccSceneCreditCostError(
                     f"{section}.credit_cost must be a positive integer or null"
                 )
+
+
+def validate_qqcc_ref2v_scenes(raw_config: Any) -> None:
+    if not isinstance(raw_config, dict):
+        return
+    raw_scenes = raw_config.get("ai_video_scenes")
+    if not isinstance(raw_scenes, list):
+        return
+    for raw_scene in raw_scenes:
+        if (
+            not isinstance(raw_scene, dict)
+            or str(raw_scene.get("mode") or "i2v").strip() != "ref2v"
+        ):
+            continue
+        references = raw_scene.get("reference_images")
+        if (
+            not isinstance(references, list)
+            or not 1 <= len(references) <= 4
+            or any(
+                not isinstance(value, str)
+                or not value.strip().startswith("qqcc/config/ref2v/ai_video/")
+                for value in references
+            )
+        ):
+            raise QqccRef2vSceneError(
+                "ai_video_scenes.reference_images must contain one to four QQCC REF2V object keys"
+            )
+        aspect_ratio = str(raw_scene.get("aspect_ratio") or "16:9").strip()
+        if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
+            raise QqccRef2vSceneError(
+                f"ai_video_scenes.aspect_ratio must be one of {list(MINIMAX_H3_ASPECT_RATIOS)}"
+            )
+        forbidden = {
+            "reference_video",
+            "reference_videos",
+            "reference_audio",
+            "reference_audios",
+        }
+        if forbidden.intersection(raw_scene):
+            raise QqccRef2vSceneError(
+                "QQCC REF2V accepts reference images only"
+            )
 
 
 def validate_qqcc_scene_resolutions(raw_config: Any) -> None:
@@ -862,6 +921,39 @@ def _normalize_ai_video_scene(
             if len(lora_items) >= AI_VIDEO_MAX_LORA_ITEMS:
                 break
 
+    mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
+    reference_images = []
+    if mode == "ref2v" and isinstance(raw_scene.get("reference_images"), list):
+        reference_images = [
+            str(value).strip()
+            for value in raw_scene["reference_images"]
+            if isinstance(value, str)
+            and str(value).strip().startswith("qqcc/config/ref2v/ai_video/")
+        ]
+    if mode == "ref2v" and not 1 <= len(reference_images) <= 4:
+        return None
+    aspect_ratio = str(raw_scene.get("aspect_ratio") or "16:9").strip()
+    if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
+        aspect_ratio = "16:9"
+    resolution = (
+        raw_scene.get("resolution").strip()
+        if isinstance(raw_scene.get("resolution"), str)
+        and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
+        else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
+    )
+    derived_ref2v_cost = (
+        build_minimax_h3_spec(
+            MINIMAX_H3_REF2V,
+            {
+                "images": ["subject", *reference_images],
+                "duration": duration,
+                "resolution_preset": resolution,
+                "aspect_ratio": aspect_ratio,
+            },
+        ).cost
+        if mode == "ref2v"
+        else None
+    )
     scene = {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
@@ -874,17 +966,19 @@ def _normalize_ai_video_scene(
             raw_scene.get("negative_prompt")
         ),
         "duration": duration,
-        "resolution": (
-            raw_scene.get("resolution").strip()
-            if isinstance(raw_scene.get("resolution"), str)
-            and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
-            else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
-        ),
+        "resolution": resolution,
         "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+        "mode": mode,
+        "reference_images": reference_images,
+        "aspect_ratio": aspect_ratio,
         "lora_items": lora_items,
-        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
+        "credit_cost": (
+            derived_ref2v_cost
+            if mode == "ref2v"
+            else _normalize_scene_credit_cost(raw_scene.get("credit_cost"))
+        ),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
-            raw_scene.get("end_frame_draw_scene_id"),
+            None if mode == "ref2v" else raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
         "jump_draw_scene_id": _normalize_end_frame_draw_scene_id(
@@ -893,7 +987,8 @@ def _normalize_ai_video_scene(
         ),
         "next_scene_id": (
             str(raw_scene.get("next_scene_id")).strip()
-            if isinstance(raw_scene.get("next_scene_id"), str)
+            if mode != "ref2v"
+            and isinstance(raw_scene.get("next_scene_id"), str)
             and str(raw_scene.get("next_scene_id")).strip()
             else None
         ),
@@ -1788,6 +1883,11 @@ def _build_config_response(
                     preview_url = build_qqcc_demo_preview_url(media)
                     if preview_url:
                         media["preview_url"] = preview_url
+                if section == "ai_video_scenes" and scene.get("mode") == "ref2v":
+                    scene["reference_image_previews"] = [
+                        build_qqcc_demo_preview_url({"object_key": object_key})
+                        for object_key in scene.get("reference_images", [])
+                    ]
     return {
         "key": QQCC_LAZY_BOT_CONFIG_KEY,
         "config": normalized_config,
@@ -1851,6 +1951,17 @@ def _merge_qqcc_demo_telegram_caches(
                     media["telegram_file_ids"] = dict(existing_file_ids)
 
 
+def _qqcc_ref2v_object_keys(config: dict[str, Any]) -> set[str]:
+    return {
+        object_key
+        for scene in config.get("ai_video_scenes", [])
+        if isinstance(scene, dict) and scene.get("mode") == "ref2v"
+        for object_key in scene.get("reference_images", [])
+        if isinstance(object_key, str)
+        and object_key.startswith("qqcc/config/ref2v/ai_video/")
+    }
+
+
 async def save_qqcc_config_payload(
     db: AsyncSession,
     payload: dict[str, Any],
@@ -1858,6 +1969,7 @@ async def save_qqcc_config_payload(
     from src.database.models import RuntimeCheckpoint
 
     validate_qqcc_video_scene_chain_config(payload)
+    validate_qqcc_ref2v_scenes(payload)
     validate_qqcc_scene_credit_costs(payload)
     validate_qqcc_scene_resolutions(payload)
     config = normalize_qqcc_config(payload)
@@ -1867,6 +1979,7 @@ async def save_qqcc_config_payload(
         .with_for_update()
     )
     checkpoint = result.scalar_one_or_none()
+    stale_reference_keys: set[str] = set()
     if checkpoint is None:
         checkpoint = RuntimeCheckpoint(
             key=QQCC_LAZY_BOT_CONFIG_KEY,
@@ -1874,13 +1987,25 @@ async def save_qqcc_config_payload(
         )
         db.add(checkpoint)
     else:
+        existing_config = normalize_qqcc_config(checkpoint.value or {})
+        stale_reference_keys = (
+            _qqcc_ref2v_object_keys(existing_config)
+            - _qqcc_ref2v_object_keys(config)
+        )
         _merge_qqcc_demo_telegram_caches(
             config,
-            normalize_qqcc_config(checkpoint.value or {}),
+            existing_config,
         )
         checkpoint.value = config
     await db.commit()
     await db.refresh(checkpoint)
+    if stale_reference_keys:
+        from src.services.storage import storage
+
+        try:
+            await storage.async_delete_r2_objects(sorted(stale_reference_keys))
+        except Exception:
+            logger.exception("Failed to delete stale QQCC REF2V reference objects")
     return _build_config_response(
         config=checkpoint.value or {},
         updated_at=checkpoint.updated_at,

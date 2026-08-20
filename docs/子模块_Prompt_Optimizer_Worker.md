@@ -90,6 +90,10 @@ H3 新任务注册 `minimax_h3_t2v_prompt@5`、`minimax_h3_i2v_prompt@5` 与
 对齐句。Profile 最大输出为 7000 字符，Worker 复验字段顺序、空行、Shot 连续编号、
 动态时间戳、图片锚点和对齐句后才发布流式结果。英文运行模板与完整中文审阅翻译的
 事实源均为 `src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量。
+
+REF2V 另注册 `minimax_h3_ref2v_prompt@1..4`，精确接受
+`reference_image_1..4` 对应的 1–4 张有序图片，并使用 `minimax_h3_ref2v@1` 输出
+`<Picture N>` 六段式完整参考提示词。QQCC 管理员固定提示词绕过用户侧优化。
 模型输出中的 CRLF、多余空行、字段冒号两侧空白、缺失但可由模式确定的 I2V 对齐行、
 带合法 `[Shot 1]` 正文且后两个字段完整时遗漏的首字段标签，以及遗漏的 I2V/FLF2V
 图片所有权短句，先由 Worker 确定性规范化并重新组装为官方格式；正文本身缺失、后两个

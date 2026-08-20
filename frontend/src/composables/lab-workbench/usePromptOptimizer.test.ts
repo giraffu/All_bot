@@ -166,4 +166,42 @@ describe('usePromptOptimizer', () => {
     expect(post.mock.calls[0][1]).not.toHaveProperty('lora_items')
     scope.stop()
   })
+
+  it('numbers one to four REF2V media roles in upload order', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        templates: [{
+          id: 'minimax_h3_ref2v', version: 1,
+          label: '参考图生视频', description: '', is_default: true,
+        }],
+      },
+    })
+    post.mockResolvedValueOnce({ data: { task_id: 'task-ref2v' } })
+    const references = [1, 2, 3, 4].map(index => ({
+      key: `web_uploads/7/reference-${index}.png`,
+      preview: '',
+      name: `reference-${index}`,
+    }))
+    const scope = effectScope()
+    const optimizer = scope.run(() => usePromptOptimizer({
+      currentModeId: ref('minimax_h3'),
+      prompt: ref('original ref2v'),
+      duration: ref('5'),
+      uploadedReferences: ref(references),
+      selectedCharacterIds: ref([]),
+      minimaxH3Mode: ref('ref2v'),
+    }))!
+    await nextTick()
+    await Promise.resolve()
+    await optimizer.optimizePrompt()
+
+    expect(post.mock.calls[0][1]).toMatchObject({
+      target_task_type: 'minimax_h3_ref2v',
+      media: references.map((item, index) => ({
+        role: `reference_image_${index + 1}`,
+        object_key: item.key,
+      })),
+    })
+    scope.stop()
+  })
 })

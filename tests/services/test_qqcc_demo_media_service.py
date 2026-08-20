@@ -14,7 +14,49 @@ from src.services.qqcc_demo_media_service import (
     delete_qqcc_private_bot_demo_media,
     send_qqcc_scene_demo_media,
     upload_qqcc_demo_media,
+    upload_qqcc_ref2v_reference_image,
 )
+
+
+@pytest.mark.asyncio
+async def test_ref2v_reference_upload_uses_restricted_unique_object_prefix():
+    puts = []
+    storage_service = SimpleNamespace(
+        r2_client=SimpleNamespace(put_object=lambda **kwargs: puts.append(kwargs)),
+        r2_bucket="user-data",
+        mark_r2_object_exists=lambda _key: None,
+    )
+
+    first = await upload_qqcc_ref2v_reference_image(
+        scene_id="ref-scene",
+        index=0,
+        upload=_Upload(
+            filename="reference.png",
+            content_type="image/png",
+            content=b"\x89PNG\r\n\x1a\nreference",
+        ),
+        storage_service=storage_service,
+    )
+    second = await upload_qqcc_ref2v_reference_image(
+        scene_id="ref-scene",
+        index=0,
+        upload=_Upload(
+            filename="replacement.png",
+            content_type="image/png",
+            content=b"\x89PNG\r\n\x1a\nreplacement",
+        ),
+        storage_service=storage_service,
+    )
+
+    assert first["object_key"].startswith(
+        "qqcc/config/ref2v/ai_video/ref-scene-r-"
+    )
+    assert first["object_key"].endswith("/input")
+    assert second["object_key"] != first["object_key"]
+    assert [put["Key"] for put in puts] == [
+        first["object_key"],
+        second["object_key"],
+    ]
 
 
 class _Upload:

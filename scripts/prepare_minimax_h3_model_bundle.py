@@ -20,14 +20,20 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2"
-MIN_FREE_BYTES = 67 * 1024**3
+VERSION = "2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2"
+MIN_FREE_BYTES = 105 * 1024**3
 FILES = (
     (
         "diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
         "57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20",
         40_222_933_592,
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
+    ),
+    (
+        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
+        "6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4",
+        40_228_444_088,
+        "https://huggingface.co/TenStrip/10Eros-Max/resolve/7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
     ),
     (
         "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
@@ -178,7 +184,7 @@ def _download(url: str, partial: Path) -> None:
 def prepare(registry: ModelRegistry) -> Path:
     registry.ensure_layout()
     if shutil.disk_usage(registry.root).free < MIN_FREE_BYTES:
-        raise RuntimeError("MiniMax H3 split bundle requires at least 55 GiB free space")
+        raise RuntimeError("MiniMax H3 split bundle requires at least 105 GiB free space")
     temp_root = registry.root / "tmp" / f"{BUNDLE}-{VERSION}"
     temp_root.mkdir(parents=True, exist_ok=True)
     manifest_files = []
@@ -229,9 +235,10 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3215304",
                 "civitai:modelVersion/3218160",
             ],
-            "revision": "10eros=47aa7e38; comfy=014cd40f; lightx2v=62487ee6",
+            "revision": "10eros-fl=47aa7e38; 10eros-ref=7766d5d6; comfy=014cd40f; lightx2v=62487ee6",
             "variant": (
-                "10Eros-Max Beta2 pruned base plus fixed LightX2V FL2VA 8-step "
+                "10Eros-Max Beta2 pruned FL2VA base, TURBO Ref2VA Beta2, "
+                "plus fixed LightX2V FL2VA 8-step "
                 "v1.0 acceleration and thirteen optional one-file LoRAs: NaughtyTimes "
                 "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v2, HMBreasts, "
                 "VagAssist, HMPussy v6, HMPenis v2, Breast Play & Jiggle v1, HMInnie "

@@ -557,7 +557,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile=None,
         is_generation=True,
         is_video=True,
-        cost=12,
+        cost=15,
     ),
     MODE_CHARACTER_REFERENCE_BUILD: _entry(
         MODE_CHARACTER_REFERENCE_BUILD,

@@ -14,6 +14,7 @@ from src.database.core import get_db
 from src.services.qqcc_config_service import (
     QqccSceneCreditCostError,
     QqccSceneResolutionError,
+    QqccRef2vSceneError,
     load_qqcc_config_payload,
     save_qqcc_generated_demo_output_media,
     save_qqcc_config_payload,
@@ -22,6 +23,7 @@ from src.services.qqcc_demo_media_service import (
     QqccDemoMediaValidationError,
     build_qqcc_demo_preview_url,
     upload_qqcc_demo_media,
+    upload_qqcc_ref2v_reference_image,
 )
 from src.services.qqcc_demo_generation_service import (
     QqccDemoGenerationError,
@@ -154,6 +156,8 @@ async def update_qqcc_config(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except QqccSceneResolutionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccRef2vSceneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/demo-media/{scene_kind}/{scene_id}/{slot}")
@@ -227,6 +231,31 @@ async def put_qqcc_scene_demo_media_json(
         slot=slot,
         file=upload,
     )
+
+
+@router.put("/ref2v-reference-json/{scene_id}/{index}")
+async def put_qqcc_ref2v_reference_image_json(
+    scene_id: str,
+    index: int,
+    payload: QqccDemoMediaJsonRequest,
+):
+    try:
+        content = base64.b64decode(payload.content_base64, validate=True)
+        media = await upload_qqcc_ref2v_reference_image(
+            scene_id=scene_id,
+            index=index,
+            upload=_MemoryUpload(
+                content=content,
+                content_type=payload.mime_type,
+                filename=payload.file_name,
+            ),
+        )
+    except (binascii.Error, ValueError, QqccDemoMediaValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to upload QQCC REF2V reference image")
+        raise HTTPException(status_code=503, detail="Reference storage unavailable") from exc
+    return {"media": media, "preview_url": build_qqcc_demo_preview_url(media)}
 
 
 @router.post("/demo-generation/{scene_kind}")

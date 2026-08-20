@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "unet_name": "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "unet_name": "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader"
@@ -43,7 +43,7 @@
   },
   "4": {
     "inputs": {
-      "clip_name": "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
       "type": "minimax",
       "device": "default"
     },
@@ -51,7 +51,7 @@
   },
   "5": {
     "inputs": {
-      "vae_name": "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
+      "vae_name": "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
     },
     "class_type": "VAELoader"
   },
@@ -75,11 +75,11 @@
         "6",
         0
       ],
+      "ref_image_size": "match",
       "prompt": "",
       "width": 736,
       "height": 416,
       "length": 124,
-      "ref_image_size": "match",
       "ref_images.ref_image_0": [
         "20",
         0
@@ -94,6 +94,10 @@
       ],
       "ref_images.ref_image_3": [
         "23",
+        0
+      ],
+      "ref_images.ref_image_4": [
+        "24",
         0
       ]
     },
@@ -120,21 +124,15 @@
   },
   "33": {
     "inputs": {
-      "sampler_name": "res_multistep"
+      "sampler_name": "er_sde"
     },
     "class_type": "KSamplerSelect"
   },
   "34": {
     "inputs": {
-      "model": [
-        "7",
-        0
-      ],
-      "scheduler": "simple",
-      "steps": 25,
-      "denoise": 1.0
+      "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
     },
-    "class_type": "BasicScheduler"
+    "class_type": "ManualSigmas"
   },
   "35": {
     "inputs": {
@@ -252,6 +250,12 @@
   "23": {
     "inputs": {
       "image": "minimax_h3_reference_4.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "24": {
+    "inputs": {
+      "image": "minimax_h3_reference_5.png"
     },
     "class_type": "LoadImage"
   }

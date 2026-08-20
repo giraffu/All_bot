@@ -18,6 +18,7 @@ _MODE_TARGETS = {
     "t2v": "minimax_h3_t2v",
     "i2v": "minimax_h3_i2v",
     "flf2v": "minimax_h3_flf2v",
+    "ref2v": "minimax_h3_ref2v",
 }
 
 
@@ -32,19 +33,28 @@ def build_advanced_video_prompt_request(
     target_task_type = _MODE_TARGETS.get(str(mode))
     if target_task_type is None:
         raise ValueError("unsupported MiniMax H3 prompt optimization mode")
-    expected_images = {"t2v": 0, "i2v": 1, "flf2v": 2}[mode]
-    if len(object_keys) != expected_images:
+    expected_images = {"t2v": (0, 0), "i2v": (1, 1), "flf2v": (2, 2), "ref2v": (1, 4)}[mode]
+    if not expected_images[0] <= len(object_keys) <= expected_images[1]:
         raise ValueError("MiniMax H3 optimizer media contract mismatch")
+    template = (
+        {"id": "minimax_h3_ref2v", "version": 1}
+        if mode == "ref2v"
+        else {"id": "minimax_h3_10eros_naughtytimes", "version": 4}
+    )
     return PromptOptimizationTaskRequest.model_validate(
         {
             "client_request_id": client_request_id,
             "target_task_type": target_task_type,
-            "template": {"id": "minimax_h3_10eros_naughtytimes", "version": 4},
+            "template": template,
             "prompt": prompt,
             "context": {"duration_seconds": duration_seconds},
             "media": [
                 {
-                    "role": "start_image" if index == 0 else "end_image",
+                    "role": (
+                        f"reference_image_{index + 1}"
+                        if mode == "ref2v"
+                        else "start_image" if index == 0 else "end_image"
+                    ),
                     "object_key": object_key,
                 }
                 for index, object_key in enumerate(object_keys)

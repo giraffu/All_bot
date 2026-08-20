@@ -216,6 +216,8 @@ export const WEB_LTX_VIDEO_ENABLED = getRuntimeFlag('enable_ltx_video', true)
 export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const WEB_LTX_VIDEO_V2_ENABLED = getRuntimeFlag('enable_ltx_video_v2', false)
 export const WEB_MINIMAX_H3_ENABLED = getRuntimeFlag('enable_minimax_h3', false)
+export const WEB_MINIMAX_H3_ENTRY_ENABLED = getRuntimeFlag('enable_minimax_h3_entry', false)
+export const WEB_MINIMAX_H3_REF2V_ENABLED = getRuntimeFlag('enable_minimax_h3_ref2v', false)
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 export const PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = 'pornmaster_flux2_edit_bf16'
@@ -727,7 +729,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== 'ltx_video' || WEB_LTX_VIDEO_ENABLED)
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
-  && (mode.id !== 'minimax_h3' || WEB_MINIMAX_H3_ENABLED)
+  && (mode.id !== 'minimax_h3' || (WEB_MINIMAX_H3_ENABLED && WEB_MINIMAX_H3_ENTRY_ENABLED))
 )) as LabModeConfig[]
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
@@ -771,8 +773,11 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'minimax_h3_t2v':
     case 'minimax_h3_i2v':
     case 'minimax_h3_flf2v':
-    case 'minimax_h3_ref2v':
       return WEB_MINIMAX_H3_ENABLED ? 'minimax_h3' : DEFAULT_LAB_MODE_ID
+    case 'minimax_h3_ref2v':
+      return WEB_MINIMAX_H3_ENABLED && WEB_MINIMAX_H3_REF2V_ENABLED
+        ? 'minimax_h3'
+        : DEFAULT_LAB_MODE_ID
     case 'scail2_action_transfer_long':
       return 'scail2_action_transfer'
     case 'wan22_video_v2':

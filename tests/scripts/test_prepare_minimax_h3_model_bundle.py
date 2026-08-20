@@ -7,7 +7,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_eighteen_pinned_assets():
+def test_split_author_stack_uses_exact_nineteen_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -16,6 +16,13 @@ def test_split_author_stack_uses_exact_eighteen_pinned_assets():
         "57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20",
         40_222_933_592,
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
+    )
+    assert files[
+        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
+    ][1:4] == (
+        "6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4",
+        40_228_444_088,
+        "https://huggingface.co/TenStrip/10Eros-Max/resolve/7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
     )
     assert files["text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"][1:3] == (
         "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
@@ -84,7 +91,7 @@ def test_split_author_stack_uses_exact_eighteen_pinned_assets():
         "6e293977389020e2e327d5e375cdc55352659f0ac61b41f270ec5ddf453fc620",
         298_260_800,
     )
-    assert len(files) == 18
+    assert len(files) == 19
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

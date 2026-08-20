@@ -14,6 +14,8 @@ export type AiVideoDurationKey = 5 | 10 | 15
 export type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 export type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 export type AiVideoSceneEngine = 'minimax_h3'
+export type AiVideoMode = 'i2v' | 'ref2v'
+export type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 export type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 export type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
 export type DemoMediaSlot = 'input' | 'output'
@@ -71,6 +73,10 @@ export interface AiVideoSceneConfig extends SceneDemoFields {
   duration: AiVideoDurationKey
   resolution: AiVideoResolutionKey
   engine: AiVideoSceneEngine
+  mode: AiVideoMode
+  reference_images: string[]
+  reference_image_previews?: string[]
+  aspect_ratio: AiVideoAspectRatio
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
   jump_draw_scene_id?: string
@@ -156,6 +162,10 @@ export interface QqccBotConfigResponse {
   options?: Partial<QqccBotConfigOptions>
 }
 export interface QqccDemoMediaUploadResponse { media: SceneDemoMedia; preview_url: string }
+export interface QqccReferenceImageUploadResponse {
+  media: SceneDemoMedia
+  preview_url: string
+}
 export interface QqccDemoGenerationResponse extends Partial<QqccDemoMediaUploadResponse> {
   generation_id: string
   status: string

@@ -83,6 +83,7 @@ MINIMAX_H3_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
+    "minimax_h3_ref2v",
 )
 SCAIL2_FLEX_PREFERRED_TASK_TYPES = (
     "scail2_action_transfer",
@@ -257,7 +258,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
 
 
-def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_model_dir():
+def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_model_dir():
     config = load_controller_config()
     profile = config.profiles["minimax_h3"]
     slots = load_lan_aio_prod_slots(include_disabled=True)
@@ -268,7 +269,7 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2/manifest.json"
+        "minimax_h3/2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
@@ -320,7 +321,7 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
 
     assert slot.environment == "cloud-test"
     assert slot.agent_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
-    assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
+    assert slot.target_task_types == MINIMAX_H3_TASK_TYPES[:-1]
     assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
     assert slot.old_runtime_container == (
         "allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod"
