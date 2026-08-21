@@ -77,4 +77,44 @@ describe('installAntDesign', () => {
       { timeout: 5_000 }
     )
   })
+
+  it('renders configured checkbox groups and collapsible tag sections', async () => {
+    root = document.createElement('div')
+    document.body.appendChild(root)
+    app = createApp({
+      data: () => ({
+        groups: ['breast_size', 'skin_tone'],
+        openPanels: ['breast_size'],
+      }),
+      template: `
+        <a-checkbox-group v-model:value="groups">
+          <a-checkbox value="breast_size">乳房</a-checkbox>
+          <a-checkbox value="skin_tone">肤色</a-checkbox>
+        </a-checkbox-group>
+        <a-collapse v-model:active-key="openPanels">
+          <a-collapse-panel key="breast_size" header="乳房标签提示词片段">
+            巨乳
+          </a-collapse-panel>
+        </a-collapse>
+      `,
+    })
+
+    installAntDesign(app)
+    app.mount(root)
+    await flushPromises()
+    await nextTick()
+
+    await vi.waitFor(
+      () => {
+        const checkboxes = Array.from(
+          root?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? []
+        )
+        expect(checkboxes).toHaveLength(2)
+        expect(checkboxes.every(checkbox => checkbox.checked)).toBe(true)
+        expect(root?.textContent).toContain('乳房标签提示词片段')
+        expect(root?.textContent).toContain('巨乳')
+      },
+      { timeout: 5_000 }
+    )
+  })
 })
