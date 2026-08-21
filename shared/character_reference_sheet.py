@@ -123,7 +123,7 @@ def compose_ingredients_character_panel(
 def compose_character_asset_mosaic(
     payloads: Iterable[tuple[int, bytes]],
 ) -> bytes:
-    """Compose one dense H3 character reference from 1-10 optional sub-images.
+    """Compose one dense character-library asset from 1-10 optional sub-images.
 
     Nude and clothed full-body slots become narrow left columns. Every other
     present slot flows into two-row columns; missing slots do not reserve holes
