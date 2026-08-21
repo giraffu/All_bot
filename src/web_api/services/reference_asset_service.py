@@ -43,6 +43,29 @@ _H3_CHARACTER_VIEW_DESCRIPTIONS = {
     "genitals_front": "front genital anatomy close-up",
 }
 
+_H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE = {
+    "face_front": (
+        "Identity evidence only; do not copy this close-up crop, camera framing, "
+        "or plain background."
+    ),
+    "body_front": (
+        "Identity and body-proportion evidence only; do not copy the reference "
+        "pose, camera framing, or plain background."
+    ),
+    "body_side": (
+        "Identity and body-proportion evidence only; do not copy the reference "
+        "pose, camera framing, or plain background."
+    ),
+    "body_back": (
+        "Identity and body-proportion evidence only; do not copy the reference "
+        "pose, camera framing, or plain background."
+    ),
+    "genitals_front": (
+        "Localized anatomy evidence only; never use this close-up as output "
+        "framing and never create an inset, overlay, split screen, or collage."
+    ),
+}
+
 
 async def resolve_h3_reference_refs(
     *,
@@ -117,7 +140,9 @@ async def resolve_h3_reference_refs(
             description = (
                 f"Adult character {character.name}; "
                 f"{_H3_CHARACTER_VIEW_DESCRIPTIONS[view_type]}; "
-                f"same identity and appearance. {character_description}"
+                f"same identity and appearance. "
+                f"{_H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE[view_type]} "
+                f"{character_description}"
             ).strip()
         else:
             raise CoreDomainError("H3 参考图来源无效。")
