@@ -162,7 +162,7 @@ async def submit_prompt_optimization(
         if requested_media:
             raise CoreDomainError("H3 新旧参考图格式不能同时提交。")
         uses_character_assets = any(
-            item.get("source") == "private_character_view"
+            item.get("source") in {"private_character_view", "private_character_sheet"}
             for item in requested_h3_refs
         )
         if uses_character_assets and os.getenv(

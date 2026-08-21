@@ -3,9 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { CheckCircle2, Images, UserRound } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
-import type { CharacterReferenceView } from '@/api/characters'
 import type { UploadedReference } from '@/composables/lab-workbench/types'
-import { WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED } from '@/features/generation/labModeConfig'
 import { useCharactersStore } from '@/stores/characters'
 
 const props = defineProps<{
@@ -24,35 +22,26 @@ const open = ref(false)
 const eligibleCharacters = computed(() => store.items.filter(character => (
   character.status === 'ready'
   && character.moderation_status === 'active'
-  && character.adult_confirmed
-  && character.usage_rights_confirmed
+  && Boolean(character.preview_url)
 )))
 const selectedCount = computed(() => props.references.length)
 
-const availableViews = (views: CharacterReferenceView[]) => views.filter(view => (
-  view.status === 'ready'
-  && Boolean(view.preview_url)
-  && (view.type !== 'genitals_front' || WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED)
-))
-
-const isSelected = (characterId: string, viewType: CharacterReferenceView['type']) => (
+const isSelected = (characterId: string) => (
   props.references.some(item => (
-    item.referenceRef?.source === 'private_character_view'
+    item.referenceRef?.source === 'private_character_sheet'
     && item.referenceRef.character_id === characterId
-    && item.referenceRef.view_type === viewType
   ))
 )
 
-const selectView = (characterId: string, characterName: string, view: CharacterReferenceView) => {
-  if (!view.preview_url || isSelected(characterId, view.type) || selectedCount.value >= props.maxItems) return
+const selectCharacter = (characterId: string, characterName: string, preview: string | null) => {
+  if (!preview || isSelected(characterId) || selectedCount.value >= props.maxItems) return
   emit('select', {
-    key: `character:${characterId}:${view.type}`,
-    preview: view.preview_url,
-    name: `${characterName} · ${view.label}`,
+    key: `character:${characterId}:sheet`,
+    preview,
+    name: characterName,
     referenceRef: {
-      source: 'private_character_view',
+      source: 'private_character_sheet',
       character_id: characterId,
-      view_type: view.type,
     },
   })
 }
@@ -88,21 +77,20 @@ onMounted(() => void store.refresh())
       <div v-else class="max-h-[65vh] space-y-5 overflow-y-auto pr-1">
         <section v-for="character in eligibleCharacters" :key="character.id">
           <div class="mb-2 font-semibold">{{ character.name }}</div>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             <button
-              v-for="view in availableViews(character.views)"
-              :key="view.type"
+              :key="character.id"
               type="button"
               class="h3-character-picker__view relative overflow-hidden rounded-2xl border text-left"
-              :class="{ 'h3-character-picker__view--selected': isSelected(character.id, view.type) }"
-              :disabled="isSelected(character.id, view.type) || selectedCount >= maxItems"
-              :data-testid="`select-character-view-${character.id}-${view.type}`"
-              @click="selectView(character.id, character.name, view)"
+              :class="{ 'h3-character-picker__view--selected': isSelected(character.id) }"
+              :disabled="isSelected(character.id) || selectedCount >= maxItems"
+              :data-testid="`select-character-sheet-${character.id}`"
+              @click="selectCharacter(character.id, character.name, character.preview_url)"
             >
-              <img :src="view.preview_url ?? ''" :alt="view.label" class="aspect-[4/5] w-full object-cover" />
+              <img :src="character.preview_url ?? ''" :alt="character.name" class="aspect-[4/5] w-full object-contain" />
               <div class="flex items-center justify-between gap-1 px-2 py-2 text-xs font-semibold">
-                <span class="truncate">{{ view.label }}</span>
-                <CheckCircle2 v-if="isSelected(character.id, view.type)" :size="15" class="shrink-0 text-emerald-400" />
+                <span class="truncate">{{ t('characters.h3_picker.composite') }}</span>
+                <CheckCircle2 v-if="isSelected(character.id)" :size="15" class="shrink-0 text-emerald-400" />
               </div>
             </button>
           </div>

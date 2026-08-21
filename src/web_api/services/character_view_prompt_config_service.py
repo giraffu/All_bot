@@ -35,49 +35,23 @@ DEFAULT_TAG_OPTIONS = {
 }
 
 _ENDING = "仅一个人物，纯白背景，不要文字、标签、边框或拼贴。"
-_COMMON = (
-    "严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，"
-    "不穿任何衣物，不佩戴任何配饰"
-)
-_FEMALE_DETAIL = "明确保持成年女性解剖特征"
-_MALE_DETAIL = (
-    "明确保持成年男性解剖特征：自然勃起阴茎和阴囊完整、清晰、无遮挡，"
-    "双手自然垂于身体两侧，不遮挡下体；不要女性乳房或女性生殖器"
-)
-_MALE_BACK_DETAIL = (
-    "明确保持成年男性背部、腰臀和腿部解剖特征，双手自然垂于身体两侧；"
-    "阴茎保持自然勃起并位于身体正面，不要在背面错误生成生殖器，"
-    "不要女性乳房或女性生殖器"
-)
 
 
 def _neutral_prompts() -> dict[str, str]:
     return {
         "face_front": (
             "生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、"
-            "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            f"直视镜头，画面包括完整头部、裸露肩部和上胸。{_ENDING}"
+            f"肤色和可见特征一致。直视镜头，画面包括完整头部和肩部。{_ENDING}"
         ),
-        "body_front": (
+        "body_front_nude": (
             "生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、"
             "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
             f"配饰，正对镜头自然站立，从头顶到双脚完整可见。{_ENDING}"
         ),
-        "body_side": (
-            "生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、"
-            "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
-            "配饰，身体与头部均向左旋转九十度，呈严格侧面，从头顶到双脚完整可见。"
-            f"{_ENDING}"
-        ),
-        "body_back": (
-            "生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、"
-            "身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            f"背对镜头自然站立，不回头，从头顶到双脚完整可见。{_ENDING}"
-        ),
-        "genitals_front": (
-            "生成与源图为同一位成年人的生殖器正面特写，保持肤色和身体特征一致。"
-            "人物完全裸体，只展示一个成年人的人体参考细节，无互动、无道具、无体液，"
-            f"纯白背景，不要文字、标签、边框或拼贴。"
+        "body_front_clothed": (
+            "生成与源图为同一位成年人的全身正面穿衣站立图，严格保持身份、五官、"
+            "发型、肤色、身材比例和身体特征一致。保留源图可见服装；源图没有完整服装时，"
+            f"使用简洁合身的日常服装。正对镜头，从头顶到双脚完整可见。{_ENDING}"
         ),
     }
 
@@ -86,61 +60,38 @@ def _gender_templates(view_type: str) -> tuple[str, str]:
     if view_type == "face_front":
         base = (
             "生成与源图为同一位成年{gender}的正面脸部近景，严格保持身份、五官、发型、"
-            "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            f"直视镜头，画面包括完整头部、裸露肩部和上胸。{{tags}}{_ENDING}"
+            f"肤色和可见特征一致。直视镜头，画面包括完整头部和肩部。{{tags}}{_ENDING}"
         )
         return base.format(gender="女性", tags="{tags}"), base.format(gender="男性", tags="{tags}")
-    if view_type == "body_front":
+    if view_type == "body_front_nude":
         female = (
-            f"生成与源图为同一位成年女性的全身正面站立图，{_COMMON}，"
-            f"{_FEMALE_DETAIL}。{{tags}}正对镜头自然站立，从头顶到双脚完整可见。{_ENDING}"
+            "生成与源图为同一位成年女性的裸体全身正面站立图，严格保持身份、五官、"
+            "发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿衣物或配饰。"
+            f"{{tags}}正对镜头自然站立，从头顶到双脚完整可见。{_ENDING}"
         )
         male = (
-            f"生成与源图为同一位成年男性的全身正面站立图，{_COMMON}，"
-            f"{_MALE_DETAIL}。{{tags}}正对镜头自然站立，从头顶到双脚完整可见。{_ENDING}"
-        )
-        return female, male
-    if view_type == "body_side":
-        female = (
-            f"生成与源图为同一位成年女性的全身侧面站立图，{_COMMON}，"
-            f"{_FEMALE_DETAIL}。{{tags}}身体与头部均向左旋转九十度，呈严格侧面，"
-            f"生殖器轮廓完整可见，从头顶到双脚完整可见。{_ENDING}"
-        )
-        male = (
-            f"生成与源图为同一位成年男性的全身侧面站立图，{_COMMON}，"
-            f"{_MALE_DETAIL}。{{tags}}身体与头部均向左旋转九十度，呈严格侧面，"
-            f"生殖器轮廓完整可见，从头顶到双脚完整可见。{_ENDING}"
-        )
-        return female, male
-    if view_type == "body_back":
-        female = (
-            f"生成与源图为同一位成年女性的全身背面站立图，{_COMMON}，"
-            f"{_FEMALE_DETAIL}。{{tags}}背对镜头自然站立，不回头，从头顶到双脚完整可见。{_ENDING}"
-        )
-        male = (
-            f"生成与源图为同一位成年男性的全身背面站立图，{_COMMON}，"
-            f"{_MALE_BACK_DETAIL}。{{tags}}背对镜头自然站立，不回头，从头顶到双脚完整可见。{_ENDING}"
+            "生成与源图为同一位成年男性的裸体全身正面站立图，严格保持身份、五官、"
+            "发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿衣物或配饰。"
+            f"{{tags}}正对镜头自然站立，从头顶到双脚完整可见。{_ENDING}"
         )
         return female, male
     female = (
-        f"生成与全身正面源图为同一位成年女性的外阴正面特写，{_COMMON}，"
-        f"{_FEMALE_DETAIL}。{{tags}}外阴和周围皮肤清晰完整，保持中立人体参考姿势，"
-        f"无互动、无道具、无体液，不展示第二个人。{_ENDING}"
+        "生成与源图为同一位成年女性的全身正面穿衣站立图，严格保持身份、五官、"
+        "发型、肤色、身材比例和身体特征一致。保留源图可见服装；没有完整服装时使用"
+        f"简洁合身的日常服装。{{tags}}从头顶到双脚完整可见。{_ENDING}"
     )
     male = (
-        f"生成与全身正面源图为同一位成年男性的阴茎与阴囊正面特写，{_COMMON}，"
-        f"{_MALE_DETAIL}。{{tags}}阴茎自然勃起，阴茎与阴囊清晰完整，"
-        f"保持中立人体参考姿势，无互动、无道具、无体液，不展示第二个人。{_ENDING}"
+        "生成与源图为同一位成年男性的全身正面穿衣站立图，严格保持身份、五官、"
+        "发型、肤色、身材比例和身体特征一致。保留源图可见服装；没有完整服装时使用"
+        f"简洁合身的日常服装。{{tags}}从头顶到双脚完整可见。{_ENDING}"
     )
     return female, male
 
 
 _VIEW_META = (
-    ("face_front", "正脸图", 1, True, ["skin_tone"]),
-    ("body_front", "全身正面图", 4, True, ["breast_size", "pubic_hair", "skin_tone"]),
-    ("body_side", "全身侧面图", 5, True, ["breast_size", "pubic_hair", "skin_tone"]),
-    ("body_back", "全身背面图", 6, True, ["breast_size", "pubic_hair", "skin_tone"]),
-    ("genitals_front", "生殖器正面特写", 7, False, ["pubic_hair", "skin_tone"]),
+    ("face_front", "正脸", 1, False, ["skin_tone"]),
+    ("body_front_nude", "正面全身裸体", 2, False, ["breast_size", "pubic_hair", "skin_tone"]),
+    ("body_front_clothed", "正面全身穿衣", 3, False, ["breast_size", "skin_tone"]),
 )
 
 

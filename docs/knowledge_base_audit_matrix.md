@@ -63,7 +63,7 @@
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
-| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | 独立私人人物身份素材与 LTX T2V/人物一致性 | domain config、独立人物/特写开关、成人与权利确认、私有/官方人物面板、官方/上传环境、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt scene snapshot、LAN canary | current | 四个基础视图进入 LTX 面板；可选器官特写只作 H3 单图引用；test-only IC 固定两个 typed 角色引用加一个环境引用 |
+| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | 独立私人人物身份素材与 LTX T2V/人物一致性 | domain config、独立人物/特写开关、H3 自由合成图、局部模板库、legacy/官方 LTX 面板、官方/上传环境、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt scene snapshot、LAN canary | current | 新私人人物任意槽至少一图形成 H3 mosaic；旧/官方四视图 v3 面板才进入 LTX；test-only IC 固定两个 typed 角色引用加一个环境引用 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界、test/prod agent 共享 ComfyUI 并存语义 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |

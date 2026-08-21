@@ -46,8 +46,45 @@ class CharacterBuildRequest(BaseModel):
         return value
 
 
-class CharacterDraftCreateRequest(CharacterBuildRequest):
-    pass
+class CharacterDraftCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    description: str | None = Field(default=None, max_length=500)
+    source_object_key: str | None = Field(default=None, min_length=1, max_length=1024)
+    template_id: str | None = Field(default=None, min_length=1, max_length=36)
+    initial_view_type: Literal[
+        "face_front",
+        "body_front_nude",
+        "body_front_clothed",
+        "torso_front",
+        "genitals_front",
+        "pelvis_back",
+        "custom_1",
+        "custom_2",
+        "custom_3",
+        "custom_4",
+    ] = "face_front"
+    initial_view_label: str | None = Field(default=None, max_length=80)
+    prompt_profile: CharacterPromptProfile | None = None
+    adult_confirmed: bool | None = None
+    usage_rights_confirmed: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("人物名称不能为空")
+        return value
+
+    @model_validator(mode="after")
+    def validate_initial_image(self):
+        if bool(self.source_object_key) == bool(self.template_id):
+            raise ValueError("exactly one of source_object_key or template_id is required")
+        if self.initial_view_type.startswith("custom_") and not str(
+            self.initial_view_label or ""
+        ).strip():
+            raise ValueError("initial_view_label is required for a custom view")
+        return self
 
 
 class CharacterConfirmationRequest(BaseModel):
@@ -76,10 +113,7 @@ class CharacterPatchRequest(BaseModel):
     def validate_description(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        value = value.strip()
-        if not value:
-            raise ValueError("人物描述不能为空")
-        return value
+        return value.strip()
 
 
 class CharacterViewGenerateRequest(BaseModel):
@@ -99,6 +133,30 @@ class CharacterViewUploadRequest(BaseModel):
     source_object_key: str = Field(min_length=1, max_length=1024)
 
 
+class CharacterViewTemplateApplyRequest(BaseModel):
+    template_id: str = Field(min_length=1, max_length=36)
+
+
+class CharacterViewPatchRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class CharacterCustomViewCreateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    source_object_key: str = Field(min_length=1, max_length=1024)
+
+
+class CharacterViewImageTemplateResponse(BaseModel):
+    id: str
+    view_type: Literal["torso_front", "genitals_front", "pelvis_back"]
+    name: str
+    gender: Literal["neutral", "female", "male"]
+    sort_order: int
+    preview_url: str
+
+
 class CharacterBatchCapacityResponse(BaseModel):
     limit: int = Field(ge=1)
     active: int = Field(ge=0)
@@ -108,6 +166,7 @@ class CharacterBatchCapacityResponse(BaseModel):
 class CharacterViewResponse(BaseModel):
     type: str
     label: str
+    description: str | None = None
     prompt: str
     default_prompt: str
     tag_groups: list[str] = Field(default_factory=list)
@@ -124,6 +183,9 @@ class CharacterViewConfigResponse(BaseModel):
     type: str
     label: str
     required: bool
+    can_generate: bool = False
+    has_templates: bool = False
+    custom: bool = False
     tag_groups: list[str] = Field(default_factory=list)
     tag_options: dict[str, dict[str, str]] = Field(default_factory=dict)
 

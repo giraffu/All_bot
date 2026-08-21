@@ -35,19 +35,19 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 - REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
   REF2V 每 5 秒的 `preview/small/standard/hd` 价格为 `15/23/30/45`，10/15 秒按
   2/3 倍计算。
-- Web REF2V 新增有序 `reference_refs`，每项只能是当前用户临时上传或私人人物的
-  单个 ready 视图：
+- Web REF2V 使用有序 `reference_refs`。当前用户的私人人物以一张服务端合成的
+  完整人物素材图作为一个引用，也可与临时上传混排：
 
   ```json
   [
-    {"source":"private_character_view","character_id":"...","view_type":"face_front"},
+    {"source":"private_character_sheet","character_id":"..."},
     {"source":"upload","object_key":"..."}
   ]
   ```
 
   `reference_refs` 只允许 1–4 项且与旧 `images` 互斥；旧纯上传 `images` 继续兼容。
-  I2V/FLF2V 不接受人物视图引用。服务端在扣费前按顺序解析 owner、成年人/权利确认、
-  moderation、人物和视图状态、对象存在性/类型/20 MB 上限及重复项，并生成最终
+  I2V/FLF2V 不接受人物素材引用。服务端在扣费前按顺序解析 owner、moderation、
+  人物、合成图和子图状态、对象存在性/20 MB 上限及重复项，并生成最终
   `images` 与 `reference_descriptions`。客户端不得提交人物 object key 或人物描述。
   Prompt Optimizer 复用相同解析器，因此优化和生成的 `<Picture N>` 顺序一致；最终
   生成会再次解析，优化后被停用或失效的人物在扣费前拒绝。
@@ -102,9 +102,11 @@ REF2V 使用 `minimax_h3_ref2v_prompt@1..4` 与 `minimax_h3_ref2v@1`。媒体角
 `reference_image_1..4`，按 `<Picture N>` 和六段式参考描述组织完整提示词；QQCC
 管理员固定场景提示词不经过用户侧优化。
 
-Web 的人物库选择器只在 REF2V 显示。用户按人物分组逐张选择视图，可与上传混用，
-统一托盘最多四张并支持拖动排序；不把四视图合成面板默认传给 H3，避免拼贴布局。
-私人人物入口由独立人物开关控制，器官特写另有 kill switch；生产两项默认关闭。
+Web 的人物库选择器只在 REF2V 显示。每个人物只提供一张完整合成素材图，可与上传
+混用，统一托盘最多四张并支持拖动排序。合成图包含同一人物的全部 ready 子图，
+Optimizer 和最终生成都把它作为一个 `<Picture N>`，描述明确要求只提取身份、身体、
+服装、局部、配饰和物件证据，不复现拼贴构图。私人人物入口由独立人物开关控制，
+显式局部子图另有 kill switch；生产两项默认关闭。
 
 ## 固定基础链与可选作者资产
 

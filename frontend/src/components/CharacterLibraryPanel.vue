@@ -19,13 +19,6 @@ import { useCharactersStore } from '@/stores/characters'
 import { WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED } from '@/features/generation/labModeConfig'
 import { useUpload } from '@/composables/useUpload'
 
-const REQUIRED_VIEW_TYPES: CharacterViewType[] = [
-  'face_front',
-  'body_front',
-  'body_side',
-  'body_back',
-]
-
 const { t } = useI18n()
 const router = useRouter()
 const store = useCharactersStore()
@@ -38,13 +31,14 @@ const uploadingView = ref(false)
 const saving = ref(false)
 const editingCharacterId = ref<string | null>(null)
 const savingMetadata = ref(false)
-const confirmingIdentity = ref(false)
-const legacyGender = ref<'female' | 'male'>('female')
+const applyingTemplate = ref(false)
+const selectedTemplateId = ref<string | undefined>()
 const deletingCharacterId = ref<string | null>(null)
 const metadataForm = reactive({
   name: '',
   description: '',
 })
+const viewMetadataForm = reactive({ displayName: '', description: '' })
 const prompts = reactive<Record<string, string>>({})
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -52,48 +46,34 @@ const characters = computed(() => store.items)
 const selectedCharacter = computed<CharacterReference | null>(() => (
   store.items.find(item => item.id === selectedCharacterId.value) ?? null
 ))
-const readyCount = computed(() => (
-  REQUIRED_VIEW_TYPES.filter(type => (
-    selectedCharacter.value?.views.find(view => view.type === type)?.status === 'ready'
-  )).length
-))
+const readyCount = computed(() => selectedCharacter.value?.views.filter(view => view.status === 'ready').length ?? 0)
 const visibleSelectedViews = computed(() => {
   if (!selectedCharacter.value) return []
-  const views = selectedCharacter.value.views.filter(view => (
-    view.type !== 'genitals_front' || WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED
-  ))
-  if (
-    WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED
-    && !views.some(view => view.type === 'genitals_front')
-  ) {
-    views.push({
-      type: 'genitals_front',
-      label: t('characters.views.genitals_front'),
-      prompt: selectedCharacter.value.default_prompts.genitals_front ?? '',
-      default_prompt: selectedCharacter.value.default_prompts.genitals_front ?? '',
-      status: 'failed',
+  const explicitTypes: CharacterViewType[] = ['genitals_front', 'pelvis_back']
+  const configs = selectedCharacter.value.view_configs ?? []
+  if (configs.length === 0) return selectedCharacter.value.views
+  return configs.flatMap((config) => {
+    if (!WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED && explicitTypes.includes(config.type)) return []
+    const existing = selectedCharacter.value?.views.find(view => view.type === config.type)
+    return [existing ?? {
+      type: config.type,
+      label: config.label,
+      description: null,
+      prompt: selectedCharacter.value?.default_prompts?.[config.type] ?? '',
+      default_prompt: selectedCharacter.value?.default_prompts?.[config.type] ?? '',
+      status: 'failed' as const,
       task_id: null,
       object_key: null,
       preview_url: null,
-    })
-  }
-  return views
+    }]
+  })
 })
 const selectedView = computed<CharacterReferenceView | null>(() => (
   visibleSelectedViews.value.find(view => view.type === selectedViewType.value) ?? null
 ))
-const identityConfirmed = computed(() => Boolean(
-  selectedCharacter.value?.adult_confirmed && selectedCharacter.value?.usage_rights_confirmed,
-))
-const genitalGenerationBlocked = computed(() => (
-  selectedViewType.value === 'genitals_front'
-  && selectedCharacter.value?.views.find(view => view.type === 'body_front')?.status !== 'ready'
-))
-const hasPendingRequiredView = computed(() => (
-  selectedCharacter.value?.views.some(view => (
-    view.status === 'pending' && REQUIRED_VIEW_TYPES.includes(view.type)
-  )) ?? false
-))
+const selectedConfig = computed(() => selectedCharacter.value?.view_configs?.find(config => config.type === selectedViewType.value))
+const selectedTemplates = computed(() => (store.viewTemplates ?? []).filter(template => template.view_type === selectedViewType.value))
+const hasPendingView = computed(() => selectedCharacter.value?.views.some(view => view.status === 'pending') ?? false)
 const hasPending = computed(() => (
   store.items.some(character => character.views.some(view => view.status === 'pending'))
 ))
@@ -108,12 +88,15 @@ const selectedPrompt = computed({
 })
 const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 
-const getFaceFrontView = (character: CharacterReference) => (
-  character.views.find(view => view.type === 'face_front') ?? null
+const getCoverUrl = (character: CharacterReference) => (
+  character.views.find(view => view.type === 'face_front' && view.preview_url)?.preview_url
+  ?? character.preview_url
+  ?? character.views.find(view => view.status === 'ready' && view.preview_url)?.preview_url
+  ?? null
 )
 
 const openCharacterDetails = (character: CharacterReference) => {
-  const initialView = getFaceFrontView(character) ?? character.views[0]
+  const initialView = character.views.find(view => view.type === 'face_front') ?? character.views[0]
   selectedCharacterId.value = character.id
   if (initialView) selectView(character, initialView)
 }
@@ -140,6 +123,9 @@ const selectView = (character: CharacterReference, view: CharacterReferenceView)
   selectedCharacterId.value = character.id
   selectedViewType.value = view.type
   prompts[`${character.id}:${view.type}`] = view.prompt || view.default_prompt
+  viewMetadataForm.displayName = view.label
+  viewMetadataForm.description = view.description ?? ''
+  selectedTemplateId.value = undefined
 }
 
 const regenerate = async () => {
@@ -182,7 +168,7 @@ const beforeViewUpload = async (file: File) => {
 }
 
 const saveReference = async () => {
-  if (!selectedCharacter.value || readyCount.value !== REQUIRED_VIEW_TYPES.length) return
+  if (!selectedCharacter.value || readyCount.value < 1) return
   saving.value = true
   try {
     await store.saveReference(selectedCharacter.value.id)
@@ -192,23 +178,30 @@ const saveReference = async () => {
   }
 }
 
+const applyTemplate = async () => {
+  if (!selectedCharacter.value || !selectedTemplateId.value) return
+  applyingTemplate.value = true
+  try {
+    await store.applyViewTemplate(selectedCharacter.value.id, selectedViewType.value, selectedTemplateId.value)
+    message.success(t('characters.template_applied'))
+    selectedTemplateId.value = undefined
+  } finally {
+    applyingTemplate.value = false
+  }
+}
+
+const saveViewDetails = async () => {
+  if (!selectedCharacter.value || !selectedView.value?.object_key || !viewMetadataForm.displayName.trim()) return
+  await store.updateViewDetails(selectedCharacter.value.id, selectedViewType.value, {
+    display_name: viewMetadataForm.displayName.trim(),
+    description: viewMetadataForm.description.trim(),
+  })
+  message.success(t('characters.details_updated'))
+}
+
 const createCharacter = () => (
   router.push({ name: 'CustomFeatures', query: { type: 'character_reference' } })
 )
-
-const confirmIdentity = async () => {
-  if (!selectedCharacter.value) return
-  confirmingIdentity.value = true
-  try {
-    await store.confirmIdentity(
-      selectedCharacter.value.id,
-      selectedCharacter.value.prompt_profile ?? { gender: legacyGender.value },
-    )
-    message.success(t('characters.identity_confirmed'))
-  } finally {
-    confirmingIdentity.value = false
-  }
-}
 
 const openMetadataEditor = (character: CharacterReference) => {
   editingCharacterId.value = character.id
@@ -230,10 +223,6 @@ const saveMetadata = async () => {
   const name = metadataForm.name.trim()
   const characterDescription = metadataForm.description.trim()
   if (!characterId || !name) return
-  if (!characterDescription) {
-    message.error(t('characters.description_required'))
-    return
-  }
   savingMetadata.value = true
   try {
     await store.rename(characterId, {
@@ -322,8 +311,8 @@ onBeforeUnmount(() => {
       >
         <div class="character-library__cover relative aspect-[4/5] overflow-hidden">
           <img
-            v-if="getFaceFrontView(character)?.preview_url"
-            :src="getFaceFrontView(character)?.preview_url ?? ''"
+            v-if="getCoverUrl(character)"
+            :src="getCoverUrl(character) ?? ''"
             :alt="character.name"
             :data-testid="`character-cover-${character.id}`"
             class="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
@@ -394,29 +383,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="!identityConfirmed" class="character-library__editor rounded-2xl border p-4">
-          <div class="font-semibold">{{ t('characters.legacy_confirmation_title') }}</div>
-          <p class="mt-1 text-sm leading-6 opacity-70">{{ t('characters.legacy_confirmation_hint') }}</p>
-          <a-radio-group
-            v-if="!selectedCharacter.prompt_profile"
-            v-model:value="legacyGender"
-            class="mt-3"
-            button-style="solid"
-          >
-            <a-radio-button value="female">{{ t('characters.gender.female') }}</a-radio-button>
-            <a-radio-button value="male">{{ t('characters.gender.male') }}</a-radio-button>
-          </a-radio-group>
-          <a-button
-            type="primary"
-            class="mt-3 rounded-xl"
-            :loading="confirmingIdentity"
-            data-testid="confirm-character-identity"
-            @click="confirmIdentity"
-          >
-            {{ t('characters.confirm_identity') }}
-          </a-button>
-        </div>
-
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
           <button
             v-for="view in visibleSelectedViews"
@@ -439,10 +405,22 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="selectedView" class="character-library__editor rounded-2xl border p-4">
-          <div v-if="selectedView.type === 'genitals_front'" class="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-5">
-            {{ t('characters.explicit_view_disclaimer') }}
+          <div class="mb-3 grid gap-3 sm:grid-cols-2">
+            <label class="block">
+              <span class="mb-1 block text-xs font-semibold">{{ t('characters.view_display_name') }}</span>
+              <a-input v-model:value="viewMetadataForm.displayName" data-testid="character-view-display-name" :maxlength="80" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-xs font-semibold">{{ t('characters.view_description') }}</span>
+              <a-textarea v-model:value="viewMetadataForm.description" data-testid="character-view-description" :maxlength="500" :auto-size="{ minRows: 1, maxRows: 4 }" />
+            </label>
           </div>
-          <div class="mb-2 flex items-center justify-between gap-2">
+          <div class="mb-3 text-right">
+            <a-button size="small" data-testid="save-character-view-details" :disabled="!selectedView.object_key || !viewMetadataForm.displayName.trim()" @click="saveViewDetails">
+              {{ t('characters.save_descriptions') }}
+            </a-button>
+          </div>
+          <div v-if="selectedConfig?.can_generate" class="mb-2 flex items-center justify-between gap-2">
             <div class="text-sm font-semibold">
               {{ t('characters.regenerate_named_view', { view: selectedView.label }) }}
             </div>
@@ -455,11 +433,13 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <a-textarea
+            v-if="selectedConfig?.can_generate"
             v-model:value="selectedPrompt"
+            data-testid="character-view-prompt"
             :maxlength="1200"
             :auto-size="{ minRows: 4, maxRows: 8 }"
           />
-          <div class="mt-3">
+          <div v-if="selectedConfig?.can_generate" class="mt-3">
             <div class="mb-2 text-xs font-semibold">
               {{ t('characters.engine_label') }}
             </div>
@@ -477,9 +457,24 @@ onBeforeUnmount(() => {
               </a-radio-button>
             </a-radio-group>
           </div>
+          <div v-if="selectedConfig?.has_templates && selectedTemplates.length" class="mt-3 flex gap-2">
+            <a-select
+              v-model:value="selectedTemplateId"
+              class="min-w-0 flex-1"
+              allow-clear
+              :placeholder="t('characters.choose_template')"
+            >
+              <a-select-option v-for="template in selectedTemplates" :key="template.id" :value="template.id">
+                {{ template.name }}
+              </a-select-option>
+            </a-select>
+            <a-button :disabled="!selectedTemplateId" :loading="applyingTemplate" @click="applyTemplate">
+              {{ t('characters.apply_template') }}
+            </a-button>
+          </div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
             <a-button
-              :disabled="readyCount !== REQUIRED_VIEW_TYPES.length || hasPendingRequiredView"
+              :disabled="readyCount < 1 || hasPendingView"
               :loading="saving"
               class="rounded-xl"
               @click="saveReference"
@@ -493,15 +488,16 @@ onBeforeUnmount(() => {
             >
               <a-button
                 class="w-full rounded-xl"
-                :disabled="!identityConfirmed || selectedView.status === 'pending'"
+                :disabled="selectedView.status === 'pending'"
                 :loading="uploadingView || uploading"
               >
                 {{ selectedView.object_key ? t('characters.replace_view_upload') : t('characters.upload_view') }}
               </a-button>
             </a-upload>
             <a-button
+              v-if="selectedConfig?.can_generate"
               type="primary"
-              :disabled="!identityConfirmed || !selectedPrompt.trim() || genitalGenerationBlocked || selectedView.status === 'pending'"
+              :disabled="!selectedPrompt.trim() || selectedView.status === 'pending'"
               :loading="regenerating || selectedView.status === 'pending'"
               class="rounded-xl"
               @click="regenerate"
@@ -517,7 +513,7 @@ onBeforeUnmount(() => {
       :open="editingCharacterId !== null"
       :title="t('characters.edit_details_title')"
       :confirm-loading="savingMetadata"
-      :ok-button-props="{ disabled: !metadataForm.name.trim() || !metadataForm.description.trim() }"
+      :ok-button-props="{ disabled: !metadataForm.name.trim() }"
       :ok-text="t('characters.save_changes')"
       :cancel-text="t('characters.cancel')"
       @ok="saveMetadata"

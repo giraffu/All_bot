@@ -3,18 +3,22 @@ import { computed, ref } from 'vue'
 
 import {
   buildCharacter,
+  applyCharacterViewTemplate,
   confirmCharacterReference,
   createCharacterDraft,
   deleteCharacter,
   fetchCharacterBatchCapacity,
+  fetchCharacterViewTemplates,
   fetchCharacters,
   generateCharacterView,
   saveCharacterReference,
   uploadCharacterView,
   updateCharacter,
+  updateCharacterView,
   type CharacterReference,
   type CharacterPromptProfile,
   type CharacterViewEngine,
+  type CharacterViewImageTemplate,
   type CharacterViewType,
 } from '@/api/characters'
 import { runCharacterViewBatch } from '@/features/characters/characterBatchGeneration'
@@ -24,6 +28,7 @@ import { useTasksStore } from '@/stores/tasks'
 export const useCharactersStore = defineStore('characters', () => {
   const tasksStore = useTasksStore()
   const items = ref<CharacterReference[]>([])
+  const viewTemplates = ref<CharacterViewImageTemplate[]>([])
   const loading = ref(false)
   const batchRuns = ref<Record<string, {
     running: boolean
@@ -58,7 +63,12 @@ export const useCharactersStore = defineStore('characters', () => {
   const refresh = async () => {
     loading.value = true
     try {
-      items.value = await fetchCharacters()
+      const [characters, templates] = await Promise.all([
+        fetchCharacters(),
+        fetchCharacterViewTemplates(),
+      ])
+      items.value = characters
+      viewTemplates.value = templates
       reconcileViewTaskSessions(items.value)
     } finally {
       loading.value = false
@@ -84,7 +94,15 @@ export const useCharactersStore = defineStore('characters', () => {
     return result
   }
 
-  const createDraft = async (payload: { name: string; description: string; source_object_key: string; prompt_profile: CharacterPromptProfile; adult_confirmed: true; usage_rights_confirmed: true }) => {
+  const createDraft = async (payload: {
+    name: string
+    description?: string
+    source_object_key?: string
+    template_id?: string
+    initial_view_type: CharacterViewType
+    initial_view_label?: string
+    prompt_profile?: CharacterPromptProfile
+  }) => {
     const result = await createCharacterDraft(payload)
     items.value = [result, ...items.value.filter(item => item.id !== result.id)]
     scheduleBackgroundRefresh()
@@ -207,6 +225,26 @@ export const useCharactersStore = defineStore('characters', () => {
     return result
   }
 
+  const applyViewTemplate = async (
+    id: string,
+    viewType: CharacterViewType,
+    templateId: string,
+  ) => {
+    const result = await applyCharacterViewTemplate(id, viewType, templateId)
+    await refresh()
+    return result
+  }
+
+  const updateViewDetails = async (
+    id: string,
+    viewType: CharacterViewType,
+    payload: { display_name?: string; description?: string },
+  ) => {
+    const result = await updateCharacterView(id, viewType, payload)
+    await refresh()
+    return result
+  }
+
   const rename = async (id: string, payload: { name?: string; description?: string; prompt_profile?: CharacterPromptProfile }) => {
     await updateCharacter(id, payload)
     await refresh()
@@ -219,6 +257,7 @@ export const useCharactersStore = defineStore('characters', () => {
 
   return {
     items,
+    viewTemplates,
     readyItems,
     loading,
     batchRuns,
@@ -230,6 +269,8 @@ export const useCharactersStore = defineStore('characters', () => {
     generateView,
     generateMissingViews,
     uploadView,
+    applyViewTemplate,
+    updateViewDetails,
     saveReference,
     rename,
     remove,

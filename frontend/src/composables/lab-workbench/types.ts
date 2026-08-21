@@ -4,6 +4,7 @@ import type { CharacterViewType } from '@/api/characters'
 
 export type H3ReferenceRef =
   | { source: 'upload'; object_key: string }
+  | { source: 'private_character_sheet'; character_id: string }
   | { source: 'private_character_view'; character_id: string; view_type: CharacterViewType }
 
 export type UploadedReference = {

@@ -38,8 +38,9 @@ class _ScalarResult:
 
 
 class _Session:
-    def __init__(self, results):
+    def __init__(self, results, get_value=None):
         self.results = iter(results)
+        self.get_value = get_value
         self.added = []
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
@@ -52,6 +53,9 @@ class _Session:
 
     def add(self, value):
         self.added.append(value)
+
+    async def get(self, _model, _identity):
+        return self.get_value
 
 
 class _SessionContext:
@@ -67,6 +71,12 @@ class _SessionContext:
 
 def _user():
     return SimpleNamespace(id=123, username="tester")
+
+
+def _png_bytes(color="white"):
+    output = io.BytesIO()
+    Image.new("RGB", (64, 64), color).save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_character_name_rejects_whitespace_only_values():
@@ -94,55 +104,50 @@ def test_character_description_is_required(description):
         CharacterBuildRequest(**payload)
 
 
-def test_character_view_catalog_exposes_four_required_views_and_optional_genitals():
+def test_character_view_catalog_exposes_six_optional_builtin_and_four_custom_slots():
     assert [item["type"] for item in service.CHARACTER_VIEW_CATALOG] == [
         "face_front",
-        "body_front",
-        "body_side",
-        "body_back",
+        "body_front_nude",
+        "body_front_clothed",
+        "torso_front",
         "genitals_front",
+        "pelvis_back",
+        "custom_1",
+        "custom_2",
+        "custom_3",
+        "custom_4",
     ]
-    assert service.CHARACTER_REQUIRED_VIEW_TYPES == (
+    assert service.CHARACTER_GENERATABLE_VIEW_TYPES == (
         "face_front",
-        "body_front",
-        "body_side",
-        "body_back",
+        "body_front_nude",
+        "body_front_clothed",
     )
-    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 5
-    assert all(
-        item["default_prompt"].strip() for item in service.CHARACTER_VIEW_CATALOG
-    )
-    for item in service.CHARACTER_VIEW_CATALOG:
-        prompt = item["default_prompt"]
-        assert "同一位成年人" in prompt
-        assert "完全裸体" in prompt
-        assert "纯白背景" in prompt
-        assert "纯黑背景" not in prompt
-        assert not any("a" <= char.lower() <= "z" for char in prompt)
+    assert service.CHARACTER_REQUIRED_VIEW_TYPES == ()
+    for item in service.CHARACTER_VIEW_CATALOG[:3]:
+        assert item["default_prompt"].strip()
+    for item in service.CHARACTER_VIEW_CATALOG[3:]:
+        assert item["default_prompt"] == ""
 
 
-def test_character_draft_requires_gender_and_explicit_adult_rights_confirmation():
-    base = {
-        "name": "Alice",
-        "description": "adult woman with short black hair",
-        "source_object_key": "staging/user-uploads/123/source.webp",
-        "prompt_profile": {"gender": "female"},
-    }
-    with pytest.raises(ValidationError):
-        CharacterDraftCreateRequest(**base)
-    with pytest.raises(ValidationError):
-        CharacterDraftCreateRequest(
-            **base,
-            adult_confirmed=True,
-            usage_rights_confirmed=False,
-        )
-
+def test_character_draft_requires_one_initial_image_but_not_description_gender_or_confirmations():
     payload = CharacterDraftCreateRequest(
-        **base,
-        adult_confirmed=True,
-        usage_rights_confirmed=True,
+        name="Alice",
+        initial_view_type="custom_1",
+        initial_view_label="脚部",
+        source_object_key="staging/user-uploads/123/source.webp",
     )
-    assert payload.prompt_profile.gender == "female"
+    assert payload.description is None
+    assert payload.prompt_profile is None
+
+    with pytest.raises(ValidationError, match="exactly one"):
+        CharacterDraftCreateRequest(name="Alice", initial_view_type="face_front")
+    with pytest.raises(ValidationError, match="exactly one"):
+        CharacterDraftCreateRequest(
+            name="Alice",
+            initial_view_type="torso_front",
+            source_object_key="staging/user-uploads/123/source.webp",
+            template_id="template-1",
+        )
 
 
 def test_female_prompt_profile_composes_selected_anatomy_and_skin_tags():
@@ -156,14 +161,12 @@ def test_female_prompt_profile_composes_selected_anatomy_and_skin_tags():
     prompts = service.compose_character_view_prompts(profile.model_dump())
 
     assert "成年女性" in prompts["face_front"]
-    for view_type in ("body_front", "body_side", "body_back"):
-        assert "巨乳" in prompts[view_type]
-        assert "浓密自然阴毛" in prompts[view_type]
-        assert "亚洲晒黑肤色" in prompts[view_type]
-        assert "勃起阴茎" not in prompts[view_type]
-    assert "成年女性" in prompts["genitals_front"]
-    assert "外阴" in prompts["genitals_front"]
-    assert "无互动" in prompts["genitals_front"]
+    assert "巨乳" in prompts["body_front_nude"]
+    assert "浓密自然阴毛" in prompts["body_front_nude"]
+    assert "亚洲晒黑肤色" in prompts["body_front_nude"]
+    assert "巨乳" in prompts["body_front_clothed"]
+    assert "浓密自然阴毛" not in prompts["body_front_clothed"]
+    assert set(prompts) == {"face_front", "body_front_nude", "body_front_clothed"}
 
 
 def test_male_prompt_profile_has_no_female_options_and_requires_visible_erect_anatomy():
@@ -172,13 +175,10 @@ def test_male_prompt_profile_has_no_female_options_and_requires_visible_erect_an
     prompts = service.compose_character_view_prompts(profile.model_dump())
 
     assert "成年男性" in prompts["face_front"]
-    for view_type in ("body_front", "body_side"):
-        assert "勃起阴茎" in prompts[view_type]
-        assert "阴囊" in prompts[view_type]
-        assert "无遮挡" in prompts[view_type]
-    assert "女性生殖器" in prompts["body_front"]
-    assert "阴茎与阴囊" in prompts["genitals_front"]
-    assert "无道具" in prompts["genitals_front"]
+    assert "成年男性" in prompts["body_front_nude"]
+    assert "完全裸体" in prompts["body_front_nude"]
+    assert "成年男性" in prompts["body_front_clothed"]
+    assert set(prompts) == {"face_front", "body_front_nude", "body_front_clothed"}
 
 
 def test_male_prompt_profile_rejects_female_only_tags():
@@ -208,7 +208,7 @@ async def test_character_list_upgrades_only_the_previous_default_black_prompt():
                 object_key=None,
             ),
             SimpleNamespace(
-                view_type="body_front",
+                view_type="body_front_nude",
                 prompt="自定义保留纯黑背景",
                 status="ready",
                 task_id=None,
@@ -239,34 +239,41 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
         "async_object_size",
         AsyncMock(return_value=1024),
     )
+    image = io.BytesIO()
+    Image.new("RGB", (320, 640), "red").save(image, format="PNG")
+    monkeypatch.setattr(
+        service.storage,
+        "get_file_bytes",
+        MagicMock(return_value=image.getvalue()),
+    )
+    monkeypatch.setattr(
+        service.storage,
+        "upload_bytes",
+        MagicMock(return_value="stored"),
+    )
 
     result = await service.create_character_draft(
         db=db,
         current_user=_user(),
         payload=CharacterDraftCreateRequest(
             name="Alice",
-            description="adult woman with short black hair",
             source_object_key="staging/user-uploads/123/source.webp",
-            prompt_profile=CharacterPromptProfile(
-                gender="female",
-                breast_size="large",
-                pubic_hair="full",
-                skin_tone="asian_tan",
-            ),
-            adult_confirmed=True,
-            usage_rights_confirmed=True,
+            initial_view_type="custom_1",
+            initial_view_label="脚部",
         ),
     )
 
-    assert result["status"] == "draft"
-    assert result["views"] == []
-    assert result["prompt_profile"]["gender"] == "female"
-    assert "巨乳" in result["default_prompts"]["body_front"]
-    assert db.added[0].status == "draft"
-    assert db.added[0].prompt_profile["skin_tone"] == "asian_tan"
+    assert result["status"] == "ready"
+    assert result["description"] is None
+    assert result["views"][0]["type"] == "custom_1"
+    assert result["views"][0]["label"] == "脚部"
+    assert result["prompt_profile"] is None
+    assert db.added[0].status == "ready"
     assert db.added[0].adult_confirmed_at is not None
     assert db.added[0].usage_rights_confirmed_at is not None
-    assert db.added[0].sheet_object_key is None
+    assert db.added[0].sheet_object_key.endswith("/character-asset-mosaic-v1.png")
+    assert db.added[1].view_type == "custom_1"
+    assert db.added[1].display_name == "脚部"
 
 
 @pytest.mark.asyncio
@@ -307,7 +314,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         db=db,
         current_user=_user(),
         character_id="character-1",
-        view_type="body_side",
+        view_type="body_front_nude",
         payload=CharacterViewGenerateRequest(
             prompt="custom side portrait",
             engine=engine,
@@ -316,7 +323,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
 
     assert result["cost"] == cost
     assert result["status"] == "pending"
-    assert db.added[0].view_type == "body_side"
+    assert db.added[0].view_type == "body_front_nude"
     kwargs = submit.await_args.kwargs
     assert kwargs["req"].task_type == task_type
     assert kwargs["req"].inputs == {
@@ -329,7 +336,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         "_character_reference_view": {
             "version": 1,
             "character_id": "character-1",
-            "view_type": "body_side",
+            "view_type": "body_front_nude",
         },
         "record_history": False,
     }
@@ -337,7 +344,97 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
 
 
 @pytest.mark.asyncio
-async def test_generate_genitals_view_uses_ready_body_front_and_requires_confirmation(
+async def test_local_detail_views_reject_prompt_generation_and_accept_multiple_admin_templates(
+    monkeypatch,
+):
+    from src.web_api.schemas.character_schema import (
+        CharacterViewGenerateRequest,
+        CharacterViewTemplateApplyRequest,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.generate_character_view(
+            db=_Session([]),
+            current_user=_user(),
+            character_id="character-1",
+            view_type="torso_front",
+            payload=CharacterViewGenerateRequest(prompt="must not run"),
+        )
+    assert exc_info.value.status_code == 405
+
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="ready",
+        prompt_profile=None,
+    )
+    template = SimpleNamespace(
+        id="template-2",
+        view_type="torso_front",
+        status="active",
+        object_key=f"{MINIO_BUCKET}/character_assets/view_templates/template-2.jpg",
+    )
+    db = _Session([character, None], get_value=template)
+    monkeypatch.setattr(
+        service.storage,
+        "get_file_bytes",
+        MagicMock(return_value=b"template-image"),
+    )
+    monkeypatch.setattr(
+        service.storage,
+        "upload_bytes",
+        MagicMock(return_value="stored"),
+    )
+    monkeypatch.setattr(
+        service,
+        "_try_auto_materialize_character_sheet",
+        AsyncMock(return_value=True),
+    )
+
+    result = await service.apply_character_view_template(
+        db=db,
+        current_user=_user(),
+        character_id="character-1",
+        view_type="torso_front",
+        payload=CharacterViewTemplateApplyRequest(template_id="template-2"),
+    )
+
+    assert result["type"] == "torso_front"
+    assert result["status"] == "ready"
+    assert db.added[0].prompt == ""
+    assert db.added[0].display_name == "胸部镜头"
+
+
+@pytest.mark.asyncio
+async def test_explicit_detail_kill_switch_filters_templates_and_rejects_upload(monkeypatch):
+    monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: False)
+    monkeypatch.setattr(
+        service,
+        "list_character_view_templates",
+        AsyncMock(return_value=[
+            {"id": "torso", "view_type": "torso_front"},
+            {"id": "front", "view_type": "genitals_front"},
+            {"id": "back", "view_type": "pelvis_back"},
+        ]),
+    )
+
+    templates = await service.list_available_character_view_templates(db=object())
+    assert templates == [{"id": "torso", "view_type": "torso_front"}]
+    with pytest.raises(HTTPException) as exc_info:
+        await service.upload_character_view(
+            db=_Session([]),
+            current_user=_user(),
+            character_id="character-1",
+            view_type="pelvis_back",
+            payload=CharacterViewUploadRequest(
+                source_object_key="staging/user-uploads/123/rear.png"
+            ),
+        )
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_generate_genitals_view_is_template_or_upload_only(
     monkeypatch,
 ):
     from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
@@ -371,23 +468,23 @@ async def test_generate_genitals_view_uses_ready_body_front_and_requires_confirm
         service.storage, "async_object_exists", AsyncMock(return_value=True)
     )
 
-    result = await service.generate_character_view(
-        db=db,
-        current_user=_user(),
-        character_id="character-1",
-        view_type="genitals_front",
-        payload=CharacterViewGenerateRequest(
-            prompt="preserve the same synthetic adult character",
-            engine="free_edit_v2_5",
-        ),
-    )
-
-    assert result["cost"] == 3
-    assert submit.await_args.kwargs["req"].inputs["images"] == [body_front.object_key]
+    with pytest.raises(HTTPException) as exc_info:
+        await service.generate_character_view(
+            db=db,
+            current_user=_user(),
+            character_id="character-1",
+            view_type="genitals_front",
+            payload=CharacterViewGenerateRequest(
+                prompt="preserve the same synthetic adult character",
+                engine="free_edit_v2_5",
+            ),
+        )
+    assert exc_info.value.status_code == 405
+    submit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_generate_genitals_view_rejects_unconfirmed_character(monkeypatch):
+async def test_generate_genitals_view_rejection_does_not_depend_on_page_confirmation(monkeypatch):
     from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
 
     character = SimpleNamespace(
@@ -399,7 +496,7 @@ async def test_generate_genitals_view_rejects_unconfirmed_character(monkeypatch)
         usage_rights_confirmed_at=None,
     )
     monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: True)
-    with pytest.raises(HTTPException, match="成年"):
+    with pytest.raises(HTTPException, match="只支持选择模板或上传"):
         await service.generate_character_view(
             db=_Session([character, None]),
             current_user=_user(),
@@ -418,7 +515,7 @@ async def test_upload_character_view_persists_owned_image_as_ready_without_task(
         user_id=123,
         status="draft",
     )
-    db = _Session([character, None])
+    db = _Session([character, None, []])
     monkeypatch.setattr(
         service.storage, "async_object_exists", AsyncMock(return_value=True)
     )
@@ -507,12 +604,18 @@ async def test_character_view_route_maps_concurrency_race_to_retryable_429(monke
 
 
 @pytest.mark.asyncio
-async def test_save_character_requires_all_four_official_views(monkeypatch):
+async def test_save_character_accepts_one_optional_view(monkeypatch):
     character = SimpleNamespace(
         id="character-1",
         user_id=123,
         status="draft",
-        description="adult woman with short black hair",
+        name="Alice",
+        description=None,
+        task_id=None,
+        source_object_key="bot-data/source.png",
+        sheet_object_key=None,
+        updated_at=None,
+        prompt_profile=None,
     )
     db = _Session(
         [
@@ -527,15 +630,10 @@ async def test_save_character_requires_all_four_official_views(monkeypatch):
         ]
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await service.save_character(
-            db=db,
-            user_id=123,
-            character_id="character-1",
-        )
-
-    assert exc_info.value.status_code == 409
-    assert "完成全部 4 张" in str(exc_info.value.detail)
+    monkeypatch.setattr(service.storage, "get_file_bytes", MagicMock(return_value=_png_bytes()))
+    monkeypatch.setattr(service.storage, "upload_bytes", MagicMock(return_value="stored"))
+    result = await service.save_character(db=db, user_id=123, character_id="character-1")
+    assert result["status"] == "ready"
 
 
 @pytest.mark.asyncio
@@ -560,21 +658,21 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
             object_key=f"{MINIO_BUCKET}/views/front.png",
         ),
         SimpleNamespace(
-            view_type="body_front",
+            view_type="body_front_nude",
             prompt="body front",
             status="ready",
             task_id="view-2",
             object_key=f"{MINIO_BUCKET}/views/body-front.png",
         ),
         SimpleNamespace(
-            view_type="body_side",
+            view_type="body_front_clothed",
             prompt="body side",
             status="ready",
             task_id="view-3",
             object_key=f"{MINIO_BUCKET}/views/body-side.png",
         ),
         SimpleNamespace(
-            view_type="body_back",
+            view_type="torso_front",
             prompt="back",
             status="ready",
             task_id="view-4",
@@ -624,19 +722,15 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
 
 
     assert result["sheet_object_key"].endswith(
-        "/character-1/ingredients-character-panel-v3.png"
+        f"/character-1/{service.CHARACTER_ASSET_MOSAIC_VERSION}.png"
     )
     assert result["preview_url"].endswith(
-        "/character-1/ingredients-character-panel-v3.png"
+        f"/character-1/{service.CHARACTER_ASSET_MOSAIC_VERSION}.png"
     )
     assert upload.call_count == 1
     with Image.open(io.BytesIO(upload.call_args.args[0])) as panel:
-        assert panel.size == (1536, 896)
-        assert panel.getpixel((288, 448)) == (255, 0, 0)
-        assert panel.getpixel((736, 448)) == (0, 128, 0)
-        assert panel.getpixel((1056, 448)) == (0, 0, 255)
-        assert panel.getpixel((1376, 448)) == (255, 255, 0)
-        assert panel.getpixel((600, 32)) == (255, 255, 255)
+        assert panel.width <= 1536
+        assert panel.height <= 1536
 
 
 @pytest.mark.asyncio
@@ -660,7 +754,7 @@ async def test_ready_child_views_automatically_materialize_the_character_panel(m
             task_id=f"task-{view_type}",
             object_key=f"{MINIO_BUCKET}/views/{view_type}.png",
         )
-        for view_type in service.CHARACTER_REQUIRED_VIEW_TYPES
+        for view_type in ("face_front",)
     ]
     db = _Session([views])
     monkeypatch.setattr(
@@ -687,7 +781,7 @@ async def test_ready_child_views_automatically_materialize_the_character_panel(m
     assert materialized is True
     assert character.status == "ready"
     assert character.sheet_object_key.endswith(
-        f"/{service.INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
+        f"/{service.CHARACTER_ASSET_MOSAIC_VERSION}.png"
     )
     assert db.commit.await_count == 1
 

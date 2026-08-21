@@ -12,8 +12,9 @@ from sqlalchemy import func, select
 
 from config import MINIO_BUCKET
 from shared.character_reference_sheet import (
+    CHARACTER_ASSET_MOSAIC_VERSION,
     INGREDIENTS_CHARACTER_PANEL_VERSION,
-    compose_ingredients_character_panel,
+    compose_character_asset_mosaic,
 )
 from src.media_paths import normalize_owned_user_upload_key
 from src.core.billing_core import get_concurrent_task_limit_for_identity
@@ -42,6 +43,10 @@ from src.web_api.services.character_view_prompt_config_service import (
     list_character_view_configs,
     render_character_view_prompts,
 )
+from src.web_api.services.character_view_template_service import (
+    get_active_character_view_template,
+    list_character_view_templates,
+)
 from src.web_api.services.task_submission_service import submit_generation_task
 
 logger = logging.getLogger(__name__)
@@ -61,15 +66,38 @@ CHARACTER_VIEW_TASK_TYPES = {
     "free_edit_v3": "pornmaster_flux2_edit_bf16",
 }
 
+_CHARACTER_VIEW_META = (
+    ("face_front", "正脸", True, False),
+    ("body_front_nude", "正面全身裸体", True, False),
+    ("body_front_clothed", "正面全身穿衣", True, False),
+    ("torso_front", "胸部镜头", False, True),
+    ("genitals_front", "正面私处", False, True),
+    ("pelvis_back", "背面私处", False, True),
+    ("custom_1", "扩展子图 1", False, False),
+    ("custom_2", "扩展子图 2", False, False),
+    ("custom_3", "扩展子图 3", False, False),
+    ("custom_4", "扩展子图 4", False, False),
+)
+
 CHARACTER_VIEW_CATALOG = tuple(
     {
-        "type": config["view_type"],
-        "label": config["display_name"],
-        "index": config["index"],
-        "required": config["required"],
-        "default_prompt": config["prompt_templates"]["neutral"],
+        "type": view_type,
+        "label": label,
+        "index": index,
+        "required": False,
+        "can_generate": can_generate,
+        "has_templates": has_templates,
+        "custom": view_type.startswith("custom_"),
+        "default_prompt": (
+            BUILTIN_CHARACTER_VIEW_CONFIGS[view_type]["prompt_templates"]["neutral"]
+            if view_type in BUILTIN_CHARACTER_VIEW_CONFIGS
+            else ""
+        ),
     }
-    for config in BUILTIN_CHARACTER_VIEW_CONFIGS.values()
+    for index, (view_type, label, can_generate, has_templates) in enumerate(
+        _CHARACTER_VIEW_META,
+        1,
+    )
 )
 
 
@@ -86,6 +114,10 @@ CHARACTER_VIEW_ORDER = {
 CHARACTER_REQUIRED_VIEW_TYPES = tuple(
     item["type"] for item in CHARACTER_VIEW_CATALOG if item["required"]
 )
+CHARACTER_GENERATABLE_VIEW_TYPES = tuple(
+    item["type"] for item in CHARACTER_VIEW_CATALOG if item["can_generate"]
+)
+EXPLICIT_CHARACTER_VIEW_TYPES = {"genitals_front", "pelvis_back"}
 
 FEMALE_PROMPT_TAGS = DEFAULT_TAG_OPTIONS
 
@@ -156,31 +188,50 @@ def _view_response(
         (item for item in (view_configs or []) if item["view_type"] == row.view_type),
         None,
     )
-    config = CHARACTER_VIEW_BY_TYPE[row.view_type]
+    config = CHARACTER_VIEW_BY_TYPE.get(row.view_type) or {
+        "label": {
+            "body_front": "旧版全身正面图",
+            "body_side": "旧版全身侧面图",
+            "body_back": "旧版全身背面图",
+        }.get(row.view_type, row.view_type),
+        "default_prompt": "",
+    }
     default_prompt = (default_prompts or {}).get(
         row.view_type, config["default_prompt"]
     )
-    prompt = str(row.prompt or "").strip()
+    prompt = str(getattr(row, "prompt", None) or "").strip()
     previous_default = config["default_prompt"].replace("纯白背景", "纯黑背景")
     if prompt == previous_default:
         prompt = default_prompt
     return {
         "type": row.view_type,
-        "label": runtime_config["display_name"] if runtime_config else config["label"],
+        "label": (
+            str(getattr(row, "display_name", None) or "").strip()
+            or (runtime_config["display_name"] if runtime_config else config["label"])
+        ),
+        "description": str(getattr(row, "description", None) or "").strip() or None,
         "prompt": prompt,
         "default_prompt": default_prompt,
         "tag_groups": (
             list(runtime_config["tag_groups"])
             if runtime_config
-            else list(BUILTIN_CHARACTER_VIEW_CONFIGS[row.view_type]["tag_groups"])
+            else list(
+                BUILTIN_CHARACTER_VIEW_CONFIGS.get(row.view_type, {}).get(
+                    "tag_groups", []
+                )
+            )
         ),
         "tag_options": (
             dict(runtime_config["tag_options"])
             if runtime_config
-            else dict(BUILTIN_CHARACTER_VIEW_CONFIGS[row.view_type]["tag_options"])
+            else dict(
+                BUILTIN_CHARACTER_VIEW_CONFIGS.get(row.view_type, {}).get(
+                    "tag_options", {}
+                )
+            )
         ),
         "status": row.status,
-        "task_id": row.task_id,
+        "task_id": getattr(row, "task_id", None),
         "object_key": row.object_key,
         "preview_url": _presigned_object_url(row.object_key),
     }
@@ -217,19 +268,33 @@ def _response(
         "default_prompts": default_prompts,
         "view_configs": [
             {
-                "type": config["view_type"],
-                "label": config["display_name"],
-                "required": config["required"],
-                "tag_groups": list(config["tag_groups"]),
-                "tag_options": dict(config["tag_options"]),
+                "type": item["type"],
+                "label": (
+                    next(
+                        (
+                            config["display_name"]
+                            for config in (view_configs or [])
+                            if config["view_type"] == item["type"]
+                        ),
+                        item["label"],
+                    )
+                ),
+                "required": False,
+                "can_generate": item["can_generate"],
+                "has_templates": item["has_templates"],
+                "custom": item["custom"],
+                "tag_groups": list(
+                    BUILTIN_CHARACTER_VIEW_CONFIGS.get(item["type"], {}).get(
+                        "tag_groups", []
+                    )
+                ),
+                "tag_options": dict(
+                    BUILTIN_CHARACTER_VIEW_CONFIGS.get(item["type"], {}).get(
+                        "tag_options", {}
+                    )
+                ),
             }
-            for config in (
-                view_configs
-                or [
-                    get_builtin_character_view_config(view_type)
-                    for view_type in BUILTIN_CHARACTER_VIEW_CONFIGS
-                ]
-            )
+            for item in CHARACTER_VIEW_CATALOG
         ],
         "views": [
             _view_response(view, default_prompts, view_configs)
@@ -259,9 +324,7 @@ async def list_characters(*, db, user_id: int) -> list[dict]:
             for view in getattr(row, "views", [])
             if view.status == "ready" and view.object_key
         }
-        if row.status == "draft" and set(CHARACTER_REQUIRED_VIEW_TYPES).issubset(
-            ready_types
-        ):
+        if ready_types and not row.sheet_object_key:
             await _try_auto_materialize_character_sheet(db=db, character=row)
     view_configs = await _runtime_view_configs(db)
     return [_response(row, view_configs=view_configs) for row in rows]
@@ -321,29 +384,94 @@ async def _ensure_character_limit(*, db, user_id: int) -> None:
 
 
 async def create_character_draft(*, db, current_user, payload) -> dict:
-    object_key = await _validate_character_source(
-        user_id=current_user.id,
-        source_object_key=payload.source_object_key,
-    )
+    if (
+        payload.initial_view_type in EXPLICIT_CHARACTER_VIEW_TYPES
+        and not character_explicit_views_enabled()
+    ):
+        raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
     await _ensure_character_limit(db=db, user_id=current_user.id)
+    if payload.template_id:
+        template = await get_active_character_view_template(db, payload.template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="人物子图模板不存在或已停用。")
+        if template.view_type != payload.initial_view_type:
+            raise HTTPException(status_code=400, detail="人物子图模板类型不匹配。")
+        source_key = str(template.object_key).removeprefix(f"{MINIO_BUCKET}/")
+        source_bytes = await asyncio.to_thread(
+            storage.get_file_bytes,
+            source_key,
+            MINIO_BUCKET,
+        )
+        extension = source_key.rsplit(".", 1)[-1].lower()
+    else:
+        source_key = await _validate_character_source(
+            user_id=current_user.id,
+            source_object_key=str(payload.source_object_key),
+        )
+        source_bytes = await asyncio.to_thread(
+            storage.get_file_bytes,
+            source_key,
+            MINIO_BUCKET,
+        )
+        extension = source_key.rsplit(".", 1)[-1].lower()
+    if not source_bytes or extension not in CHARACTER_IMAGE_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="无法读取初始人物子图。")
+
+    character_id = str(uuid.uuid4())
+    durable_key = (
+        f"character_references/{current_user.id}/{character_id}/views/"
+        f"{payload.initial_view_type}-{uuid.uuid4().hex}.{extension}"
+    )
+    uploaded = await asyncio.to_thread(
+        storage.upload_bytes,
+        source_bytes,
+        durable_key,
+        CHARACTER_IMAGE_CONTENT_TYPES[extension],
+        MINIO_BUCKET,
+    )
+    if not uploaded:
+        raise HTTPException(status_code=503, detail="人物初始子图保存失败，请重试。")
+
     row = CharacterReference(
-        id=str(uuid.uuid4()),
+        id=character_id,
         user_id=current_user.id,
         name=payload.name.strip(),
-        description=payload.description.strip(),
-        prompt_profile=payload.prompt_profile.model_dump(),
-        adult_confirmed_at=datetime.now() if payload.adult_confirmed else None,
-        usage_rights_confirmed_at=(
-            datetime.now() if payload.usage_rights_confirmed else None
-        ),
-        source_object_key=f"{MINIO_BUCKET}/{object_key}",
+        description=str(payload.description or "").strip() or None,
+        prompt_profile=(payload.prompt_profile.model_dump() if payload.prompt_profile else None),
+        # Consent/rights are enforced by the upstream account flow. These
+        # timestamps remain populated for old readers without adding duplicate
+        # confirmations to the character workspace.
+        adult_confirmed_at=datetime.now(),
+        usage_rights_confirmed_at=datetime.now(),
+        source_object_key=f"{MINIO_BUCKET}/{durable_key}",
         task_id=str(uuid.uuid4()),
         status="draft",
     )
+    prompts = compose_character_view_prompts(row.prompt_profile)
+    view = CharacterReferenceView(
+        id=str(uuid.uuid4()),
+        character_id=character_id,
+        view_type=payload.initial_view_type,
+        display_name=(
+            str(payload.initial_view_label or "").strip()
+            or CHARACTER_VIEW_BY_TYPE[payload.initial_view_type]["label"]
+        ),
+        description=None,
+        prompt=prompts.get(payload.initial_view_type, ""),
+        object_key=f"{MINIO_BUCKET}/{durable_key}",
+        task_id=None,
+        status="ready",
+    )
     db.add(row)
+    db.add(view)
     await db.commit()
     view_configs = await _runtime_view_configs(db)
-    return _response(row, [], view_configs)
+    return await _materialize_saved_character_sheet(
+        db=db,
+        character=row,
+        views=[view],
+        view_configs=view_configs,
+    )
 
 
 async def confirm_character_identity(
@@ -384,6 +512,11 @@ async def generate_character_view(
 ) -> dict:
     if view_type not in CHARACTER_VIEW_BY_TYPE:
         raise HTTPException(status_code=404, detail="未知的人物子图类型。")
+    if view_type not in CHARACTER_GENERATABLE_VIEW_TYPES:
+        raise HTTPException(
+            status_code=405,
+            detail="该子图只支持选择模板或上传替换，不能调用提示词生成。",
+        )
     character = (
         await db.execute(
             select(CharacterReference).where(
@@ -406,47 +539,7 @@ async def generate_character_view(
     if view is not None and view.status == "pending":
         raise HTTPException(status_code=409, detail="该子图正在生成，请稍候。")
 
-    if view_type == "genitals_front":
-        if not character_explicit_views_enabled():
-            raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
-        if not getattr(character, "adult_confirmed_at", None) or not getattr(
-            character, "usage_rights_confirmed_at", None
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="请先确认人物已成年且拥有素材使用权。",
-            )
-        profile = getattr(character, "prompt_profile", None) or {}
-        if profile.get("gender") not in {"female", "male"}:
-            raise HTTPException(status_code=409, detail="请先设置人物性别。")
-        body_front = (
-            await db.execute(
-                select(CharacterReferenceView).where(
-                    CharacterReferenceView.character_id == character_id,
-                    CharacterReferenceView.view_type == "body_front",
-                )
-            )
-        ).scalar_one_or_none()
-        if (
-            body_front is None
-            or body_front.status != "ready"
-            or not body_front.object_key
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="请先完成全身正面图，再生成生殖器特写。",
-            )
-        body_front_key = str(body_front.object_key).removeprefix(
-            f"{MINIO_BUCKET}/"
-        )
-        if not await storage.async_object_exists(MINIO_BUCKET, body_front_key):
-            raise HTTPException(
-                status_code=409,
-                detail="全身正面图已失效，请先重新生成或上传。",
-            )
-        source_object_key = body_front.object_key
-    else:
-        source_object_key = character.source_object_key
+    source_object_key = character.source_object_key
 
     task_id = str(uuid.uuid4())
     if view is None:
@@ -454,6 +547,8 @@ async def generate_character_view(
             id=str(uuid.uuid4()),
             character_id=character_id,
             view_type=view_type,
+            display_name=CHARACTER_VIEW_BY_TYPE[view_type]["label"],
+            description=None,
             prompt=payload.prompt.strip(),
             task_id=task_id,
             status="pending",
@@ -511,6 +606,8 @@ async def upload_character_view(
     config = CHARACTER_VIEW_BY_TYPE.get(view_type)
     if config is None:
         raise HTTPException(status_code=404, detail="未知的人物子图类型。")
+    if view_type in EXPLICIT_CHARACTER_VIEW_TYPES and not character_explicit_views_enabled():
+        raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
     character = (
         await db.execute(
             select(CharacterReference).where(
@@ -522,19 +619,6 @@ async def upload_character_view(
     ).scalar_one_or_none()
     if character is None:
         raise HTTPException(status_code=404, detail="人物不存在。")
-    if view_type == "genitals_front":
-        if not character_explicit_views_enabled():
-            raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
-        if not getattr(character, "adult_confirmed_at", None) or not getattr(
-            character, "usage_rights_confirmed_at", None
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="请先确认人物已成年且拥有素材使用权。",
-            )
-        profile = getattr(character, "prompt_profile", None) or {}
-        if profile.get("gender") not in {"female", "male"}:
-            raise HTTPException(status_code=409, detail="请先设置人物性别。")
     view = (
         await db.execute(
             select(CharacterReferenceView).where(
@@ -581,22 +665,142 @@ async def upload_character_view(
             id=str(uuid.uuid4()),
             character_id=character_id,
             view_type=view_type,
-            prompt=prompts[view_type],
+            display_name=config["label"],
+            description=None,
+            prompt=prompts.get(view_type, ""),
             task_id=None,
             object_key=f"{MINIO_BUCKET}/{durable_key}",
             status="ready",
         )
         db.add(view)
     else:
-        view.prompt = prompts[view_type]
+        view.prompt = prompts.get(view_type, "")
         view.task_id = None
         view.object_key = f"{MINIO_BUCKET}/{durable_key}"
         view.status = "ready"
         view.updated_at = datetime.now()
     await db.commit()
-    if hasattr(db, "get_bind"):
-        await _try_auto_materialize_character_sheet(db=db, character=character)
+    await _try_auto_materialize_character_sheet(db=db, character=character)
     return _view_response(view, prompts, view_configs)
+
+
+async def list_available_character_view_templates(*, db) -> list[dict]:
+    templates = await list_character_view_templates(db, include_disabled=False)
+    if character_explicit_views_enabled():
+        return templates
+    return [
+        item
+        for item in templates
+        if item["view_type"] not in EXPLICIT_CHARACTER_VIEW_TYPES
+    ]
+
+
+async def apply_character_view_template(
+    *, db, current_user, character_id: str, view_type: str, payload
+) -> dict:
+    config = CHARACTER_VIEW_BY_TYPE.get(view_type)
+    if config is None or not config["has_templates"]:
+        raise HTTPException(status_code=404, detail="该人物子图不支持图片模板。")
+    if view_type in EXPLICIT_CHARACTER_VIEW_TYPES and not character_explicit_views_enabled():
+        raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
+    character = (
+        await db.execute(
+            select(CharacterReference).where(
+                CharacterReference.id == character_id,
+                CharacterReference.user_id == current_user.id,
+                CharacterReference.status != "deleted",
+            )
+        )
+    ).scalar_one_or_none()
+    if character is None:
+        raise HTTPException(status_code=404, detail="人物不存在。")
+    template = await get_active_character_view_template(db, payload.template_id)
+    if template is None or template.view_type != view_type:
+        raise HTTPException(status_code=404, detail="人物子图模板不存在、已停用或类型不匹配。")
+    template_key = str(template.object_key).removeprefix(f"{MINIO_BUCKET}/")
+    image_bytes = await asyncio.to_thread(
+        storage.get_file_bytes,
+        template_key,
+        MINIO_BUCKET,
+    )
+    if not image_bytes:
+        raise HTTPException(status_code=409, detail="人物子图模板文件已失效。")
+    extension = template_key.rsplit(".", 1)[-1].lower()
+    if extension not in CHARACTER_IMAGE_CONTENT_TYPES:
+        raise HTTPException(status_code=409, detail="人物子图模板格式无效。")
+    durable_key = (
+        f"character_references/{current_user.id}/{character_id}/views/"
+        f"{view_type}-{uuid.uuid4().hex}.{extension}"
+    )
+    uploaded = await asyncio.to_thread(
+        storage.upload_bytes,
+        image_bytes,
+        durable_key,
+        CHARACTER_IMAGE_CONTENT_TYPES[extension],
+        MINIO_BUCKET,
+    )
+    if not uploaded:
+        raise HTTPException(status_code=503, detail="人物模板保存失败，请重试。")
+    view = (
+        await db.execute(
+            select(CharacterReferenceView).where(
+                CharacterReferenceView.character_id == character_id,
+                CharacterReferenceView.view_type == view_type,
+            )
+        )
+    ).scalar_one_or_none()
+    if view is None:
+        view = CharacterReferenceView(
+            id=str(uuid.uuid4()),
+            character_id=character_id,
+            view_type=view_type,
+            display_name=config["label"],
+            description=None,
+            prompt="",
+            object_key=f"{MINIO_BUCKET}/{durable_key}",
+            task_id=None,
+            status="ready",
+        )
+        db.add(view)
+    else:
+        if view.status == "pending":
+            raise HTTPException(status_code=409, detail="该子图正在生成，不能应用模板。")
+        view.object_key = f"{MINIO_BUCKET}/{durable_key}"
+        view.task_id = None
+        view.status = "ready"
+        view.updated_at = datetime.now()
+    await db.commit()
+    await _try_auto_materialize_character_sheet(db=db, character=character)
+    view_configs = await _runtime_view_configs(db)
+    return _view_response(view, compose_character_view_prompts(character.prompt_profile), view_configs)
+
+
+async def patch_character_view(
+    *, db, user_id: int, character_id: str, view_type: str, payload
+) -> dict:
+    if view_type not in CHARACTER_VIEW_BY_TYPE:
+        raise HTTPException(status_code=404, detail="未知的人物子图类型。")
+    view = (
+        await db.execute(
+            select(CharacterReferenceView)
+            .join(CharacterReference)
+            .where(
+                CharacterReferenceView.character_id == character_id,
+                CharacterReferenceView.view_type == view_type,
+                CharacterReference.user_id == user_id,
+                CharacterReference.status != "deleted",
+            )
+        )
+    ).scalar_one_or_none()
+    if view is None:
+        raise HTTPException(status_code=404, detail="人物子图不存在。")
+    if payload.display_name is not None:
+        view.display_name = payload.display_name.strip()
+    if payload.description is not None:
+        view.description = payload.description.strip() or None
+    view.updated_at = datetime.now()
+    await db.commit()
+    return _view_response(view)
 
 
 def _read_character_view_bytes(
@@ -617,7 +821,7 @@ def _read_character_view_bytes(
 
 
 def _compose_character_sheet(payloads: list[tuple[int, bytes]]) -> bytes:
-    return compose_ingredients_character_panel(payloads)
+    return compose_character_asset_mosaic(payloads)
 
 
 async def _materialize_saved_character_sheet(
@@ -627,29 +831,26 @@ async def _materialize_saved_character_sheet(
     views: list[CharacterReferenceView],
     view_configs: list[dict] | None = None,
 ) -> dict:
-    ready_by_type = {
-        view.view_type: view
-        for view in views
-        if view.status == "ready" and view.object_key
-    }
-    missing_types = [
-        view_type
-        for view_type in CHARACTER_REQUIRED_VIEW_TYPES
-        if view_type not in ready_by_type
-    ]
-    if missing_types:
+    ready_views = sorted(
+        (
+            view
+            for view in views
+            if view.status == "ready"
+            and view.object_key
+            and view.view_type in CHARACTER_VIEW_BY_TYPE
+        ),
+        key=lambda view: CHARACTER_VIEW_ORDER[view.view_type],
+    )
+    if not ready_views:
         raise HTTPException(
             status_code=409,
-            detail="请生成或上传并完成全部 4 张子图后再保存人物参考图。",
+            detail="人物至少需要一张已完成的子图。",
         )
-    ready_views = [
-        ready_by_type[view_type] for view_type in CHARACTER_REQUIRED_VIEW_TYPES
-    ]
     payloads = await asyncio.to_thread(_read_character_view_bytes, ready_views)
     sheet = await asyncio.to_thread(_compose_character_sheet, payloads)
     object_key = (
         f"character_references/{character.user_id}/{character.id}/"
-        f"{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
+        f"{CHARACTER_ASSET_MOSAIC_VERSION}.png"
     )
     uploaded = await asyncio.to_thread(
         storage.upload_bytes,
@@ -688,10 +889,12 @@ async def _try_auto_materialize_character_sheet(
         .scalars()
         .all()
     )
-    ready_types = {
-        view.view_type for view in views if view.status == "ready" and view.object_key
-    }
-    if not set(CHARACTER_REQUIRED_VIEW_TYPES).issubset(ready_types):
+    if not any(
+        view.status == "ready"
+        and view.object_key
+        and view.view_type in CHARACTER_VIEW_BY_TYPE
+        for view in views
+    ):
         return False
     try:
         await _materialize_saved_character_sheet(
@@ -720,8 +923,6 @@ async def save_character(*, db, user_id: int, character_id: str) -> dict:
     ).scalar_one_or_none()
     if character is None:
         raise HTTPException(status_code=404, detail="人物不存在。")
-    if not str(character.description or "").strip():
-        raise HTTPException(status_code=409, detail="请先填写人物描述。")
     views = (
         (
             await db.execute(
@@ -758,17 +959,14 @@ async def resolve_ready_character_sheet(
         or not row.sheet_object_key
     ):
         raise HTTPException(status_code=400, detail="人物不存在、未就绪或已删除。")
+    # The legacy two-character LTX workflow only accepts its original four-view
+    # panel. New flexible mosaics are intentionally consumed through H3 typed refs.
     if not row.sheet_object_key.endswith(f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"):
         raise HTTPException(
             status_code=400,
-            detail="人物参考图版本已失效，请完成四张子图后重新保存。",
+            detail="人物参考图版本已失效，请重新保存人物。",
         )
     description = str(row.description or "").strip()
-    if not description:
-        raise HTTPException(
-            status_code=400,
-            detail="请先在人物图库填写人物描述。",
-        )
     sheet = row.sheet_object_key
     await release_read_transaction(db)
     return ReadyCharacterIngredient(
@@ -889,7 +1087,7 @@ async def patch_character(*, db, user_id: int, character_id: str, payload) -> di
     if payload.name is not None:
         row.name = payload.name.strip()
     if payload.description is not None:
-        row.description = payload.description.strip()
+        row.description = payload.description.strip() or None
     if payload.prompt_profile is not None:
         current_profile = getattr(row, "prompt_profile", None) or {}
         next_profile = payload.prompt_profile.model_dump()
@@ -943,8 +1141,9 @@ async def finalize_character_reference(
                 candidate.object_key = result_path
             candidate.updated_at = datetime.now()
             await db.commit()
-            if candidate.status == "ready" and hasattr(db, "get"):
-                character = await db.get(CharacterReference, candidate.character_id)
+            character_id = getattr(candidate, "character_id", None)
+            if candidate.status == "ready" and character_id and hasattr(db, "get"):
+                character = await db.get(CharacterReference, character_id)
                 if character is not None and character.status != "deleted":
                     await _try_auto_materialize_character_sheet(
                         db=db,
