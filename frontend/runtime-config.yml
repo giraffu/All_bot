@@ -15,7 +15,7 @@
     "enable_character_explicit_views": true,
     "enable_ltx_video_v2": false,
     "enable_minimax_h3": true,
-    "enable_minimax_h3_entry": false,
+    "enable_minimax_h3_entry": true,
     "enable_minimax_h3_ref2v": true
   },
   "prod": {
