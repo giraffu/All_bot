@@ -80,10 +80,10 @@ class ReferenceAssetFeatureGateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         characters_disabled = request.url.path.startswith(
             "/api/characters"
-        ) and not _env_enabled("CHARACTER_ASSETS_ENABLED")
+        ) and not _env_enabled("CHARACTER_ASSETS_ENABLED", default=False)
         ltx_assets_disabled = request.url.path.startswith(
             "/api/reference-assets"
-        ) and not _env_enabled("LTX_T2V_BACKEND_ENABLED")
+        ) and not _env_enabled("LTX_T2V_BACKEND_ENABLED", default=False)
         if characters_disabled or ltx_assets_disabled:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return await call_next(request)
