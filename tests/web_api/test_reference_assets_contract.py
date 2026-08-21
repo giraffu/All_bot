@@ -75,6 +75,74 @@ async def test_h3_private_character_views_and_uploads_resolve_in_user_order():
 
 
 @pytest.mark.asyncio
+async def test_h3_character_view_descriptions_do_not_bind_output_composition():
+    character = SimpleNamespace(
+        id="character-1",
+        name="Alice",
+        description="synthetic adult identity",
+        status="ready",
+        moderation_status="active",
+        adult_confirmed_at=object(),
+        usage_rights_confirmed_at=object(),
+    )
+    face = SimpleNamespace(
+        view_type="face_front",
+        status="ready",
+        object_key="bot-data/face.png",
+    )
+    body = SimpleNamespace(
+        view_type="body_front",
+        status="ready",
+        object_key="bot-data/body.png",
+    )
+    genitals = SimpleNamespace(
+        view_type="genitals_front",
+        status="ready",
+        object_key="bot-data/genitals.png",
+    )
+
+    result = await resolve_h3_reference_refs(
+        db=_Db(
+            [
+                character,
+                face,
+                character,
+                body,
+                character,
+                genitals,
+            ]
+        ),
+        user_id=7,
+        reference_refs=[
+            {
+                "source": "private_character_view",
+                "character_id": "character-1",
+                "view_type": "face_front",
+            },
+            {
+                "source": "private_character_view",
+                "character_id": "character-1",
+                "view_type": "body_front",
+            },
+            {
+                "source": "private_character_view",
+                "character_id": "character-1",
+                "view_type": "genitals_front",
+            },
+        ],
+        object_size=AsyncMock(return_value=1024),
+        explicit_views_enabled=True,
+    )
+
+    assert "do not copy this close-up crop" in result.descriptions[0]
+    assert "do not copy the reference pose" in result.descriptions[1]
+    assert "Localized anatomy evidence only" in result.descriptions[2]
+    assert "never create an inset, overlay, split screen, or collage" in (
+        result.descriptions[2]
+    )
+
+
+@pytest.mark.asyncio
 async def test_h3_character_reference_rejects_unconfirmed_or_duplicate_assets():
     unconfirmed = SimpleNamespace(
         status="ready",
