@@ -119,6 +119,9 @@ async def test_h3_private_character_sheet_injects_post_creation_child_descriptio
     assert "Only lower-body details" in result.descriptions[0]
     assert "Bare feet with red nail polish" in result.descriptions[0]
     assert "do not reproduce the collage" in result.descriptions[0]
+    assert "exactly one person" in result.descriptions[0]
+    assert "never render a contact sheet, split screen, grid, panels, or duplicate bodies" in result.descriptions[0]
+    assert "do not copy the source backdrop" in result.descriptions[0]
 
 
 @pytest.mark.asyncio
