@@ -167,6 +167,10 @@ DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
+DaSiWa 的 NVIDIA VFX 构建依赖固定为官方 `0.1.0.1` CPython 3.12 ABI3 wheel，按
+`597,321,055` bytes 与 SHA256 `e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905`
+并行分段下载并在安装前合并校验，避免 NVIDIA wheel-stub 的单连接损坏重试；该 wheel
+只属于镜像构建依赖，不进入模型 bundle。
 当前 RTX 5090 运行态保留 DynamicVRAM，但镜像将 AIMDO cast buffer 的
 最大预留从 16 GiB 收紧为 8 GiB，避免 32 GiB 显卡上 PyTorch 只剩
 16 GiB 可分配空间。运行参数同时启用 `--cache-none`，以便在图执行期间尽快
