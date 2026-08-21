@@ -212,10 +212,15 @@ async def resolve_h3_reference_refs(
             character_description = str(character.description or "").strip()
             child_text = "; ".join(child_descriptions)
             description = (
-                f"Adult character {character.name}; composite reference sheet whose panels "
-                "all describe the same character. Use identity, body, clothing, anatomy, "
-                "accessory, and prop evidence according to each visible panel, but do not "
-                f"reproduce the collage or its panel layout. {character_description} {child_text}"
+                f"Adult character {character.name}; IMPORTANT: this is an identity-only "
+                "contact sheet, not a scene or composition reference. Every panel is a "
+                "different observation of the same adult. In the target video, render "
+                "exactly one person in one full-frame continuous scene. Use the panels only "
+                "as evidence for identity, body, clothing, anatomy, accessories, and props; "
+                "do not reproduce the collage or its panel layout. Specifically, never render "
+                "a contact sheet, split screen, grid, panels, or duplicate bodies; do not copy "
+                "the source backdrop, whitespace, framing, or repeated poses. "
+                f"{character_description} {child_text}"
             ).strip()
         else:
             raise CoreDomainError("H3 参考图来源无效。")
