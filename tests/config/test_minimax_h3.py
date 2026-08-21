@@ -45,6 +45,8 @@ def test_web_locales_hide_model_names():
                 "deepthroat": "深喉动作",
                 "pov_missionary": "POV 传教士动作",
                 "footjob": "足交动作",
+                "pussy_stills_v1": "私密部位静帧实验",
+                "titjob": "乳房夹持动作实验",
             }
             if language == "zh"
             else {
@@ -53,6 +55,8 @@ def test_web_locales_hide_model_names():
                 "deepthroat": "Deep-throat motion",
                 "pov_missionary": "POV missionary motion",
                 "footjob": "Footjob motion",
+                "pussy_stills_v1": "Intimate anatomy still-frame experiment",
+                "titjob": "Breast-intercourse motion experiment",
             }
         )
         for model_id, label in expected_new_labels.items():
@@ -85,6 +89,8 @@ def test_web_locales_hide_model_names():
         "VagAssist",
         "HMPussy",
         "HMPenis",
+        "HMPussy V1 Stills",
+        "Better Titfuck",
     ):
         assert private_term not in public_copy
 
@@ -109,7 +115,7 @@ def test_minimax_h3_image_pins_parallel_nvidia_vfx_build_dependency():
     assert "--parallelism 12" in dockerfile
 
 
-def test_minimax_h3_exposes_fourteen_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_sixteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
@@ -125,6 +131,8 @@ def test_minimax_h3_exposes_fourteen_local_addons_and_defaults_to_none():
         "pussy",
         "penis",
         "cumshot",
+        "pussy_stills_v1",
+        "titjob",
     )
     assert build_minimax_h3_spec(MINIMAX_H3_T2V, {}).addon_items == ()
 
@@ -143,6 +151,16 @@ def test_minimax_h3_pins_new_and_updated_addon_contracts():
     )
     assert MINIMAX_H3_ADDON_MODELS["cumshot"].default_strength == 0.9
     assert MINIMAX_H3_ADDON_MODELS["cumshot"].prompt_prefix == "hmcumshot3"
+    assert MINIMAX_H3_ADDON_MODELS["pussy_stills_v1"].model_path == (
+        "MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["pussy_stills_v1"].default_strength == 0.35
+    assert MINIMAX_H3_ADDON_MODELS["pussy_stills_v1"].prompt_prefix == "pussy"
+    assert MINIMAX_H3_ADDON_MODELS["titjob"].model_path == (
+        "MiniMaxH3/Titjob_Titfuck_V1-MiniMaxh3_ComfyTinker.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["titjob"].default_strength == 0.75
+    assert MINIMAX_H3_ADDON_MODELS["titjob"].prompt_prefix == "titjob"
 
 
 def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():

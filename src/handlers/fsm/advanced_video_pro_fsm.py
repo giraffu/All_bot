@@ -21,6 +21,7 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    MINIMAX_H3_MAX_ADDON_ITEMS,
 )
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -75,6 +76,9 @@ ADDON_EFFECT_LABELS = {
     "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
     "pussy": ("阴道细节", "Vaginal detail"),
     "penis": ("阴茎细节", "Penile detail"),
+    "cumshot": ("射精动作", "Ejaculation motion"),
+    "pussy_stills_v1": ("私密部位静帧实验", "Intimate anatomy still-frame experiment"),
+    "titjob": ("乳房夹持动作实验", "Breast-intercourse motion experiment"),
 }
 
 
@@ -138,7 +142,7 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                _text(context, "全选效果", "Select all effects"),
+                _text(context, "选满效果", "Select max effects"),
                 callback_data="avp_addon_all",
             ),
             InlineKeyboardButton(
@@ -311,6 +315,14 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             show_alert=True,
         )
         return ConversationHandler.END
+    raw_selected = data.get("addon_models")
+    if not isinstance(raw_selected, list):
+        raw_selected = []
+    data["addon_models"] = [
+        model_id
+        for model_id in raw_selected
+        if model_id in MINIMAX_H3_ADDON_MODELS
+    ][:MINIMAX_H3_MAX_ADDON_ITEMS]
     value = str(query.data or "")
     if value.startswith("avp_mode_"):
         mode = value.removeprefix("avp_mode_")
@@ -334,11 +346,13 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if addon == "none":
             selected.clear()
         elif addon == "all":
-            data["addon_models"] = list(MINIMAX_H3_ADDON_MODELS)
+            data["addon_models"] = list(MINIMAX_H3_ADDON_MODELS)[
+                :MINIMAX_H3_MAX_ADDON_ITEMS
+            ]
         elif addon in MINIMAX_H3_ADDON_MODELS:
             if addon in selected:
                 selected.remove(addon)
-            else:
+            elif len(selected) < MINIMAX_H3_MAX_ADDON_ITEMS:
                 selected.append(addon)
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]

@@ -517,7 +517,7 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 3
+    assert options["ai_video_addon_models_version"] == 4
     assert options["ai_video_addon_models"] == [
         {
             "value": model.id,
@@ -527,9 +527,9 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
         for model in MINIMAX_H3_ADDON_MODELS.values()
     ]
     assert options["ai_video_addon_models"][-1] == {
-        "value": "cumshot",
-        "label": "HMCumshot v0.5（射精动作）",
-        "default_strength": 0.9,
+        "value": "titjob",
+        "label": "Better Titfuck v0.5（乳房夹持动作实验）",
+        "default_strength": 0.75,
     }
 
 

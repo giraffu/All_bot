@@ -288,6 +288,36 @@ def test_minimax_h3_worker_chains_new_action_loras_and_injects_declared_triggers
     assert workflow["30"]["inputs"]["prompt"] == "inniepussy, fj., scene"
 
 
+def test_minimax_h3_worker_chains_new_stills_and_titjob_loras_with_triggers():
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+    patch_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={
+            "prompt": "scene",
+            "lora_items": [
+                {"name": "pussy_stills_v1"},
+                {"name": "titjob"},
+            ],
+        },
+    )
+
+    assert workflow["100"]["inputs"] == {
+        "model": ["8", 0],
+        "lora_name": "MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors",
+        "strength_model": 0.35,
+    }
+    assert workflow["101"]["inputs"] == {
+        "model": ["100", 0],
+        "lora_name": "MiniMaxH3/Titjob_Titfuck_V1-MiniMaxh3_ComfyTinker.safetensors",
+        "strength_model": 0.75,
+    }
+    assert workflow["2"]["inputs"]["model"] == ["101", 0]
+    assert workflow["30"]["inputs"]["prompt"] == "pussy, titjob, scene"
+
+
 def test_minimax_h3_worker_uses_prompt_without_trigger_injection():
     workflow = json.loads(
         Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
