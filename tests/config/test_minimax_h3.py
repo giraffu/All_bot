@@ -96,6 +96,19 @@ def test_minimax_h3_image_bounds_aimdo_cast_reservation():
     assert "DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 8 * 1024 ** 3" in dockerfile
 
 
+def test_minimax_h3_image_pins_parallel_nvidia_vfx_build_dependency():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "workers/runpod_profiles/minimax_h3/Dockerfile").read_text()
+
+    assert "NVIDIA_VFX_WHEEL_SIZE=597321055" in dockerfile
+    assert (
+        "NVIDIA_VFX_WHEEL_SHA256="
+        "e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905"
+    ) in dockerfile
+    assert "download_pinned_file.py" in dockerfile
+    assert "--parallelism 12" in dockerfile
+
+
 def test_minimax_h3_exposes_fourteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
