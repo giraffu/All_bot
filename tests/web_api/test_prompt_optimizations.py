@@ -238,7 +238,7 @@ async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
 
 
 @pytest.mark.asyncio
-async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_picture_order(
+async def test_submit_h3_ref2v_resolves_character_view_and_upload_in_picture_order(
     monkeypatch,
 ):
     class SessionFactory:
@@ -256,7 +256,7 @@ async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_pictur
     resolve = AsyncMock(
         return_value=ResolvedH3ReferenceSet(
             images=(
-                "character_references/7/alice/character-asset-mosaic-v1.png",
+                "character_references/7/alice/views/face.png",
                 "staging/user-uploads/7/prop.png",
             ),
             descriptions=(
@@ -309,6 +309,13 @@ async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_pictur
     assert "front face identity reference" in inputs["prompt_config_snapshot"][
         "user_message"
     ]
+    assert "Reference-to-target binding (mandatory)" in inputs[
+        "prompt_config_snapshot"
+    ]["user_message"]
+    assert (
+        "The one and only person in the target video is the person from <Picture 1>"
+        in inputs["prompt_config_snapshot"]["user_message"]
+    )
 
 
 @pytest.mark.asyncio

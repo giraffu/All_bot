@@ -102,7 +102,7 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
     resolve = AsyncMock(
         return_value=ResolvedH3ReferenceSet(
-            images=("character_references/123/alice/character-asset-mosaic-v1.png", "staging/user-uploads/123/style.png"),
+            images=("character_references/123/alice/views/face.png", "staging/user-uploads/123/style.png"),
             descriptions=("Adult character Alice; front face identity reference.", "User-uploaded visual reference."),
         )
     )
@@ -142,6 +142,12 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
     submitted = submit.await_args.kwargs["inputs"]
     assert submitted["images"] == list(resolve.return_value.images)
     assert submitted["reference_descriptions"] == list(resolve.return_value.descriptions)
+    assert submitted["prompt"].startswith("Reference-to-target binding (mandatory):")
+    assert (
+        "The one and only person in the target video is the person from <Picture 1>"
+        in submitted["prompt"]
+    )
+    assert submitted["prompt"].endswith("Alice walks toward the camera")
     assert "reference_refs" not in submitted
 
 
