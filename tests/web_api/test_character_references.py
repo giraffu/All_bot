@@ -621,6 +621,8 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
     )
 
     assert result["status"] == "ready"
+
+
     assert result["sheet_object_key"].endswith(
         "/character-1/ingredients-character-panel-v3.png"
     )
@@ -635,6 +637,59 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         assert panel.getpixel((1056, 448)) == (0, 0, 255)
         assert panel.getpixel((1376, 448)) == (255, 255, 0)
         assert panel.getpixel((600, 32)) == (255, 255, 255)
+
+
+@pytest.mark.asyncio
+async def test_ready_child_views_automatically_materialize_the_character_panel(monkeypatch):
+    character = SimpleNamespace(
+        id="character-auto",
+        user_id=123,
+        name="Alice",
+        description="adult character",
+        status="draft",
+        task_id="draft-auto",
+        source_object_key=f"{MINIO_BUCKET}/source.png",
+        sheet_object_key=None,
+        updated_at=None,
+    )
+    views = [
+        SimpleNamespace(
+            view_type=view_type,
+            prompt=view_type,
+            status="ready",
+            task_id=f"task-{view_type}",
+            object_key=f"{MINIO_BUCKET}/views/{view_type}.png",
+        )
+        for view_type in service.CHARACTER_REQUIRED_VIEW_TYPES
+    ]
+    db = _Session([views])
+    monkeypatch.setattr(
+        service,
+        "_read_character_view_bytes",
+        MagicMock(return_value=[(0, b"front")]),
+    )
+    monkeypatch.setattr(
+        service,
+        "_compose_character_sheet",
+        MagicMock(return_value=b"panel"),
+    )
+    monkeypatch.setattr(
+        service.storage,
+        "upload_bytes",
+        MagicMock(return_value="stored"),
+    )
+
+    materialized = await service._try_auto_materialize_character_sheet(
+        db=db,
+        character=character,
+    )
+
+    assert materialized is True
+    assert character.status == "ready"
+    assert character.sheet_object_key.endswith(
+        f"/{service.INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
+    )
+    assert db.commit.await_count == 1
 
 
 @pytest.mark.asyncio

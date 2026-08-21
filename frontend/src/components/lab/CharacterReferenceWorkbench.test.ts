@@ -11,6 +11,8 @@ const {
   error,
   fetchCapacity,
   generateView,
+  generateMissingViews,
+  rename,
   refresh,
   storeItems,
   uploadFile,
@@ -20,6 +22,8 @@ const {
   error: vi.fn(),
   fetchCapacity: vi.fn(),
   generateView: vi.fn(),
+  generateMissingViews: vi.fn(),
+  rename: vi.fn(),
   refresh: vi.fn(),
   storeItems: [] as any[],
   uploadFile: vi.fn(),
@@ -31,6 +35,9 @@ vi.mock('@/stores/characters', () => ({
     items: storeItems,
     refresh,
     generateView,
+    generateMissingViews,
+    rename,
+    batchRuns: {},
     getBatchCapacity: fetchCapacity,
     createDraft,
     uploadView,
@@ -100,6 +107,17 @@ describe('CharacterReferenceWorkbench', () => {
         body_side: '侧面默认提示词',
         body_back: '背面默认提示词',
       },
+      view_configs: [
+        {
+          type: 'face_front',
+          label: '后台正脸名称',
+          required: true,
+          tag_groups: ['skin_tone'],
+          tag_options: {
+            skin_tone: { fair: '白皙肤色', asian_yellow: '亚洲黄色肤色', asian_tan: '晒黑肤色' },
+          },
+        },
+      ],
       views: [
         { type: 'face_front', status: 'ready', preview_url: 'front.png' },
         { type: 'body_front', status: 'ready', preview_url: 'body.png' },
@@ -107,6 +125,8 @@ describe('CharacterReferenceWorkbench', () => {
     })
     refresh.mockResolvedValue(undefined)
     generateView.mockResolvedValue(undefined)
+    generateMissingViews.mockResolvedValue({ submitted: 2, failed: 0, cancelled: false })
+    rename.mockResolvedValue(undefined)
     uploadFile.mockResolvedValue('web_uploads/123/front.png')
     uploadView.mockResolvedValue(undefined)
     fetchCapacity.mockResolvedValue({ limit: 3, active: 1, available: 2 })
@@ -121,7 +141,7 @@ describe('CharacterReferenceWorkbench', () => {
     })
   })
 
-  it('shows female trait groups and hides them for male characters', async () => {
+  it('hides trait tags on the initial page and shows only active-view tags below its prompt', async () => {
     const wrapper = mount(CharacterReferenceWorkbench, {
       global: {
         stubs: {
@@ -134,14 +154,18 @@ describe('CharacterReferenceWorkbench', () => {
         },
       },
     })
-    expect(wrapper.find('[data-testid="female-options"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="male-note"]').exists()).toBe(false)
-
-    ;(wrapper.vm as any).selectGender('male')
-    await nextTick()
-
+    expect(wrapper.find('[data-testid="active-view-options"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="female-options"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="male-note"]').exists()).toBe(true)
+    ;(wrapper.vm as any).draftId = 'character-1'
+    await nextTick()
+    expect(wrapper.find('[data-testid="active-view-options"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('characters.profile_groups.skin_tone')
+    expect(wrapper.text()).not.toContain('characters.profile_groups.breast_size')
+
+    await (wrapper.vm as any).selectFemaleTag('skin_tone', 'fair')
+    expect(rename).toHaveBeenCalledWith('character-1', {
+      prompt_profile: expect.objectContaining({ gender: 'female', skin_tone: 'fair' }),
+    })
   })
 
   it('submits selected tags and hydrates prompts from the backend response', async () => {
@@ -287,12 +311,13 @@ describe('CharacterReferenceWorkbench', () => {
     await wrapper.get('[data-testid="generate-missing-views"]').trigger('click')
     await flushPromises()
 
-    expect(fetchCapacity).toHaveBeenCalledOnce()
-    expect(generateView).toHaveBeenCalledTimes(2)
-    expect(generateView.mock.calls.map(call => call[1])).toEqual([
-      'body_side',
-      'body_back',
-    ])
-    expect(generateView.mock.calls.every(call => call.at(-1) === false)).toBe(true)
+    expect(generateMissingViews).toHaveBeenCalledWith(
+      'character-1',
+      [
+        { type: 'body_side', prompt: '侧面默认提示词', label: 'characters.views.body_side' },
+        { type: 'body_back', prompt: '背面默认提示词', label: 'characters.views.body_back' },
+      ],
+      'free_edit_v2_5',
+    )
   })
 })

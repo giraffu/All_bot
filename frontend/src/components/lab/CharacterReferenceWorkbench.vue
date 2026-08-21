@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { CheckCircle2, ImagePlus, RefreshCw, Sparkles } from 'lucide-vue-next'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 
 import type {
   CharacterReference,
@@ -13,10 +12,7 @@ import type {
   CharacterViewType,
 } from '@/api/characters'
 import { useUpload } from '@/composables/useUpload'
-import {
-  getMissingCharacterViewTypes,
-  runCharacterViewBatch,
-} from '@/features/characters/characterBatchGeneration'
+import { getMissingCharacterViewTypes } from '@/features/characters/characterBatchGeneration'
 import {
   CHARACTER_VIEW_ENGINE_OPTIONS,
   getCharacterViewEngineCost,
@@ -52,14 +48,8 @@ const EXPLICIT_VIEW_DEFINITION: ViewDefinition = {
   labelKey: 'characters.views.genitals_front',
 }
 const GENDER_OPTIONS = ['female', 'male'] as const
-const FEMALE_TAG_GROUPS = [
-  { key: 'breast_size', values: ['large', 'natural', 'flat'] },
-  { key: 'pubic_hair', values: ['full', 'natural', 'none'] },
-  { key: 'skin_tone', values: ['fair', 'asian_yellow', 'asian_tan'] },
-] as const
 
 const { t } = useI18n()
-const router = useRouter()
 const store = useCharactersStore()
 const { uploading, uploadFile } = useUpload()
 const name = ref('')
@@ -78,17 +68,11 @@ const creatingDraft = ref(false)
 const generatingView = ref<CharacterViewType | null>(null)
 const uploadingView = ref<CharacterViewType | null>(null)
 const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
-const saving = ref(false)
-const batchGenerating = ref(false)
-const batchSubmitted = ref(0)
-const batchTotal = ref(0)
 const prompts = reactive<Record<CharacterViewType, string>>(
   Object.fromEntries(
     [...REQUIRED_VIEW_DEFINITIONS, EXPLICIT_VIEW_DEFINITION].map(view => [view.type, '']),
   ) as Record<CharacterViewType, string>,
 )
-let refreshTimer: ReturnType<typeof setTimeout> | null = null
-let batchRunId = 0
 
 const draft = computed<CharacterReference | null>(() => (
   store.items.find(item => item.id === draftId.value) ?? null
@@ -107,6 +91,13 @@ const activeDefinition = computed(() => (
 const activeView = computed<CharacterReferenceView | undefined>(() => (
   viewMap.value.get(activeViewType.value)
 ))
+const activeViewConfig = computed(() => (
+  draft.value?.view_configs?.find(config => config.type === activeViewType.value)
+))
+const viewLabel = (definition: ViewDefinition) => (
+  draft.value?.view_configs?.find(config => config.type === definition.type)?.label
+  ?? t(definition.labelKey)
+)
 const readyCount = computed(() => (
   REQUIRED_VIEW_DEFINITIONS.filter(definition => (
     viewMap.value.get(definition.type)?.status === 'ready'
@@ -115,12 +106,10 @@ const readyCount = computed(() => (
 const hasPendingView = computed(() => (
   draft.value?.views.some(view => view.status === 'pending') ?? false
 ))
-const hasPendingRequiredView = computed(() => (
-  draft.value?.views.some(view => (
-    view.status === 'pending'
-    && REQUIRED_VIEW_DEFINITIONS.some(definition => definition.type === view.type)
-  )) ?? false
-))
+const batchState = computed(() => draftId.value ? store.batchRuns?.[draftId.value] : undefined)
+const batchGenerating = computed(() => batchState.value?.running ?? false)
+const batchSubmitted = computed(() => batchState.value?.submitted ?? 0)
+const batchTotal = computed(() => batchState.value?.total ?? 0)
 const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 const missingViewTypes = computed(() => getMissingCharacterViewTypes(
   REQUIRED_VIEW_DEFINITIONS.map(view => view.type),
@@ -151,10 +140,11 @@ const restorePrompt = (viewType: CharacterViewType) => {
 const selectGender = (gender: 'female' | 'male') => {
   promptProfile.gender = gender
 }
-const selectFemaleTag = (
+const selectFemaleTag = async (
   key: 'breast_size' | 'pubic_hair' | 'skin_tone',
   value: string,
 ) => {
+  const previousDefaults = { ...(draft.value?.default_prompts ?? {}) }
   if (key === 'breast_size') {
     promptProfile.breast_size = value as Required<CharacterPromptProfile>['breast_size']
   } else if (key === 'pubic_hair') {
@@ -162,12 +152,14 @@ const selectFemaleTag = (
   } else {
     promptProfile.skin_tone = value as Required<CharacterPromptProfile>['skin_tone']
   }
-}
-
-const refreshDraft = async () => {
-  await store.refresh()
-  if (draftId.value && hasPendingView.value) {
-    refreshTimer = setTimeout(() => void refreshDraft(), 4000)
+  if (draftId.value) {
+    await store.rename(draftId.value, { prompt_profile: profilePayload.value })
+    for (const definition of viewDefinitions.value) {
+      const previousDefault = previousDefaults[definition.type]
+      if (!prompts[definition.type] || prompts[definition.type] === previousDefault) {
+        restorePrompt(definition.type)
+      }
+    }
   }
 }
 
@@ -226,13 +218,11 @@ const generateView = async () => {
       activeViewType.value,
       prompt,
       selectedEngine.value,
-      t(activeDefinition.value.labelKey),
+      viewLabel(activeDefinition.value),
     )
     message.success(t('characters.view_submitted', {
-      view: t(activeDefinition.value.labelKey),
+      view: viewLabel(activeDefinition.value),
     }))
-    if (refreshTimer) clearTimeout(refreshTimer)
-    refreshTimer = setTimeout(() => void refreshDraft(), 2500)
   } finally {
     generatingView.value = null
   }
@@ -254,64 +244,31 @@ const beforeViewUpload = async (file: File) => {
     if (!objectKey || !draftId.value) return false
     await store.uploadView(draftId.value, viewType, objectKey)
     message.success(t('characters.view_uploaded', {
-      view: t(activeDefinition.value.labelKey),
+      view: viewLabel(activeDefinition.value),
     }))
-    await refreshDraft()
+    await store.refresh()
   } finally {
     uploadingView.value = null
   }
   return false
 }
 
-const isConcurrencyLimitError = (error: unknown) => {
-  const response = (error as {
-    response?: { status?: number; data?: { detail?: unknown } }
-  })?.response
-  return response?.status === 429
-    && typeof response.data?.detail === 'string'
-    && response.data.detail.includes('正在处理中')
-}
-
-const waitForBatchCapacity = async () => {
-  await new Promise(resolve => setTimeout(resolve, 4000))
-  await store.refresh()
-}
-
 const generateMissingViews = async () => {
   if (!draftId.value || batchGenerating.value) return
   const queuedViewTypes = [...missingViewTypes.value]
   if (queuedViewTypes.length === 0) return
-
-  const runId = ++batchRunId
-  batchGenerating.value = true
-  batchSubmitted.value = 0
-  batchTotal.value = queuedViewTypes.length
   try {
-    const result = await runCharacterViewBatch({
-      viewTypes: queuedViewTypes,
-      getCapacity: store.getBatchCapacity,
-      submit: async (viewType) => {
-        if (!draftId.value) return
+    const result = await store.generateMissingViews(
+      draftId.value,
+      queuedViewTypes.map((viewType) => {
         const definition = REQUIRED_VIEW_DEFINITIONS.find(view => view.type === viewType)!
         const prompt = prompts[viewType].trim()
         if (!prompt) throw new Error(`Missing prompt for ${viewType}`)
-        await store.generateView(
-          draftId.value,
-          viewType,
-          prompt,
-          selectedEngine.value,
-          t(definition.labelKey),
-          false,
-        )
-      },
-      waitForCapacity: waitForBatchCapacity,
-      isActive: () => runId === batchRunId,
-      shouldRetry: isConcurrencyLimitError,
-      onProgress: ({ submitted }) => {
-        batchSubmitted.value = submitted
-      },
-    })
-    if (!result.cancelled) {
+        return { type: viewType, prompt, label: viewLabel(definition) }
+      }),
+      selectedEngine.value,
+    )
+    if (result && !result.cancelled) {
       if (result.failed > 0) {
         message.warning(t('characters.batch_submitted_with_failures', {
           submitted: result.submitted,
@@ -326,29 +283,10 @@ const generateMissingViews = async () => {
   } catch (error) {
     console.error('Failed to batch-generate character views:', error)
     message.error(t('characters.batch_submit_failed'))
-  } finally {
-    if (runId === batchRunId) {
-      batchGenerating.value = false
-      await refreshDraft()
-    }
-  }
-}
-
-const saveReference = async () => {
-  if (!draftId.value || readyCount.value !== REQUIRED_VIEW_DEFINITIONS.length) return
-  saving.value = true
-  try {
-    await store.saveReference(draftId.value)
-    message.success(t('characters.saved_to_library'))
-    await router.push({ name: 'MyFavorites', query: { tab: 'characters' } })
-  } finally {
-    saving.value = false
   }
 }
 
 const resetWorkspace = () => {
-  batchRunId += 1
-  batchGenerating.value = false
   draftId.value = null
   name.value = ''
   description.value = ''
@@ -368,8 +306,6 @@ const resetWorkspace = () => {
 
 onMounted(() => void store.refresh())
 onBeforeUnmount(() => {
-  batchRunId += 1
-  if (refreshTimer) clearTimeout(refreshTimer)
   if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
 })
 </script>
@@ -451,26 +387,6 @@ onBeforeUnmount(() => {
               <div class="mt-1 text-xs opacity-70">{{ t(`characters.gender.${gender}_hint`) }}</div>
             </button>
           </div>
-          <div v-if="promptProfile.gender === 'female'" class="mt-4 grid gap-4" data-testid="female-options">
-            <div v-for="group in FEMALE_TAG_GROUPS" :key="group.key">
-              <div class="mb-2 text-xs font-semibold opacity-75">{{ t(`characters.profile_groups.${group.key}`) }}</div>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="value in group.values"
-                  :key="value"
-                  type="button"
-                  class="character-workbench__pill rounded-full border px-3 py-2 text-xs font-semibold"
-                  :class="{ 'character-workbench__pill--active': promptProfile[group.key] === value }"
-                  @click="selectFemaleTag(group.key, value)"
-                >
-                  {{ t(`characters.profile_options.${group.key}.${value}`) }}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div v-else class="character-workbench__male-note mt-4 rounded-2xl px-4 py-3 text-xs leading-5" data-testid="male-note">
-            {{ t('characters.male_prompt_note') }}
-          </div>
         </div>
         <div class="character-workbench__notice rounded-2xl px-4 py-3 text-sm leading-6">
           {{ t('characters.billing_hint') }}
@@ -511,7 +427,7 @@ onBeforeUnmount(() => {
           @click="activeViewType = definition.type"
         >
           <div class="flex items-center justify-between gap-2">
-            <span class="text-sm font-semibold">{{ t(definition.labelKey) }}</span>
+            <span class="text-sm font-semibold">{{ viewLabel(definition) }}</span>
             <CheckCircle2
               v-if="viewMap.get(definition.type)?.status === 'ready'"
               :size="16"
@@ -548,7 +464,7 @@ onBeforeUnmount(() => {
           />
           <div v-else class="px-6 text-center">
             <ImagePlus :size="40" class="mx-auto opacity-60" />
-            <div class="mt-3 font-semibold">{{ t(activeDefinition.labelKey) }}</div>
+            <div class="mt-3 font-semibold">{{ viewLabel(activeDefinition) }}</div>
             <div class="mt-2 text-sm leading-6 opacity-70">
               {{ t('characters.view_empty_hint') }}
             </div>
@@ -575,6 +491,28 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 8, maxRows: 14 }"
             :placeholder="t('characters.view_prompt_placeholder')"
           />
+          <div
+            v-if="promptProfile.gender === 'female' && activeViewConfig?.tag_groups.length"
+            class="character-workbench__profile mt-4 grid gap-4 rounded-2xl border p-4"
+            data-testid="active-view-options"
+          >
+            <div class="text-sm font-semibold">{{ t('characters.active_view_tags') }}</div>
+            <div v-for="group in activeViewConfig.tag_groups" :key="group">
+              <div class="mb-2 text-xs font-semibold opacity-75">{{ t(`characters.profile_groups.${group}`) }}</div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="(_, value) in activeViewConfig.tag_options[group]"
+                  :key="value"
+                  type="button"
+                  class="character-workbench__pill rounded-full border px-3 py-2 text-xs font-semibold"
+                  :class="{ 'character-workbench__pill--active': promptProfile[group] === value }"
+                  @click="selectFemaleTag(group, String(value))"
+                >
+                  {{ t(`characters.profile_options.${group}.${String(value)}`) }}
+                </button>
+              </div>
+            </div>
+          </div>
           <div class="mt-4">
             <div class="mb-2 text-sm font-semibold">
               {{ t('characters.engine_label') }}
@@ -652,23 +590,13 @@ onBeforeUnmount(() => {
           <div class="mt-2 text-center text-xs opacity-70">
             {{ t('characters.batch_concurrency_hint') }}
           </div>
-          <div class="character-workbench__save mt-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="character-workbench__save mt-5 flex flex-col gap-3 rounded-2xl border p-4">
             <div>
-              <div class="font-semibold">{{ t('characters.save_reference_title') }}</div>
+              <div class="font-semibold">{{ t('characters.auto_save_reference_title') }}</div>
               <div class="mt-1 text-xs opacity-70">
-                {{ readyCount === REQUIRED_VIEW_DEFINITIONS.length ? t('characters.save_ready_hint') : t('characters.save_need_four') }}
+                {{ draft.status === 'ready' ? t('characters.auto_saved_to_library') : t('characters.auto_save_in_progress') }}
               </div>
             </div>
-            <a-button
-              type="primary"
-              ghost
-              class="shrink-0 rounded-xl"
-              :disabled="readyCount !== REQUIRED_VIEW_DEFINITIONS.length || hasPendingRequiredView"
-              :loading="saving"
-              @click="saveReference"
-            >
-              {{ draft.status === 'ready' ? t('characters.update_reference') : t('characters.save_to_library') }}
-            </a-button>
           </div>
         </div>
       </div>
