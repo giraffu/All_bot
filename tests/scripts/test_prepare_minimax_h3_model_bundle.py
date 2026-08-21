@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 
 import pytest
 import yaml
@@ -7,7 +8,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_two_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -97,8 +98,20 @@ def test_split_author_stack_uses_exact_twenty_pinned_assets():
         "6e293977389020e2e327d5e375cdc55352659f0ac61b41f270ec5ddf453fc620",
         298_260_800,
     )
-    assert len(files) == 20
-    assert sum(entry[2] for entry in module.FILES) == 110_253_208_359
+    assert files["loras/MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors"][1:4] == (
+        "373c3cad3bf27047fdd754fe111443d97e70e3108a8829f2ec63c48832466eb3",
+        77_580_008,
+        "https://civitai.red/api/download/models/3252213?fileId=3135252",
+    )
+    assert files[
+        "loras/MiniMaxH3/Titjob_Titfuck_V1-MiniMaxh3_ComfyTinker.safetensors"
+    ][1:4] == (
+        "4a0679c613a5c52d8fd59c48455996402206eefa347939e5bbc736b530d196f5",
+        155_110_304,
+        "https://civitai.red/api/download/models/3252313?fileId=3135351",
+    )
+    assert len(files) == 22
+    assert sum(entry[2] for entry in module.FILES) == 110_485_898_671
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):
@@ -108,6 +121,24 @@ def test_naughtytimes_download_requires_civitai_token(monkeypatch):
             "https://civitai.red/api/download/models/3212436?fileId=3094173",
             offset=0,
         )
+
+
+def test_model_bundle_catalog_matches_prepare_script():
+    catalog = yaml.safe_load(
+        Path("ops/gpu_pool_controller/config/model_bundles.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    bundle = catalog["bundles"][module.BUNDLE]
+
+    assert bundle["version"] == module.VERSION
+    assert {
+        item["relative_path"]: (item["sha256"], item["size_bytes"])
+        for item in bundle["files"]
+    } == {
+        relative_path: (sha256, size_bytes)
+        for relative_path, sha256, size_bytes, _url in module.FILES
+    }
 
 
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):

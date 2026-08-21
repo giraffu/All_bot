@@ -4,7 +4,7 @@ AI 视频场景面向用户统一称为“高级图生视频pro”。`ai_video_s
 `i2v|ref2v`，缺失时兼容为 I2V；旧普通场景提交 H3 I2V，配置尾帧生成链的旧场景提交
 H3 FLF2V。REF2V 场景由用户上传 1 张主体图，拼接管理员配置的 1–4 张有序参考图，
 固定画幅并由服务端派生价格。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
-清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 14 个可选附加模型，配置
+清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 16 个可选附加模型，配置
 后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
 值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
@@ -140,7 +140,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, resolution, lora_items, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；14 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, resolution, lora_items, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；16 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数；缺失字段按 `null` 归一，无需迁移。固定价只读取用户直接点击的根场景，代表完整链总价；清空恢复旧动态/分段计费。新增场景从 options 读取默认值：AI动图 `6`、AI视频 `10`、AI绘图/AI滤镜 `2`。修改模型、时长、尾帧或后处理不会自动改价。

@@ -187,6 +187,22 @@ MINIMAX_H3_ADDON_MODELS = {
         0.9,
         "hmcumshot3",
     ),
+    "pussy_stills_v1": MiniMaxH3AddonModel(
+        "pussy_stills_v1",
+        "HMPussy V1 Stills（私密部位静帧实验）",
+        "HMPussy V1 Stills (intimate anatomy still-frame experiment)",
+        "MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors",
+        0.35,
+        "pussy",
+    ),
+    "titjob": MiniMaxH3AddonModel(
+        "titjob",
+        "Better Titfuck v0.5（乳房夹持动作实验）",
+        "Better Titfuck v0.5 (breast-intercourse motion experiment)",
+        "MiniMaxH3/Titjob_Titfuck_V1-MiniMaxh3_ComfyTinker.safetensors",
+        0.75,
+        "titjob",
+    ),
 }
 
 

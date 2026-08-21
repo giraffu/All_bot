@@ -39,6 +39,16 @@ describe('labModeConfig', () => {
       labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot',
       defaultStrength: 0.9,
     })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'pussy_stills_v1',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.pussy_stills_v1',
+      defaultStrength: 0.35,
+    })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'titjob',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.titjob',
+      defaultStrength: 0.75,
+    })
   })
 
   it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {
