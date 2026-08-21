@@ -42,7 +42,20 @@ export function installAntDesign(app: App) {
   registerAsyncComponent(app, 'a-button', () => import('ant-design-vue/es/button'))
   registerAsyncComponent(app, 'a-card', () => import('ant-design-vue/es/card'))
   registerAsyncComponent(app, 'a-checkbox', () => import('ant-design-vue/es/checkbox'))
+  registerAsyncComponent(
+    app,
+    'a-checkbox-group',
+    () => import('ant-design-vue/es/checkbox'),
+    namedExport('CheckboxGroup')
+  )
   registerAsyncComponent(app, 'a-col', () => import('ant-design-vue/es/col'))
+  registerAsyncComponent(app, 'a-collapse', () => import('ant-design-vue/es/collapse'))
+  registerAsyncComponent(
+    app,
+    'a-collapse-panel',
+    () => import('ant-design-vue/es/collapse'),
+    namedExport('CollapsePanel')
+  )
   registerAsyncComponent(app, 'a-date-picker', () => import('ant-design-vue/es/date-picker'))
   registerAsyncComponent(app, 'a-range-picker', () => import('ant-design-vue/es/date-picker'), (module) => {
     const datePicker = defaultExport(module) as Component & { RangePicker?: Component }
