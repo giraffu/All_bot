@@ -15,8 +15,6 @@ const sourceKey = ref<string | null>(null)
 const sourcePreview = ref<string | null>(null)
 const submitting = ref(false)
 const gender = ref<'female' | 'male'>('female')
-const adultConfirmed = ref(false)
-const usageRightsConfirmed = ref(false)
 const editingId = ref<string | null>(null)
 const editingName = ref('')
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -58,20 +56,14 @@ const beforeUpload = async (file: File) => {
 
 const submit = async () => {
   if (!name.value.trim() || !sourceKey.value) return
-  const characterDescription = description.value.trim()
-  if (!characterDescription) {
-    message.error(t('characters.description_required'))
-    return
-  }
   submitting.value = true
   try {
-    await store.create({
+    await store.createDraft({
       name: name.value.trim(),
-      description: characterDescription,
+      description: description.value.trim() || undefined,
       source_object_key: sourceKey.value,
+      initial_view_type: 'face_front',
       prompt_profile: { gender: gender.value },
-      adult_confirmed: true,
-      usage_rights_confirmed: true,
     })
     name.value = ''
     description.value = ''
@@ -102,21 +94,12 @@ const saveRename = async (id: string) => {
 }
 
 const retry = async (character: (typeof store.items)[number]) => {
-  if (!character.description?.trim()) {
-    message.error(t('characters.description_required'))
-    return
-  }
-  if (!character.prompt_profile || !character.adult_confirmed || !character.usage_rights_confirmed) {
-    message.error(t('characters.legacy_confirmation_hint'))
-    return
-  }
-  await store.create({
+  await store.createDraft({
     name: character.name,
-    description: character.description.trim(),
+    description: character.description?.trim() || undefined,
     source_object_key: character.source_object_key,
-    prompt_profile: character.prompt_profile,
-    adult_confirmed: true,
-    usage_rights_confirmed: true,
+    initial_view_type: 'face_front',
+    prompt_profile: character.prompt_profile ?? undefined,
   })
   ensureRefreshPolling()
   message.success(t('characters.build_submitted'))
@@ -142,10 +125,8 @@ const retry = async (character: (typeof store.items)[number]) => {
             <a-radio-button value="female">{{ t('characters.gender.female') }}</a-radio-button>
             <a-radio-button value="male">{{ t('characters.gender.male') }}</a-radio-button>
           </a-radio-group>
-          <a-checkbox v-model:checked="adultConfirmed">{{ t('characters.adult_confirmation') }}</a-checkbox>
-          <a-checkbox v-model:checked="usageRightsConfirmed">{{ t('characters.rights_confirmation') }}</a-checkbox>
-          <a-button type="primary" :disabled="!name.trim() || !description.trim() || !sourceKey || !adultConfirmed || !usageRightsConfirmed" :loading="submitting || uploading" @click="submit">
-            {{ t('characters.build_button') }} · 18 {{ t('app.credits') }}
+          <a-button type="primary" :disabled="!name.trim() || !sourceKey" :loading="submitting || uploading" @click="submit">
+            {{ t('characters.create_from_first_view') }}
           </a-button>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn(), patch: vi.fn() }))
 vi.mock('../api/client', () => ({ api: apiMocks }))
 vi.mock('ant-design-vue', () => ({ message: { success: vi.fn() } }))
 
@@ -30,8 +30,12 @@ const config = {
 
 describe('CharacterGenerationConfigManager', () => {
   beforeEach(() => {
-    apiMocks.get.mockReset().mockResolvedValue({ data: [structuredClone(config)] })
+    apiMocks.get.mockReset().mockImplementation((url: string) => Promise.resolve({
+      data: url.endsWith('/templates') ? [] : [structuredClone(config)],
+    }))
     apiMocks.put.mockReset().mockResolvedValue({ data: { ...structuredClone(config), revision: 1, config_source: 'database' } })
+    apiMocks.post.mockReset().mockResolvedValue({ data: {} })
+    apiMocks.patch.mockReset().mockResolvedValue({ data: {} })
   })
 
   it('loads per-view names, templates and tag combinations and publishes edits', async () => {
@@ -51,6 +55,11 @@ describe('CharacterGenerationConfigManager', () => {
           'a-checkbox-group': PassThrough,
           'a-collapse': PassThrough,
           'a-collapse-panel': PassThrough,
+          'a-select': PassThrough,
+          'a-select-option': PassThrough,
+          'a-input-number': true,
+          'a-upload': PassThrough,
+          'a-empty': PassThrough,
         },
       },
     })
@@ -66,5 +75,45 @@ describe('CharacterGenerationConfigManager', () => {
       tag_groups: ['skin_tone'],
       tag_options: config.tag_options,
     })
+  })
+
+  it('uploads one of multiple body-detail image templates', async () => {
+    const wrapper = mount(CharacterGenerationConfigManager, {
+      global: { stubs: {
+        'a-alert': PassThrough,
+        'a-tabs': PassThrough,
+        'a-tab-pane': PassThrough,
+        'a-form': PassThrough,
+        'a-form-item': PassThrough,
+        'a-input': true,
+        'a-input-number': true,
+        'a-select': PassThrough,
+        'a-select-option': PassThrough,
+        'a-upload': PassThrough,
+        'a-button': PassThrough,
+        'a-empty': PassThrough,
+        'a-tag': PassThrough,
+        'a-checkbox': PassThrough,
+        'a-checkbox-group': PassThrough,
+        'a-collapse': PassThrough,
+        'a-collapse-panel': PassThrough,
+        'a-textarea': true,
+      } },
+    })
+    await flushPromises()
+    ;(wrapper.vm as any).templateForm.view_type = 'genitals_front'
+    ;(wrapper.vm as any).templateForm.name = '模板 A'
+    ;(wrapper.vm as any).templateForm.gender = 'female'
+    ;(wrapper.vm as any).uploadFile = new File(['image'], 'template.png', { type: 'image/png' })
+
+    await (wrapper.vm as any).createTemplate()
+
+    expect(apiMocks.post).toHaveBeenCalledWith(
+      '/api/character-generation/configs/templates',
+      expect.any(FormData),
+    )
+    const payload = apiMocks.post.mock.calls[0][1] as FormData
+    expect(payload.get('view_type')).toBe('genitals_front')
+    expect(payload.get('name')).toBe('模板 A')
   })
 })

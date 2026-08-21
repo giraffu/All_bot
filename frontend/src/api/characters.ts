@@ -14,7 +14,7 @@ export type CharacterReference = {
   prompt_profile: CharacterPromptProfile | null
   adult_confirmed: boolean
   usage_rights_confirmed: boolean
-  default_prompts: Record<CharacterViewType, string>
+  default_prompts: Partial<Record<CharacterViewType, string>>
   view_configs?: CharacterViewConfig[]
   views: CharacterReferenceView[]
 }
@@ -23,6 +23,9 @@ export type CharacterViewConfig = {
   type: CharacterViewType
   label: string
   required: boolean
+  can_generate: boolean
+  has_templates: boolean
+  custom: boolean
   tag_groups: CharacterTagGroup[]
   tag_options: Record<CharacterTagGroup, Record<string, string>>
 }
@@ -37,6 +40,7 @@ export type CharacterPromptProfile = {
 export type CharacterReferenceView = {
   type: CharacterViewType
   label: string
+  description: string | null
   prompt: string
   default_prompt: string
   tag_groups?: CharacterTagGroup[]
@@ -51,10 +55,24 @@ export type CharacterTagGroup = 'breast_size' | 'pubic_hair' | 'skin_tone'
 
 export type CharacterViewType =
   | 'face_front'
-  | 'body_front'
-  | 'body_side'
-  | 'body_back'
+  | 'body_front_nude'
+  | 'body_front_clothed'
+  | 'torso_front'
   | 'genitals_front'
+  | 'pelvis_back'
+  | 'custom_1'
+  | 'custom_2'
+  | 'custom_3'
+  | 'custom_4'
+
+export type CharacterViewImageTemplate = {
+  id: string
+  view_type: 'torso_front' | 'genitals_front' | 'pelvis_back'
+  name: string
+  gender: 'neutral' | 'female' | 'male'
+  sort_order: number
+  preview_url: string
+}
 
 export type CharacterViewEngine =
   | 'free_edit'
@@ -86,11 +104,12 @@ export const buildCharacter = async (payload: {
 
 export const createCharacterDraft = async (payload: {
   name: string
-  description: string
-  source_object_key: string
-  prompt_profile: CharacterPromptProfile
-  adult_confirmed: true
-  usage_rights_confirmed: true
+  description?: string
+  source_object_key?: string
+  template_id?: string
+  initial_view_type: CharacterViewType
+  initial_view_label?: string
+  prompt_profile?: CharacterPromptProfile
 }): Promise<CharacterReference> => (
   await api.post('/characters/drafts', payload)
 ).data
@@ -120,6 +139,28 @@ export const uploadCharacterView = async (
   await api.post(`/characters/${id}/views/${viewType}/upload`, {
     source_object_key: sourceObjectKey,
   })
+).data
+
+export const fetchCharacterViewTemplates = async (): Promise<CharacterViewImageTemplate[]> => (
+  await api.get('/characters/view-templates')
+).data
+
+export const applyCharacterViewTemplate = async (
+  id: string,
+  viewType: CharacterViewType,
+  templateId: string,
+): Promise<CharacterReferenceView> => (
+  await api.post(`/characters/${id}/views/${viewType}/template`, {
+    template_id: templateId,
+  })
+).data
+
+export const updateCharacterView = async (
+  id: string,
+  viewType: CharacterViewType,
+  payload: { display_name?: string; description?: string },
+): Promise<CharacterReferenceView> => (
+  await api.patch(`/characters/${id}/views/${viewType}`, payload)
 ).data
 
 export const saveCharacterReference = async (

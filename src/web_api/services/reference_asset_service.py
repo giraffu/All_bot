@@ -37,10 +37,18 @@ class ResolvedH3ReferenceSet:
 
 _H3_CHARACTER_VIEW_DESCRIPTIONS = {
     "face_front": "front face view",
-    "body_front": "full-body front view",
+    "body_front": "legacy full-body front view",
+    "body_front_nude": "nude full-body front view",
+    "body_front_clothed": "clothed full-body front view",
     "body_side": "full-body side view",
     "body_back": "full-body back view",
+    "torso_front": "front torso detail",
     "genitals_front": "front genital anatomy close-up",
+    "pelvis_back": "rear pelvis detail",
+    "custom_1": "custom character detail 1",
+    "custom_2": "custom character detail 2",
+    "custom_3": "custom character detail 3",
+    "custom_4": "custom character detail 4",
 }
 
 _H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE = {
@@ -51,6 +59,14 @@ _H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE = {
     "body_front": (
         "Identity and body-proportion evidence only; do not copy the reference "
         "pose, camera framing, or plain background."
+    ),
+    "body_front_nude": (
+        "Identity and body-proportion evidence only; do not copy the reference "
+        "pose, camera framing, or plain background."
+    ),
+    "body_front_clothed": (
+        "Identity, body-proportion, and clothing evidence only; do not copy the "
+        "reference pose, camera framing, or plain background."
     ),
     "body_side": (
         "Identity and body-proportion evidence only; do not copy the reference "
@@ -64,6 +80,17 @@ _H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE = {
         "Localized anatomy evidence only; never use this close-up as output "
         "framing and never create an inset, overlay, split screen, or collage."
     ),
+    "torso_front": (
+        "Localized torso evidence only; do not use this crop as output framing."
+    ),
+    "pelvis_back": (
+        "Localized rear anatomy evidence only; do not use this crop as output "
+        "framing and never create an inset, overlay, split screen, or collage."
+    ),
+    "custom_1": "User-defined character evidence only; follow its description.",
+    "custom_2": "User-defined character evidence only; follow its description.",
+    "custom_3": "User-defined character evidence only; follow its description.",
+    "custom_4": "User-defined character evidence only; follow its description.",
 }
 
 
@@ -105,7 +132,7 @@ async def resolve_h3_reference_refs(
             view_type = str(raw.get("view_type") or "").strip()
             if not character_id or view_type not in _H3_CHARACTER_VIEW_DESCRIPTIONS:
                 raise CoreDomainError("人物参考图类型无效。")
-            if view_type == "genitals_front" and not explicit_views_enabled:
+            if view_type in {"genitals_front", "pelvis_back"} and not explicit_views_enabled:
                 raise CoreDomainError("人物特写功能当前未开放。")
             character = (
                 await db.execute(
@@ -120,10 +147,6 @@ async def resolve_h3_reference_refs(
                 raise CoreDomainError("人物不存在或尚未完成。")
             if getattr(character, "moderation_status", "active") != "active":
                 raise CoreDomainError("人物已被停用。")
-            if not getattr(character, "adult_confirmed_at", None) or not getattr(
-                character, "usage_rights_confirmed_at", None
-            ):
-                raise CoreDomainError("请先确认人物已成年且拥有素材使用权。")
             view = (
                 await db.execute(
                     select(CharacterReferenceView).where(
@@ -137,12 +160,62 @@ async def resolve_h3_reference_refs(
             object_key = str(view.object_key).removeprefix(f"{MINIO_BUCKET}/")
             identity = (source, character_id, view_type)
             character_description = str(character.description or "").strip()
+            view_description = str(getattr(view, "description", None) or "").strip()
             description = (
                 f"Adult character {character.name}; "
                 f"{_H3_CHARACTER_VIEW_DESCRIPTIONS[view_type]}; "
                 f"same identity and appearance. "
                 f"{_H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE[view_type]} "
-                f"{character_description}"
+                f"{character_description} {view_description}"
+            ).strip()
+        elif source == "private_character_sheet":
+            if set(raw) != {"source", "character_id"}:
+                raise CoreDomainError("人物参考图字段无效。")
+            character_id = str(raw.get("character_id") or "").strip()
+            if not character_id:
+                raise CoreDomainError("人物参考图字段无效。")
+            character = (
+                await db.execute(
+                    select(CharacterReference).where(
+                        CharacterReference.id == character_id,
+                        CharacterReference.user_id == user_id,
+                        CharacterReference.status != "deleted",
+                    )
+                )
+            ).scalar_one_or_none()
+            if character is None or character.status != "ready" or not character.sheet_object_key:
+                raise CoreDomainError("人物不存在或尚未完成。")
+            if getattr(character, "moderation_status", "active") != "active":
+                raise CoreDomainError("人物已被停用。")
+            ready_views = [
+                view
+                for view in getattr(character, "views", [])
+                if view.status == "ready" and view.object_key
+            ]
+            if not ready_views:
+                raise CoreDomainError("人物没有可用子图。")
+            if not explicit_views_enabled and any(
+                view.view_type in {"genitals_front", "pelvis_back"}
+                for view in ready_views
+            ):
+                raise CoreDomainError("人物特写功能当前未开放。")
+            object_key = str(character.sheet_object_key).removeprefix(
+                f"{MINIO_BUCKET}/"
+            )
+            identity = (source, character_id)
+            child_descriptions = []
+            for view in ready_views:
+                label = str(getattr(view, "display_name", None) or "").strip()
+                detail = str(getattr(view, "description", None) or "").strip()
+                if detail:
+                    child_descriptions.append(f"{label or view.view_type}: {detail}")
+            character_description = str(character.description or "").strip()
+            child_text = "; ".join(child_descriptions)
+            description = (
+                f"Adult character {character.name}; composite reference sheet whose panels "
+                "all describe the same character. Use identity, body, clothing, anatomy, "
+                "accessory, and prop evidence according to each visible panel, but do not "
+                f"reproduce the collage or its panel layout. {character_description} {child_text}"
             ).strip()
         else:
             raise CoreDomainError("H3 参考图来源无效。")

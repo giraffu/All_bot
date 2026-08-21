@@ -6,6 +6,7 @@ const apiMocks = vi.hoisted(() => ({
   generateCharacterView: vi.fn(),
   uploadCharacterView: vi.fn(),
   confirmCharacterReference: vi.fn(),
+  fetchCharacterViewTemplates: vi.fn(),
 }))
 const addTask = vi.hoisted(() => vi.fn())
 const settleExternalTask = vi.hoisted(() => vi.fn())
@@ -17,9 +18,12 @@ vi.mock('@/api/characters', () => ({
   deleteCharacter: vi.fn(),
   fetchCharacterBatchCapacity: apiMocks.fetchCharacterBatchCapacity,
   fetchCharacters: apiMocks.fetchCharacters,
+  fetchCharacterViewTemplates: apiMocks.fetchCharacterViewTemplates,
   generateCharacterView: apiMocks.generateCharacterView,
   uploadCharacterView: apiMocks.uploadCharacterView,
   saveCharacterReference: vi.fn(),
+  applyCharacterViewTemplate: vi.fn(),
+  updateCharacterView: vi.fn(),
   updateCharacter: vi.fn(),
 }))
 
@@ -36,6 +40,7 @@ describe('characters store', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     apiMocks.fetchCharacters.mockResolvedValue([])
+    apiMocks.fetchCharacterViewTemplates.mockResolvedValue([])
     apiMocks.fetchCharacterBatchCapacity.mockResolvedValue({
       limit: 5,
       active: 2,
@@ -81,7 +86,7 @@ describe('characters store', () => {
     const store = useCharactersStore()
     await store.generateView(
       'character-1',
-      'body_side',
+      'body_front_clothed',
       'side body',
       'free_edit_v2_5',
       '全身侧面图',
@@ -89,7 +94,7 @@ describe('characters store', () => {
 
     expect(apiMocks.generateCharacterView).toHaveBeenCalledWith(
       'character-1',
-      'body_side',
+      'body_front_clothed',
       'side body',
       'free_edit_v2_5',
     )
@@ -135,14 +140,14 @@ describe('characters store', () => {
             preview_url: 'https://example.com/ready.png',
           },
           {
-            type: 'body_back',
+            type: 'body_front_nude',
             label: '全身背面图',
             task_id: 'failed-view-task',
             status: 'failed',
             preview_url: null,
           },
           {
-            type: 'body_side',
+            type: 'body_front_clothed',
             label: '全身侧面图',
             task_id: 'pending-view-task',
             status: 'pending',
@@ -179,8 +184,8 @@ describe('characters store', () => {
     const result = await store.generateMissingViews(
       'character-1',
       [
-        { type: 'body_side', prompt: 'side', label: '全身侧面图' },
-        { type: 'body_back', prompt: 'back', label: '全身背面图' },
+        { type: 'body_front_clothed', prompt: 'clothed', label: '穿衣正面全身' },
+        { type: 'body_front_nude', prompt: 'nude', label: '裸体正面全身' },
       ],
       'free_edit_v2_5',
     )

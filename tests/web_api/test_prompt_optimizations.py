@@ -238,7 +238,7 @@ async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
 
 
 @pytest.mark.asyncio
-async def test_submit_h3_ref2v_resolves_typed_character_views_in_picture_order(
+async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_picture_order(
     monkeypatch,
 ):
     class SessionFactory:
@@ -256,12 +256,12 @@ async def test_submit_h3_ref2v_resolves_typed_character_views_in_picture_order(
     resolve = AsyncMock(
         return_value=ResolvedH3ReferenceSet(
             images=(
-                "character_references/7/alice/face.png",
-                "character_references/7/alice/genitals.png",
+                "character_references/7/alice/character-asset-mosaic-v1.png",
+                "staging/user-uploads/7/prop.png",
             ),
             descriptions=(
-                "Adult character Alice; front face view.",
-                "Adult character Alice; front genital anatomy close-up.",
+                "Adult character Alice; composite reference sheet.",
+                "User-uploaded visual reference.",
             ),
         )
     )
@@ -278,14 +278,12 @@ async def test_submit_h3_ref2v_resolves_typed_character_views_in_picture_order(
             media=[],
             reference_refs=[
                 {
-                    "source": "private_character_view",
+                    "source": "private_character_sheet",
                     "character_id": "alice",
-                    "view_type": "face_front",
                 },
                 {
-                    "source": "private_character_view",
-                    "character_id": "alice",
-                    "view_type": "genitals_front",
+                    "source": "upload",
+                    "object_key": "staging/user-uploads/7/prop.png",
                 },
             ],
         ),
@@ -307,7 +305,7 @@ async def test_submit_h3_ref2v_resolves_typed_character_views_in_picture_order(
     assert inputs["trusted_context"]["reference_descriptions"] == list(
         resolve.return_value.descriptions
     )
-    assert "front genital anatomy close-up" in inputs["prompt_config_snapshot"][
+    assert "composite reference sheet" in inputs["prompt_config_snapshot"][
         "user_message"
     ]
 

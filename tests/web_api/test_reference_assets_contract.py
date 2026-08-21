@@ -75,6 +75,53 @@ async def test_h3_private_character_views_and_uploads_resolve_in_user_order():
 
 
 @pytest.mark.asyncio
+async def test_h3_private_character_sheet_injects_post_creation_child_descriptions():
+    character = SimpleNamespace(
+        id="character-1",
+        name="Detail-only character",
+        description="Only lower-body details appear in the target video.",
+        status="ready",
+        moderation_status="active",
+        sheet_object_key=(
+            "bot-data/character_references/7/character-1/character-asset-mosaic-v1.png"
+        ),
+        views=[
+            SimpleNamespace(
+                view_type="genitals_front",
+                display_name="正面细节",
+                description="Use the visible shape and skin details.",
+                status="ready",
+                object_key="bot-data/views/front.png",
+            ),
+            SimpleNamespace(
+                view_type="custom_1",
+                display_name="脚部",
+                description="Bare feet with red nail polish.",
+                status="ready",
+                object_key="bot-data/views/feet.png",
+            ),
+        ],
+    )
+
+    result = await resolve_h3_reference_refs(
+        db=_Db([character]),
+        user_id=7,
+        reference_refs=[
+            {"source": "private_character_sheet", "character_id": "character-1"}
+        ],
+        object_size=AsyncMock(return_value=4096),
+        explicit_views_enabled=True,
+    )
+
+    assert result.images == (
+        "character_references/7/character-1/character-asset-mosaic-v1.png",
+    )
+    assert "Only lower-body details" in result.descriptions[0]
+    assert "Bare feet with red nail polish" in result.descriptions[0]
+    assert "do not reproduce the collage" in result.descriptions[0]
+
+
+@pytest.mark.asyncio
 async def test_h3_character_view_descriptions_do_not_bind_output_composition():
     character = SimpleNamespace(
         id="character-1",
@@ -143,27 +190,34 @@ async def test_h3_character_view_descriptions_do_not_bind_output_composition():
 
 
 @pytest.mark.asyncio
-async def test_h3_character_reference_rejects_unconfirmed_or_duplicate_assets():
+async def test_h3_character_reference_does_not_require_page_confirmation_and_rejects_duplicates():
     unconfirmed = SimpleNamespace(
         status="ready",
         moderation_status="active",
+        name="Alice",
+        description=None,
         adult_confirmed_at=None,
         usage_rights_confirmed_at=None,
     )
-    with pytest.raises(CoreDomainError, match="成年"):
-        await resolve_h3_reference_refs(
-            db=_Db([unconfirmed]),
-            user_id=7,
-            reference_refs=[
-                {
-                    "source": "private_character_view",
-                    "character_id": "character-1",
-                    "view_type": "body_front",
-                }
-            ],
-            object_size=AsyncMock(return_value=1024),
-            explicit_views_enabled=True,
-        )
+    view = SimpleNamespace(
+        status="ready",
+        object_key="bot-data/views/face.png",
+        description=None,
+    )
+    result = await resolve_h3_reference_refs(
+        db=_Db([unconfirmed, view]),
+        user_id=7,
+        reference_refs=[
+            {
+                "source": "private_character_view",
+                "character_id": "character-1",
+                "view_type": "face_front",
+            }
+        ],
+        object_size=AsyncMock(return_value=1024),
+        explicit_views_enabled=True,
+    )
+    assert result.images == ("views/face.png",)
 
     duplicate = {
         "source": "upload",

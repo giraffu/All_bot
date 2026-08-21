@@ -27,14 +27,16 @@ class FakeConfigDb:
 
 def test_builtin_configs_expose_per_view_names_and_effective_tag_groups():
     face = get_builtin_character_view_config("face_front")
-    front = get_builtin_character_view_config("body_front")
-    explicit = get_builtin_character_view_config("genitals_front")
+    nude = get_builtin_character_view_config("body_front_nude")
+    clothed = get_builtin_character_view_config("body_front_clothed")
 
-    assert face["display_name"] == "正脸图"
+    assert face["display_name"] == "正脸"
     assert face["tag_groups"] == ["skin_tone"]
-    assert front["tag_groups"] == ["breast_size", "pubic_hair", "skin_tone"]
-    assert explicit["tag_groups"] == ["pubic_hair", "skin_tone"]
-    assert set(front["prompt_templates"]) == {"neutral", "female", "male"}
+    assert nude["tag_groups"] == ["breast_size", "pubic_hair", "skin_tone"]
+    assert clothed["tag_groups"] == ["breast_size", "skin_tone"]
+    assert set(nude["prompt_templates"]) == {"neutral", "female", "male"}
+    with pytest.raises(ValueError):
+        get_builtin_character_view_config("torso_front")
 
 
 def test_render_uses_only_tags_enabled_for_each_view():
@@ -49,17 +51,18 @@ def test_render_uses_only_tags_enabled_for_each_view():
 
     assert "白皙肤色" in prompts["face_front"]
     assert "巨乳" not in prompts["face_front"]
-    assert "巨乳" in prompts["body_front"]
-    assert "无阴毛" in prompts["body_front"]
-    assert "巨乳" not in prompts["genitals_front"]
-    assert "无阴毛" in prompts["genitals_front"]
+    assert "巨乳" in prompts["body_front_nude"]
+    assert "无阴毛" in prompts["body_front_nude"]
+    assert "巨乳" in prompts["body_front_clothed"]
+    assert "无阴毛" not in prompts["body_front_clothed"]
+    assert set(prompts) == {"face_front", "body_front_nude", "body_front_clothed"}
 
 
 def test_config_validation_rejects_unknown_placeholders_and_tag_groups():
-    config = get_builtin_character_view_config("body_front")
+    config = get_builtin_character_view_config("body_front_nude")
     with pytest.raises(ValueError, match="unknown prompt variables"):
         validate_character_view_config(
-            view_type="body_front",
+            view_type="body_front_nude",
             display_name=config["display_name"],
             prompt_templates={**config["prompt_templates"], "female": "{unknown}"},
             tag_groups=config["tag_groups"],
@@ -67,7 +70,7 @@ def test_config_validation_rejects_unknown_placeholders_and_tag_groups():
         )
     with pytest.raises(ValueError, match="unknown tag groups"):
         validate_character_view_config(
-            view_type="body_front",
+            view_type="body_front_nude",
             display_name=config["display_name"],
             prompt_templates=config["prompt_templates"],
             tag_groups=["height"],
@@ -78,7 +81,7 @@ def test_config_validation_rejects_unknown_placeholders_and_tag_groups():
 @pytest.mark.asyncio
 async def test_admin_save_publishes_new_revision_and_custom_tag_fragments():
     db = FakeConfigDb()
-    config = get_builtin_character_view_config("body_front")
+    config = get_builtin_character_view_config("body_front_nude")
     payload = SimpleNamespace(
         display_name="正面身份图",
         prompt_templates=config["prompt_templates"],
@@ -93,10 +96,10 @@ async def test_admin_save_publishes_new_revision_and_custom_tag_fragments():
     )
 
     first = await save_character_view_config(
-        db, view_type="body_front", payload=payload, updated_by="admin-a"
+        db, view_type="body_front_nude", payload=payload, updated_by="admin-a"
     )
     second = await save_character_view_config(
-        db, view_type="body_front", payload=payload, updated_by="admin-b"
+        db, view_type="body_front_nude", payload=payload, updated_by="admin-b"
     )
 
     assert first["revision"] == 1

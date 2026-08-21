@@ -688,7 +688,9 @@ class CharacterReferenceView(Base):
     __table_args__ = (
         CheckConstraint(
             "view_type in ('face_front', 'face_side', 'face_three_quarter', "
-            "'body_front', 'body_side', 'body_back', 'genitals_front')",
+            "'body_front', 'body_side', 'body_back', 'body_front_nude', "
+            "'body_front_clothed', 'torso_front', 'genitals_front', "
+            "'pelvis_back', 'custom_1', 'custom_2', 'custom_3', 'custom_4')",
             name="ck_character_reference_views_type",
         ),
         CheckConstraint(
@@ -711,6 +713,8 @@ class CharacterReferenceView(Base):
         index=True,
     )
     view_type = Column(String(32), nullable=False)
+    display_name = Column(String(80), nullable=True)
+    description = Column(String(500), nullable=True)
     prompt = Column(Text, nullable=False)
     object_key = Column(String(1024), nullable=True)
     task_id = Column(String(64), nullable=True)
@@ -844,6 +848,43 @@ class CharacterViewPromptConfig(Base):
     revision = Column(Integer, nullable=False, default=1, server_default=text("1"))
     content_hash = Column(String(64), nullable=False)
     updated_by = Column(String(100), nullable=False)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+
+class CharacterViewImageTemplate(Base):
+    __tablename__ = "character_view_image_templates"
+    __table_args__ = (
+        CheckConstraint(
+            "view_type in ('torso_front', 'genitals_front', 'pelvis_back')",
+            name="ck_character_view_image_templates_type",
+        ),
+        CheckConstraint(
+            "gender in ('neutral', 'female', 'male')",
+            name="ck_character_view_image_templates_gender",
+        ),
+        CheckConstraint(
+            "status in ('active', 'disabled')",
+            name="ck_character_view_image_templates_status",
+        ),
+        Index(
+            "ix_character_view_image_templates_type_status_sort",
+            "view_type",
+            "status",
+            "sort_order",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    view_type = Column(String(32), nullable=False)
+    name = Column(String(80), nullable=False)
+    gender = Column(String(16), nullable=False, default="neutral")
+    object_key = Column(String(1024), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    status = Column(String(16), nullable=False, default="active")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
     )

@@ -18,17 +18,23 @@ from src.web_api.schemas.character_schema import (
     CharacterPatchRequest,
     CharacterResponse,
     CharacterViewGenerateRequest,
+    CharacterViewImageTemplateResponse,
+    CharacterViewPatchRequest,
     CharacterViewResponse,
+    CharacterViewTemplateApplyRequest,
     CharacterViewUploadRequest,
 )
 from src.web_api.services.character_reference_service import (
     build_character,
+    apply_character_view_template,
     character_features_enabled,
     create_character_draft,
     delete_character,
     generate_character_view,
     get_character_batch_capacity,
     list_characters,
+    list_available_character_view_templates,
+    patch_character_view,
     patch_character,
     save_character,
     upload_character_view,
@@ -95,6 +101,14 @@ async def get_batch_capacity(
     return await get_character_batch_capacity(current_user=current_user)
 
 
+@router.get(
+    "/view-templates",
+    response_model=list[CharacterViewImageTemplateResponse],
+)
+async def get_character_view_templates(db: AsyncSession = Depends(get_db)):
+    return await list_available_character_view_templates(db=db)
+
+
 @router.post("/{character_id}/views/{view_type}/generate")
 async def create_character_view(
     character_id: str,
@@ -138,6 +152,46 @@ async def upload_character_view_image(
     return await upload_character_view(
         db=db,
         current_user=current_user,
+        character_id=character_id,
+        view_type=view_type,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{character_id}/views/{view_type}/template",
+    response_model=CharacterViewResponse,
+)
+async def apply_character_view_image_template(
+    character_id: str,
+    view_type: str,
+    payload: CharacterViewTemplateApplyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await apply_character_view_template(
+        db=db,
+        current_user=current_user,
+        character_id=character_id,
+        view_type=view_type,
+        payload=payload,
+    )
+
+
+@router.patch(
+    "/{character_id}/views/{view_type}",
+    response_model=CharacterViewResponse,
+)
+async def update_character_view(
+    character_id: str,
+    view_type: str,
+    payload: CharacterViewPatchRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await patch_character_view(
+        db=db,
+        user_id=current_user.id,
         character_id=character_id,
         view_type=view_type,
         payload=payload,

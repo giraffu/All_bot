@@ -149,7 +149,7 @@ scene-script，而不是沿用旧版提示词技巧。为此预留 `ltx_eros_v14
 | `img2img`、`img2img_lora`、`i2i_pro` | `image_edit_general` | 生成简洁的结果规格：主体、编辑差异、保持项、风格、灯光与构图。LoRA 名称和强度不是提示词内容。 |
 | `i2i_draw` | `image_edit_pose_locked` | 与通用编辑相同，但姿态/构图保持要求归 Worker 固定契约；LLM 不得移除或反向改写。 |
 | `txt2img` | `text_to_image_full_scene` | 无参考图，完整描述主体、动作、环境、构图、镜头、灯光、材质和风格，不使用首帧/保持原图等语言。 |
-| `character_reference_build` | `character_reference_slots` | 不做自由创意润色。按视图槽位输出同一身份、同一服装的正面/侧面/背面等严格描述；人物面板的实际拼接与白底契约由服务端完成。 |
+| `character_reference_build` | `character_reference_slots` | 仅兼容旧四视图构建任务。新人物素材只有正脸、裸体正面全身和穿衣正面全身三个槽允许提示词生成；局部与自定义槽只走模板或上传，完整合成由服务端完成。 |
 
 人物一致性细则继续以
 [`子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`](子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md)

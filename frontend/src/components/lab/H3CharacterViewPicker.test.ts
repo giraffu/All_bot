@@ -13,6 +13,7 @@ const store = vi.hoisted(() => ({
     name: 'Ari',
     status: 'ready',
     moderation_status: 'active',
+    preview_url: 'https://cdn/sheet.png',
     adult_confirmed: true,
     usage_rights_confirmed: true,
     views: [{
@@ -33,7 +34,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('H3CharacterViewPicker', () => {
-  it('emits a typed private character view reference', async () => {
+  it('emits a typed private character composite reference', async () => {
     const wrapper = mount(H3CharacterViewPicker, {
       props: { references: [], maxItems: 4 },
       global: {
@@ -45,14 +46,13 @@ describe('H3CharacterViewPicker', () => {
       },
     })
 
-    await wrapper.get('[data-testid="select-character-view-character-1-face_front"]').trigger('click')
+    await wrapper.get('[data-testid="select-character-sheet-character-1"]').trigger('click')
 
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({
-      key: 'character:character-1:face_front',
+      key: 'character:character-1:sheet',
       referenceRef: {
-        source: 'private_character_view',
+        source: 'private_character_sheet',
         character_id: 'character-1',
-        view_type: 'face_front',
       },
     })
   })
