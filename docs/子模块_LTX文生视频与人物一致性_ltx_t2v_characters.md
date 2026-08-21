@@ -2,6 +2,18 @@
 
 ## 当前测试契约
 
+人物参考图已升级为独立的私人人物身份素材库，由
+`CHARACTER_ASSETS_ENABLED/enable_character_assets` 控制，不再跟随 LTX 开关。
+四个基础视图仍是保存人物和生成 LTX 合成面板的必需项；可选
+`genitals_front` 由 `CHARACTER_EXPLICIT_VIEWS_ENABLED/
+enable_character_explicit_views` 单独控制，且不进入 LTX 四视图面板。
+
+新人物必须提交性别、成年人确认和素材使用权确认。旧人物可在首次用于 H3 或补充
+器官特写前完成确认；缺失性别只允许补设一次。器官特写必须以 ready 的
+`body_front` 作为自由 P 图编辑输入，也可直接上传替换；生成按所选 2/3/5 灵石流程
+计费并沿用失败退款，上传和保存不扣费。所有人物子图仅写私人人物库，不写
+History/Gallery，也不能投稿或转为模板。
+
 练功房的文生视频入口支持两种互斥模式：
 
 - `ltx_t2v`：纯文字生成，不需要参考图片，1280×704，支持 5/10/15/20 秒。
@@ -41,7 +53,7 @@ operator。`ltx_unified` LAN AIO 必须通过受管 compose 参数固定
 `--use-pytorch-cross-attention`；不得在 GPU 宿主机上手改 compose 或现场安装
 xFormers。
 
-三张媒体的稳定顺序是：角色参考图 1、角色参考图 2、场景背景图。人物参考图是人物
+三张媒体的稳定顺序是：角色参考图 1、角色参考图 2、场景背景图。LTX 使用的人物参考图是人物
 图库生成的完整四视图面板；背景只定义环境、布局和光线。三者都不是视频首帧或
 终帧。Worker 输入准备必须对 `character_sheets` 和 `background_image` 分别执行
 对象存储下载、图片规范化和 ComfyUI input 上传，再把 workflow 的 `LoadImage`

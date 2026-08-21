@@ -11,6 +11,7 @@
     {"patterns": ["MEDIA_ARCHIVE_*"], "services": ["web-api"]},
     {"patterns": ["DASHBOARD_*"], "services": ["dashboard-backend", "dashboard-frontend"]},
     {"patterns": ["LTX_T2V_BACKEND_ENABLED", "LTX_T2V_MSR_ENABLED"], "services": ["web-api"]},
+    {"patterns": ["CHARACTER_ASSETS_ENABLED", "CHARACTER_EXPLICIT_VIEWS_ENABLED"], "services": ["web-api"]},
     {"patterns": ["MINIMAX_H3_BACKEND_ENABLED", "MINIMAX_H3_REF2V_ENABLED", "MINIMAX_H3_ENTRY_ENABLED", "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"], "services": ["web-api", "bot", "qqcc-bot"]},
     {"patterns": ["ALLBOT_WORKER_*", "AGENT_SECRET_TOKEN", "PREFETCH_*", "PIPELINE_*"], "services": ["worker"]},
     {"patterns": ["PAID_GROUP_*"], "services": ["paid-group-guard-bot"]},

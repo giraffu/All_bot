@@ -56,6 +56,7 @@ CHARACTER_VIEW_CATALOG = (
         "type": "face_front",
         "label": "正脸图",
         "index": 1,
+        "required": True,
         "default_prompt": (
             "生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、"
             "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
@@ -67,6 +68,7 @@ CHARACTER_VIEW_CATALOG = (
         "type": "body_front",
         "label": "全身正面图",
         "index": 4,
+        "required": True,
         "default_prompt": (
             "生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、"
             "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
@@ -78,6 +80,7 @@ CHARACTER_VIEW_CATALOG = (
         "type": "body_side",
         "label": "全身侧面图",
         "index": 5,
+        "required": True,
         "default_prompt": (
             "生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、"
             "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
@@ -89,10 +92,23 @@ CHARACTER_VIEW_CATALOG = (
         "type": "body_back",
         "label": "全身背面图",
         "index": 6,
+        "required": True,
         "default_prompt": (
             "生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、"
             "身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
             "背对镜头自然站立，不回头，从头顶到双脚完整可见。仅一个人物，纯白背景，"
+            "不要文字、标签、边框或拼贴。"
+        ),
+    },
+    {
+        "type": "genitals_front",
+        "label": "生殖器正面特写",
+        "index": 7,
+        "required": False,
+        "default_prompt": (
+            "生成与源图为同一位成年人的生殖器正面特写，保持肤色和身体特征一致。"
+            "人物完全裸体，只展示一个成年人的人体参考细节，无互动、无道具、"
+            "无体液，纯白背景，"
             "不要文字、标签、边框或拼贴。"
         ),
     },
@@ -109,7 +125,9 @@ CHARACTER_VIEW_BY_TYPE = {item["type"]: item for item in CHARACTER_VIEW_CATALOG}
 CHARACTER_VIEW_ORDER = {
     item["type"]: int(item["index"]) for item in CHARACTER_VIEW_CATALOG
 }
-CHARACTER_REQUIRED_VIEW_TYPES = tuple(item["type"] for item in CHARACTER_VIEW_CATALOG)
+CHARACTER_REQUIRED_VIEW_TYPES = tuple(
+    item["type"] for item in CHARACTER_VIEW_CATALOG if item["required"]
+)
 
 FEMALE_PROMPT_TAGS = {
     "breast_size": {
@@ -193,12 +211,36 @@ def compose_character_view_prompts(
             f"生成与源图为{identity}的全身背面站立图，{common}，{back_detail}。"
             f"背对镜头自然站立，不回头，从头顶到双脚完整可见。{ending}"
         ),
+        "genitals_front": (
+            (
+                f"生成与全身正面源图为{identity}的外阴正面特写，{common}，"
+                f"{body_detail}。外阴和周围皮肤清晰完整，保持中立人体参考姿势，"
+                "无互动、无道具、无体液，不展示第二个人。"
+                f"{ending}"
+            )
+            if gender == "female"
+            else (
+                f"生成与全身正面源图为{identity}的阴茎与阴囊正面特写，{common}，"
+                f"{body_detail}。阴茎自然勃起，阴茎与阴囊清晰完整，"
+                "保持中立人体参考姿势，无互动、无道具、无体液，不展示第二个人。"
+                f"{ending}"
+            )
+        ),
     }
     return prompts
 
 
 def character_features_enabled() -> bool:
-    return os.getenv("LTX_T2V_BACKEND_ENABLED", "false").strip().lower() in {
+    return os.getenv("CHARACTER_ASSETS_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def character_explicit_views_enabled() -> bool:
+    return os.getenv("CHARACTER_EXPLICIT_VIEWS_ENABLED", "false").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -273,6 +315,10 @@ def _response(
         "sheet_object_key": row.sheet_object_key,
         "preview_url": preview,
         "prompt_profile": prompt_profile,
+        "adult_confirmed": bool(getattr(row, "adult_confirmed_at", None)),
+        "usage_rights_confirmed": bool(
+            getattr(row, "usage_rights_confirmed_at", None)
+        ),
         "default_prompts": default_prompts,
         "views": [_view_response(view, default_prompts) for view in resolved_views],
     }
@@ -360,8 +406,10 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
         user_id=current_user.id,
         name=payload.name.strip(),
         description=payload.description.strip(),
-        prompt_profile=(
-            payload.prompt_profile.model_dump() if payload.prompt_profile else None
+        prompt_profile=payload.prompt_profile.model_dump(),
+        adult_confirmed_at=datetime.now() if payload.adult_confirmed else None,
+        usage_rights_confirmed_at=(
+            datetime.now() if payload.usage_rights_confirmed else None
         ),
         source_object_key=f"{MINIO_BUCKET}/{object_key}",
         task_id=str(uuid.uuid4()),
@@ -370,6 +418,38 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
     db.add(row)
     await db.commit()
     return _response(row, [])
+
+
+async def confirm_character_identity(
+    *, db, user_id: int, character_id: str, payload
+) -> dict:
+    character = (
+        await db.execute(
+            select(CharacterReference).where(
+                CharacterReference.id == character_id,
+                CharacterReference.user_id == user_id,
+                CharacterReference.status != "deleted",
+            )
+        )
+    ).scalar_one_or_none()
+    if character is None:
+        raise HTTPException(status_code=404, detail="人物不存在。")
+    existing_profile = getattr(character, "prompt_profile", None)
+    requested_profile = (
+        payload.prompt_profile.model_dump() if payload.prompt_profile else None
+    )
+    if existing_profile is None:
+        if requested_profile is None:
+            raise HTTPException(status_code=409, detail="请先设置人物性别。")
+        character.prompt_profile = requested_profile
+    elif requested_profile is not None and requested_profile != existing_profile:
+        raise HTTPException(status_code=409, detail="人物性别和身体标签不能再次修改。")
+    now = datetime.now()
+    character.adult_confirmed_at = now
+    character.usage_rights_confirmed_at = now
+    character.updated_at = now
+    await db.commit()
+    return _response(character)
 
 
 async def generate_character_view(
@@ -399,6 +479,48 @@ async def generate_character_view(
     if view is not None and view.status == "pending":
         raise HTTPException(status_code=409, detail="该子图正在生成，请稍候。")
 
+    if view_type == "genitals_front":
+        if not character_explicit_views_enabled():
+            raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
+        if not getattr(character, "adult_confirmed_at", None) or not getattr(
+            character, "usage_rights_confirmed_at", None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="请先确认人物已成年且拥有素材使用权。",
+            )
+        profile = getattr(character, "prompt_profile", None) or {}
+        if profile.get("gender") not in {"female", "male"}:
+            raise HTTPException(status_code=409, detail="请先设置人物性别。")
+        body_front = (
+            await db.execute(
+                select(CharacterReferenceView).where(
+                    CharacterReferenceView.character_id == character_id,
+                    CharacterReferenceView.view_type == "body_front",
+                )
+            )
+        ).scalar_one_or_none()
+        if (
+            body_front is None
+            or body_front.status != "ready"
+            or not body_front.object_key
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="请先完成全身正面图，再生成生殖器特写。",
+            )
+        body_front_key = str(body_front.object_key).removeprefix(
+            f"{MINIO_BUCKET}/"
+        )
+        if not await storage.async_object_exists(MINIO_BUCKET, body_front_key):
+            raise HTTPException(
+                status_code=409,
+                detail="全身正面图已失效，请先重新生成或上传。",
+            )
+        source_object_key = body_front.object_key
+    else:
+        source_object_key = character.source_object_key
+
     task_id = str(uuid.uuid4())
     if view is None:
         view = CharacterReferenceView(
@@ -422,7 +544,7 @@ async def generate_character_view(
             req=TaskGenerateRequest(
                 task_type=task_type,
                 inputs={
-                    "images": [character.source_object_key],
+                    "images": [source_object_key],
                     "record_history": False,
                 },
                 prompt=payload.prompt.strip(),
@@ -473,6 +595,19 @@ async def upload_character_view(
     ).scalar_one_or_none()
     if character is None:
         raise HTTPException(status_code=404, detail="人物不存在。")
+    if view_type == "genitals_front":
+        if not character_explicit_views_enabled():
+            raise HTTPException(status_code=404, detail="人物特写功能当前未开放。")
+        if not getattr(character, "adult_confirmed_at", None) or not getattr(
+            character, "usage_rights_confirmed_at", None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="请先确认人物已成年且拥有素材使用权。",
+            )
+        profile = getattr(character, "prompt_profile", None) or {}
+        if profile.get("gender") not in {"female", "male"}:
+            raise HTTPException(status_code=409, detail="请先设置人物性别。")
     view = (
         await db.execute(
             select(CharacterReferenceView).where(
@@ -705,9 +840,9 @@ async def build_character(
         user_id=current_user.id,
         name=payload.name.strip(),
         description=payload.description.strip(),
-        prompt_profile=(
-            payload.prompt_profile.model_dump() if payload.prompt_profile else None
-        ),
+        prompt_profile=payload.prompt_profile.model_dump(),
+        adult_confirmed_at=datetime.now(),
+        usage_rights_confirmed_at=datetime.now(),
         source_object_key=f"{MINIO_BUCKET}/{object_key}",
         task_id=task_id,
         status="pending",
@@ -729,10 +864,14 @@ async def build_character(
                 inputs={
                     "images": [f"{MINIO_BUCKET}/{object_key}"],
                     "character_id": character_id,
+                    "record_history": False,
                     "prompt": "Generate six separate consistent adult character reference views on pure black backgrounds: front close-up face, three-quarter face, front waist-up, front full body, side full body, back full body. Preserve identity, face, hairstyle, skin tone, body, clothing and accessories. No text, labels, borders or collage.",
                 },
                 task_id=task_id,
-                registry_metadata={"character_id": character_id},
+                registry_metadata={
+                    "character_id": character_id,
+                    "record_history": False,
+                },
             ),
             TaskSubmissionPolicy(
                 side_effect_plan=TaskSubmissionSideEffectPlan(

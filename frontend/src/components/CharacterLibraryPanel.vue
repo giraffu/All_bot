@@ -16,8 +16,10 @@ import {
   getCharacterViewEngineCost,
 } from '@/features/characters/characterViewEngines'
 import { useCharactersStore } from '@/stores/characters'
+import { WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED } from '@/features/generation/labModeConfig'
+import { useUpload } from '@/composables/useUpload'
 
-const VIEW_TYPES: CharacterViewType[] = [
+const REQUIRED_VIEW_TYPES: CharacterViewType[] = [
   'face_front',
   'body_front',
   'body_side',
@@ -27,13 +29,17 @@ const VIEW_TYPES: CharacterViewType[] = [
 const { t } = useI18n()
 const router = useRouter()
 const store = useCharactersStore()
+const { uploading, uploadFile } = useUpload()
 const selectedCharacterId = ref<string | null>(null)
 const selectedViewType = ref<CharacterViewType>('face_front')
 const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const regenerating = ref(false)
+const uploadingView = ref(false)
 const saving = ref(false)
 const editingCharacterId = ref<string | null>(null)
 const savingMetadata = ref(false)
+const confirmingIdentity = ref(false)
+const legacyGender = ref<'female' | 'male'>('female')
 const deletingCharacterId = ref<string | null>(null)
 const metadataForm = reactive({
   name: '',
@@ -46,11 +52,47 @@ const characters = computed(() => store.items)
 const selectedCharacter = computed<CharacterReference | null>(() => (
   store.items.find(item => item.id === selectedCharacterId.value) ?? null
 ))
-const selectedView = computed<CharacterReferenceView | null>(() => (
-  selectedCharacter.value?.views.find(view => view.type === selectedViewType.value) ?? null
-))
 const readyCount = computed(() => (
-  selectedCharacter.value?.views.filter(view => view.status === 'ready').length ?? 0
+  REQUIRED_VIEW_TYPES.filter(type => (
+    selectedCharacter.value?.views.find(view => view.type === type)?.status === 'ready'
+  )).length
+))
+const visibleSelectedViews = computed(() => {
+  if (!selectedCharacter.value) return []
+  const views = selectedCharacter.value.views.filter(view => (
+    view.type !== 'genitals_front' || WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED
+  ))
+  if (
+    WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED
+    && !views.some(view => view.type === 'genitals_front')
+  ) {
+    views.push({
+      type: 'genitals_front',
+      label: t('characters.views.genitals_front'),
+      prompt: selectedCharacter.value.default_prompts.genitals_front ?? '',
+      default_prompt: selectedCharacter.value.default_prompts.genitals_front ?? '',
+      status: 'failed',
+      task_id: null,
+      object_key: null,
+      preview_url: null,
+    })
+  }
+  return views
+})
+const selectedView = computed<CharacterReferenceView | null>(() => (
+  visibleSelectedViews.value.find(view => view.type === selectedViewType.value) ?? null
+))
+const identityConfirmed = computed(() => Boolean(
+  selectedCharacter.value?.adult_confirmed && selectedCharacter.value?.usage_rights_confirmed,
+))
+const genitalGenerationBlocked = computed(() => (
+  selectedViewType.value === 'genitals_front'
+  && selectedCharacter.value?.views.find(view => view.type === 'body_front')?.status !== 'ready'
+))
+const hasPendingRequiredView = computed(() => (
+  selectedCharacter.value?.views.some(view => (
+    view.status === 'pending' && REQUIRED_VIEW_TYPES.includes(view.type)
+  )) ?? false
 ))
 const hasPending = computed(() => (
   store.items.some(character => character.views.some(view => view.status === 'pending'))
@@ -118,8 +160,29 @@ const regenerate = async () => {
   }
 }
 
+const beforeViewUpload = async (file: File) => {
+  if (!selectedCharacter.value || !selectedView.value) return false
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    message.error(t('characters.image_type_error'))
+    return false
+  }
+  uploadingView.value = true
+  try {
+    const objectKey = await uploadFile(file, {
+      maxSizeBytes: 20 * 1024 * 1024,
+      maxSizeLabel: '20MB',
+    })
+    if (!objectKey || !selectedCharacter.value || !selectedView.value) return false
+    await store.uploadView(selectedCharacter.value.id, selectedView.value.type, objectKey)
+    message.success(t('characters.view_uploaded', { view: selectedView.value.label }))
+  } finally {
+    uploadingView.value = false
+  }
+  return false
+}
+
 const saveReference = async () => {
-  if (!selectedCharacter.value || readyCount.value !== VIEW_TYPES.length) return
+  if (!selectedCharacter.value || readyCount.value !== REQUIRED_VIEW_TYPES.length) return
   saving.value = true
   try {
     await store.saveReference(selectedCharacter.value.id)
@@ -132,6 +195,20 @@ const saveReference = async () => {
 const createCharacter = () => (
   router.push({ name: 'CustomFeatures', query: { type: 'character_reference' } })
 )
+
+const confirmIdentity = async () => {
+  if (!selectedCharacter.value) return
+  confirmingIdentity.value = true
+  try {
+    await store.confirmIdentity(
+      selectedCharacter.value.id,
+      selectedCharacter.value.prompt_profile ?? { gender: legacyGender.value },
+    )
+    message.success(t('characters.identity_confirmed'))
+  } finally {
+    confirmingIdentity.value = false
+  }
+}
 
 const openMetadataEditor = (character: CharacterReference) => {
   editingCharacterId.value = character.id
@@ -317,9 +394,32 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div v-if="!identityConfirmed" class="character-library__editor rounded-2xl border p-4">
+          <div class="font-semibold">{{ t('characters.legacy_confirmation_title') }}</div>
+          <p class="mt-1 text-sm leading-6 opacity-70">{{ t('characters.legacy_confirmation_hint') }}</p>
+          <a-radio-group
+            v-if="!selectedCharacter.prompt_profile"
+            v-model:value="legacyGender"
+            class="mt-3"
+            button-style="solid"
+          >
+            <a-radio-button value="female">{{ t('characters.gender.female') }}</a-radio-button>
+            <a-radio-button value="male">{{ t('characters.gender.male') }}</a-radio-button>
+          </a-radio-group>
+          <a-button
+            type="primary"
+            class="mt-3 rounded-xl"
+            :loading="confirmingIdentity"
+            data-testid="confirm-character-identity"
+            @click="confirmIdentity"
+          >
+            {{ t('characters.confirm_identity') }}
+          </a-button>
+        </div>
+
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
           <button
-            v-for="view in selectedCharacter.views"
+            v-for="view in visibleSelectedViews"
             :key="view.type"
             type="button"
             class="character-library__view overflow-hidden rounded-2xl border text-left"
@@ -339,6 +439,9 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="selectedView" class="character-library__editor rounded-2xl border p-4">
+          <div v-if="selectedView.type === 'genitals_front'" class="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-5">
+            {{ t('characters.explicit_view_disclaimer') }}
+          </div>
           <div class="mb-2 flex items-center justify-between gap-2">
             <div class="text-sm font-semibold">
               {{ t('characters.regenerate_named_view', { view: selectedView.label }) }}
@@ -376,16 +479,29 @@ onBeforeUnmount(() => {
           </div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
             <a-button
-              :disabled="readyCount !== VIEW_TYPES.length || selectedCharacter.views.some(view => view.status === 'pending')"
+              :disabled="readyCount !== REQUIRED_VIEW_TYPES.length || hasPendingRequiredView"
               :loading="saving"
               class="rounded-xl"
               @click="saveReference"
             >
               {{ t('characters.update_reference') }}
             </a-button>
+            <a-upload
+              :show-upload-list="false"
+              :before-upload="beforeViewUpload"
+              accept="image/png,image/jpeg,image/webp"
+            >
+              <a-button
+                class="w-full rounded-xl"
+                :disabled="!identityConfirmed || selectedView.status === 'pending'"
+                :loading="uploadingView || uploading"
+              >
+                {{ selectedView.object_key ? t('characters.replace_view_upload') : t('characters.upload_view') }}
+              </a-button>
+            </a-upload>
             <a-button
               type="primary"
-              :disabled="!selectedPrompt.trim() || selectedView.status === 'pending'"
+              :disabled="!identityConfirmed || !selectedPrompt.trim() || genitalGenerationBlocked || selectedView.status === 'pending'"
               :loading="regenerating || selectedView.status === 'pending'"
               class="rounded-xl"
               @click="regenerate"

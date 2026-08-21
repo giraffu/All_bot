@@ -167,6 +167,8 @@ describe('CharacterReferenceWorkbench', () => {
     await (wrapper.vm as any).createDraft()
 
     expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
       prompt_profile: {
         gender: 'female',
         breast_size: 'large',

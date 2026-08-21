@@ -216,6 +216,8 @@ export const WEB_I2I_DRAW_ENABLED = false
 export const WEB_LTX_VIDEO_ENABLED = getRuntimeFlag('enable_ltx_video', true)
 export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const WEB_LTX_VIDEO_V2_ENABLED = getRuntimeFlag('enable_ltx_video_v2', false)
+export const WEB_CHARACTER_ASSETS_ENABLED = getRuntimeFlag('enable_character_assets', false)
+export const WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED = getRuntimeFlag('enable_character_explicit_views', false)
 export const WEB_MINIMAX_H3_ENABLED = getRuntimeFlag('enable_minimax_h3', false)
 export const WEB_MINIMAX_H3_ENTRY_ENABLED = getRuntimeFlag('enable_minimax_h3_entry', false)
 export const WEB_MINIMAX_H3_REF2V_ENABLED = getRuntimeFlag('enable_minimax_h3_ref2v', false)
@@ -726,7 +728,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
-  && (mode.id !== 'character_reference' || WEB_LTX_T2V_ENABLED)
+  && (mode.id !== 'character_reference' || WEB_CHARACTER_ASSETS_ENABLED)
   && (mode.id !== 'ltx_video' || WEB_LTX_VIDEO_ENABLED)
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
@@ -739,7 +741,7 @@ export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
 export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined): UnifiedLabModeId => {
   switch (taskType) {
     case 'character_reference':
-      return WEB_LTX_T2V_ENABLED ? 'character_reference' : DEFAULT_LAB_MODE_ID
+      return WEB_CHARACTER_ASSETS_ENABLED ? 'character_reference' : DEFAULT_LAB_MODE_ID
     case 'txt2img':
       return 'txt2img'
     case FREE_EDIT_V2_5_TASK_TYPE:

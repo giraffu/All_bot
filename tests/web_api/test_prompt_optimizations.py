@@ -238,6 +238,81 @@ async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
 
 
 @pytest.mark.asyncio
+async def test_submit_h3_ref2v_resolves_typed_character_views_in_picture_order(
+    monkeypatch,
+):
+    class SessionFactory:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    from src.web_api.services.reference_asset_service import ResolvedH3ReferenceSet
+
+    monkeypatch.setenv("CHARACTER_ASSETS_ENABLED", "true")
+    monkeypatch.setenv("CHARACTER_EXPLICIT_VIEWS_ENABLED", "true")
+    monkeypatch.setattr("src.database.core.AsyncSessionLocal", SessionFactory)
+    resolve = AsyncMock(
+        return_value=ResolvedH3ReferenceSet(
+            images=(
+                "character_references/7/alice/face.png",
+                "character_references/7/alice/genitals.png",
+            ),
+            descriptions=(
+                "Adult character Alice; front face view.",
+                "Adult character Alice; front genital anatomy close-up.",
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "src.web_api.services.reference_asset_service.resolve_h3_reference_refs",
+        resolve,
+    )
+    submit = AsyncMock(return_value={"task_id": "central-h3-ref", "cost": 1})
+
+    await submit_prompt_optimization(
+        request=_request(
+            target_task_type="minimax_h3_ref2v",
+            template={"id": "minimax_h3_ref2v", "version": 1},
+            media=[],
+            reference_refs=[
+                {
+                    "source": "private_character_view",
+                    "character_id": "alice",
+                    "view_type": "face_front",
+                },
+                {
+                    "source": "private_character_view",
+                    "character_id": "alice",
+                    "view_type": "genitals_front",
+                },
+            ],
+        ),
+        current_user=SimpleNamespace(id=7, username="alice"),
+        get_balance=AsyncMock(return_value=18),
+        object_size=AsyncMock(return_value=1024),
+        task_application=LegacyTaskApplicationAdapter(submit),
+        load_config_func=_load_config,
+    )
+
+    inputs = submit.await_args.kwargs["inputs"]
+    assert [item["role"] for item in inputs["media"]] == [
+        "reference_image_1",
+        "reference_image_2",
+    ]
+    assert [item["object_key"] for item in inputs["media"]] == list(
+        resolve.return_value.images
+    )
+    assert inputs["trusted_context"]["reference_descriptions"] == list(
+        resolve.return_value.descriptions
+    )
+    assert "front genital anatomy close-up" in inputs["prompt_config_snapshot"][
+        "user_message"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
     class SessionFactory:
         async def __aenter__(self):

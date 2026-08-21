@@ -1,5 +1,10 @@
 import type { GenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import type { LabUploadPreviewKind, LabUploadSlotId } from '@/features/generation/labModeConfig'
+import type { CharacterViewType } from '@/api/characters'
+
+export type H3ReferenceRef =
+  | { source: 'upload'; object_key: string }
+  | { source: 'private_character_view'; character_id: string; view_type: CharacterViewType }
 
 export type UploadedReference = {
   key: string
@@ -9,6 +14,7 @@ export type UploadedReference = {
   height?: number
   locked?: boolean
   lockedLabel?: string
+  referenceRef?: H3ReferenceRef
 }
 
 export type PendingReferenceUpload = UploadedReference & {

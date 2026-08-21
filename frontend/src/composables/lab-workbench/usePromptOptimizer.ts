@@ -61,7 +61,7 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
   const mediaFingerprint = () => JSON.stringify({
     mode: options.currentModeId.value,
     duration: Number(options.duration.value),
-    media: options.uploadedReferences.value.map(item => item.key),
+    media: options.uploadedReferences.value.map(item => item.referenceRef ?? item.key),
     characters: options.selectedCharacterIds.value,
     environmentSource: options.environmentSource?.value ?? 'upload',
     environmentId: options.selectedEnvironmentId?.value ?? '',
@@ -161,15 +161,19 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
         template: templateRef,
         prompt: original,
         context: { duration_seconds: Number(options.duration.value) },
-        media: isT2vIc ? []
+        media: isT2vIc || isH3Ref2v ? []
           : targetTaskType.value === 'ltx_t2v'
             ? []
             : options.uploadedReferences.value.map((item, index) => ({
-                role: isH3Ref2v
-                  ? `reference_image_${index + 1}`
-                  : index === 0 ? 'start_image' : 'end_image',
+                role: index === 0 ? 'start_image' : 'end_image',
                 object_key: item.key,
               })),
+        reference_refs: isH3Ref2v
+          ? options.uploadedReferences.value.map(item => item.referenceRef ?? ({
+              source: 'upload' as const,
+              object_key: item.key,
+            }))
+          : undefined,
         character_refs: isT2vIc ? options.selectedCharacterIds.value.map((value) => {
           const [source, id] = value.includes(':') ? value.split(':', 2) : ['private', value]
           return { source, id }

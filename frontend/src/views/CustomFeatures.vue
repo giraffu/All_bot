@@ -16,9 +16,13 @@ import CharacterReferenceWorkbench from '@/components/lab/CharacterReferenceWork
 import LabAdvancedOptionsPanel from '@/components/lab/LabAdvancedOptionsPanel.vue'
 import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
+import H3CharacterViewPicker from '@/components/lab/H3CharacterViewPicker.vue'
 import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
-import { WEB_MINIMAX_H3_REF2V_ENABLED } from '@/features/generation/labModeConfig'
+import {
+  WEB_CHARACTER_ASSETS_ENABLED,
+  WEB_MINIMAX_H3_REF2V_ENABLED,
+} from '@/features/generation/labModeConfig'
 
 const { t } = useI18n()
 const {
@@ -27,6 +31,7 @@ const {
   currentModeId,
   prompt,
   audioPrompt,
+  uploadedReferences,
   displayedReferences,
   isSubmitting,
   currentTask,
@@ -37,6 +42,8 @@ const {
   beforeUploadSlot,
   handleAssetVideoMetadata,
   handleRemoveReference,
+  addReference,
+  reorderReference,
   handleRemoveUploadSlot,
   handleSubmit,
   resetAfterResult,
@@ -166,6 +173,7 @@ const promptLockedHint = computed(() => (
         @update:prompt="prompt = $event"
         @asset-video-metadata="handleAssetVideoMetadata"
         @remove-reference="handleRemoveReference"
+        @reorder-reference="reorderReference"
         @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"
         @optimize-prompt="optimizePrompt"
@@ -216,6 +224,12 @@ const promptLockedHint = computed(() => (
                 {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}
               </div>
             </div>
+            <H3CharacterViewPicker
+              v-if="minimaxH3Mode === 'ref2v' && WEB_CHARACTER_ASSETS_ENABLED"
+              :references="uploadedReferences"
+              :max-items="4"
+              @select="addReference"
+            />
             <div class="space-y-2">
               <div class="text-xs font-medium text-slate-600 dark:text-slate-300">
                 {{ t('lab.workbench.minimax_h3_addons') }}

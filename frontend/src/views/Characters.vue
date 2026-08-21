@@ -14,6 +14,9 @@ const description = ref('')
 const sourceKey = ref<string | null>(null)
 const sourcePreview = ref<string | null>(null)
 const submitting = ref(false)
+const gender = ref<'female' | 'male'>('female')
+const adultConfirmed = ref(false)
+const usageRightsConfirmed = ref(false)
 const editingId = ref<string | null>(null)
 const editingName = ref('')
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,6 +69,9 @@ const submit = async () => {
       name: name.value.trim(),
       description: characterDescription,
       source_object_key: sourceKey.value,
+      prompt_profile: { gender: gender.value },
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
     })
     name.value = ''
     description.value = ''
@@ -100,10 +106,17 @@ const retry = async (character: (typeof store.items)[number]) => {
     message.error(t('characters.description_required'))
     return
   }
+  if (!character.prompt_profile || !character.adult_confirmed || !character.usage_rights_confirmed) {
+    message.error(t('characters.legacy_confirmation_hint'))
+    return
+  }
   await store.create({
     name: character.name,
     description: character.description.trim(),
     source_object_key: character.source_object_key,
+    prompt_profile: character.prompt_profile,
+    adult_confirmed: true,
+    usage_rights_confirmed: true,
   })
   ensureRefreshPolling()
   message.success(t('characters.build_submitted'))
@@ -125,7 +138,13 @@ const retry = async (character: (typeof store.items)[number]) => {
         <div class="space-y-3">
           <a-input v-model:value="name" :maxlength="60" :placeholder="t('characters.name_placeholder')" />
           <a-textarea v-model:value="description" :maxlength="500" :rows="4" :placeholder="t('characters.description_placeholder')" />
-          <a-button type="primary" :disabled="!name.trim() || !description.trim() || !sourceKey" :loading="submitting || uploading" @click="submit">
+          <a-radio-group v-model:value="gender" button-style="solid">
+            <a-radio-button value="female">{{ t('characters.gender.female') }}</a-radio-button>
+            <a-radio-button value="male">{{ t('characters.gender.male') }}</a-radio-button>
+          </a-radio-group>
+          <a-checkbox v-model:checked="adultConfirmed">{{ t('characters.adult_confirmation') }}</a-checkbox>
+          <a-checkbox v-model:checked="usageRightsConfirmed">{{ t('characters.rights_confirmation') }}</a-checkbox>
+          <a-button type="primary" :disabled="!name.trim() || !description.trim() || !sourceKey || !adultConfirmed || !usageRightsConfirmed" :loading="submitting || uploading" @click="submit">
             {{ t('characters.build_button') }} · 18 {{ t('app.credits') }}
           </a-button>
         </div>

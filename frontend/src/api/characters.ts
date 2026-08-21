@@ -12,6 +12,8 @@ export type CharacterReference = {
   sheet_object_key: string | null
   preview_url: string | null
   prompt_profile: CharacterPromptProfile | null
+  adult_confirmed: boolean
+  usage_rights_confirmed: boolean
   default_prompts: Record<CharacterViewType, string>
   views: CharacterReferenceView[]
 }
@@ -39,6 +41,7 @@ export type CharacterViewType =
   | 'body_front'
   | 'body_side'
   | 'body_back'
+  | 'genitals_front'
 
 export type CharacterViewEngine =
   | 'free_edit'
@@ -63,16 +66,28 @@ export const buildCharacter = async (payload: {
   name: string
   description: string
   source_object_key: string
-  prompt_profile?: CharacterPromptProfile
+  prompt_profile: CharacterPromptProfile
+  adult_confirmed: true
+  usage_rights_confirmed: true
 }) => (await api.post('/characters/build', payload)).data
 
 export const createCharacterDraft = async (payload: {
   name: string
   description: string
   source_object_key: string
-  prompt_profile?: CharacterPromptProfile
+  prompt_profile: CharacterPromptProfile
+  adult_confirmed: true
+  usage_rights_confirmed: true
 }): Promise<CharacterReference> => (
   await api.post('/characters/drafts', payload)
+).data
+
+export const confirmCharacterReference = async (id: string, payload: {
+  prompt_profile?: CharacterPromptProfile
+  adult_confirmed: true
+  usage_rights_confirmed: true
+}): Promise<CharacterReference> => (
+  await api.post(`/characters/${id}/confirm`, payload)
 ).data
 
 export const generateCharacterView = async (

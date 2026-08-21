@@ -75,6 +75,101 @@ async def test_ltx_t2v_operator_canary_bypasses_closed_user_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_h3_ref2v_resolves_typed_character_references_before_submission(
+    monkeypatch,
+):
+    monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("MINIMAX_H3_REF2V_ENABLED", "true")
+    monkeypatch.setenv("CHARACTER_ASSETS_ENABLED", "true")
+    monkeypatch.setenv("CHARACTER_EXPLICIT_VIEWS_ENABLED", "true")
+    submit = AsyncMock(return_value={"task_id": "task-h3-ref", "cost": 15})
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    from src.database import core as db_core
+    from src.web_api.services.reference_asset_service import ResolvedH3ReferenceSet
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
+    resolve = AsyncMock(
+        return_value=ResolvedH3ReferenceSet(
+            images=("character_references/123/alice/face.png", "staging/user-uploads/123/style.png"),
+            descriptions=("Adult character Alice; front face view.", "User-uploaded visual reference."),
+        )
+    )
+    monkeypatch.setattr(
+        "src.web_api.services.reference_asset_service.resolve_h3_reference_refs",
+        resolve,
+    )
+
+    await service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="minimax_h3_ref2v",
+            prompt="Alice walks toward the camera",
+            inputs={
+                "duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "16:9",
+                "reference_refs": [
+                    {
+                        "source": "private_character_view",
+                        "character_id": "alice",
+                        "view_type": "face_front",
+                    },
+                    {
+                        "source": "upload",
+                        "object_key": "staging/user-uploads/123/style.png",
+                    },
+                ],
+            },
+        ),
+        current_user=_user(),
+        get_balance=AsyncMock(return_value=85),
+        promote_staged_inputs_func=AsyncMock(
+            side_effect=lambda **kwargs: list(kwargs["input_refs"])
+        ),
+    )
+
+    submitted = submit.await_args.kwargs["inputs"]
+    assert submitted["images"] == list(resolve.return_value.images)
+    assert submitted["reference_descriptions"] == list(resolve.return_value.descriptions)
+    assert "reference_refs" not in submitted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["minimax_h3_i2v", "minimax_h3_flf2v"])
+async def test_h3_frame_modes_reject_character_reference_refs(monkeypatch, task_type):
+    monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
+    with pytest.raises(CoreDomainError, match="仅支持参考图生视频"):
+        await service.submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type=task_type,
+                prompt="scene",
+                inputs={
+                    "reference_refs": [
+                        {
+                            "source": "private_character_view",
+                            "character_id": "alice",
+                            "view_type": "face_front",
+                        }
+                    ]
+                },
+            ),
+            current_user=_user(),
+            get_balance=AsyncMock(return_value=100),
+        )
+
+
+@pytest.mark.asyncio
 async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
     monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")

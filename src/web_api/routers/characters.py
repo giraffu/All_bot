@@ -13,6 +13,8 @@ from src.web_api.schemas.character_schema import (
     CharacterBatchCapacityResponse,
     CharacterBuildRequest,
     CharacterBuildResponse,
+    CharacterConfirmationRequest,
+    CharacterDraftCreateRequest,
     CharacterPatchRequest,
     CharacterResponse,
     CharacterViewGenerateRequest,
@@ -21,6 +23,7 @@ from src.web_api.schemas.character_schema import (
 )
 from src.web_api.services.character_reference_service import (
     build_character,
+    character_features_enabled,
     create_character_draft,
     delete_character,
     generate_character_view,
@@ -29,9 +32,16 @@ from src.web_api.services.character_reference_service import (
     patch_character,
     save_character,
     upload_character_view,
+    confirm_character_identity,
 )
 
-router = APIRouter()
+
+def _require_character_assets_enabled() -> None:
+    if not character_features_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_require_character_assets_enabled)])
 
 
 @router.post("/build", response_model=CharacterBuildResponse)
@@ -45,13 +55,28 @@ async def create_character(
 
 @router.post("/drafts", response_model=CharacterResponse)
 async def create_character_workspace(
-    payload: CharacterBuildRequest,
+    payload: CharacterDraftCreateRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     return await create_character_draft(
         db=db,
         current_user=current_user,
+        payload=payload,
+    )
+
+
+@router.post("/{character_id}/confirm", response_model=CharacterResponse)
+async def confirm_character_workspace(
+    character_id: str,
+    payload: CharacterConfirmationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await confirm_character_identity(
+        db=db,
+        user_id=current_user.id,
+        character_id=character_id,
         payload=payload,
     )
 

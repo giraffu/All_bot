@@ -55,7 +55,7 @@ const routes: RouteRecordRaw[] = [
         name: 'CustomFeatures',
         component: () => import('@/views/CustomFeatures.vue')
       },
-      ...(getRuntimeFlag('enable_ltx_t2v', false)
+      ...(getRuntimeFlag('enable_character_assets', false)
         ? [{
             path: 'characters',
             name: 'Characters',

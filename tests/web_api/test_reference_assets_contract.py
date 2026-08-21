@@ -10,6 +10,7 @@ from src.web_api.services.prompt_optimizer_config_service import (
 )
 from src.web_api.services.reference_asset_service import (
     normalize_reference_inputs,
+    resolve_h3_reference_refs,
     resolve_reference_set,
 )
 
@@ -28,6 +29,86 @@ class _Db:
 
     async def execute(self, _query):
         return _ScalarResult(next(self.values))
+
+
+@pytest.mark.asyncio
+async def test_h3_private_character_views_and_uploads_resolve_in_user_order():
+    character = SimpleNamespace(
+        id="character-1",
+        name="Alice",
+        description="adult woman with short black hair",
+        status="ready",
+        moderation_status="active",
+        adult_confirmed_at=object(),
+        usage_rights_confirmed_at=object(),
+    )
+    face = SimpleNamespace(
+        view_type="face_front",
+        status="ready",
+        object_key="bot-data/character_references/7/character-1/views/face.png",
+    )
+    result = await resolve_h3_reference_refs(
+        db=_Db([character, face]),
+        user_id=7,
+        reference_refs=[
+            {
+                "source": "private_character_view",
+                "character_id": "character-1",
+                "view_type": "face_front",
+            },
+            {
+                "source": "upload",
+                "object_key": "staging/user-uploads/7/style.webp",
+            },
+        ],
+        object_size=AsyncMock(return_value=1024),
+        explicit_views_enabled=True,
+    )
+
+    assert result.images == (
+        "character_references/7/character-1/views/face.png",
+        "staging/user-uploads/7/style.webp",
+    )
+    assert result.descriptions[0].startswith("Adult character Alice")
+    assert "front face" in result.descriptions[0]
+    assert "User-uploaded" in result.descriptions[1]
+
+
+@pytest.mark.asyncio
+async def test_h3_character_reference_rejects_unconfirmed_or_duplicate_assets():
+    unconfirmed = SimpleNamespace(
+        status="ready",
+        moderation_status="active",
+        adult_confirmed_at=None,
+        usage_rights_confirmed_at=None,
+    )
+    with pytest.raises(CoreDomainError, match="成年"):
+        await resolve_h3_reference_refs(
+            db=_Db([unconfirmed]),
+            user_id=7,
+            reference_refs=[
+                {
+                    "source": "private_character_view",
+                    "character_id": "character-1",
+                    "view_type": "body_front",
+                }
+            ],
+            object_size=AsyncMock(return_value=1024),
+            explicit_views_enabled=True,
+        )
+
+    duplicate = {
+        "source": "upload",
+        "object_key": "staging/user-uploads/7/same.png",
+    }
+    with pytest.raises(CoreDomainError, match="重复"):
+        await resolve_h3_reference_refs(
+            db=_Db([]),
+            user_id=7,
+            reference_refs=[duplicate, duplicate],
+            object_size=AsyncMock(return_value=1024),
+            explicit_views_enabled=True,
+        )
 
 
 def test_typed_references_require_two_unique_characters_and_one_environment():

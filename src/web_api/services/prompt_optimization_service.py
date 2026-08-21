@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -91,11 +92,20 @@ async def submit_prompt_optimization(
     load_config_func=None,
 ) -> dict[str, Any]:
     requested_media = [item.model_dump() for item in request.media]
+    requested_h3_refs = (
+        [item.model_dump(exclude_none=True) for item in request.reference_refs]
+        if request.reference_refs is not None
+        else None
+    )
     is_minimax_h3 = request.target_task_type in MINIMAX_H3_TASK_TYPES
+    resolved_references = None
+    resolved_h3_references = None
     if request.lora_items:
         raise CoreDomainError("当前提示词优化任务不接受附加模型。")
     character_ids = [str(value or "").strip() for value in request.character_ids]
     if request.target_task_type == "ltx_t2v_ic":
+        if requested_h3_refs is not None:
+            raise CoreDomainError("当前提示词优化任务不接受 H3 人物视图引用。")
         if request.character_refs is not None and character_ids:
             raise CoreDomainError("新旧角色引用不能同时提交。")
         if request.environment_ref is not None and requested_media:
@@ -148,7 +158,50 @@ async def submit_prompt_optimization(
                 ),
             }
         ]
+    elif request.target_task_type == "minimax_h3_ref2v" and requested_h3_refs is not None:
+        if requested_media:
+            raise CoreDomainError("H3 新旧参考图格式不能同时提交。")
+        uses_character_assets = any(
+            item.get("source") == "private_character_view"
+            for item in requested_h3_refs
+        )
+        if uses_character_assets and os.getenv(
+            "CHARACTER_ASSETS_ENABLED", "false"
+        ).strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            raise CoreDomainError("人物身份素材功能当前未开放。")
+        from src.database.core import AsyncSessionLocal
+        from src.web_api.services.reference_asset_service import (
+            resolve_h3_reference_refs,
+        )
+
+        explicit_enabled = os.getenv(
+            "CHARACTER_EXPLICIT_VIEWS_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        async with AsyncSessionLocal() as character_db:
+            resolved_h3_references = await resolve_h3_reference_refs(
+                db=character_db,
+                user_id=current_user.id,
+                reference_refs=requested_h3_refs,
+                object_size=object_size,
+                explicit_views_enabled=explicit_enabled,
+            )
+        media = [
+            {
+                "role": f"reference_image_{index}",
+                "object_key": object_key,
+            }
+            for index, object_key in enumerate(
+                resolved_h3_references.images, start=1
+            )
+        ]
     else:
+        if requested_h3_refs is not None:
+            raise CoreDomainError("人物库参考图仅支持 H3 参考图生视频优化。")
         if character_ids or request.character_refs is not None or request.environment_ref is not None:
             raise CoreDomainError("当前提示词优化任务不接受角色或环境引用。")
         media = await validate_prompt_media_objects(
@@ -196,7 +249,15 @@ async def submit_prompt_optimization(
                 "environment_description": resolved_references.environment_description,
             }
             if request.target_task_type == "ltx_t2v_ic"
-            else {}
+            else (
+                {
+                    "reference_descriptions": list(
+                        resolved_h3_references.descriptions
+                    )
+                }
+                if resolved_h3_references is not None
+                else {}
+            )
         ),
         "text_stream_contract": build_text_stream_contract(
             resolved.profile.output_fields,
@@ -216,6 +277,16 @@ async def submit_prompt_optimization(
         prompt=request.prompt,
         context=resolved.normalized_context,
     )
+    if resolved_h3_references is not None:
+        bindings = "\n".join(
+            f"<Picture {index}>: {description}"
+            for index, description in enumerate(
+                resolved_h3_references.descriptions, start=1
+            )
+        )
+        variables["media_frame_instructions"] = (
+            f"{variables['media_frame_instructions']}\n{bindings}"
+        )
     variables.update(
         {
             "character_descriptions": "\n".join(

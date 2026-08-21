@@ -91,4 +91,17 @@ describe('LabReferenceTray', () => {
 
     expect(wrapper.find('.lab-reference-tray__remove').exists()).toBe(false)
   })
+
+  it('emits drag reorder positions in visible Picture order', async () => {
+    const wrapper = mountTray([
+      { key: 'first', preview: '/first.png', name: 'first.png' },
+      { key: 'second', preview: '/second.png', name: 'second.png' },
+    ])
+    const items = wrapper.findAll('.lab-reference-tray__item')
+
+    await items[0].trigger('dragstart')
+    await items[1].trigger('drop')
+
+    expect(wrapper.emitted('reorder')).toEqual([[0, 1]])
+  })
 })

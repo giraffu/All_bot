@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import {
   buildCharacter,
+  confirmCharacterReference,
   createCharacterDraft,
   deleteCharacter,
   fetchCharacterBatchCapacity,
@@ -54,15 +55,25 @@ export const useCharactersStore = defineStore('characters', () => {
     }
   }
 
-  const create = async (payload: { name: string; description: string; source_object_key: string; prompt_profile?: CharacterPromptProfile }) => {
+  const create = async (payload: { name: string; description: string; source_object_key: string; prompt_profile: CharacterPromptProfile; adult_confirmed: true; usage_rights_confirmed: true }) => {
     const result = await buildCharacter(payload)
     await refresh()
     return result
   }
 
-  const createDraft = async (payload: { name: string; description: string; source_object_key: string; prompt_profile?: CharacterPromptProfile }) => {
+  const createDraft = async (payload: { name: string; description: string; source_object_key: string; prompt_profile: CharacterPromptProfile; adult_confirmed: true; usage_rights_confirmed: true }) => {
     const result = await createCharacterDraft(payload)
     items.value = [result, ...items.value.filter(item => item.id !== result.id)]
+    return result
+  }
+
+  const confirmIdentity = async (id: string, promptProfile?: CharacterPromptProfile) => {
+    const result = await confirmCharacterReference(id, {
+      prompt_profile: promptProfile,
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
+    })
+    items.value = items.value.map(item => item.id === id ? result : item)
     return result
   }
 
@@ -121,6 +132,7 @@ export const useCharactersStore = defineStore('characters', () => {
     refresh,
     create,
     createDraft,
+    confirmIdentity,
     getBatchCapacity,
     generateView,
     uploadView,
