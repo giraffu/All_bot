@@ -10,16 +10,16 @@ describe('test Web video feature visibility', () => {
       enable_ltx_video_v2: false,
       enable_ltx_t2v: false,
       enable_minimax_h3: true,
-      enable_minimax_h3_entry: false,
+      enable_minimax_h3_entry: true,
       enable_minimax_h3_ref2v: true,
     }
   })
 
-  it('keeps the H3 card hidden while its direct test capability is enabled', async () => {
+  it('shows the H3 card when the test entry and capability flags are enabled', async () => {
     const { UNIFIED_LAB_MODES, resolveLabModeIdFromTaskType } = await import('./labModeConfig')
     const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)
 
-    expect(visibleModeIds).not.toContain('minimax_h3')
+    expect(visibleModeIds).toContain('minimax_h3')
     expect(visibleModeIds).not.toContain('ltx_video')
     expect(visibleModeIds).not.toContain('ltx_video_v2')
     expect(visibleModeIds).not.toContain('ltx_t2v')
