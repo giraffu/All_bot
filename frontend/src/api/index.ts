@@ -82,6 +82,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.config?.suppressGlobalError) {
+      return Promise.reject(error)
+    }
+
     const t = i18n.global.t
     if (!error.response) {
       message.error(t('api.network_error'))
