@@ -276,6 +276,43 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.minimax_h3_title')
   })
 
+  it('submits ordered mixed typed references for H3 REF2V', async () => {
+    const harness = createHarness('minimax_h3')
+    harness.prompt.value = 'Picture 1 and Picture 2 walk together'
+    harness.minimaxH3Mode.value = 'ref2v'
+    harness.uploadedReferences.value = [
+      {
+        key: 'character:character-1:face_front',
+        preview: 'https://cdn/face.png',
+        name: 'A · Front Face',
+        referenceRef: {
+          source: 'private_character_view',
+          character_id: 'character-1',
+          view_type: 'face_front',
+        },
+      },
+      refImage('web_uploads/7/scene.png'),
+    ]
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_ref2v',
+      inputs: expect.objectContaining({
+        images: [],
+        reference_refs: [
+          {
+            source: 'private_character_view',
+            character_id: 'character-1',
+            view_type: 'face_front',
+          },
+          { source: 'upload', object_key: 'web_uploads/7/scene.png' },
+        ],
+      }),
+    }), 'lab.cards.minimax_h3_title')
+    expect(harness.submitTask.mock.calls[0][0].inputs).not.toHaveProperty('reference_descriptions')
+  })
+
   it('submits ordered MSR character ids with a required scene background', async () => {
     const harness = createHarness('ltx_t2v')
     harness.prompt.value = '图1与图2在客厅交谈'

@@ -45,13 +45,19 @@ def _assert_task_access(
         "ENABLE_LTX_VIDEO_V2"
     ):
         raise CoreDomainError("高级图生视频 v2 当前未开放。")
-    gated_types = {"ltx_t2v", "ltx_t2v_ic", "character_reference_build"}
+    gated_types = {"ltx_t2v", "ltx_t2v_ic"}
     if (
         task_type in gated_types
         and not operator_canary_authorized
         and not env_enabled("LTX_T2V_BACKEND_ENABLED")
     ):
         raise CoreDomainError("文生视频与人物图库功能当前未开放。")
+    if (
+        task_type == "character_reference_build"
+        and not operator_canary_authorized
+        and not env_enabled("CHARACTER_ASSETS_ENABLED")
+    ):
+        raise CoreDomainError("人物身份素材功能当前未开放。")
     if (
         task_type.startswith("minimax_h3_")
         and not operator_canary_authorized
@@ -112,6 +118,46 @@ async def _resolve_ltx_character_inputs(
     inputs["background_image"] = resolved.environment_object_key
 
 
+async def _resolve_h3_reference_inputs(
+    inputs: dict[str, Any],
+    *,
+    internal_user_id: int,
+    env_enabled: Callable[[str], bool],
+) -> None:
+    reference_refs = inputs.get("reference_refs")
+    if reference_refs is None:
+        return
+    if inputs.get("images") not in (None, [], ()):
+        raise CoreDomainError("H3 新旧参考图格式不能同时提交。")
+    if inputs.get("reference_descriptions") not in (None, [], ()):
+        raise CoreDomainError("人物参考说明只能由服务端生成。")
+    uses_character_assets = any(
+        isinstance(item, dict)
+        and item.get("source") == "private_character_view"
+        for item in reference_refs
+    )
+    if uses_character_assets and not env_enabled("CHARACTER_ASSETS_ENABLED"):
+        raise CoreDomainError("人物身份素材功能当前未开放。")
+
+    from src.database.core import AsyncSessionLocal
+    from src.web_api.services.reference_asset_service import (
+        resolve_h3_reference_refs,
+    )
+
+    async with AsyncSessionLocal() as character_db:
+        resolved = await resolve_h3_reference_refs(
+            db=character_db,
+            user_id=internal_user_id,
+            reference_refs=reference_refs,
+            explicit_views_enabled=env_enabled(
+                "CHARACTER_EXPLICIT_VIEWS_ENABLED"
+            ),
+        )
+    inputs.pop("reference_refs", None)
+    inputs["images"] = list(resolved.images)
+    inputs["reference_descriptions"] = list(resolved.descriptions)
+
+
 async def prepare_web_submission_request(
     req,
     *,
@@ -129,6 +175,14 @@ async def prepare_web_submission_request(
         inputs["negative_prompt"] = req.negative_prompt
     if req.task_type == "character_reference_build":
         raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
+    if inputs.get("reference_refs") is not None:
+        if req.task_type != "minimax_h3_ref2v":
+            raise CoreDomainError("人物库参考图仅支持参考图生视频。")
+        await _resolve_h3_reference_inputs(
+            inputs,
+            internal_user_id=internal_user_id,
+            env_enabled=env_enabled,
+        )
     if req.task_type == "ltx_t2v_ic":
         await _resolve_ltx_character_inputs(
             inputs,

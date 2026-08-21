@@ -76,11 +76,15 @@ class PrivateBotFeatureGateMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class LtxT2VFeatureGateMiddleware(BaseHTTPMiddleware):
+class ReferenceAssetFeatureGateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        if request.url.path.startswith(("/api/characters", "/api/reference-assets")) and os.getenv(
-            "LTX_T2V_BACKEND_ENABLED", "false"
-        ).strip().lower() not in {"1", "true", "yes", "on"}:
+        characters_disabled = request.url.path.startswith(
+            "/api/characters"
+        ) and not _env_enabled("CHARACTER_ASSETS_ENABLED")
+        ltx_assets_disabled = request.url.path.startswith(
+            "/api/reference-assets"
+        ) and not _env_enabled("LTX_T2V_BACKEND_ENABLED")
+        if characters_disabled or ltx_assets_disabled:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return await call_next(request)
 
@@ -124,7 +128,7 @@ app = FastAPI(
 
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(PrivateBotFeatureGateMiddleware)
-app.add_middleware(LtxT2VFeatureGateMiddleware)
+app.add_middleware(ReferenceAssetFeatureGateMiddleware)
 
 # CORS configuration
 app.add_middleware(

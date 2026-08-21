@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, reactive } from 'vue'
+import { defineComponent, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CharacterLibraryPanel from './CharacterLibraryPanel.vue'
 
 const {
   confirm,
+  confirmIdentity,
   error,
   refresh,
   remove,
@@ -15,6 +16,7 @@ const {
   storeItems,
 } = vi.hoisted(() => ({
   confirm: vi.fn(),
+  confirmIdentity: vi.fn(),
   error: vi.fn(),
   refresh: vi.fn(),
   remove: vi.fn(),
@@ -27,8 +29,16 @@ vi.mock('@/stores/characters', () => ({
     items: storeItems,
     loading: false,
     refresh,
+    confirmIdentity,
     remove,
     rename,
+  }),
+}))
+
+vi.mock('@/composables/useUpload', () => ({
+  useUpload: () => ({
+    uploading: ref(false),
+    uploadFile: vi.fn(),
   }),
 }))
 
@@ -109,6 +119,7 @@ describe('CharacterLibraryPanel', () => {
     refresh.mockResolvedValue(undefined)
     rename.mockResolvedValue(undefined)
     remove.mockResolvedValue(undefined)
+    confirmIdentity.mockResolvedValue(undefined)
     storeItems.splice(0, storeItems.length, {
       id: 'character-1',
       name: '鹿小草',
@@ -118,6 +129,9 @@ describe('CharacterLibraryPanel', () => {
       source_object_key: 'source.png',
       sheet_object_key: 'sheet.png',
       preview_url: 'preview.png',
+      adult_confirmed: false,
+      usage_rights_confirmed: false,
+      prompt_profile: null,
       views: [
         {
           type: 'face_front',
@@ -162,6 +176,7 @@ describe('CharacterLibraryPanel', () => {
         AInput: InputStub,
         ATextarea: TextareaStub,
         AModal: ModalStub,
+        AUpload: { template: '<div><slot /></div>' },
         ASpin: true,
         ARadioGroup: true,
         ARadioButton: true,
@@ -230,5 +245,16 @@ describe('CharacterLibraryPanel', () => {
 
     expect(confirm).toHaveBeenCalledOnce()
     expect(remove).toHaveBeenCalledWith('character-1')
+  })
+
+  it('requires a one-time identity confirmation for legacy characters', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-character-character-1"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-character-identity"]').trigger('click')
+    await flushPromises()
+
+    expect(confirmIdentity).toHaveBeenCalledWith('character-1', { gender: 'female' })
   })
 })

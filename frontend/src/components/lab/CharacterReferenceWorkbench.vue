@@ -22,13 +22,14 @@ import {
   getCharacterViewEngineCost,
 } from '@/features/characters/characterViewEngines'
 import { useCharactersStore } from '@/stores/characters'
+import { WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED } from '@/features/generation/labModeConfig'
 
 type ViewDefinition = {
   type: CharacterViewType
   labelKey: string
 }
 
-const VIEW_DEFINITIONS: ViewDefinition[] = [
+const REQUIRED_VIEW_DEFINITIONS: ViewDefinition[] = [
   {
     type: 'face_front',
     labelKey: 'characters.views.face_front',
@@ -46,6 +47,10 @@ const VIEW_DEFINITIONS: ViewDefinition[] = [
     labelKey: 'characters.views.body_back',
   },
 ]
+const EXPLICIT_VIEW_DEFINITION: ViewDefinition = {
+  type: 'genitals_front',
+  labelKey: 'characters.views.genitals_front',
+}
 const GENDER_OPTIONS = ['female', 'male'] as const
 const FEMALE_TAG_GROUPS = [
   { key: 'breast_size', values: ['large', 'natural', 'flat'] },
@@ -67,6 +72,8 @@ const promptProfile = reactive<Required<CharacterPromptProfile>>({
 })
 const sourceKey = ref<string | null>(null)
 const sourcePreview = ref<string | null>(null)
+const adultConfirmed = ref(false)
+const usageRightsConfirmed = ref(false)
 const draftId = ref<string | null>(null)
 const activeViewType = ref<CharacterViewType>('face_front')
 const creatingDraft = ref(false)
@@ -79,7 +86,7 @@ const batchSubmitted = ref(0)
 const batchTotal = ref(0)
 const prompts = reactive<Record<CharacterViewType, string>>(
   Object.fromEntries(
-    VIEW_DEFINITIONS.map(view => [view.type, '']),
+    [...REQUIRED_VIEW_DEFINITIONS, EXPLICIT_VIEW_DEFINITION].map(view => [view.type, '']),
   ) as Record<CharacterViewType, string>,
 )
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -91,25 +98,42 @@ const draft = computed<CharacterReference | null>(() => (
 const viewMap = computed(() => new Map(
   (draft.value?.views ?? []).map(view => [view.type, view]),
 ))
+const viewDefinitions = computed(() => (
+  WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED
+    ? [...REQUIRED_VIEW_DEFINITIONS, EXPLICIT_VIEW_DEFINITION]
+    : REQUIRED_VIEW_DEFINITIONS
+))
 const activeDefinition = computed(() => (
-  VIEW_DEFINITIONS.find(view => view.type === activeViewType.value)!
+  viewDefinitions.value.find(view => view.type === activeViewType.value)!
 ))
 const activeView = computed<CharacterReferenceView | undefined>(() => (
   viewMap.value.get(activeViewType.value)
 ))
 const readyCount = computed(() => (
-  draft.value?.views.filter(view => view.status === 'ready').length ?? 0
+  REQUIRED_VIEW_DEFINITIONS.filter(definition => (
+    viewMap.value.get(definition.type)?.status === 'ready'
+  )).length
 ))
 const hasPendingView = computed(() => (
   draft.value?.views.some(view => view.status === 'pending') ?? false
 ))
+const hasPendingRequiredView = computed(() => (
+  draft.value?.views.some(view => (
+    view.status === 'pending'
+    && REQUIRED_VIEW_DEFINITIONS.some(definition => definition.type === view.type)
+  )) ?? false
+))
 const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 const missingViewTypes = computed(() => getMissingCharacterViewTypes(
-  VIEW_DEFINITIONS.map(view => view.type),
+  REQUIRED_VIEW_DEFINITIONS.map(view => view.type),
   draft.value?.views ?? [],
 ))
 const batchEstimatedCost = computed(() => (
   missingViewTypes.value.length * selectedEngineCost.value
+))
+const genitalGenerationBlocked = computed(() => (
+  activeViewType.value === 'genitals_front'
+  && viewMap.value.get('body_front')?.status !== 'ready'
 ))
 
 const profilePayload = computed<CharacterPromptProfile>(() => (
@@ -177,9 +201,11 @@ const createDraft = async () => {
       description: characterDescription,
       source_object_key: sourceKey.value,
       prompt_profile: profilePayload.value,
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
     })
     draftId.value = created.id
-    for (const definition of VIEW_DEFINITIONS) {
+    for (const definition of viewDefinitions.value) {
       prompts[definition.type] = created.default_prompts?.[definition.type] ?? ''
     }
     message.success(t('characters.draft_created'))
@@ -268,7 +294,7 @@ const generateMissingViews = async () => {
       getCapacity: store.getBatchCapacity,
       submit: async (viewType) => {
         if (!draftId.value) return
-        const definition = VIEW_DEFINITIONS.find(view => view.type === viewType)!
+        const definition = REQUIRED_VIEW_DEFINITIONS.find(view => view.type === viewType)!
         const prompt = prompts[viewType].trim()
         if (!prompt) throw new Error(`Missing prompt for ${viewType}`)
         await store.generateView(
@@ -311,7 +337,7 @@ const generateMissingViews = async () => {
 }
 
 const saveReference = async () => {
-  if (!draftId.value || readyCount.value !== VIEW_DEFINITIONS.length) return
+  if (!draftId.value || readyCount.value !== REQUIRED_VIEW_DEFINITIONS.length) return
   saving.value = true
   try {
     await store.saveReference(draftId.value)
@@ -331,13 +357,15 @@ const resetWorkspace = () => {
   sourceKey.value = null
   if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
   sourcePreview.value = null
+  adultConfirmed.value = false
+  usageRightsConfirmed.value = false
   activeViewType.value = 'face_front'
   selectedEngine.value = 'free_edit_v2_5'
   promptProfile.gender = 'female'
   promptProfile.breast_size = 'natural'
   promptProfile.pubic_hair = 'natural'
   promptProfile.skin_tone = 'asian_yellow'
-  for (const definition of VIEW_DEFINITIONS) {
+  for (const definition of [...REQUIRED_VIEW_DEFINITIONS, EXPLICIT_VIEW_DEFINITION]) {
     prompts[definition.type] = ''
   }
 }
@@ -452,11 +480,19 @@ onBeforeUnmount(() => {
         <div class="character-workbench__notice rounded-2xl px-4 py-3 text-sm leading-6">
           {{ t('characters.billing_hint') }}
         </div>
+        <div class="space-y-2 rounded-2xl border p-4 text-sm">
+          <a-checkbox v-model:checked="adultConfirmed" data-testid="adult-confirmation">
+            {{ t('characters.adult_confirmation') }}
+          </a-checkbox>
+          <a-checkbox v-model:checked="usageRightsConfirmed" data-testid="rights-confirmation">
+            {{ t('characters.rights_confirmation') }}
+          </a-checkbox>
+        </div>
         <a-button
           type="primary"
           size="large"
           class="h-12 rounded-2xl font-semibold"
-          :disabled="!name.trim() || !description.trim() || !sourceKey"
+          :disabled="!name.trim() || !description.trim() || !sourceKey || !adultConfirmed || !usageRightsConfirmed"
           :loading="creatingDraft || uploading"
           @click="createDraft"
         >
@@ -470,7 +506,7 @@ onBeforeUnmount(() => {
         <div>
           <div class="font-semibold">{{ draft.name }}</div>
           <div class="mt-1 text-xs">
-            {{ t('characters.ready_progress', { ready: readyCount, total: VIEW_DEFINITIONS.length }) }}
+            {{ t('characters.ready_progress', { ready: readyCount, total: REQUIRED_VIEW_DEFINITIONS.length }) }}
           </div>
         </div>
         <a-button size="small" class="rounded-full" @click="resetWorkspace">
@@ -478,9 +514,9 @@ onBeforeUnmount(() => {
         </a-button>
       </div>
 
-      <div class="character-workbench__tabs mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div class="character-workbench__tabs mb-5 grid grid-cols-2 gap-2 lg:grid-cols-5">
         <button
-          v-for="definition in VIEW_DEFINITIONS"
+          v-for="definition in viewDefinitions"
           :key="definition.type"
           type="button"
           class="character-workbench__tab rounded-2xl border px-3 py-3 text-left"
@@ -504,6 +540,16 @@ onBeforeUnmount(() => {
             {{ t(`characters.view_status_${viewMap.get(definition.type)?.status || 'empty'}`) }}
           </div>
         </button>
+      </div>
+
+      <div
+        v-if="activeViewType === 'genitals_front'"
+        class="character-workbench__notice mb-5 rounded-2xl px-4 py-3 text-sm leading-6"
+      >
+        {{ t('characters.explicit_view_disclaimer') }}
+        <span v-if="genitalGenerationBlocked" class="block font-semibold text-amber-400">
+          {{ t('characters.genital_body_front_required') }}
+        </span>
       </div>
 
       <div class="grid gap-5 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
@@ -566,7 +612,7 @@ onBeforeUnmount(() => {
               size="large"
               class="h-12 rounded-2xl font-semibold"
               :loading="generatingView === activeViewType || activeView?.status === 'pending'"
-              :disabled="!prompts[activeViewType].trim() || hasPendingView || batchGenerating || uploadingView !== null"
+              :disabled="!prompts[activeViewType].trim() || genitalGenerationBlocked || hasPendingView || batchGenerating || uploadingView !== null"
               @click="generateView"
             >
               {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
@@ -623,14 +669,14 @@ onBeforeUnmount(() => {
             <div>
               <div class="font-semibold">{{ t('characters.save_reference_title') }}</div>
               <div class="mt-1 text-xs opacity-70">
-                {{ readyCount === VIEW_DEFINITIONS.length ? t('characters.save_ready_hint') : t('characters.save_need_four') }}
+                {{ readyCount === REQUIRED_VIEW_DEFINITIONS.length ? t('characters.save_ready_hint') : t('characters.save_need_four') }}
               </div>
             </div>
             <a-button
               type="primary"
               ghost
               class="shrink-0 rounded-xl"
-              :disabled="readyCount !== VIEW_DEFINITIONS.length || hasPendingView"
+              :disabled="readyCount !== REQUIRED_VIEW_DEFINITIONS.length || hasPendingRequiredView"
               :loading="saving"
               @click="saveReference"
             >

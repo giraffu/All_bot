@@ -102,7 +102,13 @@ def _environment(environment: str) -> dict[str, str]:
         "ALIPAY_DIRECT_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
+        "CHARACTER_ASSETS_ENABLED": "true" if environment == "test" else "false",
+        "CHARACTER_EXPLICIT_VIEWS_ENABLED": (
+            "true" if environment == "test" else "false"
+        ),
         "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
+        "MINIMAX_H3_ENTRY_ENABLED": "true" if environment == "test" else "false",
+        "MINIMAX_H3_REF2V_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED": "true" if environment == "test" else "false",
         "WEB_FINALIZER_IN_WEB_ENABLED": "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
@@ -148,6 +154,8 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["WORKER_REDIS_URL"] == "redis://prod-worker/0"
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
+    assert web["CHARACTER_ASSETS_ENABLED"] == "false"
+    assert web["CHARACTER_EXPLICIT_VIEWS_ENABLED"] == "false"
     assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
     assert web["WEB_FINALIZER_IN_WEB_ENABLED"] == "false"
@@ -262,6 +270,16 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     assert module.affected_services(contract, {"LTX_T2V_BACKEND_ENABLED"}) == {
         "web-api"
     }
+
+
+def test_character_asset_flags_only_reconfigure_web_api():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(
+        contract,
+        {"CHARACTER_ASSETS_ENABLED", "CHARACTER_EXPLICIT_VIEWS_ENABLED"},
+    ) == {"web-api"}
 
 
 def test_web_finalizer_owner_flag_reconfigures_web_api():

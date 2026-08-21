@@ -62,6 +62,28 @@ export function useLabReferenceUploads({
     uploadedReferences.value.splice(index, 1)
   }
 
+  const addReference = (reference: UploadedReference) => {
+    if (uploadedReferences.value.length + pendingReferenceUploads.value.length >= currentMode.value.maxImages) {
+      message.warning(t('template_apply.image_prompt.max_images_warning', {
+        count: currentMode.value.maxImages,
+      }))
+      return false
+    }
+    if (reference.referenceRef && uploadedReferences.value.some(item => (
+      JSON.stringify(item.referenceRef) === JSON.stringify(reference.referenceRef)
+    ))) {
+      return false
+    }
+    uploadedReferences.value.push(reference)
+    return true
+  }
+
+  const reorderReference = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return
+    const [item] = uploadedReferences.value.splice(fromIndex, 1)
+    if (item) uploadedReferences.value.splice(toIndex, 0, item)
+  }
+
   const beforeUpload = async (file: File) => {
     if (uploadedReferences.value.length + pendingReferenceUploads.value.length >= currentMode.value.maxImages) {
       message.warning(
@@ -125,5 +147,7 @@ export function useLabReferenceUploads({
     beforeUpload,
     clearReferences,
     handleRemoveReference,
+    addReference,
+    reorderReference,
   }
 }

@@ -13,7 +13,7 @@ function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
     || value === 'apply'
     || value === 'prompt_templates'
     || value === 'submissions'
-    || (value === 'characters' && getRuntimeFlag('enable_ltx_t2v', false))
+    || (value === 'characters' && getRuntimeFlag('enable_character_assets', false))
   ) {
     return value
   }
@@ -44,7 +44,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
       { id: 'prompt_templates' as FavoriteFilterTab, name: options.t('my_notes.tabs.prompt_templates') },
       { id: 'submissions' as FavoriteFilterTab, name: options.t('my_notes.tabs.submissions') },
     ]
-    if (getRuntimeFlag('enable_ltx_t2v', false)) {
+    if (getRuntimeFlag('enable_character_assets', false)) {
       tabs.push({ id: 'characters', name: options.t('my_notes.tabs.characters') })
     }
     return tabs

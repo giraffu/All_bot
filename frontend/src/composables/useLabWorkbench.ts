@@ -453,6 +453,11 @@ export function useLabWorkbench() {
     selectedEnvironmentId.value = ''
     references.clearReferences()
   })
+  watch(minimaxH3Mode, (nextMode, previousMode) => {
+    if (nextMode !== previousMode && currentMode.value.id === 'minimax_h3') {
+      references.clearReferences()
+    }
+  })
 
   const hydrateLabRoute = () => {
     template.hydrateFromRoute()
@@ -613,6 +618,8 @@ export function useLabWorkbench() {
     beforeUploadSlot: slots.beforeUploadSlot,
     handleAssetVideoMetadata: slots.handleAssetVideoMetadata,
     handleRemoveReference: references.handleRemoveReference,
+    addReference: references.addReference,
+    reorderReference: references.reorderReference,
     handleRemoveUploadSlot: slots.handleRemoveUploadSlot,
     handleSubmit,
     resetAfterResult,

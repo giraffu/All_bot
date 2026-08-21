@@ -167,7 +167,7 @@ describe('usePromptOptimizer', () => {
     scope.stop()
   })
 
-  it('numbers one to four REF2V media roles in upload order', async () => {
+  it('submits ordered typed REF2V references without legacy media', async () => {
     get.mockResolvedValueOnce({
       data: {
         templates: [{
@@ -181,6 +181,13 @@ describe('usePromptOptimizer', () => {
       key: `web_uploads/7/reference-${index}.png`,
       preview: '',
       name: `reference-${index}`,
+      referenceRef: index === 2
+        ? {
+            source: 'private_character_view' as const,
+            character_id: 'character-1',
+            view_type: 'face_front' as const,
+          }
+        : undefined,
     }))
     const scope = effectScope()
     const optimizer = scope.run(() => usePromptOptimizer({
@@ -197,8 +204,9 @@ describe('usePromptOptimizer', () => {
 
     expect(post.mock.calls[0][1]).toMatchObject({
       target_task_type: 'minimax_h3_ref2v',
-      media: references.map((item, index) => ({
-        role: `reference_image_${index + 1}`,
+      media: [],
+      reference_refs: references.map(item => item.referenceRef ?? ({
+        source: 'upload',
         object_key: item.key,
       })),
     })

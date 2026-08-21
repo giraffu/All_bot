@@ -25,7 +25,9 @@ class CharacterBuildRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     description: str = Field(min_length=1, max_length=500)
     source_object_key: str = Field(min_length=1, max_length=1024)
-    prompt_profile: CharacterPromptProfile | None = None
+    prompt_profile: CharacterPromptProfile
+    adult_confirmed: Literal[True]
+    usage_rights_confirmed: Literal[True]
 
     @field_validator("name")
     @classmethod
@@ -42,6 +44,16 @@ class CharacterBuildRequest(BaseModel):
         if not value:
             raise ValueError("人物描述不能为空")
         return value
+
+
+class CharacterDraftCreateRequest(CharacterBuildRequest):
+    pass
+
+
+class CharacterConfirmationRequest(BaseModel):
+    adult_confirmed: Literal[True]
+    usage_rights_confirmed: Literal[True]
+    prompt_profile: CharacterPromptProfile | None = None
 
 
 class CharacterPatchRequest(BaseModel):
@@ -110,11 +122,15 @@ class CharacterResponse(BaseModel):
     name: str
     description: str | None
     status: str
+    moderation_status: str = "active"
+    moderation_reason: str | None = None
     task_id: str | None
     source_object_key: str
     sheet_object_key: str | None
     preview_url: str | None = None
     prompt_profile: CharacterPromptProfile | None = None
+    adult_confirmed: bool = False
+    usage_rights_confirmed: bool = False
     default_prompts: dict[str, str] = Field(default_factory=dict)
     views: list[CharacterViewResponse] = Field(default_factory=list)
 

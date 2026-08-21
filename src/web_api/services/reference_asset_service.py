@@ -8,7 +8,12 @@ from fastapi import HTTPException
 
 from config import MINIO_BUCKET
 from src.core.task_core_types import CoreDomainError
-from src.database.models import OfficialCharacterAsset, OfficialEnvironmentAsset
+from src.database.models import (
+    CharacterReference,
+    CharacterReferenceView,
+    OfficialCharacterAsset,
+    OfficialEnvironmentAsset,
+)
 from src.services.storage import storage
 from src.web_api.services.prompt_optimization_service import (
     PROMPT_MEDIA_MAX_BYTES,
@@ -22,6 +27,113 @@ class ResolvedReferenceSet:
     character_descriptions: tuple[str, str]
     environment_object_key: str
     environment_description: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedH3ReferenceSet:
+    images: tuple[str, ...]
+    descriptions: tuple[str, ...]
+
+
+_H3_CHARACTER_VIEW_DESCRIPTIONS = {
+    "face_front": "front face view",
+    "body_front": "full-body front view",
+    "body_side": "full-body side view",
+    "body_back": "full-body back view",
+    "genitals_front": "front genital anatomy close-up",
+}
+
+
+async def resolve_h3_reference_refs(
+    *,
+    db,
+    user_id: int,
+    reference_refs: list[dict],
+    object_size: Callable[
+        [str, str], Awaitable[int | None]
+    ] = storage.async_object_size,
+    explicit_views_enabled: bool,
+) -> ResolvedH3ReferenceSet:
+    if not isinstance(reference_refs, list) or not 1 <= len(reference_refs) <= 4:
+        raise CoreDomainError("H3 参考图必须包含 1 至 4 项。")
+
+    images: list[str] = []
+    descriptions: list[str] = []
+    identities: set[tuple[str, ...]] = set()
+    for raw in reference_refs:
+        if not isinstance(raw, dict):
+            raise CoreDomainError("H3 参考图引用格式无效。")
+        source = str(raw.get("source") or "").strip()
+        if source == "upload":
+            if set(raw) != {"source", "object_key"}:
+                raise CoreDomainError("上传参考图字段无效。")
+            object_key = normalize_owned_prompt_media_key(
+                str(raw.get("object_key") or ""), user_id
+            )
+            identity = (source, object_key)
+            description = (
+                "User-uploaded visual reference; use only visible identity, "
+                "appearance, prop, or style evidence."
+            )
+        elif source == "private_character_view":
+            if set(raw) != {"source", "character_id", "view_type"}:
+                raise CoreDomainError("人物参考图字段无效。")
+            character_id = str(raw.get("character_id") or "").strip()
+            view_type = str(raw.get("view_type") or "").strip()
+            if not character_id or view_type not in _H3_CHARACTER_VIEW_DESCRIPTIONS:
+                raise CoreDomainError("人物参考图类型无效。")
+            if view_type == "genitals_front" and not explicit_views_enabled:
+                raise CoreDomainError("人物特写功能当前未开放。")
+            character = (
+                await db.execute(
+                    select(CharacterReference).where(
+                        CharacterReference.id == character_id,
+                        CharacterReference.user_id == user_id,
+                        CharacterReference.status != "deleted",
+                    )
+                )
+            ).scalar_one_or_none()
+            if character is None or character.status != "ready":
+                raise CoreDomainError("人物不存在或尚未完成。")
+            if getattr(character, "moderation_status", "active") != "active":
+                raise CoreDomainError("人物已被停用。")
+            if not getattr(character, "adult_confirmed_at", None) or not getattr(
+                character, "usage_rights_confirmed_at", None
+            ):
+                raise CoreDomainError("请先确认人物已成年且拥有素材使用权。")
+            view = (
+                await db.execute(
+                    select(CharacterReferenceView).where(
+                        CharacterReferenceView.character_id == character_id,
+                        CharacterReferenceView.view_type == view_type,
+                    )
+                )
+            ).scalar_one_or_none()
+            if view is None or view.status != "ready" or not view.object_key:
+                raise CoreDomainError("所选人物视图尚未完成或已失效。")
+            object_key = str(view.object_key).removeprefix(f"{MINIO_BUCKET}/")
+            identity = (source, character_id, view_type)
+            character_description = str(character.description or "").strip()
+            description = (
+                f"Adult character {character.name}; "
+                f"{_H3_CHARACTER_VIEW_DESCRIPTIONS[view_type]}; "
+                f"same identity and appearance. {character_description}"
+            ).strip()
+        else:
+            raise CoreDomainError("H3 参考图来源无效。")
+
+        if identity in identities:
+            raise CoreDomainError("H3 参考图不能重复。")
+        identities.add(identity)
+        size = await object_size(MINIO_BUCKET, object_key)
+        if size is None:
+            raise CoreDomainError("H3 参考图不存在或暂不可读取。")
+        if size > PROMPT_MEDIA_MAX_BYTES:
+            raise CoreDomainError("单张 H3 参考图不能超过 20 MB。")
+        images.append(object_key)
+        descriptions.append(description)
+
+    return ResolvedH3ReferenceSet(tuple(images), tuple(descriptions))
 
 
 def _url(object_key: str | None) -> str | None:

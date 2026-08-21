@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CloseOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 interface UploadedReferenceItem {
@@ -19,9 +20,20 @@ defineProps<{
 
 const emit = defineEmits<{
   remove: [index: number]
+  reorder: [fromIndex: number, toIndex: number]
 }>()
 
 const { t } = useI18n()
+const draggedIndex = ref<number | null>(null)
+
+const startDrag = (index: number) => {
+  draggedIndex.value = index
+}
+
+const dropAt = (index: number) => {
+  if (draggedIndex.value !== null) emit('reorder', draggedIndex.value, index)
+  draggedIndex.value = null
+}
 </script>
 
 <template>
@@ -36,7 +48,15 @@ const { t } = useI18n()
         :key="item.key"
         class="lab-reference-tray__item group relative overflow-hidden rounded-xl"
         :class="{ 'lab-reference-tray__item--uploading': item.uploading }"
+        :draggable="!item.uploading && !item.locked"
+        @dragstart="startDrag(index)"
+        @dragover.prevent
+        @drop.prevent="dropAt(index)"
+        @dragend="draggedIndex = null"
       >
+        <span class="lab-reference-tray__order absolute bottom-0.5 left-0.5 rounded-full px-1.5 text-[10px] font-bold">
+          {{ index + 1 }}
+        </span>
         <a-image
           :src="item.preview"
           class="lab-reference-tray__image block"
@@ -115,6 +135,13 @@ const { t } = useI18n()
   font-size: 12px;
   line-height: 1;
   padding: 0;
+}
+
+.lab-reference-tray__order {
+  z-index: 3;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  pointer-events: none;
 }
 
 .lab-reference-tray__remove:hover,

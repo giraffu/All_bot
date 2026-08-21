@@ -76,6 +76,7 @@ const emit = defineEmits<{
   'update:prompt': [value: string]
   submit: []
   removeReference: [index: number]
+  reorderReference: [fromIndex: number, toIndex: number]
   removeUploadSlot: [slotId: LabUploadSlotId]
   assetVideoMetadata: [slotId: LabUploadSlotId, durationSeconds: number | null]
   optimizePrompt: []
@@ -152,6 +153,7 @@ const compactUploadLabel = (label: string) => label
         :items="references"
         class="mb-3"
         @remove="emit('removeReference', $event)"
+        @reorder="(fromIndex, toIndex) => emit('reorderReference', fromIndex, toIndex)"
       />
 
       <div v-if="hasAssetUploadSlots">

@@ -59,11 +59,11 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | canonical Worker、workflow JSON、mapping、patcher | current | 模型/workflow |
-| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 四个公开模式、TURBO REF2V/ManualSigmas、十四个候选 LoRA（单次最多十三个）、分阶段入口、test/prod Worker 共享 ComfyUI 并存边界、20 文件模型包和 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
+| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 四个公开模式、TURBO REF2V/ManualSigmas、Web 有序上传/私人人物 typed refs、十四个候选 LoRA（单次最多十三个）、分阶段入口、test/prod Worker 共享 ComfyUI 并存边界、20 文件模型包和 canary | task registry、API workflow、profile、model manifest、人物引用解析器 | runtime-verification-required | MiniMax H3 开发/发布 |
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
-| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、私有/官方人物面板、官方/上传环境、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt scene snapshot、LAN canary | current | 纯 T2V 无媒体；test-only IC 固定两个 typed 角色引用加一个环境引用，10Eros v1.4 DMD 提供成人能力、Licon MSR test 只维持身份，不叠加 distilled/Sulphur；三张图均不是首尾帧 |
+| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | 独立私人人物身份素材与 LTX T2V/人物一致性 | domain config、独立人物/特写开关、成人与权利确认、私有/官方人物面板、官方/上传环境、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt scene snapshot、LAN canary | current | 四个基础视图进入 LTX 面板；可选器官特写只作 H3 单图引用；test-only IC 固定两个 typed 角色引用加一个环境引用 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界、test/prod agent 共享 ComfyUI 并存语义 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |

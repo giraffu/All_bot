@@ -12,6 +12,7 @@ from src.core.task_core import ConcurrencyLimitError
 from src.core.task_core_types import SubmissionReconciliationPending
 from src.web_api.schemas.character_schema import (
     CharacterBuildRequest,
+    CharacterDraftCreateRequest,
     CharacterPromptProfile,
     CharacterViewUploadRequest,
 )
@@ -74,6 +75,9 @@ def test_character_name_rejects_whitespace_only_values():
             name="   ",
             description="adult woman with short black hair",
             source_object_key="staging/user-uploads/123/source.webp",
+            prompt_profile={"gender": "female"},
+            adult_confirmed=True,
+            usage_rights_confirmed=True,
         )
 
 
@@ -90,14 +94,21 @@ def test_character_description_is_required(description):
         CharacterBuildRequest(**payload)
 
 
-def test_character_view_catalog_exposes_four_white_background_character_targets():
+def test_character_view_catalog_exposes_four_required_views_and_optional_genitals():
     assert [item["type"] for item in service.CHARACTER_VIEW_CATALOG] == [
         "face_front",
         "body_front",
         "body_side",
         "body_back",
+        "genitals_front",
     ]
-    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 4
+    assert service.CHARACTER_REQUIRED_VIEW_TYPES == (
+        "face_front",
+        "body_front",
+        "body_side",
+        "body_back",
+    )
+    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 5
     assert all(
         item["default_prompt"].strip() for item in service.CHARACTER_VIEW_CATALOG
     )
@@ -108,6 +119,30 @@ def test_character_view_catalog_exposes_four_white_background_character_targets(
         assert "纯白背景" in prompt
         assert "纯黑背景" not in prompt
         assert not any("a" <= char.lower() <= "z" for char in prompt)
+
+
+def test_character_draft_requires_gender_and_explicit_adult_rights_confirmation():
+    base = {
+        "name": "Alice",
+        "description": "adult woman with short black hair",
+        "source_object_key": "staging/user-uploads/123/source.webp",
+        "prompt_profile": {"gender": "female"},
+    }
+    with pytest.raises(ValidationError):
+        CharacterDraftCreateRequest(**base)
+    with pytest.raises(ValidationError):
+        CharacterDraftCreateRequest(
+            **base,
+            adult_confirmed=True,
+            usage_rights_confirmed=False,
+        )
+
+    payload = CharacterDraftCreateRequest(
+        **base,
+        adult_confirmed=True,
+        usage_rights_confirmed=True,
+    )
+    assert payload.prompt_profile.gender == "female"
 
 
 def test_female_prompt_profile_composes_selected_anatomy_and_skin_tags():
@@ -126,6 +161,9 @@ def test_female_prompt_profile_composes_selected_anatomy_and_skin_tags():
         assert "浓密自然阴毛" in prompts[view_type]
         assert "亚洲晒黑肤色" in prompts[view_type]
         assert "勃起阴茎" not in prompts[view_type]
+    assert "成年女性" in prompts["genitals_front"]
+    assert "外阴" in prompts["genitals_front"]
+    assert "无互动" in prompts["genitals_front"]
 
 
 def test_male_prompt_profile_has_no_female_options_and_requires_visible_erect_anatomy():
@@ -139,6 +177,8 @@ def test_male_prompt_profile_has_no_female_options_and_requires_visible_erect_an
         assert "阴囊" in prompts[view_type]
         assert "无遮挡" in prompts[view_type]
     assert "女性生殖器" in prompts["body_front"]
+    assert "阴茎与阴囊" in prompts["genitals_front"]
+    assert "无道具" in prompts["genitals_front"]
 
 
 def test_male_prompt_profile_rejects_female_only_tags():
@@ -203,7 +243,7 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
     result = await service.create_character_draft(
         db=db,
         current_user=_user(),
-        payload=CharacterBuildRequest(
+        payload=CharacterDraftCreateRequest(
             name="Alice",
             description="adult woman with short black hair",
             source_object_key="staging/user-uploads/123/source.webp",
@@ -213,6 +253,8 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
                 pubic_hair="full",
                 skin_tone="asian_tan",
             ),
+            adult_confirmed=True,
+            usage_rights_confirmed=True,
         ),
     )
 
@@ -222,6 +264,8 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
     assert "巨乳" in result["default_prompts"]["body_front"]
     assert db.added[0].status == "draft"
     assert db.added[0].prompt_profile["skin_tone"] == "asian_tan"
+    assert db.added[0].adult_confirmed_at is not None
+    assert db.added[0].usage_rights_confirmed_at is not None
     assert db.added[0].sheet_object_key is None
 
 
@@ -290,6 +334,79 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         "record_history": False,
     }
     assert kwargs["allow_contribute_override"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_genitals_view_uses_ready_body_front_and_requires_confirmation(
+    monkeypatch,
+):
+    from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
+
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="ready",
+        source_object_key=f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp",
+        prompt_profile={"gender": "female"},
+        adult_confirmed_at=object(),
+        usage_rights_confirmed_at=object(),
+    )
+    body_front = SimpleNamespace(
+        view_type="body_front",
+        status="ready",
+        object_key=f"{MINIO_BUCKET}/character_references/123/character-1/views/body-front.png",
+    )
+    db = _Session([character, None, body_front])
+    submit = AsyncMock(
+        return_value=SimpleNamespace(
+            task_id="task-genitals-1",
+            cost=3,
+            status="pending",
+            balance_remaining=97,
+        )
+    )
+    monkeypatch.setattr(service, "submit_generation_task", submit)
+    monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: True)
+    monkeypatch.setattr(
+        service.storage, "async_object_exists", AsyncMock(return_value=True)
+    )
+
+    result = await service.generate_character_view(
+        db=db,
+        current_user=_user(),
+        character_id="character-1",
+        view_type="genitals_front",
+        payload=CharacterViewGenerateRequest(
+            prompt="preserve the same synthetic adult character",
+            engine="free_edit_v2_5",
+        ),
+    )
+
+    assert result["cost"] == 3
+    assert submit.await_args.kwargs["req"].inputs["images"] == [body_front.object_key]
+
+
+@pytest.mark.asyncio
+async def test_generate_genitals_view_rejects_unconfirmed_character(monkeypatch):
+    from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
+
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="ready",
+        prompt_profile={"gender": "female"},
+        adult_confirmed_at=None,
+        usage_rights_confirmed_at=None,
+    )
+    monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: True)
+    with pytest.raises(HTTPException, match="成年"):
+        await service.generate_character_view(
+            db=_Session([character, None]),
+            current_user=_user(),
+            character_id="character-1",
+            view_type="genitals_front",
+            payload=CharacterViewGenerateRequest(prompt="synthetic adult character"),
+        )
 
 
 @pytest.mark.asyncio
@@ -574,18 +691,25 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
             name="Alice",
             description="adult woman with short black hair",
             source_object_key="staging/user-uploads/123/source.webp",
+            prompt_profile={"gender": "female"},
+            adult_confirmed=True,
+            usage_rights_confirmed=True,
         ),
     )
 
     assert result["cost"] == 18
     assert result["balance_remaining"] == 82
     assert db.added[0].status == "pending"
+    assert db.added[0].adult_confirmed_at is not None
+    assert db.added[0].usage_rights_confirmed_at is not None
     assert submit.await_args.kwargs["allow_contribute_override"] is False
     assert submit.await_args.kwargs["submission_before_dispatch_func"] is not None
     assert submit.await_args.kwargs["submission_should_compensate_func"] is not None
     assert submit.await_args.kwargs["inputs"]["images"] == [
         f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp"
     ]
+    assert submit.await_args.kwargs["inputs"]["record_history"] is False
+    assert submit.await_args.kwargs["registry_metadata"]["record_history"] is False
 
 
 @pytest.mark.asyncio
@@ -622,6 +746,9 @@ async def test_character_build_stays_pending_while_dispatch_reconciles(monkeypat
             name="Alice",
             description="adult woman with short black hair",
             source_object_key="staging/user-uploads/123/source.webp",
+            prompt_profile={"gender": "female"},
+            adult_confirmed=True,
+            usage_rights_confirmed=True,
         ),
     )
 
@@ -635,6 +762,9 @@ async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
         name="Alice",
         description="adult woman with short black hair",
         source_object_key="staging/user-uploads/999/source.png",
+        prompt_profile={"gender": "female"},
+        adult_confirmed=True,
+        usage_rights_confirmed=True,
     )
     with pytest.raises(HTTPException, match="当前用户"):
         await service.build_character(
@@ -657,6 +787,9 @@ async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
                 name="Alice",
                 description="adult woman with short black hair",
                 source_object_key="staging/user-uploads/123/source.png",
+                prompt_profile={"gender": "female"},
+                adult_confirmed=True,
+                usage_rights_confirmed=True,
             ),
         )
     assert exc_info.value.status_code == 413

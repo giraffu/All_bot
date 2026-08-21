@@ -658,6 +658,8 @@ class CharacterReference(Base):
     name = Column(String(60), nullable=False)
     description = Column(String(500), nullable=True)
     prompt_profile = Column(JSON, nullable=True)
+    adult_confirmed_at = Column(DateTime, nullable=True)
+    usage_rights_confirmed_at = Column(DateTime, nullable=True)
     source_object_key = Column(String(1024), nullable=False)
     sheet_object_key = Column(String(1024), nullable=True)
     task_id = Column(String(64), nullable=False)
@@ -686,7 +688,7 @@ class CharacterReferenceView(Base):
     __table_args__ = (
         CheckConstraint(
             "view_type in ('face_front', 'face_side', 'face_three_quarter', "
-            "'body_front', 'body_side', 'body_back')",
+            "'body_front', 'body_side', 'body_back', 'genitals_front')",
             name="ck_character_reference_views_type",
         ),
         CheckConstraint(

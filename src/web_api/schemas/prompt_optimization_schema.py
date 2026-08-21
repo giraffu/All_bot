@@ -1,7 +1,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class PromptTemplateRef(BaseModel):
@@ -45,6 +45,35 @@ class EnvironmentAssetRef(BaseModel):
     object_key: str | None = Field(default=None, max_length=1024)
 
 
+class H3ReferenceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["upload", "private_character_view"]
+    object_key: str | None = Field(default=None, max_length=1024)
+    character_id: str | None = Field(default=None, max_length=64)
+    view_type: Literal[
+        "face_front",
+        "body_front",
+        "body_side",
+        "body_back",
+        "genitals_front",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def validate_source_fields(self):
+        if self.source == "upload":
+            if not self.object_key or self.character_id is not None or self.view_type is not None:
+                raise ValueError("upload reference requires only object_key")
+        elif (
+            not self.character_id
+            or self.view_type is None
+            or self.object_key is not None
+        ):
+            raise ValueError(
+                "private character view requires character_id and view_type"
+            )
+        return self
+
+
 class PromptOptimizationTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     client_request_id: UUID
@@ -56,6 +85,7 @@ class PromptOptimizationTaskRequest(BaseModel):
     character_ids: list[str] = Field(default_factory=list, max_length=2)
     character_refs: list[CharacterAssetRef] | None = Field(default=None, max_length=2)
     environment_ref: EnvironmentAssetRef | None = None
+    reference_refs: list[H3ReferenceRef] | None = Field(default=None, max_length=4)
     lora_items: list[PromptLoraItem] = Field(default_factory=list, max_length=5)
 
     @field_validator("prompt")

@@ -5,12 +5,14 @@ const apiMocks = vi.hoisted(() => ({
   fetchCharacters: vi.fn(),
   generateCharacterView: vi.fn(),
   uploadCharacterView: vi.fn(),
+  confirmCharacterReference: vi.fn(),
 }))
 const addTask = vi.hoisted(() => vi.fn())
 const settleExternalTask = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/characters', () => ({
   buildCharacter: vi.fn(),
+  confirmCharacterReference: apiMocks.confirmCharacterReference,
   createCharacterDraft: vi.fn(),
   deleteCharacter: vi.fn(),
   fetchCharacterBatchCapacity: apiMocks.fetchCharacterBatchCapacity,
@@ -48,6 +50,24 @@ describe('characters store', () => {
       limit: 5,
       active: 2,
       available: 3,
+    })
+  })
+
+  it('persists the one-time adult, rights, and missing-gender confirmation', async () => {
+    apiMocks.confirmCharacterReference.mockResolvedValue({
+      id: 'character-1',
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
+      views: [],
+    })
+    const store = useCharactersStore()
+
+    await store.confirmIdentity('character-1', { gender: 'female' })
+
+    expect(apiMocks.confirmCharacterReference).toHaveBeenCalledWith('character-1', {
+      prompt_profile: { gender: 'female' },
+      adult_confirmed: true,
+      usage_rights_confirmed: true,
     })
   })
 

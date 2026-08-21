@@ -170,7 +170,7 @@ export function useLabSubmitPayload({
       }
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: `minimax_h3_${mode}`,
-        images,
+        images: mode === 'ref2v' ? [] : images,
         duration: Number(duration.value),
         prompt: prompt.value,
         promptTarget: 'inputs',
@@ -185,7 +185,14 @@ export function useLabSubmitPayload({
                 end_source_height: uploadedReferences.value[1]?.height,
               }
             : {}),
-          reference_descriptions: [],
+          ...(mode === 'ref2v'
+            ? {
+                reference_refs: uploadedReferences.value.map(item => item.referenceRef ?? ({
+                  source: 'upload' as const,
+                  object_key: item.key,
+                })),
+              }
+            : {}),
           ...((minimaxH3AddonItems?.value.length ?? 0) > 0
             ? {
                 lora_items: minimaxH3AddonItems!.value.map(item => ({
