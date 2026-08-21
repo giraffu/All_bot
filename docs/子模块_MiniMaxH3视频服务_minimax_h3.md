@@ -51,6 +51,10 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   `images` 与 `reference_descriptions`。客户端不得提交人物 object key 或人物描述。
   `character-asset-mosaic-v1` 只用于人物库完整资产与预览，不能作为 H3 输入；这是为了
   避免模型把接触表复刻成分屏、网格或重复人物。
+  对人物子图，服务端还会按 `character_id` 分组并注入强制 Picture-to-target 绑定：同一
+  人物的多个 `<Picture N>` 只描述目标视频中的同一个实例，参考图本身、比较视图、接触
+  表、分屏和重复身体不得进入输出。用户无需在提示词中手写内部 Picture 编号；Prompt
+  Optimizer 使用同一绑定。
   Prompt Optimizer 复用相同解析器，因此优化和生成的 `<Picture N>` 顺序一致；最终
   生成会再次解析，优化后被停用或失效的人物在扣费前拒绝。
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V

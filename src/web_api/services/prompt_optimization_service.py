@@ -176,6 +176,7 @@ async def submit_prompt_optimization(
             raise CoreDomainError("人物身份素材功能当前未开放。")
         from src.database.core import AsyncSessionLocal
         from src.web_api.services.reference_asset_service import (
+            build_h3_character_reference_binding,
             resolve_h3_reference_refs,
         )
 
@@ -284,8 +285,17 @@ async def submit_prompt_optimization(
                 resolved_h3_references.descriptions, start=1
             )
         )
-        variables["media_frame_instructions"] = (
-            f"{variables['media_frame_instructions']}\n{bindings}"
+        character_binding = build_h3_character_reference_binding(
+            requested_h3_refs or []
+        )
+        variables["media_frame_instructions"] = "\n".join(
+            part
+            for part in (
+                variables["media_frame_instructions"],
+                bindings,
+                character_binding,
+            )
+            if part
         )
     variables.update(
         {

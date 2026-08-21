@@ -9,10 +9,37 @@ from src.web_api.services.prompt_optimizer_config_service import (
     render_config_snapshot,
 )
 from src.web_api.services.reference_asset_service import (
+    build_h3_character_reference_binding,
     normalize_reference_inputs,
     resolve_h3_reference_refs,
     resolve_reference_set,
 )
+
+
+def test_h3_character_binding_groups_multiple_views_of_the_same_identity():
+    binding = build_h3_character_reference_binding(
+        [
+            {
+                "source": "private_character_view",
+                "character_id": "alice",
+                "view_type": "face_front",
+            },
+            {"source": "upload", "object_key": "staging/user-uploads/7/room.png"},
+            {
+                "source": "private_character_view",
+                "character_id": "alice",
+                "view_type": "body_front_clothed",
+            },
+        ]
+    )
+
+    assert (
+        "<Picture 1> and <Picture 3> are different views of the same one target character"
+        in binding
+    )
+    assert "Render exactly one instance of this character" in binding
+    assert "<Picture 2>" not in binding
+    assert "contact sheets, split screens, grids, panels" in binding
 
 
 class _ScalarResult:

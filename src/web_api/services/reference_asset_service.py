@@ -94,6 +94,60 @@ _H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE = {
 }
 
 
+def _picture_labels(indices: list[int]) -> str:
+    labels = [f"<Picture {index}>" for index in indices]
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return " and ".join(labels)
+    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+
+def build_h3_character_reference_binding(reference_refs: list[dict]) -> str:
+    """Bind trusted character refs to target subjects without exposing object keys."""
+    grouped_positions: dict[str, list[int]] = {}
+    for index, raw in enumerate(reference_refs, start=1):
+        if not isinstance(raw, dict) or raw.get("source") != "private_character_view":
+            continue
+        character_id = str(raw.get("character_id") or "").strip()
+        if character_id:
+            grouped_positions.setdefault(character_id, []).append(index)
+    if not grouped_positions:
+        return ""
+
+    groups = list(grouped_positions.values())
+    clauses: list[str] = []
+    if len(groups) == 1:
+        labels = _picture_labels(groups[0])
+        if len(groups[0]) == 1:
+            clauses.append(
+                "The one and only person in the target video is the person from "
+                f"{labels}. Render exactly one instance of this person."
+            )
+        else:
+            clauses.append(
+                f"{labels} are different views of the same one target character. "
+                "The one and only person in the target video is the person shown in "
+                "these pictures. Render exactly one instance of this character."
+            )
+    else:
+        for positions in groups:
+            labels = _picture_labels(positions)
+            view_word = "is" if len(positions) == 1 else "are"
+            clauses.append(
+                f"{labels} {view_word} identity and appearance evidence for one target "
+                "character. Render exactly one instance of this character."
+            )
+
+    return (
+        "Reference-to-target binding (mandatory): "
+        f"{' '.join(clauses)} Use character reference pictures only as identity and "
+        "appearance evidence; do not show the reference pictures themselves. The output "
+        "must be one full-frame continuous scene, never comparison views, contact sheets, "
+        "split screens, grids, panels, inset images, or repeated bodies."
+    )
+
+
 async def resolve_h3_reference_refs(
     *,
     db,

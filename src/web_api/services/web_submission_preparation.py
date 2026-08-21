@@ -171,6 +171,7 @@ async def prepare_web_submission_request(
         env_enabled=env_enabled,
     )
     inputs = dict(req.inputs)
+    h3_character_binding = ""
     if req.negative_prompt:
         inputs["negative_prompt"] = req.negative_prompt
     if req.task_type == "character_reference_build":
@@ -178,6 +179,13 @@ async def prepare_web_submission_request(
     if inputs.get("reference_refs") is not None:
         if req.task_type != "minimax_h3_ref2v":
             raise CoreDomainError("人物库参考图仅支持参考图生视频。")
+        from src.web_api.services.reference_asset_service import (
+            build_h3_character_reference_binding,
+        )
+
+        h3_character_binding = build_h3_character_reference_binding(
+            inputs["reference_refs"]
+        )
         await _resolve_h3_reference_inputs(
             inputs,
             internal_user_id=internal_user_id,
@@ -206,7 +214,11 @@ async def prepare_web_submission_request(
     if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:
         raise CoreDomainError("自由P图 v3 仅支持上传 1 张原图。")
     if req.prompt:
-        inputs["prompt"] = req.prompt
+        inputs["prompt"] = (
+            f"{h3_character_binding}\n\nUser scene request:\n{req.prompt}"
+            if h3_character_binding
+            else req.prompt
+        )
     return PreparedWebSubmission(
         inputs=inputs,
         images=images,
