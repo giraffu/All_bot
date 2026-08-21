@@ -15,7 +15,16 @@ export type CharacterReference = {
   adult_confirmed: boolean
   usage_rights_confirmed: boolean
   default_prompts: Record<CharacterViewType, string>
+  view_configs?: CharacterViewConfig[]
   views: CharacterReferenceView[]
+}
+
+export type CharacterViewConfig = {
+  type: CharacterViewType
+  label: string
+  required: boolean
+  tag_groups: CharacterTagGroup[]
+  tag_options: Record<CharacterTagGroup, Record<string, string>>
 }
 
 export type CharacterPromptProfile = {
@@ -30,11 +39,15 @@ export type CharacterReferenceView = {
   label: string
   prompt: string
   default_prompt: string
+  tag_groups?: CharacterTagGroup[]
+  tag_options?: Record<CharacterTagGroup, Record<string, string>>
   status: 'pending' | 'ready' | 'failed'
   task_id: string | null
   object_key: string | null
   preview_url: string | null
 }
+
+export type CharacterTagGroup = 'breast_size' | 'pubic_hair' | 'skin_tone'
 
 export type CharacterViewType =
   | 'face_front'
@@ -115,7 +128,7 @@ export const saveCharacterReference = async (
   await api.post(`/characters/${id}/save`)
 ).data
 
-export const updateCharacter = async (id: string, payload: { name?: string; description?: string }) => (
+export const updateCharacter = async (id: string, payload: { name?: string; description?: string; prompt_profile?: CharacterPromptProfile }) => (
   await api.patch(`/characters/${id}`, payload)
 ).data
 

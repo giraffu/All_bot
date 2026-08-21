@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -34,7 +35,16 @@ from src.services.task_web_submission_intent import WebSubmissionIntentJournal
 from src.task_application_runtime import get_task_application
 from src.web_api.common.utils import release_read_transaction
 from src.web_api.schemas.task_schema import TaskGenerateRequest
+from src.web_api.services.character_view_prompt_config_service import (
+    BUILTIN_CHARACTER_VIEW_CONFIGS,
+    DEFAULT_TAG_OPTIONS,
+    get_builtin_character_view_config,
+    list_character_view_configs,
+    render_character_view_prompts,
+)
 from src.web_api.services.task_submission_service import submit_generation_task
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_CHARACTER_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 CHARACTER_IMAGE_CONTENT_TYPES = {
@@ -51,67 +61,15 @@ CHARACTER_VIEW_TASK_TYPES = {
     "free_edit_v3": "pornmaster_flux2_edit_bf16",
 }
 
-CHARACTER_VIEW_CATALOG = (
+CHARACTER_VIEW_CATALOG = tuple(
     {
-        "type": "face_front",
-        "label": "正脸图",
-        "index": 1,
-        "required": True,
-        "default_prompt": (
-            "生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、"
-            "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            "直视镜头，画面包括完整头部、裸露肩部和上胸。仅一个人物，纯白背景，"
-            "不要文字、标签、边框或拼贴。"
-        ),
-    },
-    {
-        "type": "body_front",
-        "label": "全身正面图",
-        "index": 4,
-        "required": True,
-        "default_prompt": (
-            "生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、"
-            "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
-            "配饰，正对镜头自然站立，从头顶到双脚完整可见。仅一个人物，纯白背景，"
-            "不要文字、标签、边框或拼贴。"
-        ),
-    },
-    {
-        "type": "body_side",
-        "label": "全身侧面图",
-        "index": 5,
-        "required": True,
-        "default_prompt": (
-            "生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、"
-            "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
-            "配饰，身体与头部均向左旋转九十度，呈严格侧面，从头顶到双脚完整可见。"
-            "仅一个人物，纯白背景，不要文字、标签、边框或拼贴。"
-        ),
-    },
-    {
-        "type": "body_back",
-        "label": "全身背面图",
-        "index": 6,
-        "required": True,
-        "default_prompt": (
-            "生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、"
-            "身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            "背对镜头自然站立，不回头，从头顶到双脚完整可见。仅一个人物，纯白背景，"
-            "不要文字、标签、边框或拼贴。"
-        ),
-    },
-    {
-        "type": "genitals_front",
-        "label": "生殖器正面特写",
-        "index": 7,
-        "required": False,
-        "default_prompt": (
-            "生成与源图为同一位成年人的生殖器正面特写，保持肤色和身体特征一致。"
-            "人物完全裸体，只展示一个成年人的人体参考细节，无互动、无道具、"
-            "无体液，纯白背景，"
-            "不要文字、标签、边框或拼贴。"
-        ),
-    },
+        "type": config["view_type"],
+        "label": config["display_name"],
+        "index": config["index"],
+        "required": config["required"],
+        "default_prompt": config["prompt_templates"]["neutral"],
+    }
+    for config in BUILTIN_CHARACTER_VIEW_CONFIGS.values()
 )
 
 
@@ -129,105 +87,26 @@ CHARACTER_REQUIRED_VIEW_TYPES = tuple(
     item["type"] for item in CHARACTER_VIEW_CATALOG if item["required"]
 )
 
-FEMALE_PROMPT_TAGS = {
-    "breast_size": {
-        "large": "巨乳",
-        "natural": "正常自然乳房",
-        "flat": "平乳",
-    },
-    "pubic_hair": {
-        "full": "浓密自然阴毛",
-        "natural": "正常自然阴毛",
-        "none": "无阴毛、阴部光滑",
-    },
-    "skin_tone": {
-        "fair": "白皙肤色",
-        "asian_yellow": "亚洲自然黄色肤色",
-        "asian_tan": "亚洲晒黑肤色",
-    },
-}
+FEMALE_PROMPT_TAGS = DEFAULT_TAG_OPTIONS
+
+
+async def _runtime_view_configs(db) -> list[dict]:
+    # Lightweight service unit tests use deliberately tiny session doubles. Real
+    # AsyncSession instances always expose get_bind and read dashboard overrides.
+    if not hasattr(db, "get_bind"):
+        return [
+            get_builtin_character_view_config(view_type)
+            for view_type in BUILTIN_CHARACTER_VIEW_CONFIGS
+        ]
+    return await list_character_view_configs(db)
 
 
 def compose_character_view_prompts(
     profile: dict | None,
+    configs: list[dict] | None = None,
 ) -> dict[str, str]:
     """Compose canonical prompts; legacy characters keep the neutral defaults."""
-    if not profile:
-        return {item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG}
-    gender = str(profile.get("gender") or "")
-    if gender == "female":
-        anatomy = "、".join(
-            (
-                FEMALE_PROMPT_TAGS["breast_size"][
-                    str(profile.get("breast_size") or "natural")
-                ],
-                FEMALE_PROMPT_TAGS["pubic_hair"][
-                    str(profile.get("pubic_hair") or "natural")
-                ],
-                FEMALE_PROMPT_TAGS["skin_tone"][
-                    str(profile.get("skin_tone") or "asian_yellow")
-                ],
-            )
-        )
-        identity = "同一位成年女性"
-        body_detail = f"明确保持成年女性解剖特征：{anatomy}"
-    elif gender == "male":
-        identity = "同一位成年男性"
-        body_detail = (
-            "明确保持成年男性解剖特征：自然勃起阴茎和阴囊完整、清晰、无遮挡，"
-            "双手自然垂于身体两侧，不遮挡下体；不要女性乳房或女性生殖器"
-        )
-        back_detail = (
-            "明确保持成年男性背部、腰臀和腿部解剖特征，双手自然垂于身体两侧；"
-            "阴茎保持自然勃起并位于身体正面，不要在背面错误生成生殖器，"
-            "不要女性乳房或女性生殖器"
-        )
-    else:
-        return {item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG}
-    if gender == "female":
-        back_detail = body_detail
-
-    common = (
-        "严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，"
-        "不穿任何衣物，不佩戴任何配饰"
-    )
-    ending = "仅一个人物，纯白背景，不要文字、标签、边框或拼贴。"
-    prompts = {
-        "face_front": (
-            f"生成与源图为{identity}的正面脸部近景，严格保持身份、五官、发型、"
-            "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
-            f"直视镜头，画面包括完整头部、裸露肩部和上胸。{ending}"
-        ),
-        "body_front": (
-            f"生成与源图为{identity}的全身正面站立图，{common}，{body_detail}。"
-            f"正对镜头自然站立，从头顶到双脚完整可见。{ending}"
-        ),
-        "body_side": (
-            f"生成与源图为{identity}的全身侧面站立图，{common}，{body_detail}。"
-            "身体与头部均向左旋转九十度，呈严格侧面，生殖器轮廓完整可见，"
-            f"从头顶到双脚完整可见。{ending}"
-        ),
-        "body_back": (
-            f"生成与源图为{identity}的全身背面站立图，{common}，{back_detail}。"
-            f"背对镜头自然站立，不回头，从头顶到双脚完整可见。{ending}"
-        ),
-        "genitals_front": (
-            (
-                f"生成与全身正面源图为{identity}的外阴正面特写，{common}，"
-                f"{body_detail}。外阴和周围皮肤清晰完整，保持中立人体参考姿势，"
-                "无互动、无道具、无体液，不展示第二个人。"
-                f"{ending}"
-            )
-            if gender == "female"
-            else (
-                f"生成与全身正面源图为{identity}的阴茎与阴囊正面特写，{common}，"
-                f"{body_detail}。阴茎自然勃起，阴茎与阴囊清晰完整，"
-                "保持中立人体参考姿势，无互动、无道具、无体液，不展示第二个人。"
-                f"{ending}"
-            )
-        ),
-    }
-    return prompts
+    return render_character_view_prompts(profile, configs)
 
 
 def character_features_enabled() -> bool:
@@ -271,7 +150,12 @@ def _presigned_object_url(value: str | None) -> str | None:
 def _view_response(
     row: CharacterReferenceView,
     default_prompts: dict[str, str] | None = None,
+    view_configs: list[dict] | None = None,
 ) -> dict:
+    runtime_config = next(
+        (item for item in (view_configs or []) if item["view_type"] == row.view_type),
+        None,
+    )
     config = CHARACTER_VIEW_BY_TYPE[row.view_type]
     default_prompt = (default_prompts or {}).get(
         row.view_type, config["default_prompt"]
@@ -282,9 +166,19 @@ def _view_response(
         prompt = default_prompt
     return {
         "type": row.view_type,
-        "label": config["label"],
+        "label": runtime_config["display_name"] if runtime_config else config["label"],
         "prompt": prompt,
         "default_prompt": default_prompt,
+        "tag_groups": (
+            list(runtime_config["tag_groups"])
+            if runtime_config
+            else list(BUILTIN_CHARACTER_VIEW_CONFIGS[row.view_type]["tag_groups"])
+        ),
+        "tag_options": (
+            dict(runtime_config["tag_options"])
+            if runtime_config
+            else dict(BUILTIN_CHARACTER_VIEW_CONFIGS[row.view_type]["tag_options"])
+        ),
         "status": row.status,
         "task_id": row.task_id,
         "object_key": row.object_key,
@@ -295,6 +189,7 @@ def _view_response(
 def _response(
     row: CharacterReference,
     views: list[CharacterReferenceView] | None = None,
+    view_configs: list[dict] | None = None,
 ) -> dict:
     preview = None
     if row.sheet_object_key:
@@ -302,7 +197,7 @@ def _response(
     resolved_views = list(views if views is not None else getattr(row, "views", []))
     resolved_views.sort(key=lambda item: CHARACTER_VIEW_ORDER.get(item.view_type, 99))
     prompt_profile = getattr(row, "prompt_profile", None)
-    default_prompts = compose_character_view_prompts(prompt_profile)
+    default_prompts = compose_character_view_prompts(prompt_profile, view_configs)
     return {
         "id": row.id,
         "name": row.name,
@@ -320,7 +215,26 @@ def _response(
             getattr(row, "usage_rights_confirmed_at", None)
         ),
         "default_prompts": default_prompts,
-        "views": [_view_response(view, default_prompts) for view in resolved_views],
+        "view_configs": [
+            {
+                "type": config["view_type"],
+                "label": config["display_name"],
+                "required": config["required"],
+                "tag_groups": list(config["tag_groups"]),
+                "tag_options": dict(config["tag_options"]),
+            }
+            for config in (
+                view_configs
+                or [
+                    get_builtin_character_view_config(view_type)
+                    for view_type in BUILTIN_CHARACTER_VIEW_CONFIGS
+                ]
+            )
+        ],
+        "views": [
+            _view_response(view, default_prompts, view_configs)
+            for view in resolved_views
+        ],
     }
 
 
@@ -339,7 +253,18 @@ async def list_characters(*, db, user_id: int) -> list[dict]:
         .scalars()
         .all()
     )
-    return [_response(row) for row in rows]
+    for row in rows:
+        ready_types = {
+            view.view_type
+            for view in getattr(row, "views", [])
+            if view.status == "ready" and view.object_key
+        }
+        if row.status == "draft" and set(CHARACTER_REQUIRED_VIEW_TYPES).issubset(
+            ready_types
+        ):
+            await _try_auto_materialize_character_sheet(db=db, character=row)
+    view_configs = await _runtime_view_configs(db)
+    return [_response(row, view_configs=view_configs) for row in rows]
 
 
 async def get_character_batch_capacity(
@@ -417,7 +342,8 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
     )
     db.add(row)
     await db.commit()
-    return _response(row, [])
+    view_configs = await _runtime_view_configs(db)
+    return _response(row, [], view_configs)
 
 
 async def confirm_character_identity(
@@ -449,7 +375,8 @@ async def confirm_character_identity(
     character.usage_rights_confirmed_at = now
     character.updated_at = now
     await db.commit()
-    return _response(character)
+    view_configs = await _runtime_view_configs(db)
+    return _response(character, view_configs=view_configs)
 
 
 async def generate_character_view(
@@ -645,32 +572,31 @@ async def upload_character_view(
     if not uploaded:
         raise HTTPException(status_code=503, detail="人物子图保存失败，请重试。")
 
+    view_configs = await _runtime_view_configs(db)
+    prompts = compose_character_view_prompts(
+        getattr(character, "prompt_profile", None), view_configs
+    )
     if view is None:
         view = CharacterReferenceView(
             id=str(uuid.uuid4()),
             character_id=character_id,
             view_type=view_type,
-            prompt=compose_character_view_prompts(
-                getattr(character, "prompt_profile", None)
-            )[view_type],
+            prompt=prompts[view_type],
             task_id=None,
             object_key=f"{MINIO_BUCKET}/{durable_key}",
             status="ready",
         )
         db.add(view)
     else:
-        view.prompt = compose_character_view_prompts(
-            getattr(character, "prompt_profile", None)
-        )[view_type]
+        view.prompt = prompts[view_type]
         view.task_id = None
         view.object_key = f"{MINIO_BUCKET}/{durable_key}"
         view.status = "ready"
         view.updated_at = datetime.now()
     await db.commit()
-    return _view_response(
-        view,
-        compose_character_view_prompts(getattr(character, "prompt_profile", None)),
-    )
+    if hasattr(db, "get_bind"):
+        await _try_auto_materialize_character_sheet(db=db, character=character)
+    return _view_response(view, prompts, view_configs)
 
 
 def _read_character_view_bytes(
@@ -695,7 +621,11 @@ def _compose_character_sheet(payloads: list[tuple[int, bytes]]) -> bytes:
 
 
 async def _materialize_saved_character_sheet(
-    *, db, character: CharacterReference, views: list[CharacterReferenceView]
+    *,
+    db,
+    character: CharacterReference,
+    views: list[CharacterReferenceView],
+    view_configs: list[dict] | None = None,
 ) -> dict:
     ready_by_type = {
         view.view_type: view
@@ -734,7 +664,48 @@ async def _materialize_saved_character_sheet(
     character.status = "ready"
     character.updated_at = datetime.now()
     await db.commit()
-    return _response(character, views)
+    if view_configs is None:
+        view_configs = await _runtime_view_configs(db)
+    return _response(character, views, view_configs)
+
+
+async def _try_auto_materialize_character_sheet(
+    *, db, character: CharacterReference
+) -> bool:
+    """Promote a persisted draft once all required child slots are ready.
+
+    A child result must remain usable even when sheet composition or storage has a
+    transient failure. The next child upload, finalizer, or explicit save retries it.
+    """
+    views = list(
+        (
+            await db.execute(
+                select(CharacterReferenceView).where(
+                    CharacterReferenceView.character_id == character.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    ready_types = {
+        view.view_type for view in views if view.status == "ready" and view.object_key
+    }
+    if not set(CHARACTER_REQUIRED_VIEW_TYPES).issubset(ready_types):
+        return False
+    try:
+        await _materialize_saved_character_sheet(
+            db=db,
+            character=character,
+            views=views,
+        )
+    except Exception:
+        logger.exception(
+            "character sheet auto materialization failed character_id=%s",
+            character.id,
+        )
+        return False
+    return True
 
 
 async def save_character(*, db, user_id: int, character_id: str) -> dict:
@@ -919,9 +890,16 @@ async def patch_character(*, db, user_id: int, character_id: str, payload) -> di
         row.name = payload.name.strip()
     if payload.description is not None:
         row.description = payload.description.strip()
+    if payload.prompt_profile is not None:
+        current_profile = getattr(row, "prompt_profile", None) or {}
+        next_profile = payload.prompt_profile.model_dump()
+        if current_profile.get("gender") not in {None, next_profile["gender"]}:
+            raise HTTPException(status_code=409, detail="人物性别不能再次修改。")
+        row.prompt_profile = next_profile
     row.updated_at = datetime.now()
     await db.commit()
-    return _response(row)
+    view_configs = await _runtime_view_configs(db)
+    return _response(row, view_configs=view_configs)
 
 
 async def delete_character(*, db, user_id: int, character_id: str) -> None:
@@ -965,6 +943,13 @@ async def finalize_character_reference(
                 candidate.object_key = result_path
             candidate.updated_at = datetime.now()
             await db.commit()
+            if candidate.status == "ready" and hasattr(db, "get"):
+                character = await db.get(CharacterReference, candidate.character_id)
+                if character is not None and character.status != "deleted":
+                    await _try_auto_materialize_character_sheet(
+                        db=db,
+                        character=character,
+                    )
             return
 
         # Legacy all-at-once builds stored the task directly on the character row.

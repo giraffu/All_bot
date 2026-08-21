@@ -833,6 +833,22 @@ class PromptOptimizerSceneConfig(Base):
     )
 
 
+class CharacterViewPromptConfig(Base):
+    __tablename__ = "character_view_prompt_configs"
+
+    view_type = Column(String(32), primary_key=True)
+    display_name = Column(String(100), nullable=False)
+    prompt_templates = Column(JSON, nullable=False)
+    tag_groups = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    tag_options = Column(JSON, nullable=False, default=dict, server_default=text("'{}'::json"))
+    revision = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    content_hash = Column(String(64), nullable=False)
+    updated_by = Column(String(100), nullable=False)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+
 class CharacterModelAsset(Base):
     __tablename__ = "character_model_assets"
     __table_args__ = (

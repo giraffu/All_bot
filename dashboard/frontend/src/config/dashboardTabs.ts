@@ -38,6 +38,7 @@ export type DashboardTabKey =
   | 'support_tickets'
   | 'reference_assets'
   | 'prompt_optimizer'
+  | 'character_generation'
 
 export interface DashboardTabConfig {
   key: DashboardTabKey
@@ -164,6 +165,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     label: '提示词优化配置',
     icon: RobotOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/PromptOptimizerConfigManager.vue'))),
+    containerClass: PANEL_CONTAINER_CLASS,
+    scrollable: true,
+  },
+  {
+    key: 'character_generation',
+    label: '角色生成管理',
+    icon: UserOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/CharacterGenerationConfigManager.vue'))),
     containerClass: PANEL_CONTAINER_CLASS,
     scrollable: true,
   },

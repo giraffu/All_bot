@@ -59,6 +59,7 @@ class CharacterConfirmationRequest(BaseModel):
 class CharacterPatchRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     description: str | None = Field(default=None, max_length=500)
+    prompt_profile: CharacterPromptProfile | None = None
 
     @field_validator("name")
     @classmethod
@@ -109,12 +110,22 @@ class CharacterViewResponse(BaseModel):
     label: str
     prompt: str
     default_prompt: str
+    tag_groups: list[str] = Field(default_factory=list)
+    tag_options: dict[str, dict[str, str]] = Field(default_factory=dict)
     status: str
     moderation_status: str = "active"
     moderation_reason: str | None = None
     task_id: str | None = None
     object_key: str | None = None
     preview_url: str | None = None
+
+
+class CharacterViewConfigResponse(BaseModel):
+    type: str
+    label: str
+    required: bool
+    tag_groups: list[str] = Field(default_factory=list)
+    tag_options: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class CharacterResponse(BaseModel):
@@ -132,6 +143,7 @@ class CharacterResponse(BaseModel):
     adult_confirmed: bool = False
     usage_rights_confirmed: bool = False
     default_prompts: dict[str, str] = Field(default_factory=dict)
+    view_configs: list[CharacterViewConfigResponse] = Field(default_factory=list)
     views: list[CharacterViewResponse] = Field(default_factory=list)
 
 

@@ -168,4 +168,26 @@ describe('characters store', () => {
       expect.anything(),
     )
   })
+
+  it('batch submission uses live capacity and registers every child as a floating task', async () => {
+    apiMocks.generateCharacterView
+      .mockResolvedValueOnce({ task_id: 'view-task-1', task_type: 'free_edit_v2_5' })
+      .mockResolvedValueOnce({ task_id: 'view-task-2', task_type: 'free_edit_v2_5' })
+    apiMocks.fetchCharacterBatchCapacity.mockResolvedValue({ limit: 2, active: 0, available: 2 })
+    const store = useCharactersStore()
+
+    const result = await store.generateMissingViews(
+      'character-1',
+      [
+        { type: 'body_side', prompt: 'side', label: '全身侧面图' },
+        { type: 'body_back', prompt: 'back', label: '全身背面图' },
+      ],
+      'free_edit_v2_5',
+    )
+
+    expect(result).toMatchObject({ submitted: 2, failed: 0, cancelled: false })
+    expect(apiMocks.fetchCharacterBatchCapacity).toHaveBeenCalled()
+    expect(addTask).toHaveBeenCalledTimes(2)
+    expect(store.batchRuns['character-1']).toMatchObject({ running: false, submitted: 2, total: 2 })
+  })
 })

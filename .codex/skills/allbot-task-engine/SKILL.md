@@ -71,15 +71,12 @@ finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独�
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
   cleanup；清理失败需保留可恢复证据。
-- Web finalizer record 的 Hash 是恢复事实，due-time ZSET 是调度索引；写 record
-  必须同步刷新 due score。runner 只取到期小批次，禁止周期性 `HGETALL`。
-  处理中保留 due member，并以单任务 lease 防多实例重复收口；终态才原子清理
-  record、due member 与 backend index。Central 终态 Pub/Sub 只把任务提前设为
-  due-now，事件丢失仍由 ZSET 轮询兜底。
-- `task-control-worker` 是 submission reconciliation、Web finalizer 和 generic
-  zombie sweep 的目标宿主，三者使用独立 Redis leader lease。该模块/profile
-  默认禁用；迁移时先启用并确认 health/lease，再分别关闭 Web、主 Bot、QQCC
-  的旧循环。短暂重叠仍必须依赖单任务 lease/幂等账本保证安全，不能同时翻转。
+- Web finalizer Hash 是恢复事实，due-time ZSET 是索引；写 record 同步刷新 score。
+  runner 只取到期小批次，禁止 `HGETALL`；处理中保留 member 并用单任务 lease，终态
+  原子清理。Pub/Sub 仅提前 due，事件丢失由 ZSET 兜底。
+- `task-control-worker` 承载 reconciliation、Web finalizer 和 zombie sweep，三者各用
+  leader lease。迁移先启用并确认 health/lease，再关闭旧循环；重叠靠单任务 lease/
+  幂等账本，不能同时翻转。
 - Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
   失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
   也不能借此自动重启或删除 provider/GPU runtime。
@@ -87,6 +84,8 @@ finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独�
   `dispatching/reconciling` 期间必须保留 owner，不得因 monitor 超时或断网释放。
 - presentation 的 `record_history=false` 只隐藏内部 stage 的 History/计数，
   不跳过结果物化和运行态清理；`send_result=false` 也不能替代 History 语义。
+- 人物子图由全局 store 按服务端并发补位、逐图注册悬浮任务，不绑定页面生命周期；
+  四个基础槽位 ready 后由服务端自动合成面板。
 
 ## 4. provider、队列与 Worker 红线
 
