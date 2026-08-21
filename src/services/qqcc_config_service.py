@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.lora_catalog import IMAGE_LORA_MODELS
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_MAX_ADDON_ITEMS,
     MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_REF2V,
     build_minimax_h3_spec,
@@ -96,7 +97,7 @@ AI_VIDEO_DURATION_KEYS = (5, 10, 15)
 AI_VIDEO_RESOLUTION_KEYS = ("preview", "small", "standard", "hd")
 DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
-AI_VIDEO_MAX_LORA_ITEMS = len(MINIMAX_H3_ADDON_MODELS)
+AI_VIDEO_MAX_LORA_ITEMS = MINIMAX_H3_MAX_ADDON_ITEMS
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
@@ -1849,7 +1850,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ai_video_addon_models_version": 2,
+        "ai_video_addon_models_version": 3,
         "ai_video_addon_models": [
             {
                 "value": model.id,

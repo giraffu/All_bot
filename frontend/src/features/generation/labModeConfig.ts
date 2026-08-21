@@ -93,6 +93,7 @@ export const MINIMAX_H3_ADDON_OPTIONS = [
   { value: 'vagassist', labelKey: 'lab.workbench.minimax_h3_addon_options.vagassist', defaultStrength: 1.0 },
   { value: 'pussy', labelKey: 'lab.workbench.minimax_h3_addon_options.pussy', defaultStrength: 0.35 },
   { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addon_options.penis', defaultStrength: 1.0 },
+  { value: 'cumshot', labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot', defaultStrength: 0.9 },
 ] as const
 
 export const EDIT_LORA_OPTIONS = [

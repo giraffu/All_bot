@@ -101,16 +101,16 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2
+    version: 2026-08-21-10eros-turbo-ref2va-addon14-hmpenis-v2-cumshot-v05
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2/files
-      discovered_size_gb: 102.31
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-21-10eros-turbo-ref2va-addon14-hmpenis-v2-cumshot-v05/files
+      discovered_size_gb: 102.68
       import_status: prepared_by_script
-      notes: Pinned 10Eros-Max Beta2 FL2VA base plus TURBO Ref2VA Beta2, fixed LightX2V FL2VA 8-step acceleration, thirteen optional LoRAs, and official Comfy-Org Qwen3-VL/video/audio VAE assets. All nineteen sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
+      notes: Pinned 10Eros-Max Beta2 FL2VA base plus TURBO Ref2VA Beta2, fixed LightX2V FL2VA 8-step acceleration, fourteen optional LoRAs, and official Comfy-Org Qwen3-VL/video/audio VAE assets. Motion Booster V0.2 is unchanged, HMPenis is pinned to v2.0, and HMCumshot v0.5 is newly added. All twenty sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
     files:
       - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors
         sha256: 57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20
@@ -166,9 +166,12 @@ bundles:
       - relative_path: loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors
         sha256: 3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee
         size_bytes: 626294968
-      - relative_path: loras/MiniMaxH3/HMPenis_v2_e35.safetensors
-        sha256: c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060
-        size_bytes: 310168344
+      - relative_path: loras/MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors
+        sha256: 017dd1adddc1be3ec0605dd2e7de97138eb2c6c6ba24be402cf47f103ac1f1b3
+        size_bytes: 77580008
+      - relative_path: loras/MiniMaxH3/HMCumshot_V2.safetensors
+        sha256: 1a5b7948bb97f27737e62c3dd5497a3afb77517f230787f45e45c7d8fe3dc24d
+        size_bytes: 626294968
 
   img2img_lora_baseline:
     version: 2026-06-10

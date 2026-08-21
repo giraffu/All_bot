@@ -34,6 +34,11 @@ describe('labModeConfig', () => {
       labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx',
       defaultStrength: 0.75,
     })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'cumshot',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot',
+      defaultStrength: 0.9,
+    })
   })
 
   it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {

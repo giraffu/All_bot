@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-20-10eros-turbo-ref2va-addon13-lightx2v8-mystic-v2"
+VERSION = "2026-08-21-10eros-turbo-ref2va-addon14-hmpenis-v2-cumshot-v05"
 MIN_FREE_BYTES = 105 * 1024**3
 FILES = (
     (
@@ -132,10 +132,16 @@ FILES = (
         "https://civitai.red/api/download/models/3215304?fileId=3097100",
     ),
     (
-        "loras/MiniMaxH3/HMPenis_v2_e35.safetensors",
-        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
-        310_168_344,
-        "https://civitai.red/api/download/models/3218160",
+        "loras/MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors",
+        "017dd1adddc1be3ec0605dd2e7de97138eb2c6c6ba24be402cf47f103ac1f1b3",
+        77_580_008,
+        "https://civitai.red/api/download/models/3247473?fileId=3130327",
+    ),
+    (
+        "loras/MiniMaxH3/HMCumshot_V2.safetensors",
+        "1a5b7948bb97f27737e62c3dd5497a3afb77517f230787f45e45c7d8fe3dc24d",
+        626_294_968,
+        "https://civitai.red/api/download/models/3238531?fileId=3121030",
     ),
 )
 
@@ -233,15 +239,16 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3217238:file/3099030",
                 "civitai:modelVersion/3216751",
                 "civitai:modelVersion/3215304",
-                "civitai:modelVersion/3218160",
+                "civitai:modelVersion/3247473:file/3130327",
+                "civitai:modelVersion/3238531:file/3121030",
             ],
             "revision": "10eros-fl=47aa7e38; 10eros-ref=7766d5d6; comfy=014cd40f; lightx2v=62487ee6",
             "variant": (
                 "10Eros-Max Beta2 pruned FL2VA base, TURBO Ref2VA Beta2, "
                 "plus fixed LightX2V FL2VA 8-step "
-                "v1.0 acceleration and thirteen optional one-file LoRAs: NaughtyTimes "
+                "v1.0 acceleration and fourteen optional one-file LoRAs: NaughtyTimes "
                 "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v2, HMBreasts, "
-                "VagAssist, HMPussy v6, HMPenis v2, Breast Play & Jiggle v1, HMInnie "
+                "VagAssist, HMPussy v6, HMPenis v2.0, HMCumshot v0.5, Breast Play & Jiggle v1, HMInnie "
                 "v1, Deepthroat v0.2, POV Missionary v0.7 and Footjobs Type B v1; "
                 "official Qwen3-VL encoder "
                 "and FP16 video/FP32 audio VAEs"
