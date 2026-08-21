@@ -127,10 +127,10 @@ manifest 和专项文档读取，不在此维护快照。
   `worst quality, inconsistent motion, blurry, jittery, distorted`。布局排除词必须
   单独 A/B 验证后才能加入，不能默认与参考表训练语义对冲。
   LTX 只接受既有 `ingredients-character-panel-v3`：左侧正脸、右侧全身正/侧/背，
-  禁止把多个同角色素材作为多个等权 scene panel。新的 H3 私人人物素材使用独立的
-  `character-asset-mosaic-v1`，允许任意槽缺失，裸体/穿衣正面全身窄列置左，其余
-  ready 槽按两行列流式排列；H3 必须把整张合成图作为一个 typed ref，不能把它送入
-  LTX。身体局部槽只允许管理员模板或用户上传，不调用提示词生成。
+  新私人人物库的 `character-asset-mosaic-v1` 只作完整资产与预览：槽可缺失，裸体/穿衣
+  全身窄列置左，其余 ready 槽按两行流式排列。H3 canary 已证明接触表会被复刻成分屏和
+  重复身体，因此 H3 只能逐张选择 1–4 个子图 typed refs，mosaic 不进入 H3/LTX。
+  身体局部槽只允许管理员模板或用户上传，不调用提示词生成。
 
 ## 6. 最小验证
 

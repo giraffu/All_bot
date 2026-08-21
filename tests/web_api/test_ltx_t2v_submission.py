@@ -103,7 +103,7 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
     resolve = AsyncMock(
         return_value=ResolvedH3ReferenceSet(
             images=("character_references/123/alice/character-asset-mosaic-v1.png", "staging/user-uploads/123/style.png"),
-            descriptions=("Adult character Alice; composite reference sheet.", "User-uploaded visual reference."),
+            descriptions=("Adult character Alice; front face identity reference.", "User-uploaded visual reference."),
         )
     )
     monkeypatch.setattr(
@@ -121,8 +121,9 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
                 "aspect_ratio": "16:9",
                 "reference_refs": [
                     {
-                        "source": "private_character_sheet",
+                        "source": "private_character_view",
                         "character_id": "alice",
+                        "view_type": "face_front",
                     },
                     {
                         "source": "upload",
@@ -156,8 +157,9 @@ async def test_h3_frame_modes_reject_character_reference_refs(monkeypatch, task_
                 inputs={
                     "reference_refs": [
                         {
-                            "source": "private_character_sheet",
+                            "source": "private_character_view",
                             "character_id": "alice",
+                            "view_type": "face_front",
                         }
                     ]
                 },

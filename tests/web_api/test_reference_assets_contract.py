@@ -75,7 +75,7 @@ async def test_h3_private_character_views_and_uploads_resolve_in_user_order():
 
 
 @pytest.mark.asyncio
-async def test_h3_private_character_sheet_injects_post_creation_child_descriptions():
+async def test_h3_private_character_sheet_is_rejected_to_prevent_collage_leakage():
     character = SimpleNamespace(
         id="character-1",
         name="Detail-only character",
@@ -103,25 +103,16 @@ async def test_h3_private_character_sheet_injects_post_creation_child_descriptio
         ],
     )
 
-    result = await resolve_h3_reference_refs(
-        db=_Db([character]),
-        user_id=7,
-        reference_refs=[
-            {"source": "private_character_sheet", "character_id": "character-1"}
-        ],
-        object_size=AsyncMock(return_value=4096),
-        explicit_views_enabled=True,
-    )
-
-    assert result.images == (
-        "character_references/7/character-1/character-asset-mosaic-v1.png",
-    )
-    assert "Only lower-body details" in result.descriptions[0]
-    assert "Bare feet with red nail polish" in result.descriptions[0]
-    assert "do not reproduce the collage" in result.descriptions[0]
-    assert "exactly one person" in result.descriptions[0]
-    assert "never render a contact sheet, split screen, grid, panels, or duplicate bodies" in result.descriptions[0]
-    assert "do not copy the source backdrop" in result.descriptions[0]
+    with pytest.raises(CoreDomainError, match="H3 参考图来源无效"):
+        await resolve_h3_reference_refs(
+            db=_Db([character]),
+            user_id=7,
+            reference_refs=[
+                {"source": "private_character_sheet", "character_id": "character-1"}
+            ],
+            object_size=AsyncMock(return_value=4096),
+            explicit_views_enabled=True,
+        )
 
 
 @pytest.mark.asyncio

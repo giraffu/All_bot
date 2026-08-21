@@ -168,60 +168,6 @@ async def resolve_h3_reference_refs(
                 f"{_H3_CHARACTER_VIEW_COMPOSITION_GUIDANCE[view_type]} "
                 f"{character_description} {view_description}"
             ).strip()
-        elif source == "private_character_sheet":
-            if set(raw) != {"source", "character_id"}:
-                raise CoreDomainError("人物参考图字段无效。")
-            character_id = str(raw.get("character_id") or "").strip()
-            if not character_id:
-                raise CoreDomainError("人物参考图字段无效。")
-            character = (
-                await db.execute(
-                    select(CharacterReference).where(
-                        CharacterReference.id == character_id,
-                        CharacterReference.user_id == user_id,
-                        CharacterReference.status != "deleted",
-                    )
-                )
-            ).scalar_one_or_none()
-            if character is None or character.status != "ready" or not character.sheet_object_key:
-                raise CoreDomainError("人物不存在或尚未完成。")
-            if getattr(character, "moderation_status", "active") != "active":
-                raise CoreDomainError("人物已被停用。")
-            ready_views = [
-                view
-                for view in getattr(character, "views", [])
-                if view.status == "ready" and view.object_key
-            ]
-            if not ready_views:
-                raise CoreDomainError("人物没有可用子图。")
-            if not explicit_views_enabled and any(
-                view.view_type in {"genitals_front", "pelvis_back"}
-                for view in ready_views
-            ):
-                raise CoreDomainError("人物特写功能当前未开放。")
-            object_key = str(character.sheet_object_key).removeprefix(
-                f"{MINIO_BUCKET}/"
-            )
-            identity = (source, character_id)
-            child_descriptions = []
-            for view in ready_views:
-                label = str(getattr(view, "display_name", None) or "").strip()
-                detail = str(getattr(view, "description", None) or "").strip()
-                if detail:
-                    child_descriptions.append(f"{label or view.view_type}: {detail}")
-            character_description = str(character.description or "").strip()
-            child_text = "; ".join(child_descriptions)
-            description = (
-                f"Adult character {character.name}; IMPORTANT: this is an identity-only "
-                "contact sheet, not a scene or composition reference. Every panel is a "
-                "different observation of the same adult. In the target video, render "
-                "exactly one person in one full-frame continuous scene. Use the panels only "
-                "as evidence for identity, body, clothing, anatomy, accessories, and props; "
-                "do not reproduce the collage or its panel layout. Specifically, never render "
-                "a contact sheet, split screen, grid, panels, or duplicate bodies; do not copy "
-                "the source backdrop, whitespace, framing, or repeated poses. "
-                f"{character_description} {child_text}"
-            ).strip()
         else:
             raise CoreDomainError("H3 参考图来源无效。")
 

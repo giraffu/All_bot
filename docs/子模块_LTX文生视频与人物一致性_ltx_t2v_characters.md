@@ -16,9 +16,10 @@
 
 人物任一 ready 子图发生变化后，服务端生成 `character-asset-mosaic-v1`：裸体与穿衣
 正面全身作为最左侧窄长列，其余实际存在的子图按槽位顺序每列上下两张排列；缺失槽位
-不保留空洞，奇数末图占满最后一列。H3 通过 `private_character_sheet` 引用这张完整
-合成图。旧 `ingredients-character-panel-v3` 仅继续服务已有 LTX 双角色素材；新的自由
-合成图不会进入 LTX，避免旧 workflow 误读布局。
+不保留空洞，奇数末图占满最后一列。完整合成图用于人物库资产与预览；H3 逐张引用
+ready 子图，避免把拼图布局复刻为视频中的分屏或重复身体。旧
+`ingredients-character-panel-v3` 仅继续服务已有 LTX 双角色素材；新的自由合成图不会
+进入 H3 或 LTX workflow。
 
 练功房的文生视频入口支持两种互斥模式：
 
