@@ -59,12 +59,12 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | canonical Worker、workflow JSON、mapping、patcher | current | 模型/workflow |
-| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 四个公开模式、TURBO REF2V/ManualSigmas、十四个候选 LoRA（单次最多十三个）、分阶段入口与 LAN GPU 边界、20 文件模型包和 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
+| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 四个公开模式、TURBO REF2V/ManualSigmas、十四个候选 LoRA（单次最多十三个）、分阶段入口、test/prod Worker 共享 ComfyUI 并存边界、20 文件模型包和 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、私有/官方人物面板、官方/上传环境、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt scene snapshot、LAN canary | current | 纯 T2V 无媒体；test-only IC 固定两个 typed 角色引用加一个环境引用，10Eros v1.4 DMD 提供成人能力、Licon MSR test 只维持身份，不叠加 distilled/Sulphur；三张图均不是首尾帧 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界、test/prod agent 共享 ComfyUI 并存语义 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |
 | `docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` | LAN 管理、A–H 多选集成/对齐与模块多选发布 UI/runner | `lan_resource_manager`、workspace coordinator、`release.py` | current | 本地资源平台 |
@@ -79,7 +79,7 @@
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | 症状分诊、独立模块发布、服务/config/数据库 mutation 总门禁 | module catalog、release CLI、env/service contracts、目标 live state | current | 一般运维与环境变更 |
-| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 控制面/Worker 拓扑、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、Worker Compose、remote module state | runtime-verification-required | 测试环境 |
+| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 控制面/Worker 拓扑、与正式 Worker 共享 ComfyUI 的长期并存边界、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、Worker Compose、remote module state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与单模块 exact-digest SOP | prod overlay/env contract、remote module state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |

@@ -180,7 +180,7 @@ DaSiWa 的 NVIDIA VFX 构建依赖固定为官方 `0.1.0.1` CPython 3.12 ABI3 wh
 
 ## 测试 Worker 与正式 GPU 边界
 
-H3 测试 Worker 是测试云主机上的专用 `worker-agent`，只连接 test Central 和测试
+H3 测试 Worker 是独立测试执行面的专用 `worker-agent`，只连接 test Central 和测试
 存储，并声明 T2V/I2V/FLF2V/REF2V 四种公开类型。`worker-relay` 协议未变化时不重建。
 普通“启动
 H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 cloud-test
@@ -193,10 +193,19 @@ revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，�
 Central `/system/workers` 中目标 agent 为 `enabled`、`idle` 且 profile/types 精确。
 这只能证明测试 Worker 可接单，不等于 GPU artifact canary 已通过。
 
-执行测试任务前必须 drain 正式 Worker，测试 agent 停止后才恢复正式 intake，避免两个
-agent 并发访问同一 ComfyUI。验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，
-并覆盖 REF2V 1/4/5 图、单个 addon 和 13 addon 有序组合，逐条检查：Central task type、
-Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
+测试 agent 与正式 Worker 是两个长期并存的 Central consumer：前者只连接 test
+Central/测试存储，后者只连接 prod Central/正式存储。二者可以同时保持 enabled 并调用
+同一个 H3 ComfyUI；共享 ComfyUI 的 `/queue` 是执行串行化与容量事实源，不得仅因测试
+agent 在线或提交测试任务就 drain 正式 Worker，也不得在测试结束后停止测试 agent。
+运维检查必须分别核对两个 Central 的 heartbeat、task ownership 和对象存储边界，并同时
+观察 ComfyUI queue，不能把 test Central 队列为空误判为 GPU 没有工作。
+
+并存不授权并发修改 GPU runtime。模型 bundle/cache、workflow、镜像、ComfyUI 重启或
+LAN slot takeover/rollback 仍需独立维护窗口，并按单槽 operator 的 drain 规则执行；只有
+显式独占 benchmark 或已证实共享队列争用影响诊断时，才临时暂停其中一侧 intake。
+验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，并覆盖 REF2V 1/4/5 图、
+单个 addon 和 13 addon 有序组合，逐条检查：Central task type、Worker agent、MP4、
+24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
 黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。
 `scripts/minimax_h3_prod_smoke.py` 使用 FFmpeg `signalstats` 扫描全部帧；所有帧的
 `YAVG <= 20` 且 `YMAX <= 32` 时按全黑失败，缺少亮度元数据同样 fail closed。H3 profile 保持

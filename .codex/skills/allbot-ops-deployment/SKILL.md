@@ -38,8 +38,8 @@ main，拒绝 PR/fork 和 GPU kind。GPU/ComfyUI 由 operator 直接调用
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
 test 目标时可拒绝 test，但不阻断直接部署 prod。
 
-“启动测试 Worker”默认在测试云主机运行专用 relay/agent，并只连接 test
-Central/存储；LAN/RunPod 是正式 Worker，不得据此启动、接管或改写其 runtime。
+测试 Worker 仅连接 test Central/存储，不得据此操作 LAN/RunPod 正式 runtime。
+测试与正式 Worker 可共享 ComfyUI；普通测试不 drain/停止任一方，GPU mutation 仍需维护窗口。
 
 ## 构建前网络与缓存预检
 

@@ -34,6 +34,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   自行拼接 provider API 或 LAN Compose。
 - Worker Agent 从 Central 领取支持的 task type，调用同容器/目标 ComfyUI，
   上传结果并在 `/complete` 前确认交付成功。
+- 测试 agent 不属于 LAN current slot，也不与正式 Worker 互斥。二者可分别连接
+  test/prod Central 并长期共享同一个 ComfyUI；任务消费归属看各自 Central，物理 GPU
+  执行顺序看 ComfyUI `/queue`。普通测试任务不触发正式 Worker drain，GPU artifact、
+  cache、workflow、ComfyUI 生命周期或 slot mutation 才按单槽维护门禁排空。
 - RunPod 是云端弹性 adapter；LAN AIO 是单物理卡受控容器 adapter。二者都
   必须使用 exact digest；镜像从 canonical `workers/comfy_agent`、根 `src`、
   `shared` 与薄 `workers/runpod_runtime` adapter 组合，不能主机源码覆盖。

@@ -33,10 +33,11 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
 
 - 控制面：`central-api`、`web-api`、`main-bot`、`qqcc-bot`、
   `private-bot-worker`。
-- 测试执行面：测试云主机以独立 Compose project 运行 `worker-relay` 和
+- 测试执行面：受控测试执行主机以独立 Compose project 运行 `worker-relay` 和
   `ALLBOT_WORKER_SERVICES` 选中的 `worker-NN`。`worker-agent` 仍是 build-only
-  模块，但由 `docker-compose-worker-base.yml` 在测试云主机消费精确 digest；它不
-  属于控制面 base Compose，也不在目标机 build。
+  模块，但由 `docker-compose-worker-base.yml` 在目标测试执行主机消费精确 digest；它不
+  属于控制面 base Compose，也不在目标机 build。测试执行主机可以与云控制面分离；
+  具体主机、容器数量和在线状态以当次 release identity 与 live observation 为准。
 - 管理面：`dashboard-backend`、`dashboard-frontend`、
   `qqcc-config-backend`、`qqcc-config-frontend`。
 - 公网与媒体：`public-web`、`imgproxy`。
@@ -130,7 +131,8 @@ RunPod mutation 使用受控 provider；LAN mutation 必须加载
 
 ### 5.1 测试云 Worker 启动边界
 
-“测试 Worker”固定指测试云主机上的专用 agent。其 release env 必须分别 pin
+“测试 Worker”固定指独立测试执行面的专用 agent，不限定必须与云控制面同机。其
+release env 必须分别 pin
 `ALLBOT_WORKER_AGENT_IMAGE`、`ALLBOT_WORKER_RELAY_IMAGE` 和完整
 `ALLBOT_RELEASE_SHA`，测试 env 只选择所需 `worker-NN`，并把 Central、对象存储
 和 agent identity 保持在 test。启动使用不可变 release root 中的 Worker Compose：
@@ -149,10 +151,23 @@ loopback 的临时传输；不得公开 ComfyUI 端口、复制正式 Central/�
 测试 agent 去启动、停止、接管 LAN/RunPod 正式 Worker。传输是运行时依赖，不把
 临时端口、主机 IP、agent 数量或在线状态写入 Git。
 
+测试 agent 与正式 Worker 可以长期同时运行，即使二者通过各自网络边界调用同一个
+ComfyUI。它们必须使用不同 agent identity，分别连接 test/prod Central 和测试/正式
+对象存储；任务归属以各自 Central 为准，共享 GPU 的执行顺序以 ComfyUI `/queue` 为准。
+普通测试提交不 drain 正式 intake，测试结束也不停止测试 agent。观测排队时同时检查
+目标 Central queue、两个 agent heartbeat/current task 和 ComfyUI queue，避免把控制面
+排队与 GPU 执行排队混为一谈。
+
+上述并存只适用于消费任务，不放宽 GPU mutation 门禁。模型缓存、workflow、镜像、
+ComfyUI 生命周期和 LAN slot 切换仍由对应 operator 在显式维护窗口操作；独占性能测试
+或争用诊断需要暂停某一侧时，必须作为当次临时操作明确记录，不能写成默认拓扑。
+
 启动完成至少验证：两个容器 running 且 restart count 为 0、OCI revision 为目标
 完整 SHA、ComfyUI `/system_stats` 与 `/queue` 可达、test Central
 `/system/workers` 出现目标 agent、`control_state=enabled`，以及 supported types
-与目标 profile 精确一致。只有提交并完成最小任务后才能进一步声称模型 canary
+与目标 profile 精确一致；若共享正式 ComfyUI，还要只读确认正式 Worker 保持其原
+control state，并核对 test/prod agent 没有复用 identity、Central 或对象存储。
+只有提交并完成最小任务后才能进一步声称模型 canary
 通过；“Worker 正在运行”本身不等于 GPU canary。
 
 ## 6. 最小验证
