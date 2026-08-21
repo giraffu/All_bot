@@ -287,7 +287,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ai_video_addon_models_version: 2,
+  ai_video_addon_models_version: 3,
   ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],
@@ -2806,7 +2806,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 13 个）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 13 个，可选 14 种）" class="mb-4">
           <a-select
             :value="sceneConfig.lora_items.map(item => item.name)"
             mode="multiple"

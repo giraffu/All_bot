@@ -1463,7 +1463,7 @@ describe('QqccBotSettings', () => {
       options: {
         default_ai_video_engine: 'minimax_h3',
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
-        ai_video_addon_models_version: 2,
+        ai_video_addon_models_version: 3,
         ai_video_addon_models: [
           { value: 'motion_booster', label: '成人动作强化', default_strength: 0.7 },
           { value: 'mystic_xxx', label: '人体结构增强', default_strength: 0.75 },

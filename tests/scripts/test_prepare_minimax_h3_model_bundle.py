@@ -7,7 +7,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_nineteen_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -67,9 +67,15 @@ def test_split_author_stack_uses_exact_nineteen_pinned_assets():
         "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee",
         626_294_968,
     )
-    assert files["loras/MiniMaxH3/HMPenis_v2_e35.safetensors"][1:3] == (
-        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
-        310_168_344,
+    assert files["loras/MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors"][1:4] == (
+        "017dd1adddc1be3ec0605dd2e7de97138eb2c6c6ba24be402cf47f103ac1f1b3",
+        77_580_008,
+        "https://civitai.red/api/download/models/3247473?fileId=3130327",
+    )
+    assert files["loras/MiniMaxH3/HMCumshot_V2.safetensors"][1:4] == (
+        "1a5b7948bb97f27737e62c3dd5497a3afb77517f230787f45e45c7d8fe3dc24d",
+        626_294_968,
+        "https://civitai.red/api/download/models/3238531?fileId=3121030",
     )
     assert files["loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors"][1:3] == (
         "f9cbcaa596b6b281f154388e407e7b4c4ee97ba9917614ab36bc5e86edf374f5",
@@ -91,7 +97,8 @@ def test_split_author_stack_uses_exact_nineteen_pinned_assets():
         "6e293977389020e2e327d5e375cdc55352659f0ac61b41f270ec5ddf453fc620",
         298_260_800,
     )
-    assert len(files) == 19
+    assert len(files) == 20
+    assert sum(entry[2] for entry in module.FILES) == 110_253_208_359
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

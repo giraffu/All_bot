@@ -96,7 +96,7 @@ def test_minimax_h3_image_bounds_aimdo_cast_reservation():
     assert "DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 8 * 1024 ** 3" in dockerfile
 
 
-def test_minimax_h3_exposes_all_thirteen_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_fourteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
@@ -111,8 +111,25 @@ def test_minimax_h3_exposes_all_thirteen_local_addons_and_defaults_to_none():
         "vagassist",
         "pussy",
         "penis",
+        "cumshot",
     )
     assert build_minimax_h3_spec(MINIMAX_H3_T2V, {}).addon_items == ()
+
+
+def test_minimax_h3_pins_new_and_updated_addon_contracts():
+    assert MINIMAX_H3_ADDON_MODELS["motion_booster"].model_path == (
+        "MiniMaxH3/H3_Motion_BoosterV2.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["motion_booster"].prompt_prefix == "dynv2"
+    assert MINIMAX_H3_ADDON_MODELS["penis"].model_path == (
+        "MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["penis"].prompt_prefix == "HMPenis"
+    assert MINIMAX_H3_ADDON_MODELS["cumshot"].model_path == (
+        "MiniMaxH3/HMCumshot_V2.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["cumshot"].default_strength == 0.9
+    assert MINIMAX_H3_ADDON_MODELS["cumshot"].prompt_prefix == "hmcumshot3"
 
 
 def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
@@ -172,7 +189,7 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ({"lora_name": "missing"}, "不支持"),
         ({"lora_items": [{"name": "penis"}, {"name": "penis"}]}, "不得重复"),
         ({"lora_items": [{"name": "penis", "strength": 0.0}]}, "0.1 至 2.0"),
-        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 13 项"),
+        ({"lora_items": [{"name": name} for name in MINIMAX_H3_ADDON_MODELS]}, "最多 13 项"),
     ],
 )
 def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):

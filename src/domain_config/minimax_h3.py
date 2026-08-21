@@ -55,6 +55,9 @@ MINIMAX_H3_MODEL_REF = (
 )
 MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
 MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
+# The catalog may grow without forcing an API/control-plane rollout. Requests
+# remain capped at the already deployed transport contract.
+MINIMAX_H3_MAX_ADDON_ITEMS = 13
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,9 +175,17 @@ MINIMAX_H3_ADDON_MODELS = {
         "penis",
         "HMPenis v2（阴茎）",
         "HMPenis v2",
-        "MiniMaxH3/HMPenis_v2_e35.safetensors",
+        "MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors",
         1.0,
         "HMPenis",
+    ),
+    "cumshot": MiniMaxH3AddonModel(
+        "cumshot",
+        "HMCumshot v0.5（射精动作）",
+        "HMCumshot v0.5 (ejaculation motion)",
+        "MiniMaxH3/HMCumshot_V2.safetensors",
+        0.9,
+        "hmcumshot3",
     ),
 }
 
@@ -229,9 +240,9 @@ def normalize_minimax_h3_addon_items(
         raw_items = [{"name": legacy_name, "strength": legacy_strength}]
     if not isinstance(raw_items, (list, tuple)):
         raise MiniMaxH3ValidationError("附加模型必须为有序数组。")
-    if len(raw_items) > len(MINIMAX_H3_ADDON_MODELS):
+    if len(raw_items) > MINIMAX_H3_MAX_ADDON_ITEMS:
         raise MiniMaxH3ValidationError(
-            f"附加模型必须为最多 {len(MINIMAX_H3_ADDON_MODELS)} 项的数组。"
+            f"附加模型必须为最多 {MINIMAX_H3_MAX_ADDON_ITEMS} 项的数组。"
         )
     result: list[MiniMaxH3AddonSelection] = []
     seen: set[str] = set()
