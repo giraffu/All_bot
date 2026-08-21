@@ -114,6 +114,7 @@ export function usePromptOptimizer(options: PromptOptimizerOptions) {
     if (!isSupportedMode.value) return
     const response = await api.get('/prompt-optimizations/capabilities', {
       params: { target_task_type: targetTaskType.value },
+      suppressGlobalError: true,
     })
     templates.value = response.data.templates ?? []
     textStreamCapability.value = response.data.text_stream ?? null

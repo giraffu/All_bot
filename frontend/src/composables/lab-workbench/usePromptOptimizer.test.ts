@@ -109,7 +109,10 @@ describe('usePromptOptimizer', () => {
     await Promise.resolve()
     await optimizer.optimizePrompt()
 
-    expect(get.mock.calls[0][1]).toEqual({ params: { target_task_type: 'ltx_t2v_ic' } })
+    expect(get.mock.calls[0][1]).toEqual({
+      params: { target_task_type: 'ltx_t2v_ic' },
+      suppressGlobalError: true,
+    })
     expect(post.mock.calls[0][1]).toMatchObject({
       target_task_type: 'ltx_t2v_ic',
       template: { id: 'ltx_scene_script_cinematic', version: 4 },
@@ -153,6 +156,7 @@ describe('usePromptOptimizer', () => {
 
     expect(get.mock.calls[0][1]).toEqual({
       params: { target_task_type: 'minimax_h3_flf2v' },
+      suppressGlobalError: true,
     })
     expect(post.mock.calls[0][1]).toMatchObject({
       target_task_type: 'minimax_h3_flf2v',
