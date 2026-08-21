@@ -179,6 +179,34 @@ describe('CharacterReferenceWorkbench', () => {
     expect((wrapper.vm as any).prompts.body_front).toBe('女性正面默认提示词')
   })
 
+  it('does not show page-level adult confirmations or block draft creation on them', async () => {
+    const wrapper = mount(CharacterReferenceWorkbench, {
+      global: {
+        stubs: {
+          AButton: ButtonStub,
+          AInput: passthroughStub,
+          ATextarea: passthroughStub,
+          ARadioGroup: passthroughStub,
+          ARadioButton: passthroughStub,
+          AUpload: passthroughStub,
+        },
+      },
+    })
+
+    ;(wrapper.vm as any).name = 'Alice'
+    ;(wrapper.vm as any).description = 'adult woman'
+    ;(wrapper.vm as any).sourceKey = 'web_uploads/123/source.png'
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('18+')
+    expect(wrapper.find('[data-testid="adult-confirmation"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rights-confirmation"]').exists()).toBe(false)
+    const startButton = wrapper.findAll('button').find(button => (
+      button.text().includes('characters.start_views')
+    ))
+    expect(startButton?.attributes('disabled')).toBeUndefined()
+  })
+
   it('requires a character description before creating a draft', async () => {
     const wrapper = mount(CharacterReferenceWorkbench, {
       global: {

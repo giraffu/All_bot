@@ -72,8 +72,6 @@ const promptProfile = reactive<Required<CharacterPromptProfile>>({
 })
 const sourceKey = ref<string | null>(null)
 const sourcePreview = ref<string | null>(null)
-const adultConfirmed = ref(false)
-const usageRightsConfirmed = ref(false)
 const draftId = ref<string | null>(null)
 const activeViewType = ref<CharacterViewType>('face_front')
 const creatingDraft = ref(false)
@@ -357,8 +355,6 @@ const resetWorkspace = () => {
   sourceKey.value = null
   if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
   sourcePreview.value = null
-  adultConfirmed.value = false
-  usageRightsConfirmed.value = false
   activeViewType.value = 'face_front'
   selectedEngine.value = 'free_edit_v2_5'
   promptProfile.gender = 'female'
@@ -436,12 +432,11 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="character-workbench__profile rounded-3xl border p-4 sm:p-5">
-          <div class="mb-3 flex items-center justify-between gap-3">
+          <div class="mb-3">
             <div>
               <div class="text-sm font-semibold">{{ t('characters.profile_title') }}</div>
               <div class="mt-1 text-xs opacity-70">{{ t('characters.profile_hint') }}</div>
             </div>
-            <span class="character-workbench__adult-badge rounded-full px-3 py-1 text-xs font-semibold">18+</span>
           </div>
           <div class="grid grid-cols-2 gap-2" data-testid="gender-options">
             <button
@@ -480,19 +475,11 @@ onBeforeUnmount(() => {
         <div class="character-workbench__notice rounded-2xl px-4 py-3 text-sm leading-6">
           {{ t('characters.billing_hint') }}
         </div>
-        <div class="space-y-2 rounded-2xl border p-4 text-sm">
-          <a-checkbox v-model:checked="adultConfirmed" data-testid="adult-confirmation">
-            {{ t('characters.adult_confirmation') }}
-          </a-checkbox>
-          <a-checkbox v-model:checked="usageRightsConfirmed" data-testid="rights-confirmation">
-            {{ t('characters.rights_confirmation') }}
-          </a-checkbox>
-        </div>
         <a-button
           type="primary"
           size="large"
           class="h-12 rounded-2xl font-semibold"
-          :disabled="!name.trim() || !description.trim() || !sourceKey || !adultConfirmed || !usageRightsConfirmed"
+          :disabled="!name.trim() || !description.trim() || !sourceKey"
           :loading="creatingDraft || uploading"
           @click="createDraft"
         >
@@ -781,11 +768,6 @@ onBeforeUnmount(() => {
   border-color: rgba(34, 211, 238, 0.72);
   color: var(--theme-text-primary);
   box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.12), 0 8px 24px rgba(14, 165, 233, 0.12);
-}
-
-.character-workbench__adult-badge {
-  background: rgba(244, 63, 94, 0.12);
-  color: #fb7185;
 }
 
 .character-workbench__male-note {
