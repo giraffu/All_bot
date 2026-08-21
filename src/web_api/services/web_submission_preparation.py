@@ -133,7 +133,7 @@ async def _resolve_h3_reference_inputs(
         raise CoreDomainError("人物参考说明只能由服务端生成。")
     uses_character_assets = any(
         isinstance(item, dict)
-        and item.get("source") in {"private_character_view", "private_character_sheet"}
+        and item.get("source") == "private_character_view"
         for item in reference_refs
     )
     if uses_character_assets and not env_enabled("CHARACTER_ASSETS_ENABLED"):

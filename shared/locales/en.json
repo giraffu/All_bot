@@ -655,13 +655,13 @@
   },
   "characters": {
     "title": "Character Library",
-    "description": "Start from any character or detail image, add optional sub-images, and compose one H3 character reference.",
+    "description": "Start from any character or detail image, add optional views, and compose a complete character asset; H3 can use views individually.",
     "lab_eyebrow": "Character Consistency Workbench",
     "lab_title": "Create Character Identity Assets",
-  "lab_description": "Start from any image, add optional sub-images, and compose one H3 character reference.",
-  "flexible_lab_description": "Start from any character or body-detail image, then optionally add built-in views and up to four custom views. One image is enough for an H3 character reference.",
+  "lab_description": "Start from any image, add optional views, and compose one complete character asset.",
+  "flexible_lab_description": "Start from any character or body-detail image, then optionally add built-in views and up to four custom views. One image is enough; H3 can use the saved views individually.",
     "library_eyebrow": "My Notes · Private Character Assets",
-    "library_description": "Browse and manage optional views, detail templates, upload replacements, and each complete H3 reference.",
+    "library_description": "Browse and manage optional views, detail templates, upload replacements, and each complete character asset.",
     "create_in_lab": "Create in Lab",
     "library_empty": "No character references yet",
     "library_empty_hint": "Open the Lab and upload any character or detail image to begin.",
@@ -777,8 +777,8 @@
     "h3_picker": {
       "open": "Choose from Character Library",
       "title": "Select Character Identity Assets",
-    "hint": "Each character is added as one reference made from all saved sub-images and can be mixed with temporary uploads.",
-    "empty": "No usable character reference mosaics yet",
+      "hint": "Select saved character views one by one. Multiple views of the same character can be mixed with temporary uploads, up to 4 total. The complete mosaic is only a library preview and is not sent to H3 as composition evidence.",
+      "empty": "No usable character views yet",
     "count": "Selected {count}/{max}",
     "composite": "Complete Character Reference"
     },

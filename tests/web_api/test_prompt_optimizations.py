@@ -260,7 +260,7 @@ async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_pictur
                 "staging/user-uploads/7/prop.png",
             ),
             descriptions=(
-                "Adult character Alice; composite reference sheet.",
+                "Adult character Alice; front face identity reference.",
                 "User-uploaded visual reference.",
             ),
         )
@@ -278,8 +278,9 @@ async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_pictur
             media=[],
             reference_refs=[
                 {
-                    "source": "private_character_sheet",
+                    "source": "private_character_view",
                     "character_id": "alice",
+                    "view_type": "face_front",
                 },
                 {
                     "source": "upload",
@@ -305,7 +306,7 @@ async def test_submit_h3_ref2v_resolves_composite_character_and_upload_in_pictur
     assert inputs["trusted_context"]["reference_descriptions"] == list(
         resolve.return_value.descriptions
     )
-    assert "composite reference sheet" in inputs["prompt_config_snapshot"][
+    assert "front face identity reference" in inputs["prompt_config_snapshot"][
         "user_message"
     ]
 

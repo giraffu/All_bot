@@ -47,7 +47,7 @@ class EnvironmentAssetRef(BaseModel):
 
 class H3ReferenceRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: Literal["upload", "private_character_view", "private_character_sheet"]
+    source: Literal["upload", "private_character_view"]
     object_key: str | None = Field(default=None, max_length=1024)
     character_id: str | None = Field(default=None, max_length=64)
     view_type: Literal[
@@ -71,9 +71,6 @@ class H3ReferenceRef(BaseModel):
         if self.source == "upload":
             if not self.object_key or self.character_id is not None or self.view_type is not None:
                 raise ValueError("upload reference requires only object_key")
-        elif self.source == "private_character_sheet":
-            if not self.character_id or self.object_key is not None or self.view_type is not None:
-                raise ValueError("private character sheet requires only character_id")
         elif (
             not self.character_id
             or self.view_type is None
