@@ -133,7 +133,12 @@ export interface QqccBotConfig {
 }
 
 export interface SceneEngineOption { value: string; supports_lora: boolean }
-export interface LoraModelOption { value: string; label: string; default_strength?: number }
+export interface LoraModelOption {
+  value: string
+  label: string
+  default_strength?: number
+  supported_modes?: AiVideoMode[]
+}
 export interface ResolutionOption<T extends string> { value: T; label: string }
 export interface QqccBotConfigOptions {
   scene_preset_version: number

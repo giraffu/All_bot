@@ -79,7 +79,7 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_hide_model_internals_but_keep_sixteen_effect_choices(monkeypatch):
+async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_mode(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
@@ -107,6 +107,7 @@ async def test_pro_settings_hide_model_internals_but_keep_sixteen_effect_choices
         "NaughtyTimes",
         "HMNSFW",
         "Motion Booster",
+        "REF2VA",
         "Mystic XXX",
         "HMBreasts",
         "VagAssist",
@@ -127,6 +128,7 @@ async def test_pro_settings_hide_model_internals_but_keep_sixteen_effect_choices
     assert "avp_addon_naughty_times" in callbacks
     assert "avp_addon_sex_pose" in callbacks
     assert "avp_addon_motion_booster" in callbacks
+    assert "avp_addon_motion_booster_ref2va" not in callbacks
     assert "avp_addon_mystic_xxx" in callbacks
     assert "avp_addon_breasts" in callbacks
     assert "avp_addon_vagassist" in callbacks
@@ -136,6 +138,37 @@ async def test_pro_settings_hide_model_internals_but_keep_sixteen_effect_choices
     assert "avp_addon_titjob" in callbacks
     assert "avp_addon_all" in callbacks
     assert "avp_addon_none" in callbacks
+
+    query.data = "avp_mode_ref2v"
+    await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
+    ref_callbacks = [
+        button.callback_data
+        for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "avp_addon_motion_booster_ref2va" in ref_callbacks
+
+
+@pytest.mark.asyncio
+async def test_pro_switching_out_of_ref2v_drops_ref2va_only_effect(monkeypatch):
+    monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
+    data = {
+        "mode": "ref2v",
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "images": [],
+        "reference_descriptions": [],
+        "addon_models": ["motion_booster_ref2va", "motion_booster"],
+    }
+    query = SimpleNamespace(data="avp_mode_i2v", answer=AsyncMock(), message=object())
+
+    await fsm.settings_callback(
+        SimpleNamespace(callback_query=query),
+        SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh"),
+    )
+
+    assert data["addon_models"] == ["motion_booster"]
 
 
 @pytest.mark.asyncio
@@ -155,7 +188,7 @@ async def test_pro_settings_toggle_addon_and_select_all(monkeypatch):
     assert data["addon_models"] == ["naughty_times"]
     query.data = "avp_addon_all"
     await fsm.settings_callback(update, context)
-    assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)[:13]
+    assert data["addon_models"] == list(fsm._available_addon_ids(data))[:13]
     selected_at_limit = list(data["addon_models"])
     query.data = "avp_addon_titjob"
     await fsm.settings_callback(update, context)
@@ -187,7 +220,7 @@ async def test_pro_settings_caps_legacy_oversized_addon_selection(monkeypatch):
     )
 
     assert state == AdvancedVideoProState.WAIT_PROMPT
-    assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)[:13]
+    assert data["addon_models"] == list(fsm._available_addon_ids(data))[:13]
 
 
 @pytest.mark.asyncio

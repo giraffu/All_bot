@@ -79,6 +79,34 @@ def test_qqcc_ref2v_scene_derives_read_only_price_and_preserves_reference_order(
     assert scene["next_scene_id"] is None
 
 
+def test_qqcc_ref2v_only_addon_is_kept_for_ref2v_and_removed_from_i2v():
+    common = {
+        "name": "Motion",
+        "prompt": "move",
+        "lora_items": [{"name": "motion_booster_ref2va", "strength": 0.7}],
+    }
+    config = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {"id": "i2v", **common, "mode": "i2v"},
+                {
+                    "id": "ref2v",
+                    **common,
+                    "mode": "ref2v",
+                    "reference_images": [
+                        "qqcc/config/ref2v/ai_video/ref2v/reference-0/input"
+                    ],
+                },
+            ]
+        }
+    )
+
+    assert config["ai_video_scenes"][0]["lora_items"] == []
+    assert config["ai_video_scenes"][1]["lora_items"] == [
+        {"name": "motion_booster_ref2va", "strength": 0.7}
+    ]
+
+
 @pytest.mark.parametrize("reference_count", [0, 5])
 def test_qqcc_ref2v_scene_rejects_missing_or_excess_admin_references(reference_count):
     raw = {
@@ -517,12 +545,13 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 4
+    assert options["ai_video_addon_models_version"] == 5
     assert options["ai_video_addon_models"] == [
         {
             "value": model.id,
             "label": model.label_zh,
             "default_strength": model.default_strength,
+            "supported_modes": list(model.supported_modes),
         }
         for model in MINIMAX_H3_ADDON_MODELS.values()
     ]
@@ -530,7 +559,13 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
         "value": "titjob",
         "label": "Better Titfuck v0.5（乳房夹持动作实验）",
         "default_strength": 0.75,
+        "supported_modes": ["t2v", "i2v", "flf2v", "ref2v"],
     }
+    assert next(
+        item
+        for item in options["ai_video_addon_models"]
+        if item["value"] == "motion_booster_ref2va"
+    )["supported_modes"] == ["ref2v"]
 
 
 def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():

@@ -45,6 +45,7 @@ def test_web_locales_hide_model_names():
                 "deepthroat": "深喉动作",
                 "pov_missionary": "POV 传教士动作",
                 "footjob": "足交动作",
+                "motion_booster_ref2va": "参考人物动作强化实验",
                 "pussy_stills_v1": "私密部位静帧实验",
                 "titjob": "乳房夹持动作实验",
             }
@@ -55,6 +56,7 @@ def test_web_locales_hide_model_names():
                 "deepthroat": "Deep-throat motion",
                 "pov_missionary": "POV missionary motion",
                 "footjob": "Footjob motion",
+                "motion_booster_ref2va": "Reference-character motion experiment",
                 "pussy_stills_v1": "Intimate anatomy still-frame experiment",
                 "titjob": "Breast-intercourse motion experiment",
             }
@@ -79,6 +81,7 @@ def test_web_locales_hide_model_names():
         "NaughtyTimes",
         "HMNSFW",
         "Motion Booster",
+        "REF2VA",
         "Mystic XXX",
         "Breast Play & Jiggle",
         "HMInnie",
@@ -115,11 +118,12 @@ def test_minimax_h3_image_pins_parallel_nvidia_vfx_build_dependency():
     assert "--parallelism 12" in dockerfile
 
 
-def test_minimax_h3_exposes_sixteen_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_seventeen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
         "motion_booster",
+        "motion_booster_ref2va",
         "mystic_xxx",
         "breast_play",
         "innie",
@@ -142,6 +146,11 @@ def test_minimax_h3_pins_new_and_updated_addon_contracts():
         "MiniMaxH3/H3_Motion_BoosterV2.safetensors"
     )
     assert MINIMAX_H3_ADDON_MODELS["motion_booster"].prompt_prefix == "dynv2"
+    ref2va_booster = MINIMAX_H3_ADDON_MODELS["motion_booster_ref2va"]
+    assert ref2va_booster.model_path == "MiniMaxH3/ref2VA_Motion_v2.safetensors"
+    assert ref2va_booster.default_strength == 0.7
+    assert ref2va_booster.prompt_prefix == "dynv2"
+    assert ref2va_booster.supported_modes == ("ref2v",)
     assert MINIMAX_H3_ADDON_MODELS["penis"].model_path == (
         "MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors"
     )
@@ -211,6 +220,25 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ("footjob", 0.5),
         ("pussy", 0.35),
     ]
+
+
+def test_minimax_h3_ref2va_motion_booster_is_restricted_to_ref2v():
+    ref_spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": ["subject.png", "reference.png"],
+            "lora_items": [{"name": "motion_booster_ref2va"}],
+        },
+    )
+
+    assert [(item.name, item.strength) for item in ref_spec.addon_items] == [
+        ("motion_booster_ref2va", 0.7),
+    ]
+    with pytest.raises(MiniMaxH3ValidationError, match="仅支持参考图生视频"):
+        build_minimax_h3_spec(
+            MINIMAX_H3_T2V,
+            {"lora_items": [{"name": "motion_booster_ref2va"}]},
+        )
 
 
 @pytest.mark.parametrize(

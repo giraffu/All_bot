@@ -66,6 +66,10 @@ ADDON_EFFECT_LABELS = {
     "naughty_times": ("成人动作测试一", "Adult action test 1"),
     "sex_pose": ("成人动作测试二", "Adult action test 2"),
     "motion_booster": ("成人动作强化", "Adult motion boost"),
+    "motion_booster_ref2va": (
+        "参考人物动作强化实验",
+        "Reference-character motion experiment",
+    ),
     "mystic_xxx": ("人体结构增强", "Anatomy enhancement"),
     "breast_play": ("乳房动态", "Breast motion"),
     "innie": ("阴道形态", "Vaginal shape"),
@@ -110,6 +114,25 @@ def _mode_keyboard(context) -> InlineKeyboardMarkup:
     )
 
 
+def _available_addon_ids(data: dict) -> tuple[str, ...]:
+    mode = str(data.get("mode") or "t2v")
+    return tuple(
+        model_id
+        for model_id, model in MINIMAX_H3_ADDON_MODELS.items()
+        if mode in model.supported_modes
+    )
+
+
+def _normalize_selected_addons(data: dict) -> None:
+    raw_selected = data.get("addon_models")
+    if not isinstance(raw_selected, list):
+        raw_selected = []
+    available = set(_available_addon_ids(data))
+    data["addon_models"] = [
+        model_id for model_id in raw_selected if model_id in available
+    ][:MINIMAX_H3_MAX_ADDON_ITEMS]
+
+
 def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     def buttons(prefix: str, values) -> list[InlineKeyboardButton]:
         return [
@@ -137,7 +160,7 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
             + _text(context, *ADDON_EFFECT_LABELS[model_id]),
             callback_data=f"avp_addon_{model_id}",
         )
-        for model_id in MINIMAX_H3_ADDON_MODELS
+        for model_id in _available_addon_ids(data)
     ]
     rows.append(
         [
@@ -315,19 +338,13 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             show_alert=True,
         )
         return ConversationHandler.END
-    raw_selected = data.get("addon_models")
-    if not isinstance(raw_selected, list):
-        raw_selected = []
-    data["addon_models"] = [
-        model_id
-        for model_id in raw_selected
-        if model_id in MINIMAX_H3_ADDON_MODELS
-    ][:MINIMAX_H3_MAX_ADDON_ITEMS]
+    _normalize_selected_addons(data)
     value = str(query.data or "")
     if value.startswith("avp_mode_"):
         mode = value.removeprefix("avp_mode_")
         if mode in MODES and (mode != "ref2v" or minimax_h3_ref2v_enabled()):
             data["mode"] = mode
+            _normalize_selected_addons(data)
     elif value.startswith("avp_duration_"):
         duration = int(value.removeprefix("avp_duration_"))
         if duration in DURATIONS:
@@ -346,10 +363,10 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if addon == "none":
             selected.clear()
         elif addon == "all":
-            data["addon_models"] = list(MINIMAX_H3_ADDON_MODELS)[
+            data["addon_models"] = list(_available_addon_ids(data))[
                 :MINIMAX_H3_MAX_ADDON_ITEMS
             ]
-        elif addon in MINIMAX_H3_ADDON_MODELS:
+        elif addon in _available_addon_ids(data):
             if addon in selected:
                 selected.remove(addon)
             elif len(selected) < MINIMAX_H3_MAX_ADDON_ITEMS:
@@ -519,7 +536,7 @@ async def _submit_generation(
             addon_items=[
                 {"name": name}
                 for name in data.get("addon_models", [])
-                if name in MINIMAX_H3_ADDON_MODELS
+                if name in _available_addon_ids(data)
             ],
         )
     except AdvancedVideoProSubmissionError as exc:
@@ -681,7 +698,7 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 addon_items=[
                     {"name": name}
                     for name in data.get("addon_models", [])
-                    if name in MINIMAX_H3_ADDON_MODELS
+                    if name in _available_addon_ids(data)
                 ],
             )
             draft = await start_advanced_video_prompt_task(

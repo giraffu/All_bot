@@ -1455,7 +1455,10 @@ def patch_minimax_h3_workflow(
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
     try:
-        addon_items = normalize_minimax_h3_addon_items(params)
+        addon_items = normalize_minimax_h3_addon_items(
+            params,
+            mode=task_type.removeprefix("minimax_h3_"),
+        )
     except MiniMaxH3ValidationError as exc:
         raise ValueError(f"invalid MiniMax H3 addon configuration: {exc}") from exc
     model_input = ["1", 0] if task_type == "minimax_h3_ref2v" else ["8", 0]

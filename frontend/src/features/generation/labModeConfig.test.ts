@@ -10,6 +10,7 @@ import {
   UNIFIED_LAB_MODES,
   WEB_LTX_T2V_ENABLED,
   getLabModeConfig,
+  getMiniMaxH3AddonOptionsForMode,
   getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
   resolveLabModeIdFromTaskType,
@@ -28,6 +29,12 @@ describe('labModeConfig', () => {
       value: 'motion_booster',
       labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster',
       defaultStrength: 0.7,
+    })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'motion_booster_ref2va',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster_ref2va',
+      defaultStrength: 0.7,
+      supportedModes: ['ref2v'],
     })
     expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
       value: 'mystic_xxx',
@@ -51,8 +58,19 @@ describe('labModeConfig', () => {
     })
   })
 
+  it('offers the native REF2VA motion booster only in reference-to-video mode', () => {
+    expect(getMiniMaxH3AddonOptionsForMode('t2v').map(item => item.value))
+      .not.toContain('motion_booster_ref2va')
+    expect(getMiniMaxH3AddonOptionsForMode('i2v').map(item => item.value))
+      .not.toContain('motion_booster_ref2va')
+    expect(getMiniMaxH3AddonOptionsForMode('flf2v').map(item => item.value))
+      .not.toContain('motion_booster_ref2va')
+    expect(getMiniMaxH3AddonOptionsForMode('ref2v').map(item => item.value))
+      .toContain('motion_booster_ref2va')
+  })
+
   it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {
-    expect(MINIMAX_H3_ADDON_OPTIONS.slice(4, 9)).toEqual([
+    expect(MINIMAX_H3_ADDON_OPTIONS.slice(5, 10)).toEqual([
       { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
       { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
       { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },

@@ -364,6 +364,42 @@ def test_minimax_h3_ref2v_patcher_orders_five_images_and_addons_without_lightx2v
         assert result["30"]["inputs"][f"ref_images.ref_image_{index}"] == [node_id, 0]
 
 
+def test_minimax_h3_ref2v_patcher_loads_native_ref2va_motion_booster_only_in_ref_mode():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+    result = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {
+            "prompt": "two reference characters move naturally",
+            "image": "subject.png",
+            "image2": "reference.png",
+            "lora_items": [{"name": "motion_booster_ref2va"}],
+        },
+    )
+
+    assert result["100"]["inputs"] == {
+        "model": ["1", 0],
+        "lora_name": "MiniMaxH3/ref2VA_Motion_v2.safetensors",
+        "strength_model": 0.7,
+    }
+    assert result["2"]["inputs"]["model"] == ["100", 0]
+    assert result["30"]["inputs"]["prompt"] == (
+        "dynv2, two reference characters move naturally"
+    )
+
+    t2v_workflow = patcher.load_workflow("minimax_h3_t2v")
+    with pytest.raises(ValueError, match="仅支持参考图生视频"):
+        patcher.patch_workflow(
+            "minimax_h3_t2v",
+            t2v_workflow,
+            {
+                "prompt": "scene",
+                "lora_items": [{"name": "motion_booster_ref2va"}],
+            },
+        )
+
+
 def test_minimax_h3_output_prefix_is_unique_per_execution():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")

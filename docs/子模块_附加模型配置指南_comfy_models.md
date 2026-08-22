@@ -20,7 +20,7 @@
 - LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
 - MiniMax H3 四个公开模式的固定基础链（普通模式为 10Eros Beta2 + LightX2V 8-step，
   REF2V 为 TURBO Ref2VA + er_sde/ManualSigmas）、
-  十六个候选 LoRA（单请求最多十三个）、API workflow、模型 bundle、镜像与 LAN canary 契约见
+  十七个候选 LoRA（单请求最多十三个，其中一项仅 REF2V）、API workflow、模型 bundle、镜像与 LAN canary 契约见
   [`子模块_MiniMaxH3视频服务_minimax_h3.md`](子模块_MiniMaxH3视频服务_minimax_h3.md)。
 
 ---
@@ -30,7 +30,7 @@
 - 唯一公开目录是 `src/domain_config/minimax_h3.py:MINIMAX_H3_ADDON_MODELS`。每个选项必须
   使用稳定公共 ID、一个已校验的物理文件、建议强度和可选 prompt prefix；不得为
   同一文件注册多个别名。
-- 领域目录可以下发 16 个候选，Bot/Web 单次只提交最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`。Web 逐项可编辑；
+- 领域目录可以下发 17 个候选，Bot/Web 单次只提交最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`；`motion_booster_ref2va` 仅 REF2V 可用。Web 逐项可编辑；
   Bot 只多选并使用目录默认值。空列表是正常默认态，未知、重复、超限、非有限数或
   混用新旧参数均 fail closed。
 - Bot/Web 的用户展示统一使用“效果增强”和用途标签，不显示基础链、checkpoint、
@@ -190,7 +190,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - `wan22_video_v2` 的 R2 baseline 保持 `2026-07-18-lora5` manifest。LAN GPU-177 预热时从受控下载源取得 DaSiWa SnatchKiss v11 FP8-pruned High/Low（每个 `14,528,782,272` bytes），必须以声明的 SHA-256/大小校验后按同相对路径替换 baseline；不上传 v11 对象或 manifest 到 R2。RunPod 保持禁用的旧 manifest 回退，`image_to_video` 与兼容 `wan22_aio_video` 不变。
 - 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO 与 `image_to_video` 保持各自 `2026-07-18-lora5` key；v2 使用独立的 pruned key，旧 6 月 key 均不覆盖。所有候选 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
-- `AI视频` 使用独立 `ai_video_scenes`，底层固定 `minimax_h3`。配置层与主 Bot/Web 共用 `src/domain_config/minimax_h3.py` 的 16 项目录，保存最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`、步长 `0.05`；无尾帧引用走 H3 I2V，有引用时复用同一绘图链生成尾帧后走 H3 FLF2V。`build_qqcc_config_options()` 下发稳定 ID、中文标签、默认强度和 `supports_lora=true`，Vue 不硬编码目录。
+- `AI视频` 使用独立 `ai_video_scenes`，底层固定 `minimax_h3`。配置层与主 Bot/Web 共用 `src/domain_config/minimax_h3.py` 的 17 项目录，保存最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`、步长 `0.05`；其中 `motion_booster_ref2va` 只支持 REF2V，I2V/FLF2V 保存与提交时都必须剔除。无尾帧引用走 H3 I2V，有引用时复用同一绘图链生成尾帧后走 H3 FLF2V。`build_qqcc_config_options()` 下发稳定 ID、中文标签、默认强度、`supported_modes` 和 `supports_lora=true`，Vue 不硬编码目录。
 - 官方 QQCC `ai_video_scenes[].mode=ref2v` 时只接受 1 张用户主体图与 1–4 张管理员参考图；主体在前、参考图按配置顺序拼接。该模式固定 TURBO Ref2VA，不加载 LightX2V，私有 Bot 不执行。
 - 旧 QQCC LTX `{path,strength}` 只在读取时丢弃，不映射为同名或相似 H3 资产。QQCC 配置保存、官方/私有 Bot、durable continuation、场景多段链和后台示例统一透传 H3 `lora_items`；物理文件路径和触发词只由 H3 Worker 目录解析，不能进入配置 JSON。
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型；`negative_prompt` 写入 single edit workflow 的 `254.text`。

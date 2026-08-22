@@ -197,6 +197,7 @@ interface LoraModelOption {
   value: string
   label: string
   default_strength?: number
+  supported_modes?: AiVideoMode[]
 }
 
 interface ResolutionOption<T extends string> {
@@ -287,7 +288,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ai_video_addon_models_version: 4,
+  ai_video_addon_models_version: 5,
   ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],
@@ -797,7 +798,10 @@ const normalizeLoraStrength = (raw: unknown, fallback = 1) => {
   return Math.round(Math.min(2, Math.max(0.1, safe)) * 20) / 20
 }
 
-const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
+const normalizeAiVideoLoraItems = (
+  raw: unknown,
+  mode: AiVideoMode = 'i2v',
+): AiVideoLoraItem[] => {
   if (!Array.isArray(raw)) return []
   const allowed = new Map(modelOptions.ai_video_addon_models.map(item => [item.value, item]))
   const seen = new Set<string>()
@@ -808,7 +812,11 @@ const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
     const rawName = candidate.name ?? candidate.path
     const name = typeof rawName === 'string' ? rawName.trim() : ''
     const option = allowed.get(name)
-    if (!option || seen.has(name)) continue
+    if (
+      !option
+      || seen.has(name)
+      || (option.supported_modes && !option.supported_modes.includes(mode))
+    ) continue
     seen.add(name)
     normalized.push({
       name,
@@ -1045,6 +1053,11 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
         value: item.value,
         label: typeof item.label === 'string' ? item.label : item.value,
         default_strength: normalizeLoraStrength(item.default_strength, 1),
+        supported_modes: Array.isArray(item.supported_modes)
+          ? item.supported_modes.filter(
+              (mode): mode is AiVideoMode => mode === 'i2v' || mode === 'ref2v',
+            )
+          : undefined,
       }))
   }
   return merged
@@ -1093,7 +1106,9 @@ const activeLoraOptions = computed(() =>
   isVideoSceneKind(sceneConfig.kind)
     ? modelOptions.video_lora_models
     : sceneConfig.kind === 'ai_video'
-      ? modelOptions.ai_video_addon_models
+      ? modelOptions.ai_video_addon_models.filter(
+          option => !option.supported_modes || option.supported_modes.includes(sceneConfig.mode),
+        )
       : modelOptions.image_lora_models
 )
 const activeEngineSupportsLora = computed(() =>
@@ -1377,7 +1392,10 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             ? scene.reference_image_previews.filter((item): item is string => typeof item === 'string')
             : [],
           aspect_ratio: normalizeAiVideoAspectRatio(scene?.aspect_ratio),
-          lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
+          lora_items: normalizeAiVideoLoraItems(
+            scene?.lora_items,
+            normalizeAiVideoMode(scene?.mode),
+          ),
           end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
@@ -1994,7 +2012,7 @@ const buildPayload = (): QqccBotConfig => {
       reference_images: normalizeReferenceImages(scene.reference_images),
       aspect_ratio: normalizeAiVideoAspectRatio(scene.aspect_ratio),
       duration: aiVideoDurationOptions.includes(scene.duration) ? scene.duration : 5,
-      lora_items: normalizeAiVideoLoraItems(scene.lora_items),
+      lora_items: normalizeAiVideoLoraItems(scene.lora_items, normalizeAiVideoMode(scene.mode)),
       end_frame_draw_scene_id: scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
           scene.end_frame_draw_scene_id,
           payload.draw_scenes,
@@ -2070,7 +2088,10 @@ const openSceneConfig = (
       )
     : []
   sceneConfig.lora_items = kind === 'ai_video'
-    ? normalizeAiVideoLoraItems((scene as AiVideoSceneConfig).lora_items)
+    ? normalizeAiVideoLoraItems(
+        (scene as AiVideoSceneConfig).lora_items,
+        normalizeAiVideoMode((scene as AiVideoSceneConfig).mode),
+      )
     : []
   sceneConfig.end_frame_draw_scene_id =
     kind === 'video' || kind === 'video_v1' || kind === 'ai_video'
@@ -2158,7 +2179,7 @@ const confirmSceneConfig = () => {
       ? calculateRef2vCreditCost(scene.resolution, scene.duration)
       : normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
-    scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items)
+    scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items, scene.mode)
     scene.end_frame_draw_scene_id = scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
       )
@@ -2806,7 +2827,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 13 个，可选 14 种）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" :label="`附加模型（最多 13 个，当前可选 ${activeLoraOptions.length} 种）`" class="mb-4">
           <a-select
             :value="sceneConfig.lora_items.map(item => item.name)"
             mode="multiple"
