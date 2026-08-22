@@ -128,6 +128,8 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   engine: AiVideoSceneEngine
   mode: AiVideoMode
   reference_images: string[]
+  reference_image_names: string[]
+  reference_image_telegram_file_ids: Record<string, string>[]
   reference_image_previews?: string[]
   aspect_ratio: AiVideoAspectRatio
   lora_items: AiVideoLoraItem[]
@@ -714,6 +716,24 @@ const normalizeReferenceImages = (value: unknown) =>
         typeof item === 'string' && item.startsWith('qqcc/config/ref2v/ai_video/'),
       ).slice(0, 4)
     : []
+const normalizeReferenceNames = (value: unknown, count: number) =>
+  Array.from({ length: count }, (_, index) => {
+    const candidate = Array.isArray(value) ? value[index] : undefined
+    return typeof candidate === 'string' && candidate.trim()
+      ? candidate.trim().slice(0, 64)
+      : `模板 ${index + 1}`
+  })
+const normalizeReferenceFileIds = (value: unknown, count: number) =>
+  Array.from({ length: count }, (_, index) => {
+    const candidate = Array.isArray(value) ? value[index] : undefined
+    if (!candidate || typeof candidate !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(candidate as Record<string, unknown>)
+        .filter(([botId, fileId]) => /^\d+$/.test(botId) && typeof fileId === 'string' && fileId.trim())
+        .slice(0, 4)
+        .map(([botId, fileId]) => [botId, String(fileId).trim().slice(0, 512)]),
+    )
+  })
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
   value === 'free_edit' || value === 'free_edit_v2_5' || value === 'free_edit_v3' ? value : 'free_edit_v2'
@@ -1376,6 +1396,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         const duration = aiVideoDurationOptions.includes(rawDuration as AiVideoDurationKey)
           ? (rawDuration as AiVideoDurationKey)
           : 5
+        const referenceImages = normalizeReferenceImages(scene?.reference_images)
         return {
           id,
           name: typeof scene?.name === 'string' ? scene.name : '',
@@ -1387,7 +1408,15 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
           mode: normalizeAiVideoMode(scene?.mode),
-          reference_images: normalizeReferenceImages(scene?.reference_images),
+          reference_images: referenceImages,
+          reference_image_names: normalizeReferenceNames(
+            scene?.reference_image_names,
+            referenceImages.length,
+          ),
+          reference_image_telegram_file_ids: normalizeReferenceFileIds(
+            scene?.reference_image_telegram_file_ids,
+            referenceImages.length,
+          ),
           reference_image_previews: Array.isArray(scene?.reference_image_previews)
             ? scene.reference_image_previews.filter((item): item is string => typeof item === 'string')
             : [],
@@ -1477,6 +1506,8 @@ const addAiVideoScene = () => {
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
     mode: 'i2v',
     reference_images: [],
+    reference_image_names: [],
+    reference_image_telegram_file_ids: [],
     reference_image_previews: [],
     aspect_ratio: '16:9',
     lora_items: [],
@@ -1731,6 +1762,10 @@ const uploadReferenceImage = async (
       throw new Error('QQCC_REF2V_REFERENCE_INVALID_RESPONSE')
     }
     scene.reference_images.splice(referenceIndex, 1, objectKey)
+    if (referenceIndex >= scene.reference_image_names.length) {
+      scene.reference_image_names.push(`模板 ${referenceIndex + 1}`)
+    }
+    scene.reference_image_telegram_file_ids.splice(referenceIndex, 1, {})
     const previews = [...(scene.reference_image_previews || [])]
     previews.splice(referenceIndex, 1, uploaded.preview_url)
     scene.reference_image_previews = previews
@@ -1745,6 +1780,8 @@ const uploadReferenceImage = async (
 
 const removeReferenceImage = (scene: AiVideoSceneConfig, referenceIndex: number) => {
   scene.reference_images.splice(referenceIndex, 1)
+  scene.reference_image_names.splice(referenceIndex, 1)
+  scene.reference_image_telegram_file_ids.splice(referenceIndex, 1)
   scene.reference_image_previews?.splice(referenceIndex, 1)
 }
 
@@ -1757,6 +1794,10 @@ const moveReferenceImage = (
   if (target < 0 || target >= scene.reference_images.length) return
   ;[scene.reference_images[referenceIndex], scene.reference_images[target]] =
     [scene.reference_images[target], scene.reference_images[referenceIndex]]
+  ;[scene.reference_image_names[referenceIndex], scene.reference_image_names[target]] =
+    [scene.reference_image_names[target], scene.reference_image_names[referenceIndex]]
+  ;[scene.reference_image_telegram_file_ids[referenceIndex], scene.reference_image_telegram_file_ids[target]] =
+    [scene.reference_image_telegram_file_ids[target], scene.reference_image_telegram_file_ids[referenceIndex]]
   if (scene.reference_image_previews) {
     ;[scene.reference_image_previews[referenceIndex], scene.reference_image_previews[target]] =
       [scene.reference_image_previews[target], scene.reference_image_previews[referenceIndex]]
@@ -2010,6 +2051,14 @@ const buildPayload = (): QqccBotConfig => {
       engine: normalizeAiVideoEngine(scene.engine),
       mode: normalizeAiVideoMode(scene.mode),
       reference_images: normalizeReferenceImages(scene.reference_images),
+      reference_image_names: normalizeReferenceNames(
+        scene.reference_image_names,
+        scene.reference_images.length,
+      ),
+      reference_image_telegram_file_ids: normalizeReferenceFileIds(
+        scene.reference_image_telegram_file_ids,
+        scene.reference_images.length,
+      ),
       aspect_ratio: normalizeAiVideoAspectRatio(scene.aspect_ratio),
       duration: aiVideoDurationOptions.includes(scene.duration) ? scene.duration : 5,
       lora_items: normalizeAiVideoLoraItems(scene.lora_items, normalizeAiVideoMode(scene.mode)),
@@ -2527,6 +2576,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
                     <a-image v-if="scene.reference_image_previews?.[referenceIndex]" :src="scene.reference_image_previews[referenceIndex]" :width="112" :height="88" class="object-cover" />
                     <div v-else class="flex h-[88px] items-center justify-center bg-slate-100 text-xs text-slate-400">参考图 {{ referenceIndex + 1 }}</div>
                     <div class="mt-1 text-center text-xs text-slate-500">&lt;Picture {{ referenceIndex + 2 }}&gt;</div>
+                    <a-input v-model:value="scene.reference_image_names[referenceIndex]" :maxlength="64" size="small" class="mt-1" :data-testid="`ref2v-reference-name-${index}-${referenceIndex}`" placeholder="模板显示名称" />
                     <div class="mt-2 flex justify-center gap-1">
                       <a-button size="small" :disabled="referenceIndex === 0" @click="moveReferenceImage(scene, referenceIndex, -1)"><template #icon><UpOutlined /></template></a-button>
                       <a-button size="small" :disabled="referenceIndex === scene.reference_images.length - 1" @click="moveReferenceImage(scene, referenceIndex, 1)"><template #icon><DownOutlined /></template></a-button>

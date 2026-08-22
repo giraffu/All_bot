@@ -601,6 +601,168 @@ async def send_qqcc_scene_demo_media(
         return False
 
 
+def _qqcc_ref2v_template_descriptors(
+    scene: dict[str, Any], *, template_index: int | None
+) -> list[dict[str, Any]]:
+    object_keys = scene.get("reference_images")
+    if not isinstance(object_keys, list):
+        return []
+    names = scene.get("reference_image_names")
+    caches = scene.get("reference_image_telegram_file_ids")
+    indexes = (
+        [template_index]
+        if template_index is not None and 0 <= template_index < len(object_keys)
+        else range(len(object_keys))
+        if template_index is None
+        else []
+    )
+    return [
+        {
+            "object_key": str(object_keys[index]),
+            "display_name": (
+                str(names[index]).strip()
+                if isinstance(names, list)
+                and index < len(names)
+                and str(names[index]).strip()
+                else f"模板 {index + 1}"
+            ),
+            "telegram_file_ids": (
+                dict(caches[index])
+                if isinstance(caches, list)
+                and index < len(caches)
+                and isinstance(caches[index], dict)
+                else {}
+            ),
+        }
+        for index in indexes
+        if isinstance(object_keys[index], str) and object_keys[index].strip()
+    ]
+
+
+def _read_qqcc_ref2v_image_from_r2(media: dict[str, Any], *, storage_service) -> BytesIO:
+    if not storage_service.r2_client or not storage_service.r2_bucket:
+        raise RuntimeError("R2 storage is unavailable")
+    response = storage_service.r2_client.get_object(
+        Bucket=storage_service.r2_bucket,
+        Key=str(media["object_key"]),
+    )
+    body = response.get("Body") if isinstance(response, dict) else None
+    try:
+        content = body.read(QQCC_DEMO_IMAGE_MAX_BYTES + 1) if body is not None else b""
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
+    if not content or len(content) > QQCC_DEMO_IMAGE_MAX_BYTES:
+        raise QqccDemoMediaValidationError("REF2V template image is unavailable")
+    if _matches_file_signature(content=content, mime_type="image/png"):
+        suffix = ".png"
+    elif _matches_file_signature(content=content, mime_type="image/jpeg"):
+        suffix = ".jpg"
+    else:
+        raise QqccDemoMediaValidationError("REF2V template image is invalid")
+    upload = BytesIO(content)
+    upload.name = f"qqcc-ref2v-template{suffix}"
+    return upload
+
+
+async def _send_qqcc_ref2v_items(message, items):
+    if len(items) > 1:
+        return await message.reply_media_group(
+            media=[
+                InputMediaPhoto(media=source, caption=media["display_name"])
+                for media, source in items
+            ]
+        )
+    media, source = items[0]
+    return [
+        await message.reply_photo(
+            photo=source,
+            caption=media["display_name"],
+        )
+    ]
+
+
+async def send_qqcc_ref2v_reference_templates(
+    *,
+    message,
+    bot,
+    scene: dict[str, Any],
+    template_index: int | None = None,
+    preview_url_builder=build_qqcc_demo_preview_url,
+    cache_file_ids_func=None,
+    storage_service=storage,
+) -> bool:
+    """Send REF2V templates via Telegram file_id, refreshing cache on fallback."""
+
+    descriptors = _qqcc_ref2v_template_descriptors(
+        scene, template_index=template_index
+    )
+    if not descriptors:
+        return False
+    bot_id = str(getattr(bot, "id", "") or "")
+
+    def _source(media: dict[str, Any], *, prefer_cache: bool):
+        if prefer_cache:
+            cached = media.get("telegram_file_ids")
+            if isinstance(cached, dict) and str(cached.get(bot_id) or "").strip():
+                return str(cached[bot_id]).strip()
+        return str(preview_url_builder(media) or "").strip()
+
+    async def _attempt(*, prefer_cache: bool):
+        items = [(media, _source(media, prefer_cache=prefer_cache)) for media in descriptors]
+        if any(not source for _media, source in items):
+            raise RuntimeError("QQCC REF2V template URL is unavailable")
+        return items, await _send_qqcc_ref2v_items(message, items)
+
+    try:
+        items, sent_messages = await _attempt(prefer_cache=True)
+    except Exception:
+        try:
+            items, sent_messages = await _attempt(prefer_cache=False)
+        except Exception:
+            try:
+                items = [
+                    (
+                        media,
+                        await asyncio.to_thread(
+                            _read_qqcc_ref2v_image_from_r2,
+                            media,
+                            storage_service=storage_service,
+                        ),
+                    )
+                    for media in descriptors
+                ]
+                sent_messages = await _send_qqcc_ref2v_items(message, items)
+            except Exception:
+                logger.exception("Failed to send QQCC REF2V templates")
+                return False
+
+    updates = []
+    for (media, _source_value), sent_message in zip(items, sent_messages):
+        file_id = _extract_telegram_file_id(sent_message, media_type="image")
+        if file_id:
+            updates.append(
+                {"object_key": media["object_key"], "file_id": file_id}
+            )
+    if updates and bot_id:
+        if cache_file_ids_func is None:
+            from src.services.qqcc_config_service import (
+                cache_qqcc_ref2v_telegram_file_ids,
+            )
+
+            cache_file_ids_func = cache_qqcc_ref2v_telegram_file_ids
+        try:
+            await cache_file_ids_func(
+                scene_id=str(scene.get("id") or ""),
+                bot_id=bot_id,
+                updates=updates,
+            )
+        except Exception:
+            logger.exception("Failed to persist QQCC REF2V Telegram file_id cache")
+    return True
+
+
 async def _cache_qqcc_demo_file_ids(
     *,
     items,

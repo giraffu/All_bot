@@ -25,6 +25,8 @@ from src.handlers.fsm.quick_draw_callback_data import (
     build_quick_draw_scene_callback_data,
 )
 from src.handlers.fsm.quick_video_callback_data import (
+    build_quick_ai_video_scene_callback_data,
+    build_quick_ref2v_template_callback_data,
     build_quick_video_scene_callback_data,
 )
 from src.handlers import prompt_router
@@ -411,6 +413,143 @@ def test_qqcc_video_menu_contains_lazy_video_scenes():
     assert reply_markup.inline_keyboard[0][0].callback_data == (
         build_quick_video_scene_callback_data("missionary")
     )
+
+
+@pytest.mark.asyncio
+async def test_ref2v_scene_shows_named_template_gallery_before_waiting_for_selection(
+    monkeypatch,
+):
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/a/input",
+        "qqcc/config/ref2v/ai_video/ref/b/input",
+    ]
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "足交pro",
+                    "prompt": "<Picture 1> and <Picture 2>",
+                    "mode": "ref2v",
+                    "reference_images": references,
+                    "reference_image_names": ["黑色模板", "白色模板"],
+                }
+            ],
+        }
+    )
+    gallery = AsyncMock(return_value=True)
+    reply = AsyncMock()
+    async def interaction_io(awaitable, **_kwargs):
+        return await awaitable
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "load_runtime_qqcc_config", AsyncMock(return_value=config))
+    monkeypatch.setattr(quick_video_fsm, "send_qqcc_scene_demo_media", AsyncMock())
+    monkeypatch.setattr(quick_video_fsm, "send_qqcc_ref2v_reference_templates", gallery)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "run_qqcc_interaction_io",
+        AsyncMock(side_effect=interaction_io),
+    )
+    user = SimpleNamespace(id=123, username="tester")
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=456),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_ai_video_scene_callback_data("ref"),
+            message=callback_message,
+            answer=AsyncMock(),
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_REFERENCE_TEMPLATE
+    gallery.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene=config["ai_video_scenes"][0],
+    )
+    buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
+    assert [button.text for row in buttons for button in row] == ["黑色模板", "白色模板"]
+    assert buttons[0][1].callback_data == build_quick_ref2v_template_callback_data("ref", 1)
+
+
+@pytest.mark.asyncio
+async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(monkeypatch):
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/a/input",
+        "qqcc/config/ref2v/ai_video/ref/b/input",
+    ]
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "足交pro",
+                    "prompt": "prompt",
+                    "mode": "ref2v",
+                    "reference_images": references,
+                    "reference_image_names": ["黑色模板", "白色模板"],
+                }
+            ],
+        }
+    )
+    selected_sender = AsyncMock(return_value=True)
+    edit = AsyncMock()
+    monkeypatch.setattr(quick_video_fsm, "load_runtime_qqcc_config", AsyncMock(return_value=config))
+    monkeypatch.setattr(quick_video_fsm, "send_qqcc_ref2v_reference_templates", selected_sender)
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", edit)
+    user = SimpleNamespace(id=123, username="tester")
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=456),
+        callback_query=SimpleNamespace(
+            data=build_quick_ref2v_template_callback_data("ref", 1),
+            message=callback_message,
+            answer=AsyncMock(),
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "in_conversation": "QUICK_VIDEO_ltx_video",
+            "quick_video_data": {"scene_id": "ref", "scene_kind": "ai_video"},
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_video_fsm.select_ref2v_template(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert context.user_data["quick_video_data"]["selected_reference_image"] == references[1]
+    assert context.user_data["quick_video_data"]["selected_reference_name"] == "白色模板"
+    selected_sender.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene=config["ai_video_scenes"][0],
+        template_index=1,
+    )
+    assert "白色模板" in edit.await_args.args[1]
+    assert "pic1" in edit.await_args.args[1]
 
 
 @pytest.mark.asyncio

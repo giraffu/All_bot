@@ -79,6 +79,7 @@ class QuickImageState(IntEnum):
 class QuickVideoState(IntEnum):
     """懒人动图 (传教士/后入/口交等) 状态枚举"""
 
+    WAIT_REFERENCE_TEMPLATE = auto()
     WAIT_IMAGE = auto()
     WAIT_SETTINGS = auto()
 

@@ -34,10 +34,13 @@ from src.handlers.conversation_states import QuickVideoState
 from src.handlers.fsm.quick_video_callback_data import (
     QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
     QUICK_VIDEO_MODE_KEYS,
+    QUICK_REF2V_TEMPLATE_CALLBACK_PATTERN,
+    build_quick_ref2v_template_callback_data,
     parse_quick_video_mode_callback_data,
     parse_quick_video_scene_callback_data,
     parse_quick_video_v1_scene_callback_data,
     parse_quick_ai_video_scene_callback_data,
+    parse_quick_ref2v_template_callback_data,
 )
 from src.handlers.fsm.quick_draw_callback_data import QUICK_DRAW_SCENE_CALLBACK_PATTERN
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
@@ -57,7 +60,10 @@ from src.services.qqcc_config_service import (
     project_qqcc_config_for_scene_version,
     render_qqcc_copywriting,
 )
-from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
+from src.services.qqcc_demo_media_service import (
+    send_qqcc_ref2v_reference_templates,
+    send_qqcc_scene_demo_media,
+)
 from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     is_qqcc_bot_context,
@@ -354,6 +360,12 @@ def _sync_qqcc_scene_to_quick_video_data(
             {
                 "ai_video_mode": str(scene.get("mode") or "i2v"),
                 "reference_images": list(scene.get("reference_images") or []),
+                "reference_image_names": list(
+                    scene.get("reference_image_names") or []
+                ),
+                "reference_image_telegram_file_ids": list(
+                    scene.get("reference_image_telegram_file_ids") or []
+                ),
                 "aspect_ratio": str(scene.get("aspect_ratio") or "16:9"),
             }
         )
@@ -365,6 +377,8 @@ def _sync_qqcc_scene_to_quick_video_data(
     if scene_kind != "ai_video":
         fsm_data.pop("ai_video_mode", None)
         fsm_data.pop("reference_images", None)
+        fsm_data.pop("reference_image_names", None)
+        fsm_data.pop("reference_image_telegram_file_ids", None)
         fsm_data.pop("aspect_ratio", None)
         fsm_data.pop("lora_items", None)
         fsm_data.pop("scene_kind", None)
@@ -561,7 +575,44 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             scene=scene,
             **demo_kwargs,
         )
+    is_ref2v_scene = bool(
+        scene_kind == "ai_video" and str((scene or {}).get("mode") or "") == "ref2v"
+    )
+    if is_ref2v_scene and scene is not None:
+        gallery_awaitable = send_qqcc_ref2v_reference_templates(
+            message=reply_message,
+            bot=context.bot,
+            scene=scene,
+        )
+        if is_qqcc_bot_context(context):
+            await run_qqcc_interaction_io(
+                gallery_awaitable,
+                operation="quick_video_ref2v_template_gallery",
+                logger=logger,
+            )
+        else:
+            await gallery_awaitable
     reply_markup = None
+    if is_ref2v_scene and scene is not None:
+        reference_names = list(scene.get("reference_image_names") or [])
+        reference_images = list(scene.get("reference_images") or [])
+        buttons = [
+            InlineKeyboardButton(
+                str(reference_names[index] or f"模板 {index + 1}"),
+                callback_data=build_quick_ref2v_template_callback_data(
+                    str(scene["id"]), index
+                ),
+            )
+            for index in range(len(reference_images))
+        ]
+        reply_markup = InlineKeyboardMarkup(
+            [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+        )
+        msg = (
+            f"🎞️ 已切换到【{scene.get('name') or mode_name}】模式。\n\n"
+            "请先选择一张参考模板；确认后再发送 pic1（你的正面清晰图片）。\n\n"
+            "随时可以发送 /cancel 退出流程。"
+        )
     if scene is not None and qqcc_config is not None:
         draw_config = project_qqcc_config_for_scene_version(
             qqcc_config,
@@ -602,6 +653,80 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
     else:
         await reply_awaitable
+    return (
+        QuickVideoState.WAIT_REFERENCE_TEMPLATE
+        if is_ref2v_scene
+        else QuickVideoState.WAIT_IMAGE
+    )
+
+
+async def select_ref2v_template(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    parsed = parse_quick_ref2v_template_callback_data(
+        getattr(query, "data", None)
+    )
+    if query is None or parsed is None:
+        return ConversationHandler.END
+    await safe_answer_query(query)
+    scene_id, template_index = parsed
+    fsm_data = context.user_data.get("quick_video_data")
+    if not isinstance(fsm_data, dict) or fsm_data.get("scene_id") != scene_id:
+        await safe_answer_query(
+            query, text="模板选择已失效，请重新进入场景", show_alert=True
+        )
+        return ConversationHandler.END
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    scene = (
+        get_qqcc_ai_video_scene(qqcc_config, scene_id)
+        if qqcc_config is not None
+        else None
+    )
+    if (
+        scene is None
+        or str(scene.get("mode") or "") != "ref2v"
+        or not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, getattr(update.effective_user, "id", 0))
+        return ConversationHandler.END
+    references = list(scene.get("reference_images") or [])
+    names = list(scene.get("reference_image_names") or [])
+    if template_index >= len(references):
+        await safe_answer_query(
+            query, text="模板已更新，请重新选择", show_alert=True
+        )
+        return QuickVideoState.WAIT_REFERENCE_TEMPLATE
+    _sync_qqcc_scene_to_quick_video_data(
+        fsm_data, scene, scene_kind="ai_video"
+    )
+    selected_name = str(
+        names[template_index] if template_index < len(names) else f"模板 {template_index + 1}"
+    )
+    fsm_data["selected_reference_image"] = references[template_index]
+    fsm_data["selected_reference_name"] = selected_name
+    selected_awaitable = send_qqcc_ref2v_reference_templates(
+        message=query.message,
+        bot=context.bot,
+        scene=scene,
+        template_index=template_index,
+    )
+    if is_qqcc_bot_context(context):
+        await run_qqcc_interaction_io(
+            selected_awaitable,
+            operation="quick_video_ref2v_selected_template",
+            logger=logger,
+        )
+    else:
+        await selected_awaitable
+    await robust_edit_text(
+        query.message,
+        f"✅ 已选择模板【{selected_name}】。\n\n"
+        "请发送 pic1（你的正面清晰图片），我会使用这张模板生成视频。\n\n"
+        "随时可以发送 /cancel 退出流程。",
+        parse_mode="Markdown",
+    )
     return QuickVideoState.WAIT_IMAGE
 
 
@@ -1024,6 +1149,19 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
             ),
         ],
         states={
+            QuickVideoState.WAIT_REFERENCE_TEMPLATE: [
+                CallbackQueryHandler(
+                    start_quick_video,
+                    pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
+                ),
+                CallbackQueryHandler(
+                    select_ref2v_template,
+                    pattern=QUICK_REF2V_TEMPLATE_CALLBACK_PATTERN,
+                ),
+                MessageHandler(
+                    filters.ALL & ~filters.Regex(r"^/cancel$"), unexpected_input
+                ),
+            ],
             QuickVideoState.WAIT_IMAGE: [
                 CallbackQueryHandler(
                     start_quick_video,
@@ -1032,6 +1170,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
                 CallbackQueryHandler(
                     jump_to_qqcc_draw_scene,
                     pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+                ),
+                CallbackQueryHandler(
+                    select_ref2v_template,
+                    pattern=QUICK_REF2V_TEMPLATE_CALLBACK_PATTERN,
                 ),
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(

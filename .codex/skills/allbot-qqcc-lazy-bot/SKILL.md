@@ -62,10 +62,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   拼接模板只能 Web handoff。原生提交必须带 `source_post_id`、
   `allow_contribute=False` 和 `client_type=bot:qqcc`，点击按钮不得预增
   `applied_count`。
-- 场景示范媒体先发媒体、再发上传提示。Telegram file ID 缓存失效时回退
-  当前 R2 对象；失败只能降级为文字提示。Config Backend 与 Bot 的 object
-  key allowlist 是共享契约，修改时必须同轮更新并回归“写一个缓存不删除
-  其它媒体”。
+- 示范媒体先发媒体再提示，`file_id` 失效才回退 R2；Backend/Bot 共用 object
+  key allowlist。REF2V 先展示可命名模板并要求选择，再收 `pic1`；提交和
+  重生成只用所选 key，后台保存按 key 合并缓存。
 - Config 示例生成不扣费、不占用户并发、不写 History。长时监视不得持有
   request-scoped DB session；浏览器关闭后仍应由服务端完成监视和幂等回写。
 - 主 Bot 的旧懒人入口只跳转 QQCC 或提示入口未配置，不能恢复任务提交；

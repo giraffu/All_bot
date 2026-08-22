@@ -550,13 +550,18 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
 
 
 @pytest.mark.asyncio
-async def test_qqcc_ref2v_keeps_subject_first_and_admin_references_ordered():
+async def test_qqcc_ref2v_uses_only_the_user_selected_template():
     references = [
         "qqcc/config/ref2v/ai_video/ref-scene/reference-a/input",
         "qqcc/config/ref2v/ai_video/ref-scene/reference-b/input",
     ]
     plan = build_quick_video_submission_plan(
-        fsm_data={"scene_kind": "ai_video", "scene_id": "ref-scene"},
+        fsm_data={
+            "scene_kind": "ai_video",
+            "scene_id": "ref-scene",
+            "selected_reference_image": references[1],
+            "selected_reference_name": "白色模板",
+        },
         qqcc_config=normalize_qqcc_config(
             {
                 "main_buttons": {"ai_video": True},
@@ -578,7 +583,7 @@ async def test_qqcc_ref2v_keeps_subject_first_and_admin_references_ordered():
         allowed_resolutions=[],
     )
     generation_task = AsyncMock(return_value={"output": "history/result.mp4"})
-    downloads = AsyncMock(side_effect=["/tmp/ref-a.png", "/tmp/ref-b.png"])
+    downloads = AsyncMock(return_value="/tmp/ref-b.png")
 
     await run_quick_video_submission_plan(
         plan=plan,
@@ -596,10 +601,12 @@ async def test_qqcc_ref2v_keeps_subject_first_and_admin_references_ordered():
     assert plan.kind == QuickVideoSubmissionKind.H3_REF2V
     assert plan.total_cost == 46
     assert plan.fixed_credit_cost == 46
+    assert plan.reference_images == [references[1]]
+    assert plan.result_meta["_qqcc_regenerate"]["selected_reference_image"] == references[1]
+    assert plan.result_meta["_qqcc_regenerate"]["selected_reference_name"] == "白色模板"
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
     assert generation_task.await_args.kwargs["images"] == [
         "/tmp/subject.png",
-        "/tmp/ref-a.png",
         "/tmp/ref-b.png",
     ]
     assert generation_task.await_args.kwargs["aspect_ratio"] == "9:16"

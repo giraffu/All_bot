@@ -12,10 +12,53 @@ from src.services.qqcc_demo_media_service import (
     clone_qqcc_config_demo_media_for_private_bot,
     clone_qqcc_v2_demo_media_to_v1,
     delete_qqcc_private_bot_demo_media,
+    send_qqcc_ref2v_reference_templates,
     send_qqcc_scene_demo_media,
     upload_qqcc_demo_media,
     upload_qqcc_ref2v_reference_image,
 )
+
+
+@pytest.mark.asyncio
+async def test_ref2v_template_gallery_uses_cached_telegram_file_ids_and_names():
+    reply_media_group = AsyncMock(
+        return_value=[
+            SimpleNamespace(photo=[SimpleNamespace(file_id="fresh-a")]),
+            SimpleNamespace(photo=[SimpleNamespace(file_id="fresh-b")]),
+        ]
+    )
+    message = SimpleNamespace(reply_media_group=reply_media_group)
+    cache = AsyncMock()
+    scene = {
+        "id": "ref",
+        "reference_images": ["key-a", "key-b"],
+        "reference_image_names": ["黑色模板", "白色模板"],
+        "reference_image_telegram_file_ids": [
+            {"999": "cached-a"},
+            {"999": "cached-b"},
+        ],
+    }
+
+    sent = await send_qqcc_ref2v_reference_templates(
+        message=message,
+        bot=SimpleNamespace(id=999),
+        scene=scene,
+        cache_file_ids_func=cache,
+        preview_url_builder=lambda _media: pytest.fail("cached file_id must be reused"),
+    )
+
+    assert sent is True
+    media = reply_media_group.await_args.kwargs["media"]
+    assert [item.media for item in media] == ["cached-a", "cached-b"]
+    assert [item.caption for item in media] == ["黑色模板", "白色模板"]
+    cache.assert_awaited_once_with(
+        scene_id="ref",
+        bot_id="999",
+        updates=[
+            {"object_key": "key-a", "file_id": "fresh-a"},
+            {"object_key": "key-b", "file_id": "fresh-b"},
+        ],
+    )
 
 
 @pytest.mark.asyncio

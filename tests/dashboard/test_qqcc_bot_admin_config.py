@@ -33,6 +33,7 @@ from src.services.qqcc_config_service import (
     get_enabled_qqcc_video_scenes_v1,
     get_enabled_qqcc_ai_video_scenes,
     cache_qqcc_demo_telegram_file_ids,
+    cache_qqcc_ref2v_telegram_file_ids,
     get_qqcc_copywriting_override,
     load_qqcc_config_payload,
     normalize_qqcc_config,
@@ -77,6 +78,61 @@ def test_qqcc_ref2v_scene_derives_read_only_price_and_preserves_reference_order(
     assert scene["credit_cost"] == 135
     assert scene["aspect_ratio"] == "9:16"
     assert scene["next_scene_id"] is None
+
+
+def test_qqcc_ref2v_templates_preserve_display_names_and_telegram_file_ids():
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/reference-a/input",
+        "qqcc/config/ref2v/ai_video/ref/reference-b/input",
+    ]
+    config = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "参考视频",
+                    "prompt": "<Picture 1> follows <Picture 2>",
+                    "mode": "ref2v",
+                    "reference_images": references,
+                    "reference_image_names": ["黑色模板", "白色模板"],
+                    "reference_image_telegram_file_ids": [
+                        {"123": "tg-a"},
+                        {"123": "tg-b"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    scene = config["ai_video_scenes"][0]
+    assert scene["reference_image_names"] == ["黑色模板", "白色模板"]
+    assert scene["reference_image_telegram_file_ids"] == [
+        {"123": "tg-a"},
+        {"123": "tg-b"},
+    ]
+
+
+def test_qqcc_ref2v_legacy_references_receive_stable_default_names():
+    config = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "参考视频",
+                    "prompt": "prompt",
+                    "mode": "ref2v",
+                    "reference_images": [
+                        "qqcc/config/ref2v/ai_video/ref/reference-a/input",
+                        "qqcc/config/ref2v/ai_video/ref/reference-b/input",
+                    ],
+                }
+            ]
+        }
+    )
+
+    scene = config["ai_video_scenes"][0]
+    assert scene["reference_image_names"] == ["模板 1", "模板 2"]
+    assert scene["reference_image_telegram_file_ids"] == [{}, {}]
 
 
 def test_qqcc_ref2v_only_addon_is_kept_for_ref2v_and_removed_from_i2v():
@@ -2078,6 +2134,46 @@ async def test_cache_qqcc_demo_telegram_file_ids_updates_matching_media_only():
     output = checkpoint.value["draw_scenes"][0]["demo_output_media"]
     assert output["object_key"].endswith("/generated/qqcc-demo-task-1/output")
     assert output["content_sha256"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_cache_ref2v_file_id_updates_the_matching_object_key_only():
+    config = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "参考视频",
+                    "prompt": "prompt",
+                    "mode": "ref2v",
+                    "reference_images": [
+                        "qqcc/config/ref2v/ai_video/ref/a/input",
+                        "qqcc/config/ref2v/ai_video/ref/b/input",
+                    ],
+                }
+            ]
+        }
+    )
+    checkpoint = RuntimeCheckpoint(key=QQCC_LAZY_BOT_CONFIG_KEY, value=config)
+    db = _FakeSession(checkpoint)
+
+    updated = await cache_qqcc_ref2v_telegram_file_ids(
+        scene_id="ref",
+        bot_id="123",
+        updates=[
+            {
+                "object_key": "qqcc/config/ref2v/ai_video/ref/b/input",
+                "file_id": "tg-b",
+            },
+            {"object_key": "wrong", "file_id": "must-not-write"},
+        ],
+        db=db,
+    )
+
+    assert updated == 1
+    assert checkpoint.value["ai_video_scenes"][0][
+        "reference_image_telegram_file_ids"
+    ] == [{}, {"123": "tg-b"}]
 
 
 @pytest.mark.asyncio

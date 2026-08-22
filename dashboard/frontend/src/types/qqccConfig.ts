@@ -75,6 +75,8 @@ export interface AiVideoSceneConfig extends SceneDemoFields {
   engine: AiVideoSceneEngine
   mode: AiVideoMode
   reference_images: string[]
+  reference_image_names: string[]
+  reference_image_telegram_file_ids: Record<string, string>[]
   reference_image_previews?: string[]
   aspect_ratio: AiVideoAspectRatio
   lora_items: AiVideoLoraItem[]
