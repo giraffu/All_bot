@@ -990,6 +990,8 @@ describe('QqccBotSettings', () => {
           id: 'ref', name: '参考视频', prompt: '<Picture 1> follows <Picture 2>',
           negative_prompt: '', duration: 10, resolution: 'small', engine: 'minimax_h3',
           mode: 'ref2v', reference_images: references,
+          reference_image_names: ['黑色模板', '白色模板'],
+          reference_image_telegram_file_ids: [{ '123': 'tg-a' }, { '123': 'tg-b' }],
           reference_image_previews: ['https://signed/a', 'https://signed/b'],
           aspect_ratio: '9:16', lora_items: [], credit_cost: 46,
           end_frame_draw_scene_id: '', next_scene_id: null,
@@ -1003,11 +1005,16 @@ describe('QqccBotSettings', () => {
 
     expect(wrapper.get('[data-testid="ref2v-reference-manager-0"]').text()).toContain('<Picture 2>')
     expect(wrapper.get('[data-testid="ref2v-reference-manager-0"]').text()).toContain('<Picture 3>')
+    expect((wrapper.get('[data-testid="ref2v-reference-name-0-0"]').element as HTMLInputElement).value)
+      .toBe('黑色模板')
+    await wrapper.get('[data-testid="ref2v-reference-name-0-1"]').setValue('浅色模板')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
     const saved = apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0]
     expect(saved.reference_images).toEqual(references)
+    expect(saved.reference_image_names).toEqual(['黑色模板', '浅色模板'])
+    expect(saved.reference_image_telegram_file_ids).toEqual([{ '123': 'tg-a' }, { '123': 'tg-b' }])
     expect(saved.reference_image_previews).toBeUndefined()
     expect(saved.credit_cost).toBe(46)
   })

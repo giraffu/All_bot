@@ -220,6 +220,18 @@ def validate_qqcc_ref2v_scenes(raw_config: Any) -> None:
             raise QqccRef2vSceneError(
                 "ai_video_scenes.reference_images must contain one to four QQCC REF2V object keys"
             )
+        raw_names = raw_scene.get("reference_image_names")
+        if raw_names is not None and (
+            not isinstance(raw_names, list)
+            or len(raw_names) != len(references)
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in raw_names
+            )
+        ):
+            raise QqccRef2vSceneError(
+                "ai_video_scenes.reference_image_names must name every REF2V template"
+            )
         aspect_ratio = str(raw_scene.get("aspect_ratio") or "16:9").strip()
         if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
             raise QqccRef2vSceneError(
@@ -937,6 +949,41 @@ def _normalize_ai_video_scene(
         ]
     if mode == "ref2v" and not 1 <= len(reference_images) <= 4:
         return None
+    raw_reference_names = raw_scene.get("reference_image_names")
+    reference_image_names = [
+        (
+            str(raw_reference_names[index]).strip()[:64]
+            if isinstance(raw_reference_names, list)
+            and index < len(raw_reference_names)
+            and isinstance(raw_reference_names[index], str)
+            and str(raw_reference_names[index]).strip()
+            else f"模板 {index + 1}"
+        )
+        for index in range(len(reference_images))
+    ]
+    raw_reference_file_ids = raw_scene.get("reference_image_telegram_file_ids")
+    reference_image_telegram_file_ids: list[dict[str, str]] = []
+    for reference_index in range(len(reference_images)):
+        raw_file_ids = (
+            raw_reference_file_ids[reference_index]
+            if isinstance(raw_reference_file_ids, list)
+            and reference_index < len(raw_reference_file_ids)
+            else {}
+        )
+        normalized_file_ids: dict[str, str] = {}
+        if isinstance(raw_file_ids, dict):
+            for raw_bot_id, raw_file_id in raw_file_ids.items():
+                bot_id = str(raw_bot_id).strip()
+                file_id = (
+                    str(raw_file_id).strip()
+                    if isinstance(raw_file_id, str)
+                    else ""
+                )
+                if bot_id.isdigit() and file_id:
+                    normalized_file_ids[bot_id] = file_id[:512]
+                if len(normalized_file_ids) >= 4:
+                    break
+        reference_image_telegram_file_ids.append(normalized_file_ids)
     aspect_ratio = str(raw_scene.get("aspect_ratio") or "16:9").strip()
     if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
         aspect_ratio = "16:9"
@@ -950,7 +997,7 @@ def _normalize_ai_video_scene(
         build_minimax_h3_spec(
             MINIMAX_H3_REF2V,
             {
-                "images": ["subject", *reference_images],
+                "images": ["subject", "selected-template"],
                 "duration": duration,
                 "resolution_preset": resolution,
                 "aspect_ratio": aspect_ratio,
@@ -1004,6 +1051,11 @@ def _normalize_ai_video_scene(
         scene_kind="ai_video",
         output_media_type="video",
     )
+    if mode == "ref2v":
+        scene["reference_image_names"] = reference_image_names
+        scene["reference_image_telegram_file_ids"] = (
+            reference_image_telegram_file_ids
+        )
     if not scene["jump_draw_scene_id"]:
         scene.pop("jump_draw_scene_id")
     return scene
@@ -1955,6 +2007,25 @@ def _merge_qqcc_demo_telegram_caches(
                 existing_file_ids = existing_media.get("telegram_file_ids")
                 if isinstance(existing_file_ids, dict):
                     media["telegram_file_ids"] = dict(existing_file_ids)
+            existing_reference_caches = existing_scene.get(
+                "reference_image_telegram_file_ids"
+            )
+            existing_reference_images = existing_scene.get("reference_images")
+            if not isinstance(existing_reference_caches, list) or not isinstance(
+                existing_reference_images, list
+            ):
+                continue
+            cache_by_object_key = {
+                object_key: existing_reference_caches[index]
+                for index, object_key in enumerate(existing_reference_images)
+                if isinstance(object_key, str)
+                and index < len(existing_reference_caches)
+                and isinstance(existing_reference_caches[index], dict)
+            }
+            scene["reference_image_telegram_file_ids"] = [
+                dict(cache_by_object_key.get(object_key, {}))
+                for object_key in scene.get("reference_images", [])
+            ]
 
 
 def _qqcc_ref2v_object_keys(config: dict[str, Any]) -> set[str]:
@@ -2196,6 +2267,69 @@ async def cache_qqcc_demo_telegram_file_ids(
     if db is not None:
         return await _update(db)
 
+    from src.database.core import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        return await _update(session)
+
+
+async def cache_qqcc_ref2v_telegram_file_ids(
+    *,
+    scene_id: str,
+    bot_id: str,
+    updates: list[dict[str, str]],
+    db: AsyncSession | None = None,
+) -> int:
+    """Persist official QQCC REF2V template photo file_ids by immutable object key."""
+
+    from src.database.models import RuntimeCheckpoint
+
+    if not str(bot_id).isdigit():
+        return 0
+
+    async def _update(session: AsyncSession) -> int:
+        result = await session.execute(
+            select(RuntimeCheckpoint)
+            .where(RuntimeCheckpoint.key == QQCC_LAZY_BOT_CONFIG_KEY)
+            .with_for_update()
+        )
+        checkpoint = result.scalar_one_or_none()
+        if checkpoint is None:
+            return 0
+        config = normalize_qqcc_config(checkpoint.value or {})
+        scene = next(
+            (
+                item
+                for item in config.get("ai_video_scenes", [])
+                if item.get("id") == scene_id and item.get("mode") == "ref2v"
+            ),
+            None,
+        )
+        if scene is None:
+            return 0
+        references = scene.get("reference_images", [])
+        caches = scene.get("reference_image_telegram_file_ids", [])
+        updated = 0
+        for item in updates:
+            object_key = str(item.get("object_key") or "")
+            file_id = str(item.get("file_id") or "").strip()[:512]
+            if not file_id or object_key not in references:
+                continue
+            index = references.index(object_key)
+            while len(caches) < len(references):
+                caches.append({})
+            if not isinstance(caches[index], dict):
+                caches[index] = {}
+            caches[index][str(bot_id)] = file_id
+            updated += 1
+        if updated:
+            scene["reference_image_telegram_file_ids"] = caches
+            checkpoint.value = config
+            await session.commit()
+        return updated
+
+    if db is not None:
+        return await _update(db)
     from src.database.core import AsyncSessionLocal
 
     async with AsyncSessionLocal() as session:

@@ -595,6 +595,17 @@ def build_quick_video_submission_plan(
             duration_seconds = 5
         duration = f"{duration_seconds}s"
         scene_mode = str(scene.get("mode") or "i2v")
+        selected_reference_image = str(
+            fsm_data.get("selected_reference_image") or ""
+        ).strip()
+        selected_reference_name = str(
+            fsm_data.get("selected_reference_name") or ""
+        ).strip()
+        scene_reference_images = list(scene.get("reference_images") or [])
+        if scene_mode == "ref2v" and selected_reference_image not in scene_reference_images:
+            return QuickVideoSubmissionReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
         tail_draw_scene = None if scene_mode == "ref2v" else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
         tail_draw_chain = (
             resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
@@ -639,13 +650,21 @@ def build_quick_video_submission_plan(
                 scene_id=scene_id,
                 scene_kind="ai_video",
                 display_mode_name=display_mode_name,
+                selected_reference_image=(
+                    selected_reference_image if scene_mode == "ref2v" else None
+                ),
+                selected_reference_name=(
+                    selected_reference_name if scene_mode == "ref2v" else None
+                ),
             ),
             lora_items=lora_items,
             tail_draw_chain=tail_draw_chain,
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
             fixed_credit_cost=fixed_credit_cost,
-            reference_images=list(scene.get("reference_images") or []),
+            reference_images=(
+                [selected_reference_image] if scene_mode == "ref2v" else []
+            ),
             aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
         )
 

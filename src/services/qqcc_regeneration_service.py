@@ -250,6 +250,8 @@ async def prepare_qqcc_regeneration_submission(
                 "scene_kind": meta.get("scene_kind"),
                 "resolution": getattr(history, "billing_resolution", None) or "512p",
                 "duration": _coerce_quick_video_duration(history),
+                "selected_reference_image": meta.get("selected_reference_image"),
+                "selected_reference_name": meta.get("selected_reference_name"),
             },
             qqcc_config=qqcc_config,
             allowed_resolutions=None,

@@ -2,16 +2,19 @@
 
 AI 视频场景面向用户统一称为“高级图生视频pro”。`ai_video_scenes[].mode` 为
 `i2v|ref2v`，缺失时兼容为 I2V；旧普通场景提交 H3 I2V，配置尾帧生成链的旧场景提交
-H3 FLF2V。REF2V 场景由用户上传 1 张主体图，拼接管理员配置的 1–4 张有序参考图，
-固定画幅并由服务端派生价格。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
+H3 FLF2V。REF2V 场景由管理员维护 1–4 张可命名模板图；用户进入场景后先查看模板
+图库并按名称确认其中一张，再上传 1 张主体图作为 `<Picture 1>`，确认的模板固定为
+`<Picture 2>`。固定画幅与价格由服务端派生。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
 清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 17 个可选附加模型及模式范围，配置
 后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
 值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
 权威覆盖模型分辨率价格。REF2V 只在官方 Bot/管理后台显示和执行；私有 Bot 过滤该
 场景并拒绝旧 callback。参考图对象只保存受限 `qqcc/config/ref2v/` key，配置响应才附加
-短签预览；替换、删除和排序在保存时清理已失去引用的对象。“生成示例”使用当前 demo
-input 作为 `<Picture 1>` 并读取最新参考图，不扣费、不写 History。
+短签预览；显示名与按 Bot ID 隔离的 Telegram `file_id` 缓存随对象 key 保存，替换、删除
+和排序在保存时保持同位，清理已失去引用的对象。Bot 首次发送后缓存 `file_id`，后续模板
+图库与选中图直接复用，失效时才回退 R2 并刷新。“生成示例”使用当前 demo input 作为
+`<Picture 1>` 并读取最新参考图，不扣费、不写 History。
 
 ## 1. 范围与定位
 
@@ -140,7 +143,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, resolution, lora_items, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数；缺失字段按 `null` 归一，无需迁移。固定价只读取用户直接点击的根场景，代表完整链总价；清空恢复旧动态/分段计费。新增场景从 options 读取默认值：AI动图 `6`、AI视频 `10`、AI绘图/AI滤镜 `2`。修改模型、时长、尾帧或后处理不会自动改价。
@@ -401,7 +404,8 @@ QQCC 快速入口至少覆盖：
 - 点击主菜单 `快速换脸` 直接进入 quick image 单图随机换脸流程，发 1 张正脸图后自动匹配模板；不注册 `faceswap_fsm`。
 - 旧配置迁移后默认带 `快速自慰` 和 `快速脱衣` 两个普通预设，主菜单展示 `AI绘图`；点击后按三个一行展示 inline 场景按钮，点击 `qdraw_scene:<id>` 进入 quick image 发送图片步骤并按场景 engine、场景 `prompt` / `negative_prompt`、绘图后处理或终止滤镜后处理链提交 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`，只发送最终图；场景删除后旧 callback 回复 `功能暂未开放` 且不提交任务。
 - `AI滤镜` 默认无场景不展示；配置有效 `filter_scenes` 后点击主菜单回复滤镜 inline 场景按钮，点击 `qfilter_scene:<id>` 进入 quick image 发送图片步骤并按单步滤镜场景提交。场景删除、禁用或主开关关闭后旧 callback 回复 `功能暂未开放` 且不提交任务。
-- 配置 Web 四类场景行均展示灵石消耗与输入/输出示范操作；上传后双栏预览。绘图/滤镜点击场景先发双图片，动图/视频先发图片+视频，随后才发文字提示。首次发送从 R2 获取并缓存 file_id，重复发送不再上传；缓存失效自动刷新，替换内容后旧 file_id 不复用。
+- 配置 Web 四类场景行均展示灵石消耗与输入/输出示范操作；上传后双栏预览。REF2V 参考图卡片额外提供模板显示名输入，排序/替换/删除时名称与 file_id 缓存同步移动或失效。绘图/滤镜点击场景先发双图片，动图/视频先发图片+视频，随后才发文字提示；REF2V 再发送带名称的模板图库和选择按钮，未确认模板不能上传主体或提交。首次发送从 R2 获取并缓存 file_id，重复发送不再上传；缓存失效自动刷新，替换内容后旧 file_id 不复用。
+- REF2V 提交计划只接受当前场景仍存在的 `selected_reference_image`，生成输入固定为 `[用户 pic1, 已选模板]`；结果重生成 metadata 同时持久化模板 object key 和显示名，重新生成继续使用同一模板，配置删除该模板后 fail closed。
 - 点击主菜单 `AI动图` 后，Bot 回复下方展示当前后台配置的 inline 场景按钮，默认第一行 3 个、第二行 2 个；点击 `qvid_scene:<id>` 进入 quick video 发送图片步骤。旧 `qvid_mode:*` 已发按钮兼容到对应场景，场景删除后回复 `功能暂未开放` 且不提交任务。
 - 点击主菜单 `修仙市集` 后展示 QQCC 专用类型菜单；浏览投稿时支持点赞、点踩、上一条/下一条、分类返回、一键应用或 Web 应用，不展示留言入口。
 - `修仙市集` 二次查看已缓存作品时优先用 Telegram file_id，file_id 失效后从当前 R2/S3 URL resolver 刷新。

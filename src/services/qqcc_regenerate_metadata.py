@@ -14,6 +14,8 @@ _ALLOWED_CONTEXT_KEYS = {
     "scene_id",
     "scene_kind",
     "display_mode_name",
+    "selected_reference_image",
+    "selected_reference_name",
 }
 
 
@@ -40,6 +42,8 @@ def build_qqcc_regenerate_result_meta(
     display_mode_name: str,
     scene_id: str | None = None,
     scene_kind: str | None = None,
+    selected_reference_image: str | None = None,
+    selected_reference_name: str | None = None,
 ) -> dict[str, Any]:
     context: dict[str, Any] = {
         "kind": kind,
@@ -50,6 +54,10 @@ def build_qqcc_regenerate_result_meta(
         context["scene_id"] = scene_id
     if scene_kind:
         context["scene_kind"] = scene_kind
+    if selected_reference_image:
+        context["selected_reference_image"] = selected_reference_image
+    if selected_reference_name:
+        context["selected_reference_name"] = selected_reference_name
     return {QQCC_REGENERATE_CONTEXT_KEY: normalize_qqcc_regenerate_context(context)}
 
 
