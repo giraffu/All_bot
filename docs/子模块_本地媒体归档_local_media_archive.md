@@ -463,7 +463,8 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 预取多个逻辑批次的生产 History，再逐个生成原有 1,000-History 批次 SHA，避免远程
 PostgreSQL 为每个逻辑批次单独往返。冻结行集按 History 排序且窗口密集时，以有界
 最小/最大 ID 范围做顺序主键扫描，再严格筛回冻结 ID；预取窗口和范围内额外读取均不得
-改变批次边界、所选行集或 CAS 内容。
+改变批次边界、所选行集或 CAS 内容。规划查询只投影 CAS 所需的
+`history_id/role/ordinal/path`，不得回传完整 `extra_outputs` 元数据。
 
 取得精确令牌后，本地 `export-task` 首次完整重算全局行集和 predecessor，随后每次只
 锁定并导出一个最多 1,000 个 History 的 HMAC-SHA256 任务。任务携带该批全部媒体坐标

@@ -587,21 +587,56 @@ async def build_successor_switch_batches(
             window_history_ids.extend(candidate_history_ids)
             offset += 1
 
-        production_records = await production.fetch(
-            """select h.id,h.input_file,h.output_file,h.extra_outputs
-                 from history h
-                where h.id between $1 and $2
-                order by h.id""",
+        production_refs = await production.fetch(
+            """with selected_history as (
+                   select h.id,h.input_file,h.output_file,h.extra_outputs
+                     from history h
+                    where h.id between $1 and $2
+                 ), reference_coordinates as (
+                   select h.id history_id,'input'::text role,
+                          (input_ref.ordinality-1)::integer ordinal,
+                          btrim(input_ref.value) value
+                     from selected_history h
+                     cross join lateral unnest(
+                       string_to_array(coalesce(h.input_file,''),'|')
+                     ) with ordinality input_ref(value,ordinality)
+                    where btrim(input_ref.value)<>''
+                   union all
+                   select h.id,'output'::text,0,h.output_file
+                     from selected_history h
+                    where btrim(coalesce(h.output_file,''))<>''
+                   union all
+                   select h.id,'extra:'||extra.key,
+                          (path.ordinality-1)::integer,
+                          path.value #>> '{}'
+                     from selected_history h
+                     cross join lateral jsonb_each(
+                       coalesce(h.extra_outputs::jsonb,'{}'::jsonb)
+                     ) extra
+                     cross join lateral jsonb_path_query(
+                       extra.value,'strict $.**.path'
+                     ) with ordinality path(value,ordinality)
+                    where jsonb_typeof(path.value)='string'
+                      and btrim(path.value #>> '{}')<>''
+                 )
+                 select history_id,role,ordinal,value
+                   from reference_coordinates
+                  order by history_id,role,ordinal""",
             min(window_history_ids),
             max(window_history_ids),
         )
         selected_history_ids = set(window_history_ids)
-        history_map = {
-            int(row["id"]): dict(row)
-            for row in production_records
-            if int(row["id"]) in selected_history_ids
-        }
-        if len(history_map) != len(window_history_ids):
+        current_refs_by_history: dict[int, dict[tuple[str, int], str]] = {}
+        for record in production_refs:
+            history_id = int(record["history_id"])
+            if history_id not in selected_history_ids:
+                continue
+            coord = (str(record["role"]), int(record["ordinal"]))
+            refs = current_refs_by_history.setdefault(history_id, {})
+            if coord in refs:
+                raise RuntimeError("cloud Switch planning coordinate duplicated")
+            refs[coord] = str(record["value"])
+        if set(current_refs_by_history) != selected_history_ids:
             raise RuntimeError("cloud Switch planning History row disappeared")
         ledger_records = await ledger.fetch(
             """select id,history_id,role,ordinal,original_ref,target_key,
@@ -628,7 +663,7 @@ async def build_successor_switch_batches(
             states = [
                 normalized_history_cas_state(
                     history_id,
-                    _history_record_refs(history_map[history_id]),
+                    current_refs_by_history[history_id],
                     ledger_by_history.get(history_id, []),
                     allow_selected_target=True,
                 )
