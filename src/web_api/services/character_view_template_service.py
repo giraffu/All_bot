@@ -23,6 +23,7 @@ def serialize_character_view_template(row: CharacterViewImageTemplate) -> dict:
         "gender": row.gender,
         "sort_order": row.sort_order,
         "status": row.status,
+        "is_default": bool(getattr(row, "is_default", False)),
         "object_key": row.object_key,
         "preview_url": storage.get_presigned_url(object_key, bucket=MINIO_BUCKET) or "",
     }
@@ -53,6 +54,24 @@ async def get_active_character_view_template(db, template_id: str):
     if row is None or row.status != "active":
         return None
     return row
+
+
+async def list_default_character_view_templates(db) -> list[CharacterViewImageTemplate]:
+    rows = (
+        (
+            await db.execute(
+                select(CharacterViewImageTemplate)
+                .where(
+                    CharacterViewImageTemplate.status == "active",
+                    CharacterViewImageTemplate.is_default.is_(True),
+                )
+                .order_by(CharacterViewImageTemplate.view_type)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
 
 
 async def create_character_view_template(
@@ -119,5 +138,26 @@ async def update_character_view_template(db, *, template_id: str, payload) -> di
         if payload.status not in {"active", "disabled"}:
             raise ValueError("模板状态无效。")
         row.status = payload.status
+        if payload.status == "disabled":
+            row.is_default = False
+    if payload.is_default is not None:
+        if payload.is_default and row.status != "active":
+            raise ValueError("停用的模板不能设为默认模板。")
+        if payload.is_default:
+            templates = (
+                (
+                    await db.execute(
+                        select(CharacterViewImageTemplate).where(
+                            CharacterViewImageTemplate.view_type == row.view_type
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for template in templates:
+                template.is_default = template.id == row.id
+        else:
+            row.is_default = False
     await db.commit()
     return serialize_character_view_template(row)

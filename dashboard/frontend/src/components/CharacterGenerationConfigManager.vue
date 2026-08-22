@@ -25,6 +25,7 @@ type CharacterViewImageTemplate = {
   gender: GenderTemplate
   sort_order: number
   status: 'active' | 'disabled'
+  is_default: boolean
   preview_url: string
 }
 
@@ -130,6 +131,20 @@ const createTemplate = async () => {
   }
 }
 
+const setDefault = (template: CharacterViewImageTemplate, checked: boolean) => {
+  if (checked) {
+    for (const item of templates.value) {
+      if (item.view_type === template.view_type) item.is_default = false
+    }
+  }
+  template.is_default = checked
+}
+
+const handleDefaultChange = (
+  template: CharacterViewImageTemplate,
+  checked: boolean | string | number,
+) => setDefault(template, Boolean(checked))
+
 const saveTemplate = async (template: CharacterViewImageTemplate) => {
   loading.value = true
   try {
@@ -138,8 +153,15 @@ const saveTemplate = async (template: CharacterViewImageTemplate) => {
       gender: template.gender,
       sort_order: template.sort_order,
       status: template.status,
+      is_default: template.is_default,
     })
-    templates.value = templates.value.map(item => item.id === template.id ? response.data : item)
+    templates.value = templates.value.map((item) => {
+      if (item.id === template.id) return response.data
+      if (response.data.is_default && item.view_type === template.view_type) {
+        return { ...item, is_default: false }
+      }
+      return item
+    })
     message.success('图片模板设置已保存')
   } finally {
     loading.value = false
@@ -194,7 +216,7 @@ onMounted(() => void refresh())
       </a-tab-pane>
 
       <a-tab-pane key="templates" tab="身体局部图片模板">
-        <a-alert class="mb-4" type="info" show-icon message="每个局部槽位可以配置多张图片模板。启用的模板会出现在测试 Web 人物工作台下拉列表，用户仍可上传自己的图片替换。" />
+        <a-alert class="mb-4" type="info" show-icon message="每个局部槽位可以配置多张图片模板，并指定一个默认模板。新建人物会自动复制各槽位的默认模板，用户仍可改选或上传替换。" />
         <div class="mb-6 grid gap-4 rounded-xl border p-4 md:grid-cols-[180px_1fr]">
           <a-upload :show-upload-list="false" :before-upload="beforeTemplateUpload" accept="image/png,image/jpeg,image/webp">
             <div class="flex h-44 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed bg-slate-50">
@@ -223,6 +245,19 @@ onMounted(() => void refresh())
                   <a-select v-model:value="template.gender"><a-select-option v-for="(genderLabel, key) in genderLabels" :key="key" :value="key">{{ genderLabel }}</a-select-option></a-select>
                   <a-input-number v-model:value="template.sort_order" class="w-full" />
                   <a-select v-model:value="template.status"><a-select-option value="active">启用</a-select-option><a-select-option value="disabled">停用</a-select-option></a-select>
+                </div>
+                <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <div>
+                    <div class="text-sm font-medium">新建人物默认使用</div>
+                    <div class="text-xs text-slate-500">同一局部槽位只能设置一个默认模板</div>
+                  </div>
+                  <a-switch
+                    :checked="template.is_default"
+                    :disabled="template.status !== 'active'"
+                    checked-children="默认"
+                    un-checked-children="可选"
+                    @change="handleDefaultChange(template, $event)"
+                  />
                 </div>
                 <a-button block :loading="loading" @click="saveTemplate(template)">保存模板设置</a-button>
               </div>

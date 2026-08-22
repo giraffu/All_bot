@@ -230,7 +230,7 @@ async def test_character_list_upgrades_only_the_previous_default_black_prompt():
 async def test_character_draft_upload_creates_editable_workspace_without_charging(
     monkeypatch,
 ):
-    db = _Session([0])
+    db = _Session([0, []])
     monkeypatch.setattr(
         service.storage, "async_object_exists", AsyncMock(return_value=True)
     )
@@ -274,6 +274,64 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
     assert db.added[0].sheet_object_key.endswith("/character-asset-mosaic-v1.png")
     assert db.added[1].view_type == "custom_1"
     assert db.added[1].display_name == "脚部"
+
+
+@pytest.mark.asyncio
+async def test_character_draft_copies_each_active_default_detail_template(monkeypatch):
+    monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: True)
+    defaults = [
+        SimpleNamespace(
+            id="template-torso",
+            view_type="torso_front",
+            object_key=f"{MINIO_BUCKET}/templates/torso.png",
+            status="active",
+            is_default=True,
+        ),
+        SimpleNamespace(
+            id="template-back",
+            view_type="pelvis_back",
+            object_key=f"{MINIO_BUCKET}/templates/back.png",
+            status="active",
+            is_default=True,
+        ),
+    ]
+    db = _Session([0, defaults])
+    monkeypatch.setattr(
+        service.storage, "async_object_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        service.storage, "async_object_size", AsyncMock(return_value=1024)
+    )
+    monkeypatch.setattr(
+        service.storage, "get_file_bytes", MagicMock(return_value=_png_bytes())
+    )
+    monkeypatch.setattr(
+        service.storage, "upload_bytes", MagicMock(return_value="stored")
+    )
+
+    result = await service.create_character_draft(
+        db=db,
+        current_user=_user(),
+        payload=CharacterDraftCreateRequest(
+            name="Alice",
+            source_object_key="staging/user-uploads/123/source.webp",
+            initial_view_type="face_front",
+        ),
+    )
+
+    assert [view["type"] for view in result["views"]] == [
+        "face_front",
+        "torso_front",
+        "pelvis_back",
+    ]
+    assert [row.view_type for row in db.added[1:]] == [
+        "face_front",
+        "torso_front",
+        "pelvis_back",
+    ]
+    uploaded_keys = [call.args[1] for call in service.storage.upload_bytes.call_args_list]
+    assert any("/views/torso_front-" in key for key in uploaded_keys)
+    assert any("/views/pelvis_back-" in key for key in uploaded_keys)
 
 
 @pytest.mark.asyncio

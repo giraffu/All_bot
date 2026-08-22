@@ -71,6 +71,7 @@ export type CharacterViewImageTemplate = {
   name: string
   gender: 'neutral' | 'female' | 'male'
   sort_order: number
+  is_default: boolean
   preview_url: string
 }
 

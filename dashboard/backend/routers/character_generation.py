@@ -36,6 +36,7 @@ class CharacterViewTemplatePatch(BaseModel):
     gender: str | None = None
     sort_order: int | None = None
     status: str | None = None
+    is_default: bool | None = None
 
 
 @router.get("")

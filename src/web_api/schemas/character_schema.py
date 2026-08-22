@@ -154,6 +154,7 @@ class CharacterViewImageTemplateResponse(BaseModel):
     name: str
     gender: Literal["neutral", "female", "male"]
     sort_order: int
+    is_default: bool = False
     preview_url: str
 
 
