@@ -397,6 +397,23 @@ def _sync_qqcc_scene_to_quick_video_data(
     return mode
 
 
+def _build_ref2v_template_markup(scene: dict[str, object]) -> InlineKeyboardMarkup:
+    reference_names = list(scene.get("reference_image_names") or [])
+    reference_images = list(scene.get("reference_images") or [])
+    buttons = [
+        InlineKeyboardButton(
+            f"替换为：{reference_names[index] or f'模板 {index + 1}'}",
+            callback_data=build_quick_ref2v_template_callback_data(
+                str(scene["id"]), index
+            ),
+        )
+        for index in range(len(reference_images))
+    ]
+    return InlineKeyboardMarkup(
+        [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    )
+
+
 async def _build_quick_video_settings_markup(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -579,6 +596,13 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         scene_kind == "ai_video" and str((scene or {}).get("mode") or "") == "ref2v"
     )
     if is_ref2v_scene and scene is not None:
+        reference_images = list(scene.get("reference_images") or [])
+        reference_names = list(scene.get("reference_image_names") or [])
+        if reference_images:
+            quick_video_data["selected_reference_image"] = reference_images[0]
+            quick_video_data["selected_reference_name"] = str(
+                (reference_names[0] if reference_names else "") or "模板 1"
+            )
         gallery_awaitable = send_qqcc_ref2v_reference_templates(
             message=reply_message,
             bot=context.bot,
@@ -594,23 +618,13 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await gallery_awaitable
     reply_markup = None
     if is_ref2v_scene and scene is not None:
-        reference_names = list(scene.get("reference_image_names") or [])
-        reference_images = list(scene.get("reference_images") or [])
-        buttons = [
-            InlineKeyboardButton(
-                str(reference_names[index] or f"模板 {index + 1}"),
-                callback_data=build_quick_ref2v_template_callback_data(
-                    str(scene["id"]), index
-                ),
-            )
-            for index in range(len(reference_images))
-        ]
-        reply_markup = InlineKeyboardMarkup(
-            [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
-        )
+        selected_name = str(quick_video_data.get("selected_reference_name") or "模板 1")
+        reply_markup = _build_ref2v_template_markup(scene)
         msg = (
             f"🎞️ 已切换到【{scene.get('name') or mode_name}】模式。\n\n"
-            "请先选择一张参考模板；确认后再发送 pic1（你的正面清晰图片）。\n\n"
+            f"✅ 当前默认模板【{selected_name}】。\n\n"
+            "你也可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。\n\n"
+            "如需更换，点击下方按钮可以替换模板；可重复替换，最后选择的模板生效。\n\n"
             "随时可以发送 /cancel 退出流程。"
         )
     if scene is not None and qqcc_config is not None:
@@ -632,16 +646,16 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 build_quick_draw_v1_scene_callback_data,
             )
 
-            reply_markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton(
+            jump_row = [InlineKeyboardButton(
                     f"先去 AI绘图{'V1' if is_v1 else 'V2'}生成「{jump_scene['name']}」",
                     callback_data=(
                         build_quick_draw_v1_scene_callback_data(jump_scene["id"])
                         if is_v1
                         else build_quick_draw_scene_callback_data(jump_scene["id"])
                     ),
-                )]]
-            )
+                )]
+            existing_rows = list(reply_markup.inline_keyboard) if reply_markup else []
+            reply_markup = InlineKeyboardMarkup([*existing_rows, jump_row])
     reply_awaitable = robust_reply_text(
         reply_message, msg, reply_markup=reply_markup, parse_mode="Markdown"
     )
@@ -653,11 +667,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
     else:
         await reply_awaitable
-    return (
-        QuickVideoState.WAIT_REFERENCE_TEMPLATE
-        if is_ref2v_scene
-        else QuickVideoState.WAIT_IMAGE
-    )
+    return QuickVideoState.WAIT_IMAGE
 
 
 async def select_ref2v_template(
@@ -697,7 +707,7 @@ async def select_ref2v_template(
         await safe_answer_query(
             query, text="模板已更新，请重新选择", show_alert=True
         )
-        return QuickVideoState.WAIT_REFERENCE_TEMPLATE
+        return QuickVideoState.WAIT_IMAGE
     _sync_qqcc_scene_to_quick_video_data(
         fsm_data, scene, scene_kind="ai_video"
     )
@@ -722,10 +732,11 @@ async def select_ref2v_template(
         await selected_awaitable
     await robust_edit_text(
         query.message,
-        f"✅ 已选择模板【{selected_name}】。\n\n"
-        "请发送 pic1（你的正面清晰图片），我会使用这张模板生成视频。\n\n"
+        f"✅ 已替换模板为【{selected_name}】。\n\n"
+        "现在可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。\n\n"
+        "如需再次更换，可继续点击下方“替换为”按钮；最后选择的模板生效。\n\n"
         "随时可以发送 /cancel 退出流程。",
-        parse_mode="Markdown",
+        reply_markup=_build_ref2v_template_markup(scene),
     )
     return QuickVideoState.WAIT_IMAGE
 

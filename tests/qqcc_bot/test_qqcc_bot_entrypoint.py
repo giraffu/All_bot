@@ -416,7 +416,7 @@ def test_qqcc_video_menu_contains_lazy_video_scenes():
 
 
 @pytest.mark.asyncio
-async def test_ref2v_scene_shows_named_template_gallery_before_waiting_for_selection(
+async def test_ref2v_scene_defaults_first_template_and_accepts_person_image_immediately(
     monkeypatch,
 ):
     references = [
@@ -477,15 +477,25 @@ async def test_ref2v_scene_shows_named_template_gallery_before_waiting_for_selec
 
     result = await quick_video_fsm.start_quick_video(update, context)
 
-    assert result == quick_video_fsm.QuickVideoState.WAIT_REFERENCE_TEMPLATE
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert context.user_data["quick_video_data"]["selected_reference_image"] == references[0]
+    assert context.user_data["quick_video_data"]["selected_reference_name"] == "黑色模板"
     gallery.assert_awaited_once_with(
         message=callback_message,
         bot=context.bot,
         scene=config["ai_video_scenes"][0],
     )
     buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
-    assert [button.text for row in buttons for button in row] == ["黑色模板", "白色模板"]
+    assert [button.text for row in buttons for button in row] == [
+        "替换为：黑色模板",
+        "替换为：白色模板",
+    ]
     assert buttons[0][1].callback_data == build_quick_ref2v_template_callback_data("ref", 1)
+    prompt = reply.await_args.args[1]
+    assert "当前默认模板【黑色模板】" in prompt
+    assert "点击下方按钮可以替换模板" in prompt
+    assert "也可以直接发送女性人物图片" in prompt
+    assert "正面、脸部清晰" in prompt
 
 
 @pytest.mark.asyncio
@@ -549,7 +559,14 @@ async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(m
         template_index=1,
     )
     assert "白色模板" in edit.await_args.args[1]
-    assert "pic1" in edit.await_args.args[1]
+    assert "已替换模板" in edit.await_args.args[1]
+    assert "直接发送女性人物图片" in edit.await_args.args[1]
+    assert "正面、脸部清晰" in edit.await_args.args[1]
+    buttons = edit.await_args.kwargs["reply_markup"].inline_keyboard
+    assert [button.text for row in buttons for button in row] == [
+        "替换为：黑色模板",
+        "替换为：白色模板",
+    ]
 
 
 @pytest.mark.asyncio
