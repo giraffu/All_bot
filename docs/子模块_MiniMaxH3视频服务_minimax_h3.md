@@ -6,8 +6,9 @@
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v` 和
 `minimax_h3_ref2v`。测试 Web 与主 Bot 在同一“高级图生视频pro”工作台切换四种模式。
 两端均可从
-十六个本地 LoRA 中最多选择十三个；默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
-QQCC 配置 Web 同样从这一领域目录下发 16 项，场景保存最多 13 个有序 `lora_items`；官方懒人
+十七个本地 LoRA 中最多选择十三个；其中十六项支持全部模式，原生 REF2VA Motion v0.2
+只在 REF2V 模式显示和可用。默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
+QQCC 配置 Web 同样从这一领域目录下发 17 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
 官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图；Worker 防御上限为 5 张。私有
@@ -126,8 +127,9 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-十六个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
-（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v2（0.75，
+十七个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、原生 REF2VA Motion v0.2
+（0.7，触发词 `dynv2`，仅 REF2V）、Mystic XXX v2（0.75，
 无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
 `inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
 Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
@@ -137,6 +139,12 @@ Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）�
 Motion Booster 链接的 V0.2（modelVersion `3228867`）与既有正式资产 SHA256 完全一致，
 因此保留稳定 ID 和原文件，不重复注册；HMPenis 稳定 ID 原位升级到 modelVersion
 `3247473`，旧场景无需迁移。
+原生 REF2VA Motion v0.2 使用 modelVersion `3246346`、file `3129119`，文件
+`ref2VA_Motion_v2.safetensors` 为 155,110,288 bytes，SHA256
+`b48cf96ebb14985789528449fe61985babf786feb658740a82a88ac685167fd9`。作者将它定位为
+独立的 Ref2VA 人物一致性变体而不是普通 V2 的替代品，并提示画质与稳定性存在取舍；因此
+保留原 `motion_booster`，新增 `motion_booster_ref2va` 且只允许 REF2V。公开强度未给出，
+`0.7` 是与普通 V2 对齐的保守系统初始值，技术 canary 前不得标记为已验证。
 Breast Play 作者明确建议 `0.7..0.8`，Footjobs Type B 明确建议 `0.4..0.7` 且通常
 从 `0.5` 开始；HMInnie、Deepthroat H3 v0.2 与 POV Missionary 未公开 LoRA strength
 区间，因此其目录值是保守的系统初始值，必须由后续 GPU A/B 校准，不能称为作者推荐。
@@ -168,10 +176,11 @@ REF2V 独立固定
 LightX2V。其链路为 PyTorch attention、video/audio sigma shift `11/4`、
 `MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("er_sde") →
 ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
-SamplerCustomAdvanced`；禁止 `BasicScheduler`。十六个候选 LoRA 中最多十三个仍按选择顺序注入。
+SamplerCustomAdvanced`；禁止 `BasicScheduler`。十七个候选 LoRA 中最多十三个仍按选择顺序注入；
+REF2VA Motion v0.2 只能进入这条 REF2V 链。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
-FL2VA、TURBO Ref2VA 和上述十六个可选 LoRA，不包含 RedMix。旧 checkpoint、
+FL2VA、TURBO Ref2VA 和上述十七个可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续四模式 GPU canary 才能定论。
@@ -183,8 +192,8 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-22-10eros-turbo-ref2va-addon16-pussy-stills-titjob-v05`、22 个文件的字节数与
-SHA256，总计 110,485,898,671 bytes。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02`、23 个文件的字节数与
+SHA256，总计 110,641,008,959 bytes。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

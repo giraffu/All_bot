@@ -143,6 +143,7 @@ async def _submit_confirmed_generation(draft, *, context) -> None:
                 {"name": name}
                 for name in draft.addon_models
                 if name in MINIMAX_H3_ADDON_MODELS
+                and draft.mode in MINIMAX_H3_ADDON_MODELS[name].supported_modes
             ],
         )
         await submit_advanced_video_pro_plan(

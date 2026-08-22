@@ -19,7 +19,6 @@ import {
   LTX_T2V_IC_RESOLUTION_OPTIONS,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
-  MINIMAX_H3_ADDON_OPTIONS,
   type LabModeConfig,
   type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
@@ -28,6 +27,7 @@ import {
   VIDEO_RESOLUTION_OPTIONS,
   getDefaultVideoLoraSelection,
   getLabModeConfig,
+  getMiniMaxH3AddonOptionsForMode,
   getScail2VideoDurationOptionsForMotionVideo,
   getVideoLoraOptions,
 } from '@/features/generation/labModeConfig'
@@ -97,7 +97,9 @@ export function useLabWorkbench() {
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
   const minimaxH3AddonNames = ref<string[]>([])
   const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
-  const minimaxH3AddonOptions = MINIMAX_H3_ADDON_OPTIONS
+  const minimaxH3AddonOptions = computed(() => (
+    getMiniMaxH3AddonOptionsForMode(minimaxH3Mode.value)
+  ))
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -413,15 +415,19 @@ export function useLabWorkbench() {
       : DEFAULT_EDIT_LORA_STRENGTH
   })
 
-  watch(minimaxH3AddonNames, (names) => {
+  watch([minimaxH3AddonNames, minimaxH3Mode], ([names, mode]) => {
+    const options = getMiniMaxH3AddonOptionsForMode(mode)
     const validNames = names.filter(name => (
-      MINIMAX_H3_ADDON_OPTIONS.some(option => option.value === name)
+      options.some(option => option.value === name)
     ))
+    if (validNames.length !== names.length) {
+      minimaxH3AddonNames.value = validNames
+    }
     const currentByName = new Map(
       minimaxH3AddonItems.value.map(item => [item.name, item.strength]),
     )
     minimaxH3AddonItems.value = validNames.map((name) => {
-      const option = MINIMAX_H3_ADDON_OPTIONS.find(item => item.value === name)!
+      const option = options.find(item => item.value === name)!
       return {
         name,
         strength: currentByName.get(name) ?? option.defaultStrength,

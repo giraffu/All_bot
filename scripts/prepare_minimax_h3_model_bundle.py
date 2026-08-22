@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-22-10eros-turbo-ref2va-addon16-pussy-stills-titjob-v05"
+VERSION = "2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02"
 MIN_FREE_BYTES = 105 * 1024**3
 FILES = (
     (
@@ -76,6 +76,12 @@ FILES = (
         "f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3",
         155_110_272,
         "https://civitai.red/api/download/models/3228867?fileId=3111185",
+    ),
+    (
+        "loras/MiniMaxH3/ref2VA_Motion_v2.safetensors",
+        "b48cf96ebb14985789528449fe61985babf786feb658740a82a88ac685167fd9",
+        155_110_288,
+        "https://civitai.red/api/download/models/3246346?fileId=3129119",
     ),
     (
         "loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
@@ -243,6 +249,7 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3212436:file/3094173",
                 "civitai:modelVersion/3206518",
                 "civitai:modelVersion/3228867:file/3111185",
+                "civitai:modelVersion/3246346:file/3129119",
                 "civitai:modelVersion/3242519:file/3125221",
                 "civitai:modelVersion/3225638:file/3107724",
                 "civitai:modelVersion/3222484:file/3104474",
@@ -260,8 +267,9 @@ def prepare(registry: ModelRegistry) -> Path:
             "variant": (
                 "10Eros-Max Beta2 pruned FL2VA base, TURBO Ref2VA Beta2, "
                 "plus fixed LightX2V FL2VA 8-step "
-                "v1.0 acceleration and sixteen optional one-file LoRAs: NaughtyTimes "
-                "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v2, HMBreasts, "
+                "v1.0 acceleration and seventeen optional one-file LoRAs: NaughtyTimes "
+                "v2, HMNSFW AIO v2, H3 Motion Booster v2, native Ref2VA Motion v0.2, "
+                "Mystic XXX v2, HMBreasts, "
                 "VagAssist, HMPussy v6, HMPenis v2.0, HMCumshot v0.5, Breast Play & Jiggle v1, HMInnie "
                 "v1, Deepthroat v0.2, POV Missionary v0.7, Footjobs Type B v1, "
                 "HMPussy V1 Stills and Better Titfuck v0.5; "

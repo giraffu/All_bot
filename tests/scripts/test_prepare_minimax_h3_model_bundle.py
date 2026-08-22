@@ -8,7 +8,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_two_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -50,6 +50,11 @@ def test_split_author_stack_uses_exact_twenty_two_pinned_assets():
         "f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3",
         155_110_272,
         "https://civitai.red/api/download/models/3228867?fileId=3111185",
+    )
+    assert files["loras/MiniMaxH3/ref2VA_Motion_v2.safetensors"][1:4] == (
+        "b48cf96ebb14985789528449fe61985babf786feb658740a82a88ac685167fd9",
+        155_110_288,
+        "https://civitai.red/api/download/models/3246346?fileId=3129119",
     )
     assert files["loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors"][1:4] == (
         "2fc32615f20465e0831a5c8069df4006422fc9638a0b7faa216e04a6ddfee8de",
@@ -110,8 +115,8 @@ def test_split_author_stack_uses_exact_twenty_two_pinned_assets():
         155_110_304,
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
-    assert len(files) == 22
-    assert sum(entry[2] for entry in module.FILES) == 110_485_898_671
+    assert len(files) == 23
+    assert sum(entry[2] for entry in module.FILES) == 110_641_008_959
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

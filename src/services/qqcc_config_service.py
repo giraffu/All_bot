@@ -891,6 +891,7 @@ def _normalize_ai_video_scene(
     if duration not in AI_VIDEO_DURATION_KEYS:
         duration = AI_VIDEO_DURATION_KEYS[0]
 
+    mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
     lora_items: list[dict[str, Any]] = []
     seen_loras: set[str] = set()
     raw_lora_items = raw_scene.get("lora_items")
@@ -901,7 +902,11 @@ def _normalize_ai_video_scene(
             raw_name = raw_item.get("name")
             lora_name = raw_name.strip() if isinstance(raw_name, str) else ""
             model = MINIMAX_H3_ADDON_MODELS.get(lora_name)
-            if model is None or lora_name in seen_loras:
+            if (
+                model is None
+                or mode not in model.supported_modes
+                or lora_name in seen_loras
+            ):
                 continue
             seen_loras.add(lora_name)
             try:
@@ -922,7 +927,6 @@ def _normalize_ai_video_scene(
             if len(lora_items) >= AI_VIDEO_MAX_LORA_ITEMS:
                 break
 
-    mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
     reference_images = []
     if mode == "ref2v" and isinstance(raw_scene.get("reference_images"), list):
         reference_images = [
@@ -1850,12 +1854,13 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ai_video_addon_models_version": 4,
+        "ai_video_addon_models_version": 5,
         "ai_video_addon_models": [
             {
                 "value": model.id,
                 "label": model.label_zh,
                 "default_strength": model.default_strength,
+                "supported_modes": list(model.supported_modes),
             }
             for model in MINIMAX_H3_ADDON_MODELS.values()
         ],

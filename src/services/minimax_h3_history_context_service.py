@@ -53,7 +53,8 @@ def build_minimax_h3_history_context(
         return {}
     try:
         addon_items = normalize_minimax_h3_addon_items(
-            {"lora_items": metadata.get("lora_items") or []}
+            {"lora_items": metadata.get("lora_items") or []},
+            mode=expected_mode,
         )
     except MiniMaxH3ValidationError:
         return {}

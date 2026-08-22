@@ -1501,6 +1501,51 @@ describe('QqccBotSettings', () => {
     }))
   })
 
+  it('shows the native REF2VA add-on only for REF2V scenes', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      config: {
+        global_enabled: true,
+        ai_video_scenes: [{
+          id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '',
+          duration: 5, resolution: 'preview', engine: 'minimax_h3', mode: 'i2v',
+          lora_items: [{ name: 'motion_booster_ref2va', strength: 0.7 }],
+          end_frame_draw_scene_id: '', next_scene_id: null,
+        }],
+        video_scenes: [], draw_scenes: [], filter_scenes: [],
+      },
+      options: {
+        default_ai_video_engine: 'minimax_h3',
+        ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
+        ai_video_addon_models_version: 5,
+        ai_video_addon_models: [
+          { value: 'motion_booster', label: '成人动作强化', default_strength: 0.7 },
+          {
+            value: 'motion_booster_ref2va',
+            label: '参考人物动作强化实验',
+            default_strength: 0.7,
+            supported_modes: ['ref2v'],
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings({ ref2vEnabled: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const addonSelector = () => wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
+    expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
+      .toEqual(['motion_booster'])
+    expect(wrapper.find('[data-testid="scene-ai-video-lora-strength-motion_booster_ref2va"]').exists())
+      .toBe(false)
+
+    await wrapper.get('[data-testid="scene-config-ai-video-mode"]').setValue('ref2v')
+    await flushPromises()
+    expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
+      .toEqual(['motion_booster', 'motion_booster_ref2va'])
+  })
+
   it('configures a video scene end-frame draw source in the save payload', async () => {
     const wrapper = mountSettings()
     await flushPromises()

@@ -55,6 +55,7 @@ MINIMAX_H3_MODEL_REF = (
 )
 MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
 MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
+MINIMAX_H3_MODES = ("t2v", "i2v", "flf2v", "ref2v")
 # The catalog may grow without forcing an API/control-plane rollout. Requests
 # remain capped at the already deployed transport contract.
 MINIMAX_H3_MAX_ADDON_ITEMS = 13
@@ -68,6 +69,7 @@ class MiniMaxH3AddonModel:
     model_path: str
     default_strength: float
     prompt_prefix: str = ""
+    supported_modes: tuple[str, ...] = MINIMAX_H3_MODES
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +104,15 @@ MINIMAX_H3_ADDON_MODELS = {
         "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
         0.7,
         "dynv2",
+    ),
+    "motion_booster_ref2va": MiniMaxH3AddonModel(
+        "motion_booster_ref2va",
+        "H3 Motion Booster V0.2 REF2VA（参考人物动作强化实验）",
+        "H3 Motion Booster V0.2 REF2VA (reference-character motion experiment)",
+        "MiniMaxH3/ref2VA_Motion_v2.safetensors",
+        0.7,
+        "dynv2",
+        ("ref2v",),
     ),
     "mystic_xxx": MiniMaxH3AddonModel(
         "mystic_xxx",
@@ -233,6 +244,8 @@ class MiniMaxH3Spec:
 
 def normalize_minimax_h3_addon_items(
     inputs: dict[str, Any],
+    *,
+    mode: str | None = None,
 ) -> tuple[MiniMaxH3AddonSelection, ...]:
     raw_items = inputs.get("lora_items")
     legacy_names = inputs.get("addon_models")
@@ -269,6 +282,8 @@ def normalize_minimax_h3_addon_items(
         model = MINIMAX_H3_ADDON_MODELS.get(name)
         if model is None:
             raise MiniMaxH3ValidationError("不支持该附加模型。")
+        if mode is not None and mode not in model.supported_modes:
+            raise MiniMaxH3ValidationError("该附加模型仅支持参考图生视频。")
         if name in seen:
             raise MiniMaxH3ValidationError("附加模型不得重复选择。")
         seen.add(name)
@@ -347,7 +362,10 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
-    addon_items = normalize_minimax_h3_addon_items(inputs)
+    addon_items = normalize_minimax_h3_addon_items(
+        inputs,
+        mode=task_type.removeprefix("minimax_h3_"),
+    )
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
