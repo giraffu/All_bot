@@ -30,15 +30,15 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   目标 marker/ETag 漂移不得放宽，按旧源哈希复核后以
   `TARGET_IDENTITY_DRIFT` 隔离保留；remaining 重新授权。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
-- `cloud_receipt` Copy 仅本地写账本；云端只做 HEAD/CopyObject 和 HMAC 回执，身份
-  不符 fail closed，successor canary 仍需 COPY 令牌。
+- 云 Copy/Switch 仅凭 HMAC 任务/回执跨信任域；本地独占账本，云端只连必要的 R2
+  或生产库。successor 绑定 artifact/worker/route/rowset/CAS，仍需新的精确令牌。
 - 未在冻结计划与 runtime identity 中显式选择耐久性依据时，任何 R2 原件都不得删除；
   `r2-persistent-target` 不声称 NAS 已归档，后续 NAS 备份从持久目标另立计划。
 - 最新 8 条先按用户原始 History 排名，再过滤不可见记录；Gallery 保护引用。
 - 确认丢失要求全来源两轮 not-found，间隔至少 24 小时。
 - R2 删除默认关闭；首次生产删除需要只读报告、冻结计划和新精确确认。
-- Worker 使用 0600 配置并校验路由/filesystem，默认拒绝 7890；仅冻结 History R2 Copy
-  可绑定 loopback 7890 指纹和 artifact/successor，须重新授权并 canary，禁止热改。
+- Worker 使用 0600 配置；R2 Copy 的 7890 路由须冻结指纹，换 artifact/successor 后
+  重新授权并 canary，禁止热改。
 - canary 最多领取 100 个 `history_ids`，禁止改写全局优先级。
 - 私有配置只输出来源/指纹；仅 `archived_verified` 提供原件。
 - 租约每 5 分钟续期；revision 不匹配不得覆盖。

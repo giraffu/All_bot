@@ -453,6 +453,24 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
 
+本地到生产 PostgreSQL 链路不适合长时间执行 Switch 时，不得把同时连接本地账本和
+生产库的 `execute-switch` 原样搬到云主机，也不得在生产行锁期间通过反向隧道读取本地
+账本。`scripts/history_media_r2_cloud_switch.py plan-successor` 只在旧执行器安全停止后，
+保留 predecessor 全部已完成资产和批次，把尚未完成资产原子改绑到零交集 successor，
+并将旧计划未完成批次标为 `superseded`。successor 冻结 artifact、worker、生产 DSN
+非秘密路由指纹、全局/批次 rowset、每批 CAS 和 predecessor identity；生成计划不授权
+生产更新，仍须新的 `SWITCH_HISTORY_MEDIA_<successor-sha>`。
+
+取得精确令牌后，本地 `export-task` 首次完整重算全局行集和 predecessor，随后每次只
+锁定并导出一个最多 1,000 个 History 的 HMAC-SHA256 任务。任务携带该批全部媒体坐标
+证据，但不携带数据库凭据；云端 `run-task` 只连接 `PRODUCTION_DATABASE_URL`，以 10 秒
+lock timeout 锁 History、重算冻结 CAS，并在单个事务更新引用。生产已是本计划目标值时
+按幂等重试处理。云端提交后写 0600 签名回执；本地 `import-receipt` 再验证 plan、task、
+artifact、worker、路由、批次 rowset/CAS 和账本归属，之后才写
+`switch_completed_at`/批次完成。任务租约过期可另发新任务；旧任务变为 `expired`，不得
+连接生产库或导入迟到回执。`analytics_history_media_r2_cloud_switch_plan_sessions` 和
+`analytics_history_media_r2_cloud_switch_tasks` 必须随 shadow 本地表一起保留。
+
 长时间运行的 Copy 不要求等待整个 successor 才开始切换。`plan-switch-completed`
 冻结终止 predecessor 中已提交的对象，以及当前父 Copy 计划内状态为 `completed` 的
 精确批次；当前 pending/running 批次、未提交对象和已有未完成 Switch 计划全部排除。
