@@ -345,6 +345,19 @@ def _key_sha(source_name: str, source_key: str) -> str:
     return hashlib.sha256(f"{source_name}\0{source_key}".encode()).hexdigest()
 
 
+def _exact_source_identity_hashes(values: Iterable[str]) -> list[str]:
+    raw = [str(value) for value in values]
+    exact = sorted(set(raw))
+    if len(exact) != len(raw) or any(
+        len(value) != 64
+        or value.lower() != value
+        or any(character not in "0123456789abcdef" for character in value)
+        for value in exact
+    ):
+        raise ValueError("target identity drift source SHA-256 values are invalid")
+    return exact
+
+
 def classify_retirement_candidate(candidate: dict[str, Any]) -> str:
     if int(candidate.get("pending_copy_refs") or 0):
         return "pending_copy_source"
@@ -687,6 +700,10 @@ def build_bulk_retirement_successor_manifest(
     predecessor_completed_batches_sha256: str,
     predecessor_retained_object_count: int,
     predecessor_retained_asset_coordinate_count: int,
+    predecessor_quarantined_object_count: int,
+    predecessor_quarantined_asset_coordinate_count: int,
+    predecessor_quarantined_rowset_sha256: str,
+    predecessor_quarantined_evidence_sha256: str,
     remaining_object_count: int,
     remaining_asset_coordinate_count: int,
     remaining_total_bytes: int,
@@ -720,9 +737,26 @@ def build_bulk_retirement_successor_manifest(
         raise RuntimeError("bulk retirement successor has no remaining objects")
     if len(predecessor_completed_batches_sha256) != 64:
         raise RuntimeError("bulk retirement predecessor batch proof is invalid")
+    if (
+        predecessor_quarantined_object_count < 0
+        or predecessor_quarantined_asset_coordinate_count < 0
+        or predecessor_quarantined_object_count > predecessor_retained_object_count
+        or predecessor_quarantined_asset_coordinate_count
+        > predecessor_retained_asset_coordinate_count
+        or len(predecessor_quarantined_rowset_sha256) != 64
+        or len(predecessor_quarantined_evidence_sha256) != 64
+    ):
+        raise RuntimeError("bulk retirement predecessor quarantine proof is invalid")
+    empty_proof = _sha256_json([])
+    if not predecessor_quarantined_object_count and (
+        predecessor_quarantined_asset_coordinate_count
+        or predecessor_quarantined_rowset_sha256 != empty_proof
+        or predecessor_quarantined_evidence_sha256 != empty_proof
+    ):
+        raise RuntimeError("bulk retirement empty quarantine proof is invalid")
 
     manifest: dict[str, Any] = {
-        "schema": "allbot-history-media-r2-bulk-retirement-plan/v3",
+        "schema": "allbot-history-media-r2-bulk-retirement-plan/v4",
         "execution_mode": "bulk",
         "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
         "run_id": str(predecessor_manifest["run_id"]),
@@ -751,6 +785,18 @@ def build_bulk_retirement_successor_manifest(
         ),
         "predecessor_retained_asset_coordinate_count": int(
             predecessor_retained_asset_coordinate_count
+        ),
+        "predecessor_quarantined_object_count": int(
+            predecessor_quarantined_object_count
+        ),
+        "predecessor_quarantined_asset_coordinate_count": int(
+            predecessor_quarantined_asset_coordinate_count
+        ),
+        "predecessor_quarantined_rowset_sha256": str(
+            predecessor_quarantined_rowset_sha256
+        ),
+        "predecessor_quarantined_evidence_sha256": str(
+            predecessor_quarantined_evidence_sha256
         ),
         "root_object_count": root_object_count,
         "object_count": int(remaining_object_count),
@@ -794,6 +840,15 @@ def validate_retirement_object_heads(
     target_heads: dict[str, dict[str, Any] | None],
     nas_head: dict[str, Any] | None,
 ) -> None:
+    _validate_retirement_source_head(candidate, source_head=source_head)
+    validate_retirement_survivor_heads(
+        candidate, target_heads=target_heads, nas_head=nas_head
+    )
+
+
+def _validate_retirement_source_head(
+    candidate: dict[str, Any], *, source_head: dict[str, Any] | None
+) -> None:
     if source_head is None:
         raise RuntimeError("old source is missing before retirement")
     if int(source_head.get("ContentLength") or -1) != int(candidate["byte_size"]):
@@ -818,9 +873,109 @@ def validate_retirement_object_heads(
         != actual_modified.astimezone(timezone.utc)
     ):
         raise RuntimeError("old source last-modified changed")
-    validate_retirement_survivor_heads(
-        candidate, target_heads=target_heads, nas_head=nas_head
+
+
+def validate_retirement_target_identity_drift(
+    candidate: dict[str, Any],
+    *,
+    source_head: dict[str, Any] | None,
+    target_heads: dict[str, dict[str, Any] | None],
+) -> dict[str, Any]:
+    """Prove a target identity drift without weakening normal delete gates."""
+
+    _validate_retirement_source_head(candidate, source_head=source_head)
+    marker_drift_count = 0
+    etag_drift_count = 0
+    drifted_target_count = 0
+    for target in candidate["targets"]:
+        key = str(target["target_key"])
+        if key == str(candidate["source_key"]):
+            raise RuntimeError("old source is also a standard target")
+        head = target_heads.get(key)
+        if head is None:
+            raise RuntimeError("verified target is missing")
+        if int(head.get("ContentLength") or -1) != int(candidate["byte_size"]):
+            raise RuntimeError("verified target size changed")
+        marker = str(
+            (head.get("Metadata") or {}).get("allbot-copy-plan-sha256") or ""
+        )
+        marker_drifted = marker != str(target["copy_plan_sha256"])
+        if marker_drifted:
+            marker_drift_count += 1
+        expected_etag = str(target.get("target_etag") or "")
+        etag_drifted = bool(expected_etag) and _strip_etag(
+            head.get("ETag")
+        ) != _strip_etag(
+            expected_etag
+        )
+        if etag_drifted:
+            etag_drift_count += 1
+        if marker_drifted or etag_drifted:
+            drifted_target_count += 1
+    if not drifted_target_count:
+        raise RuntimeError("verified target does not show identity drift")
+    return {
+        "drifted_target_count": drifted_target_count,
+        "marker_drift_count": marker_drift_count,
+        "etag_drift_count": etag_drift_count,
+        "target_facts_sha256": _sha256_json(candidate["targets"]),
+    }
+
+
+async def _head_target_identity_drift_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    r2_client: Any,
+    r2_bucket: str,
+    concurrency: int,
+    executor: ThreadPoolExecutor,
+) -> list[dict[str, Any]]:
+    request_funcs: list[Callable[[], Any]] = []
+    source_indexes: list[int] = []
+    target_indexes: list[dict[str, int]] = []
+    for candidate in candidates:
+        source_indexes.append(len(request_funcs))
+        request_funcs.append(
+            partial(
+                r2_client.head_object,
+                Bucket=r2_bucket,
+                Key=str(candidate["source_key"]),
+            )
+        )
+        indexes: dict[str, int] = {}
+        for target in candidate["targets"]:
+            key = str(target["target_key"])
+            indexes[key] = len(request_funcs)
+            request_funcs.append(
+                partial(r2_client.head_object, Bucket=r2_bucket, Key=key)
+            )
+        target_indexes.append(indexes)
+    controller = RetirementHeadConcurrencyController(
+        initial_concurrency=concurrency
     )
+    results, _ = await _run_retirement_head_requests(
+        request_funcs,
+        controller=controller,
+        retry_sleep=asyncio.sleep,
+        executor=executor,
+    )
+    try:
+        evidence: list[dict[str, Any]] = []
+        for index, candidate in enumerate(candidates):
+            target_heads = {
+                key: results[result_index]
+                for key, result_index in target_indexes[index].items()
+            }
+            evidence.append(
+                validate_retirement_target_identity_drift(
+                    candidate,
+                    source_head=results[source_indexes[index]],
+                    target_heads=target_heads,
+                )
+            )
+        return evidence
+    finally:
+        results.clear()
 
 
 def validate_retirement_survivor_heads(
@@ -2769,6 +2924,34 @@ async def _bulk_predecessor_retained_counts(
     return int(row["object_count"]), int(row["asset_coordinate_count"])
 
 
+async def _bulk_predecessor_quarantine_proof(
+    ledger: asyncpg.Connection,
+    plan_sha256: str,
+) -> tuple[str, int, int]:
+    rows = await ledger.fetch(
+        """select source_name,source_key,byte_size,source_etag,
+                  source_last_modified,asset_count,scope_asset_count,scope_facts,
+                  target_facts,retirement_disposition
+             from analytics_history_media_r2_retirement_objects
+            where plan_sha256=$1 and status='blocked'
+              and error_code='TARGET_IDENTITY_DRIFT'
+            order by source_key_sha256""",
+        plan_sha256,
+    )
+    identities: list[dict[str, Any]] = []
+    asset_count = 0
+    for row in rows:
+        candidate = {
+            **_candidate_from_bulk_stage(row),
+            "archive_sha256": "",
+            "nas_bucket": "",
+            "nas_key": "",
+        }
+        identities.append(_retirement_object_identity(candidate))
+        asset_count += int(row["scope_asset_count"])
+    return _sha256_json(identities), len(identities), asset_count
+
+
 async def _validate_bulk_successor_predecessor(
     ledger: asyncpg.Connection,
     manifest: dict[str, Any],
@@ -2808,7 +2991,22 @@ async def _validate_bulk_successor_predecessor(
     direct_objects, direct_assets = await _bulk_predecessor_retained_counts(
         ledger, predecessor_sha
     )
-    if direct_objects != batch_objects or direct_assets != batch_assets:
+    quarantine_sha, quarantine_objects, quarantine_assets = (
+        await _bulk_predecessor_quarantine_proof(ledger, predecessor_sha)
+    )
+    if (
+        quarantine_sha
+        != str(manifest.get("predecessor_quarantined_rowset_sha256") or "")
+        or quarantine_objects
+        != int(manifest.get("predecessor_quarantined_object_count") or 0)
+        or quarantine_assets
+        != int(manifest.get("predecessor_quarantined_asset_coordinate_count") or 0)
+    ):
+        raise RuntimeError("bulk retirement predecessor quarantine proof changed")
+    if (
+        direct_objects != batch_objects + quarantine_objects
+        or direct_assets != batch_assets + quarantine_assets
+    ):
         raise RuntimeError("bulk retirement predecessor receipt coverage changed")
     inherited_objects = int(
         predecessor_manifest.get("predecessor_retained_object_count") or 0
@@ -2826,6 +3024,9 @@ async def _validate_bulk_successor_predecessor(
 
 
 async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
+    quarantine_hashes = _exact_source_identity_hashes(
+        args.retain_target_identity_drift_source_sha256 or []
+    )
     r2_config = _load_secure_config(Path(args.config))
     clear_proxy_environment()
     validate_endpoint_route(r2_config["target"])
@@ -2903,7 +3104,7 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
                  on commit preserve rows as
                  select source_name,source_key,byte_size,source_etag,
                         source_last_modified,asset_count,scope_asset_count,
-                        scope_facts,target_facts,
+                        scope_facts,target_facts,source_key_sha256,
                         1::bigint byte_size_variants,
                         1::bigint source_etag_variants,
                         1::bigint source_time_variants,
@@ -2913,6 +3114,70 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             args.predecessor_plan_sha256,
             timeout=3600,
         )
+        quarantine_rows = await ledger.fetch(
+            """select * from bulk_retirement_candidates
+                 where source_key_sha256=any($1::text[])
+                 order by source_key_sha256""",
+            quarantine_hashes,
+        )
+        if len(quarantine_rows) != len(quarantine_hashes):
+            raise RuntimeError(
+                "target identity drift quarantine does not match planned predecessor objects"
+            )
+        quarantine_candidates = [
+            _candidate_from_bulk_stage(row) for row in quarantine_rows
+        ]
+        for candidate in quarantine_candidates:
+            candidate["source_identity_policy"] = str(
+                predecessor_manifest.get("source_identity_policy") or ""
+            )
+        quarantine_evidence: list[dict[str, Any]] = []
+        if quarantine_candidates:
+            r2_client = _s3_client(
+                r2_config["target"],
+                max_connections=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+            )
+            executor = ThreadPoolExecutor(
+                max_workers=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+                thread_name_prefix="history-r2-retirement-quarantine-head",
+            )
+            try:
+                quarantine_evidence = (
+                    await _head_target_identity_drift_candidates(
+                        quarantine_candidates,
+                        r2_client=r2_client,
+                        r2_bucket=str(r2_config["target"]["bucket"]),
+                        concurrency=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+                        executor=executor,
+                    )
+                )
+            finally:
+                executor.shutdown(wait=True, cancel_futures=True)
+                r2_client.close()
+        quarantine_identities = [
+            _retirement_object_identity(candidate)
+            for candidate in quarantine_candidates
+        ]
+        quarantine_rowset_sha = _sha256_json(quarantine_identities)
+        quarantine_evidence_sha = _sha256_json(
+            [
+                {
+                    "source_key_sha256": quarantine_hashes[index],
+                    **evidence,
+                }
+                for index, evidence in enumerate(quarantine_evidence)
+            ]
+        )
+        quarantine_asset_count = sum(
+            int(candidate["scope_asset_count"])
+            for candidate in quarantine_candidates
+        )
+        if quarantine_hashes:
+            await ledger.execute(
+                """delete from bulk_retirement_candidates
+                     where source_key_sha256=any($1::text[])""",
+                quarantine_hashes,
+            )
         live_ref_count = int(
             predecessor_manifest.get("deferred_live_history_ref_object_count") or 0
         )
@@ -2946,8 +3211,16 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             predecessor_manifest=predecessor_manifest,
             predecessor_plan_sha256=args.predecessor_plan_sha256,
             predecessor_completed_batches_sha256=completed_proof_sha,
-            predecessor_retained_object_count=retained_objects,
-            predecessor_retained_asset_coordinate_count=retained_assets,
+            predecessor_retained_object_count=(
+                retained_objects + len(quarantine_candidates)
+            ),
+            predecessor_retained_asset_coordinate_count=(
+                retained_assets + quarantine_asset_count
+            ),
+            predecessor_quarantined_object_count=len(quarantine_candidates),
+            predecessor_quarantined_asset_coordinate_count=quarantine_asset_count,
+            predecessor_quarantined_rowset_sha256=quarantine_rowset_sha,
+            predecessor_quarantined_evidence_sha256=quarantine_evidence_sha,
             remaining_object_count=object_count,
             remaining_asset_coordinate_count=asset_count,
             remaining_total_bytes=total_bytes,
@@ -2981,6 +3254,24 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
                     where plan_sha256=$1 and status<>'completed'""",
                 args.predecessor_plan_sha256,
             )
+            quarantined_count = int(
+                await ledger.fetchval(
+                    """with changed as (
+                         update analytics_history_media_r2_retirement_objects
+                            set status='blocked',error_code='TARGET_IDENTITY_DRIFT',
+                                updated_at=now()
+                          where plan_sha256=$1 and status='planned'
+                            and source_key_sha256=any($2::text[])
+                        returning 1)
+                       select count(*) from changed""",
+                    args.predecessor_plan_sha256,
+                    quarantine_hashes,
+                )
+            )
+            if quarantined_count != len(quarantine_hashes):
+                raise RuntimeError(
+                    "target identity drift quarantine predecessor state changed"
+                )
             await ledger.execute(
                 """insert into analytics_history_media_r2_retirement_plans(
                      plan_sha256,run_id,parent_copy_plan_sha256,rowset_sha256,
@@ -3039,8 +3330,19 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
                 {
                     "plan_sha256": manifest["plan_sha256"],
                     "predecessor_plan_sha256": args.predecessor_plan_sha256,
-                    "predecessor_retained_object_count": retained_objects,
-                    "predecessor_retained_asset_coordinate_count": retained_assets,
+                    "predecessor_retained_object_count": manifest[
+                        "predecessor_retained_object_count"
+                    ],
+                    "predecessor_retained_asset_coordinate_count": manifest[
+                        "predecessor_retained_asset_coordinate_count"
+                    ],
+                    "predecessor_quarantined_object_count": len(
+                        quarantine_candidates
+                    ),
+                    "predecessor_quarantined_asset_coordinate_count": (
+                        quarantine_asset_count
+                    ),
+                    "predecessor_quarantined_rowset_sha256": quarantine_rowset_sha,
                     "object_count": object_count,
                     "asset_coordinate_count": asset_count,
                     "batch_count": len(batches),
@@ -3921,6 +4223,15 @@ def _parser() -> argparse.ArgumentParser:
     bulk_successor.add_argument("--artifact-digest", required=True)
     bulk_successor.add_argument("--canary-size", type=int, default=100)
     bulk_successor.add_argument("--batch-size", type=int, default=1000)
+    bulk_successor.add_argument(
+        "--retain-target-identity-drift-source-sha256",
+        action="append",
+        default=[],
+        help=(
+            "exact old-source identity hash to re-HEAD and retain because its "
+            "persistent target identity drifted"
+        ),
+    )
     bulk_successor.add_argument("--output", required=True)
     execute = commands.add_parser("execute-delete")
     execute.add_argument("--plan-sha256", required=True)
