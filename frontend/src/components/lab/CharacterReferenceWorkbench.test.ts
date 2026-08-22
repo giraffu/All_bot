@@ -160,4 +160,22 @@ describe('CharacterReferenceWorkbench', () => {
     await nextTick()
     expect((wrapper.vm as any).activeConfig.can_generate).toBe(true)
   })
+
+  it('presents mobile editing and generation as two ordered action sections', async () => {
+    const wrapper = mountWorkbench()
+    ;(wrapper.vm as any).draftId = 'character-1'
+    await nextTick()
+
+    const details = wrapper.get('[data-testid="character-view-details-section"]')
+    const generation = wrapper.get('[data-testid="character-view-generation-section"]')
+
+    expect(details.text()).toContain('characters.details_section_title')
+    expect(details.text()).toContain('characters.save_descriptions')
+    expect(generation.text()).toContain('characters.generation_section_title')
+    expect(generation.text()).toContain('characters.upload_view_hint')
+    expect(generation.findAll('[data-testid="character-engine-option"]')).toHaveLength(3)
+    expect(details.element.compareDocumentPosition(generation.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
 })
