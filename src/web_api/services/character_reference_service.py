@@ -45,6 +45,7 @@ from src.web_api.services.character_view_prompt_config_service import (
 )
 from src.web_api.services.character_view_template_service import (
     get_active_character_view_template,
+    list_default_character_view_templates,
     list_character_view_templates,
 )
 from src.web_api.services.task_submission_service import submit_generation_task
@@ -462,14 +463,69 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
         task_id=None,
         status="ready",
     )
+    views = [view]
+    default_templates = await list_default_character_view_templates(db)
+    for default_template in default_templates:
+        view_type = str(default_template.view_type)
+        if view_type == payload.initial_view_type:
+            continue
+        if (
+            view_type in EXPLICIT_CHARACTER_VIEW_TYPES
+            and not character_explicit_views_enabled()
+        ):
+            continue
+        template_key = str(default_template.object_key).removeprefix(
+            f"{MINIO_BUCKET}/"
+        )
+        extension = template_key.rsplit(".", 1)[-1].lower()
+        image_bytes = await asyncio.to_thread(
+            storage.get_file_bytes,
+            template_key,
+            MINIO_BUCKET,
+        )
+        if not image_bytes or extension not in CHARACTER_IMAGE_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"默认人物子图模板已失效：{view_type}。",
+            )
+        default_key = (
+            f"character_references/{current_user.id}/{character_id}/views/"
+            f"{view_type}-{uuid.uuid4().hex}.{extension}"
+        )
+        default_uploaded = await asyncio.to_thread(
+            storage.upload_bytes,
+            image_bytes,
+            default_key,
+            CHARACTER_IMAGE_CONTENT_TYPES[extension],
+            MINIO_BUCKET,
+        )
+        if not default_uploaded:
+            raise HTTPException(
+                status_code=503,
+                detail=f"默认人物子图保存失败：{view_type}，请重试。",
+            )
+        views.append(
+            CharacterReferenceView(
+                id=str(uuid.uuid4()),
+                character_id=character_id,
+                view_type=view_type,
+                display_name=CHARACTER_VIEW_BY_TYPE[view_type]["label"],
+                description=None,
+                prompt="",
+                object_key=f"{MINIO_BUCKET}/{default_key}",
+                task_id=None,
+                status="ready",
+            )
+        )
     db.add(row)
-    db.add(view)
+    for character_view in views:
+        db.add(character_view)
     await db.commit()
     view_configs = await _runtime_view_configs(db)
     return await _materialize_saved_character_sheet(
         db=db,
         character=row,
-        views=[view],
+        views=views,
         view_configs=view_configs,
     )
 

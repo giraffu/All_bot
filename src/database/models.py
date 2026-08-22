@@ -874,6 +874,12 @@ class CharacterViewImageTemplate(Base):
             "status",
             "sort_order",
         ),
+        Index(
+            "uq_character_view_image_templates_default_type",
+            "view_type",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
     )
 
     id = Column(String(36), primary_key=True)
@@ -883,6 +889,9 @@ class CharacterViewImageTemplate(Base):
     object_key = Column(String(1024), nullable=False)
     sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
     status = Column(String(16), nullable=False, default="active")
+    is_default = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_by = Column(String(100), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(

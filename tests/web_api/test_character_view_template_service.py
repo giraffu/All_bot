@@ -7,8 +7,9 @@ from src.web_api.services import character_view_template_service as service
 
 
 class _Db:
-    def __init__(self, row=None):
+    def __init__(self, row=None, execute_results=None):
         self.row = row
+        self.execute_results = iter(execute_results or [])
         self.added = []
         self.commit = AsyncMock()
 
@@ -18,12 +19,21 @@ class _Db:
     def add(self, row):
         self.added.append(row)
 
+    async def execute(self, _statement):
+        return SimpleNamespace(
+            scalars=lambda: SimpleNamespace(all=lambda: next(self.execute_results))
+        )
+
 
 @pytest.mark.asyncio
 async def test_admin_can_create_multiple_templates_for_the_same_detail_slot(monkeypatch):
     db = _Db()
     monkeypatch.setattr(service.storage, "upload_bytes", MagicMock(return_value="stored"))
-    monkeypatch.setattr(service.storage, "get_presigned_url", MagicMock(return_value="https://media/template"))
+    monkeypatch.setattr(
+        service.storage,
+        "get_presigned_url",
+        MagicMock(return_value="https://media/template"),
+    )
 
     first = await service.create_character_view_template(
         db,
@@ -62,10 +72,21 @@ async def test_admin_can_disable_and_reorder_a_template(monkeypatch):
         object_key="bot-data/template.png",
         sort_order=0,
         status="active",
+        is_default=False,
     )
     db = _Db(row)
-    monkeypatch.setattr(service.storage, "get_presigned_url", MagicMock(return_value="https://media/template"))
-    payload = SimpleNamespace(name="新名称", gender="female", sort_order=30, status="disabled")
+    monkeypatch.setattr(
+        service.storage,
+        "get_presigned_url",
+        MagicMock(return_value="https://media/template"),
+    )
+    payload = SimpleNamespace(
+        name="新名称",
+        gender="female",
+        sort_order=30,
+        status="disabled",
+        is_default=None,
+    )
 
     result = await service.update_character_view_template(
         db, template_id="template-1", payload=payload
@@ -74,4 +95,51 @@ async def test_admin_can_disable_and_reorder_a_template(monkeypatch):
     assert result["name"] == "新名称"
     assert result["status"] == "disabled"
     assert result["sort_order"] == 30
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_setting_default_replaces_the_previous_default_for_the_slot(monkeypatch):
+    previous = SimpleNamespace(
+        id="template-old",
+        view_type="torso_front",
+        name="旧默认",
+        gender="female",
+        object_key="bot-data/old.png",
+        sort_order=10,
+        status="active",
+        is_default=True,
+    )
+    selected = SimpleNamespace(
+        id="template-new",
+        view_type="torso_front",
+        name="新默认",
+        gender="female",
+        object_key="bot-data/new.png",
+        sort_order=20,
+        status="active",
+        is_default=False,
+    )
+    db = _Db(selected, execute_results=[[previous, selected]])
+    monkeypatch.setattr(
+        service.storage,
+        "get_presigned_url",
+        MagicMock(return_value="https://media/template"),
+    )
+
+    result = await service.update_character_view_template(
+        db,
+        template_id=selected.id,
+        payload=SimpleNamespace(
+            name=None,
+            gender=None,
+            sort_order=None,
+            status=None,
+            is_default=True,
+        ),
+    )
+
+    assert previous.is_default is False
+    assert selected.is_default is True
+    assert result["is_default"] is True
     db.commit.assert_awaited_once()
