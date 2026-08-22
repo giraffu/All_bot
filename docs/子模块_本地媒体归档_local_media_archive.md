@@ -459,7 +459,9 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 保留 predecessor 全部已完成资产和批次，把尚未完成资产原子改绑到零交集 successor，
 并将旧计划未完成批次标为 `superseded`。successor 冻结 artifact、worker、生产 DSN
 非秘密路由指纹、全局/批次 rowset、每批 CAS 和 predecessor identity；生成计划不授权
-生产更新，仍须新的 `SWITCH_HISTORY_MEDIA_<successor-sha>`。
+生产更新，仍须新的 `SWITCH_HISTORY_MEDIA_<successor-sha>`。CAS 冻结以有界窗口一次
+预取多个逻辑批次的生产 History，再逐个生成原有 1,000-History 批次 SHA，避免远程
+PostgreSQL 为每个逻辑批次单独往返；预取窗口不得改变批次边界或 CAS 内容。
 
 取得精确令牌后，本地 `export-task` 首次完整重算全局行集和 predecessor，随后每次只
 锁定并导出一个最多 1,000 个 History 的 HMAC-SHA256 任务。任务携带该批全部媒体坐标
