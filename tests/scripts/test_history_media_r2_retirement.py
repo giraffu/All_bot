@@ -23,6 +23,7 @@ from scripts.history_media_r2_retirement import (
     _durability_archive_config,
     _delete_sources,
     _ensure_retirement_blocker_indexes,
+    _exact_source_identity_hashes,
     _expected_switch_counts,
     _head_candidates,
     _head_source_candidates,
@@ -43,6 +44,7 @@ from scripts.history_media_r2_retirement import (
     classify_retirement_candidate,
     validate_delete_gate,
     validate_retirement_object_heads,
+    validate_retirement_target_identity_drift,
 )
 
 
@@ -1121,6 +1123,10 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
         predecessor_completed_batches_sha256="d" * 64,
         predecessor_retained_object_count=3,
         predecessor_retained_asset_coordinate_count=3,
+        predecessor_quarantined_object_count=1,
+        predecessor_quarantined_asset_coordinate_count=1,
+        predecessor_quarantined_rowset_sha256="q" * 64,
+        predecessor_quarantined_evidence_sha256="v" * 64,
         remaining_object_count=5,
         remaining_asset_coordinate_count=7,
         remaining_total_bytes=500,
@@ -1132,11 +1138,15 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
         runtime_identity={"artifact_digest": "sha256:" + "f" * 64},
     )
 
-    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v3"
+    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v4"
     assert manifest["predecessor_plan_sha256"] == "p" * 64
     assert manifest["root_object_count"] == 8
     assert manifest["root_asset_coordinate_count"] == 10
     assert manifest["predecessor_retained_object_count"] == 3
+    assert manifest["predecessor_quarantined_object_count"] == 1
+    assert manifest["predecessor_quarantined_asset_coordinate_count"] == 1
+    assert manifest["predecessor_quarantined_rowset_sha256"] == "q" * 64
+    assert manifest["predecessor_quarantined_evidence_sha256"] == "v" * 64
     assert manifest["object_count"] == 5
     assert manifest["asset_coordinate_count"] == 7
     assert manifest["retained_target_object_count"] == 0
@@ -1149,6 +1159,10 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
             predecessor_completed_batches_sha256="d" * 64,
             predecessor_retained_object_count=2,
             predecessor_retained_asset_coordinate_count=3,
+            predecessor_quarantined_object_count=1,
+            predecessor_quarantined_asset_coordinate_count=1,
+            predecessor_quarantined_rowset_sha256="q" * 64,
+            predecessor_quarantined_evidence_sha256="v" * 64,
             remaining_object_count=5,
             remaining_asset_coordinate_count=7,
             remaining_total_bytes=500,
@@ -1159,6 +1173,71 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
             },
             runtime_identity={},
         )
+
+
+def test_target_identity_drift_quarantine_requires_intact_source_and_target_size():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+    )
+    source_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "LastModified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    drifted_target = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "Metadata": {},
+    }
+
+    evidence = validate_retirement_target_identity_drift(
+        candidate,
+        source_head=source_head,
+        target_heads={"task-results/task/primary.png": drifted_target},
+    )
+
+    assert evidence == {
+        "drifted_target_count": 1,
+        "marker_drift_count": 1,
+        "etag_drift_count": 0,
+        "target_facts_sha256": _sha256_json(candidate["targets"]),
+    }
+    with pytest.raises(RuntimeError, match="does not show identity drift"):
+        validate_retirement_target_identity_drift(
+            candidate,
+            source_head=source_head,
+            target_heads={
+                "task-results/task/primary.png": {
+                    **drifted_target,
+                    "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+                }
+            },
+        )
+    with pytest.raises(RuntimeError, match="target size changed"):
+        validate_retirement_target_identity_drift(
+            candidate,
+            source_head=source_head,
+            target_heads={
+                "task-results/task/primary.png": {
+                    **drifted_target,
+                    "ContentLength": 99,
+                }
+            },
+        )
+
+
+def test_target_identity_drift_quarantine_hashes_are_exact_and_unique():
+    assert _exact_source_identity_hashes(["b" * 64, "a" * 64]) == [
+        "a" * 64,
+        "b" * 64,
+    ]
+    for values in (["a" * 64, "a" * 64], ["A" * 64], ["a" * 63]):
+        with pytest.raises(ValueError, match="SHA-256 values are invalid"):
+            _exact_source_identity_hashes(values)
 
 
 def test_bulk_switch_count_parser_is_exact_and_fail_closed():
@@ -1299,6 +1378,10 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "status='planned'" in successor_source
     assert "_completed_retirement_batch_proof" in successor_source
     assert "_bulk_predecessor_retained_counts" in successor_source
+    assert "_head_target_identity_drift_candidates" in successor_source
+    assert "TARGET_IDENTITY_DRIFT" in successor_source
+    assert "executor.shutdown" in successor_source
+    assert "r2_client.close" in successor_source
     assert "set status='paused'" in successor_source
     assert "_bulk_production_has_live_refs" not in successor_source
     assert "_live_reference_counts" in source
@@ -1527,6 +1610,8 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             "/secure/r2.json",
             "--artifact-digest",
             "sha256:" + "b" * 64,
+            "--retain-target-identity-drift-source-sha256",
+            "c" * 64,
             "--output",
             "/secure/bulk-delete-successor.json",
         ]
@@ -1570,6 +1655,7 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             ]
         )
     assert bulk_successor.predecessor_plan_sha256 == "a" * 64
+    assert bulk_successor.retain_target_identity_drift_source_sha256 == ["c" * 64]
     assert bulk_successor.canary_size == 100
     assert "analytics_history_media_r2_retirement_plans" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_objects" in RETIREMENT_DDL

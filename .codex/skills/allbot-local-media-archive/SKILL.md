@@ -24,10 +24,11 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   marker，Switch 重算行集和批次 CAS，旧源保留。
 - `plan-switch-completed` 只冻结终止 predecessor/当前 completed 批次；一次一份计划，
   仍需精确 SWITCH 令牌。
-- Bulk retirement 只接受精确 DELETE SHA；集合门禁将 blocker deferred、source-is-target
-  retained。删前 HEAD 源/目标，删后仅 HEAD 源；批量删除只重试失败 key。换 artifact
-  时暂停 predecessor，successor 只冻 remaining planned 并重新授权。
-- predecessor marker/frontier 和 transient failed 只用 HEAD 对账后冻结 successor。
+- Bulk retirement 仅收精确 DELETE SHA；blocker deferred、source-is-target retained；
+  删前 HEAD 源/目标，删后仅 HEAD 源，删除只重试失败 key。
+- 换 artifact 须暂停 predecessor；HEAD 后 successor 只冻 remaining planned。
+  目标 marker/ETag 漂移不得放宽，按旧源哈希复核后以
+  `TARGET_IDENTITY_DRIFT` 隔离保留；remaining 重新授权。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
 - `cloud_receipt` Copy 仅本地写账本；云端只做 HEAD/CopyObject 和 HMAC 回执，身份
   不符 fail closed，successor canary 仍需 COPY 令牌。

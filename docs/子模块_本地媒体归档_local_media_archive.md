@@ -531,6 +531,17 @@ NAS 模式的目标和 NAS SHA 同样必须在删前通过。R2/NAS 客户端、
 `DELETE_HISTORY_MEDIA_<successor-sha>`；旧 executor 必须保持停止，不能与 successor
 竞争 paused 批次。
 
+若 predecessor 因标准持久目标的 marker/ETag 身份漂移暂停，禁止重启原执行器、改写
+原 manifest 或放宽目标门禁。操作者只向 successor 冻结器提供精确旧源身份哈希；冻结器
+必须用当前不可变 artifact 重新 HEAD，证明旧源 size/ETag（或 size/Last-Modified）仍与
+账本一致、目标仍存在且 size 一致，同时至少一个冻结 marker/ETag 确实漂移。通过后，该
+旧源在 predecessor 账本中以 `TARGET_IDENTITY_DRIFT` 终态隔离并永久保留，不进入新计划
+的 HEAD/DELETE 集合；其对象数、资产坐标数、对象行集 SHA 和低基数 HEAD 证据 SHA 都
+写入 Bulk v4 successor manifest。隔离状态、新计划写入和 predecessor 暂停必须在同一
+本地事务提交；任何哈希、状态或计数漂移全部回滚。守恒关系为“predecessor 已完成/继承
+保留 + 本次身份漂移隔离 + successor remaining = root 范围”，successor 仍需新的精确
+DELETE 令牌。
+
 Bulk 冻结对生产 History 的零引用核对先把 `eligible` 来源在本地计算为固定 32-byte
 SHA-256，再分块写入生产会话专属临时表；临时表建立唯一索引并 ANALYZE，查询会话关闭或
 事务提交即清除。History 三种路径角色只与该摘要集合做一次哈希半连接；命中的摘要流式
