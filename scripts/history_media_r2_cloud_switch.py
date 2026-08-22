@@ -588,8 +588,10 @@ async def build_successor_switch_batches(
             offset += 1
 
         production_records = await production.fetch(
-            """select id,input_file,output_file,extra_outputs from history
-                 where id=any($1::integer[]) order by id""",
+            """select h.id,h.input_file,h.output_file,h.extra_outputs
+                 from unnest($1::integer[]) selected(id)
+                 join history h on h.id=selected.id
+                order by h.id""",
             window_history_ids,
         )
         if len(production_records) != len(window_history_ids):

@@ -402,9 +402,11 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
     class Production:
         def __init__(self) -> None:
             self.fetch_calls = 0
+            self.queries = []
 
-        async def fetch(self, _query, history_ids):
+        async def fetch(self, query, history_ids):
             self.fetch_calls += 1
+            self.queries.append(query)
             selected = set(history_ids)
             return [row for row in histories if row["id"] in selected]
 
@@ -425,5 +427,9 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
 
     assert len(batches) == 6
     assert production.fetch_calls == 2
+    assert all("unnest($1::integer[])" in query for query in production.queries)
+    assert all(
+        "id=any" not in query.replace(" ", "").lower() for query in production.queries
+    )
     assert [batch["history_count"] for batch in batches] == [2] * 6
     assert all(len(batch["cas_state_sha256"]) == 64 for batch in batches)
