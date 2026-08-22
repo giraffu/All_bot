@@ -364,3 +364,66 @@ def test_cloud_switch_artifact_and_low_cardinality_task_schema() -> None:
     assert first == same_route
     assert first != other_route
     assert "secret" not in first
+
+
+@pytest.mark.asyncio
+async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip() -> (
+    None
+):
+    from scripts.history_media_r2_cloud_switch import build_successor_switch_batches
+
+    rows = []
+    histories = []
+    for index in range(1, 13):
+        row = _ledger_row(index)
+        row.update(
+            {
+                "source_name": "r2-user-data-prod",
+                "source_key": row["original_ref"],
+                "source_last_modified": None,
+                "source_etag": f"etag-{index}",
+                "source_sha256": None,
+                "target_sha256": None,
+                "byte_size": index,
+                "status": "copied_verified",
+                "history_manifest_sha256": "8" * 64,
+            }
+        )
+        rows.append(row)
+        histories.append(
+            {
+                "id": 100 + index,
+                "input_file": None,
+                "output_file": row["original_ref"],
+                "extra_outputs": {},
+            }
+        )
+
+    class Production:
+        def __init__(self) -> None:
+            self.fetch_calls = 0
+
+        async def fetch(self, _query, history_ids):
+            self.fetch_calls += 1
+            selected = set(history_ids)
+            return [row for row in histories if row["id"] in selected]
+
+    class Ledger:
+        async def fetch(self, _query, _run_id, history_ids):
+            selected = set(history_ids)
+            return [row for row in rows if row["history_id"] in selected]
+
+    production = Production()
+    batches = await build_successor_switch_batches(
+        production,
+        Ledger(),
+        run_id="11111111-1111-4111-8111-111111111111",
+        successor_rows=rows,
+        history_batch_size=2,
+        prefetch_history_count=6,
+    )
+
+    assert len(batches) == 6
+    assert production.fetch_calls == 2
+    assert [batch["history_count"] for batch in batches] == [2] * 6
+    assert all(len(batch["cas_state_sha256"]) == 64 for batch in batches)

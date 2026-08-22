@@ -33,7 +33,6 @@ from scripts.history_media_r2_cloud_copy import (
 )
 from scripts.history_media_r2_migration import (
     SWITCH_HISTORY_BATCH_SIZE,
-    _cas_state_for_histories,
     _connect_env,
     _dsn,
     _ensure_schema,
@@ -535,6 +534,109 @@ def build_cloud_switch_successor_manifest(
     return manifest
 
 
+async def build_successor_switch_batches(
+    production: Any,
+    ledger: Any,
+    *,
+    run_id: Any,
+    successor_rows: Iterable[dict[str, Any]],
+    history_batch_size: int = SWITCH_HISTORY_BATCH_SIZE,
+    prefetch_history_count: int = SWITCH_HISTORY_BATCH_SIZE * 10,
+) -> list[dict[str, Any]]:
+    """Freeze exact per-batch CAS with fewer production round trips."""
+
+    if history_batch_size <= 0 or prefetch_history_count < history_batch_size:
+        raise ValueError("cloud Switch CAS prefetch size is invalid")
+    ordered = [dict(row) for row in successor_rows]
+    logical_rows: list[list[dict[str, Any]]] = []
+    batch_rows: list[dict[str, Any]] = []
+    batch_history_ids: list[int] = []
+    for row in ordered:
+        history_id = int(row["history_id"])
+        if (
+            batch_history_ids
+            and history_id != batch_history_ids[-1]
+            and len(batch_history_ids) >= history_batch_size
+        ):
+            logical_rows.append(batch_rows)
+            batch_rows = []
+            batch_history_ids = []
+        if not batch_history_ids or history_id != batch_history_ids[-1]:
+            batch_history_ids.append(history_id)
+        batch_rows.append(row)
+    if batch_rows:
+        logical_rows.append(batch_rows)
+
+    batches: list[dict[str, Any]] = []
+    offset = 0
+    while offset < len(logical_rows):
+        window: list[list[dict[str, Any]]] = []
+        window_history_ids: list[int] = []
+        while offset < len(logical_rows):
+            candidate = logical_rows[offset]
+            candidate_history_ids = list(
+                dict.fromkeys(int(row["history_id"]) for row in candidate)
+            )
+            if (
+                window
+                and len(window_history_ids) + len(candidate_history_ids)
+                > prefetch_history_count
+            ):
+                break
+            window.append(candidate)
+            window_history_ids.extend(candidate_history_ids)
+            offset += 1
+
+        production_records = await production.fetch(
+            """select id,input_file,output_file,extra_outputs from history
+                 where id=any($1::integer[]) order by id""",
+            window_history_ids,
+        )
+        if len(production_records) != len(window_history_ids):
+            raise RuntimeError("cloud Switch planning History row disappeared")
+        history_map = {int(row["id"]): dict(row) for row in production_records}
+        ledger_records = await ledger.fetch(
+            """select id,history_id,role,ordinal,original_ref,target_key,
+                      switch_plan_sha256,switch_completed_at
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and history_id=any($2::integer[])
+                order by history_id,role,ordinal""",
+            run_id,
+            window_history_ids,
+        )
+        selected_ids = {
+            int(row["id"]) for logical_batch in window for row in logical_batch
+        }
+        ledger_by_history: dict[int, list[dict[str, Any]]] = {}
+        for record in ledger_records:
+            row = dict(record)
+            row["selected"] = int(row["id"]) in selected_ids
+            ledger_by_history.setdefault(int(row["history_id"]), []).append(row)
+
+        for logical_batch in window:
+            history_ids = list(
+                dict.fromkeys(int(row["history_id"]) for row in logical_batch)
+            )
+            states = [
+                normalized_history_cas_state(
+                    history_id,
+                    _history_record_refs(history_map[history_id]),
+                    ledger_by_history.get(history_id, []),
+                    allow_selected_target=True,
+                )
+                for history_id in history_ids
+            ]
+            batches.append(
+                _finalize_plan_batch(
+                    batch_no=len(batches),
+                    rows=logical_batch,
+                    cas_state_sha256=_sha256_json(states),
+                    row_transform=_plan_row,
+                )
+            )
+    return batches
+
+
 async def _plan_successor(args: argparse.Namespace) -> None:
     _validate_execution_identity(
         artifact_digest=args.artifact_digest,
@@ -568,45 +670,12 @@ async def _plan_successor(args: argparse.Namespace) -> None:
         successor = [row for row in rows if not row.get("switch_completed_at")]
         if any(row.get("status") != "copied_verified" for row in successor):
             raise RuntimeError("cloud Switch successor contains an ineligible asset")
-        batches: list[dict[str, Any]] = []
-        batch_rows: list[dict[str, Any]] = []
-        history_ids: list[int] = []
-
-        async def flush() -> None:
-            nonlocal batch_rows, history_ids
-            if not batch_rows:
-                return
-            cas_sha, _histories, _ledger = await _cas_state_for_histories(
-                production,
-                ledger,
-                run_id=run_id,
-                history_ids=history_ids,
-                selected_ledger_ids={int(row["id"]) for row in batch_rows},
-                allow_selected_target=True,
-            )
-            batches.append(
-                _finalize_plan_batch(
-                    batch_no=len(batches),
-                    rows=batch_rows,
-                    cas_state_sha256=cas_sha,
-                    row_transform=_plan_row,
-                )
-            )
-            batch_rows = []
-            history_ids = []
-
-        for row in successor:
-            history_id = int(row["history_id"])
-            if (
-                history_ids
-                and history_id != history_ids[-1]
-                and len(history_ids) >= SWITCH_HISTORY_BATCH_SIZE
-            ):
-                await flush()
-            if not history_ids or history_id != history_ids[-1]:
-                history_ids.append(history_id)
-            batch_rows.append(row)
-        await flush()
+        batches = await build_successor_switch_batches(
+            production,
+            ledger,
+            run_id=run_id,
+            successor_rows=successor,
+        )
         predecessor_count, predecessor_sha = await _predecessor_switch_identity(
             ledger, run_id
         )
