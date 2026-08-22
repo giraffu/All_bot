@@ -193,6 +193,12 @@ const generateView = async () => {
   }
 }
 
+const restoreDefaultPrompt = () => {
+  viewForm.prompt = activeView.value?.default_prompt
+    || draft.value?.default_prompts?.[activeViewType.value]
+    || ''
+}
+
 const saveDescriptions = async () => {
   if (!draft.value) return
   savingDetails.value = true
@@ -285,30 +291,74 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="grid gap-5 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.1fr)]">
-        <div class="character-workbench__preview flex min-h-[360px] items-center justify-center overflow-hidden rounded-3xl border">
+        <div class="character-workbench__preview flex min-h-[260px] items-center justify-center overflow-hidden rounded-3xl border sm:min-h-[360px]">
           <img v-if="activeView?.preview_url" :src="activeView.preview_url" class="max-h-[560px] w-full object-contain" />
           <div v-else class="text-center opacity-60"><ImagePlus :size="36" class="mx-auto" /><div class="mt-3 text-sm">{{ t('characters.view_optional_empty') }}</div></div>
         </div>
         <div class="space-y-4">
-          <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.character_description') }}</span><a-textarea v-model:value="characterForm.description" :maxlength="500" :auto-size="{ minRows: 2, maxRows: 5 }" /></label>
-          <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.view_display_name') }}</span><a-input v-model:value="viewForm.displayName" :maxlength="80" /></label>
-          <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.view_description') }}</span><a-textarea v-model:value="viewForm.description" :maxlength="500" :auto-size="{ minRows: 2, maxRows: 5 }" /></label>
+          <section data-testid="character-view-details-section" class="character-workbench__section rounded-3xl border p-4 sm:p-5">
+            <header class="mb-5 flex items-start gap-3">
+              <span class="character-workbench__step flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold">1</span>
+              <div>
+                <h3 class="text-base font-bold">{{ t('characters.details_section_title') }}</h3>
+                <p class="mt-1 text-xs leading-5 opacity-60">{{ t('characters.details_section_hint') }}</p>
+              </div>
+            </header>
+            <div class="space-y-4">
+              <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.character_description') }}</span><a-textarea v-model:value="characterForm.description" :maxlength="500" :auto-size="{ minRows: 2, maxRows: 5 }" /></label>
+              <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.view_display_name') }}</span><a-input v-model:value="viewForm.displayName" :maxlength="80" /></label>
+              <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.view_description') }}</span><a-textarea v-model:value="viewForm.description" :maxlength="500" :auto-size="{ minRows: 2, maxRows: 5 }" /></label>
+            </div>
+            <div class="mt-5 flex justify-end">
+              <a-button class="w-full sm:w-auto" :loading="savingDetails" @click="saveDescriptions">{{ t('characters.save_descriptions') }}</a-button>
+            </div>
+          </section>
 
-          <template v-if="activeConfig?.can_generate">
-            <label class="block"><span class="mb-2 block text-sm font-semibold">{{ t('characters.view_prompt_label') }}</span><a-textarea v-model:value="viewForm.prompt" :maxlength="1200" :auto-size="{ minRows: 4, maxRows: 8 }" /></label>
-            <a-radio-group v-model:value="selectedEngine" button-style="solid" class="flex flex-wrap gap-2"><a-radio-button v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS" :key="option.value" :value="option.value">{{ t(option.labelKey) }} · {{ option.cost }}</a-radio-button></a-radio-group>
-          </template>
+          <section data-testid="character-view-generation-section" class="character-workbench__section rounded-3xl border p-4 sm:p-5">
+            <header class="mb-5 flex items-start gap-3">
+              <span class="character-workbench__step flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold">2</span>
+              <div>
+                <h3 class="text-base font-bold">{{ t('characters.generation_section_title') }}</h3>
+                <p class="mt-1 text-xs leading-5 opacity-60">{{ t('characters.generation_section_hint') }}</p>
+              </div>
+            </header>
 
-          <div v-if="activeConfig?.has_templates" class="rounded-2xl border p-3">
-            <div class="mb-2 text-sm font-semibold">{{ t('characters.choose_admin_template') }}</div>
-            <div class="flex gap-2"><a-select v-model:value="selectedTemplateId" class="min-w-0 flex-1" allow-clear><a-select-option v-for="template in activeTemplates" :key="template.id" :value="template.id">{{ template.name }}</a-select-option></a-select><a-button :disabled="!selectedTemplateId" :loading="applyingTemplate" @click="applyTemplate">{{ t('characters.apply_template') }}</a-button></div>
-          </div>
+            <template v-if="activeConfig?.can_generate">
+              <label class="block">
+                <span class="mb-2 flex items-center justify-between gap-3 text-sm font-semibold">
+                  {{ t('characters.view_prompt_label') }}
+                  <button type="button" class="character-workbench__text-action text-xs font-semibold" @click="restoreDefaultPrompt">{{ t('characters.restore_default') }}</button>
+                </span>
+                <a-textarea v-model:value="viewForm.prompt" :maxlength="1200" :auto-size="{ minRows: 3, maxRows: 7 }" />
+              </label>
+              <div class="mt-5">
+                <div class="mb-2 text-sm font-semibold">{{ t('characters.engine_label') }}</div>
+                <a-radio-group v-model:value="selectedEngine" button-style="solid" class="character-workbench__engine-grid">
+                  <a-radio-button v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS" :key="option.value" :value="option.value" data-testid="character-engine-option">
+                    <span class="flex w-full items-center justify-between gap-3">
+                      <span class="truncate font-semibold">{{ t(option.labelKey) }}</span>
+                      <span class="character-workbench__cost shrink-0 rounded-full px-2 py-0.5 text-xs">{{ option.cost }} {{ t('app.credits') }}</span>
+                    </span>
+                  </a-radio-button>
+                </a-radio-group>
+              </div>
+            </template>
 
-          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-            <a-button :loading="savingDetails" @click="saveDescriptions">{{ t('characters.save_descriptions') }}</a-button>
-            <a-upload :show-upload-list="false" :before-upload="beforeViewUpload" accept="image/png,image/jpeg,image/webp"><a-button :loading="uploading">{{ activeView ? t('characters.replace_view_upload') : t('characters.upload_view') }}</a-button></a-upload>
-            <a-button v-if="activeConfig?.can_generate" type="primary" :disabled="!viewForm.prompt.trim() || activeView?.status === 'pending'" :loading="generating || activeView?.status === 'pending'" @click="generateView">{{ t('characters.generate_view') }} · {{ selectedEngineCost }}</a-button>
-          </div>
+            <div v-if="activeConfig?.has_templates" class="character-workbench__template mt-5 rounded-2xl border p-3">
+              <div class="mb-2 text-sm font-semibold">{{ t('characters.choose_admin_template') }}</div>
+              <div class="flex flex-col gap-2 sm:flex-row"><a-select v-model:value="selectedTemplateId" class="min-w-0 flex-1" allow-clear><a-select-option v-for="template in activeTemplates" :key="template.id" :value="template.id">{{ template.name }}</a-select-option></a-select><a-button :disabled="!selectedTemplateId" :loading="applyingTemplate" @click="applyTemplate">{{ t('characters.apply_template') }}</a-button></div>
+            </div>
+
+            <div class="mt-5 border-t pt-4">
+              <p class="mb-3 text-xs leading-5 opacity-60">{{ t('characters.upload_view_hint') }}</p>
+              <div class="grid gap-2" :class="activeConfig?.can_generate ? 'sm:grid-cols-2' : ''">
+                <a-upload class="character-workbench__upload-action" :show-upload-list="false" :before-upload="beforeViewUpload" accept="image/png,image/jpeg,image/webp">
+                  <a-button class="h-11 w-full" :loading="uploading">{{ activeView ? t('characters.replace_view_upload') : t('characters.upload_view') }}</a-button>
+                </a-upload>
+                <a-button v-if="activeConfig?.can_generate" type="primary" class="h-11 w-full" :disabled="!viewForm.prompt.trim() || activeView?.status === 'pending'" :loading="generating || activeView?.status === 'pending'" @click="generateView">{{ t('characters.generate_view') }} · {{ selectedEngineCost }} {{ t('app.credits') }}</a-button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -321,4 +371,19 @@ onBeforeUnmount(() => {
 .character-workbench__icon { color: #67e8f9; background: rgba(34, 211, 238, 0.13); border: 1px solid rgba(34, 211, 238, 0.32); }
 .character-workbench__source, .character-workbench__preview, .character-workbench__tab { background: var(--theme-panel-strong-bg); border-color: var(--theme-border); }
 .character-workbench__tab--active { border-color: var(--theme-tab-active-border); box-shadow: var(--theme-tab-active-shadow); }
+.character-workbench__section { background: var(--theme-panel-strong-bg); border-color: var(--theme-border); }
+.character-workbench__step { color: var(--theme-tab-active-text); background: var(--theme-tab-active-bg); border: 1px solid var(--theme-tab-active-border); }
+.character-workbench__text-action { color: var(--theme-tab-active-text); }
+.character-workbench__template { border-color: var(--theme-border); background: var(--theme-card-bg); }
+.character-workbench__engine-grid { display: grid; width: 100%; gap: 0.5rem; }
+.character-workbench__engine-grid :deep(.ant-radio-button-wrapper) { display: flex; width: 100%; height: auto; min-height: 44px; align-items: center; border: 1px solid var(--theme-border); border-radius: 14px; padding: 0.65rem 0.75rem; background: var(--theme-card-bg); color: var(--theme-text-primary); box-shadow: none; }
+.character-workbench__engine-grid :deep(.ant-radio-button-wrapper::before) { display: none; }
+.character-workbench__engine-grid :deep(.ant-radio-button-wrapper-checked) { border-color: var(--theme-tab-active-border); background: var(--theme-tab-active-bg); color: var(--theme-text-primary); box-shadow: var(--theme-tab-active-shadow); }
+.character-workbench__cost { background: rgba(14, 165, 233, 0.12); color: var(--theme-tab-active-text); }
+.character-workbench__upload-action { display: block; width: 100%; }
+.character-workbench__upload-action :deep(.ant-upload) { display: block; width: 100%; }
+
+@media (min-width: 640px) {
+  .character-workbench__engine-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 </style>
