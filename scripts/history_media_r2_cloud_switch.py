@@ -589,14 +589,20 @@ async def build_successor_switch_batches(
 
         production_records = await production.fetch(
             """select h.id,h.input_file,h.output_file,h.extra_outputs
-                 from unnest($1::integer[]) selected(id)
-                 join history h on h.id=selected.id
+                 from history h
+                where h.id between $1 and $2
                 order by h.id""",
-            window_history_ids,
+            min(window_history_ids),
+            max(window_history_ids),
         )
-        if len(production_records) != len(window_history_ids):
+        selected_history_ids = set(window_history_ids)
+        history_map = {
+            int(row["id"]): dict(row)
+            for row in production_records
+            if int(row["id"]) in selected_history_ids
+        }
+        if len(history_map) != len(window_history_ids):
             raise RuntimeError("cloud Switch planning History row disappeared")
-        history_map = {int(row["id"]): dict(row) for row in production_records}
         ledger_records = await ledger.fetch(
             """select id,history_id,role,ordinal,original_ref,target_key,
                       switch_plan_sha256,switch_completed_at

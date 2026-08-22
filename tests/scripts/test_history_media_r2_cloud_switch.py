@@ -404,11 +404,14 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
             self.fetch_calls = 0
             self.queries = []
 
-        async def fetch(self, query, history_ids):
+        async def fetch(self, query, first_history_id, last_history_id):
             self.fetch_calls += 1
             self.queries.append(query)
-            selected = set(history_ids)
-            return [row for row in histories if row["id"] in selected]
+            return [
+                row
+                for row in histories
+                if first_history_id <= row["id"] <= last_history_id
+            ]
 
     class Ledger:
         async def fetch(self, _query, _run_id, history_ids):
@@ -427,7 +430,8 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
 
     assert len(batches) == 6
     assert production.fetch_calls == 2
-    assert all("unnest($1::integer[])" in query for query in production.queries)
+    assert all("h.id between $1 and $2" in query for query in production.queries)
+    assert all("unnest" not in query.lower() for query in production.queries)
     assert all(
         "id=any" not in query.replace(" ", "").lower() for query in production.queries
     )
