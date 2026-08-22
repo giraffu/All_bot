@@ -407,10 +407,19 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
         async def fetch(self, query, first_history_id, last_history_id):
             self.fetch_calls += 1
             self.queries.append(query)
-            return [
+            selected = [
                 row
                 for row in histories
                 if first_history_id <= row["id"] <= last_history_id
+            ]
+            return [
+                {
+                    "history_id": row["id"],
+                    "role": "output",
+                    "ordinal": 0,
+                    "value": row["output_file"],
+                }
+                for row in selected
             ]
 
     class Ledger:
@@ -431,7 +440,11 @@ async def test_successor_planner_prefetches_multiple_cas_batches_per_round_trip(
     assert len(batches) == 6
     assert production.fetch_calls == 2
     assert all("h.id between $1 and $2" in query for query in production.queries)
-    assert all("unnest" not in query.lower() for query in production.queries)
+    assert all("unnest($1::integer[])" not in query for query in production.queries)
+    assert all("jsonb_path_query" in query for query in production.queries)
+    assert all(
+        "select h.extra_outputs" not in query.lower() for query in production.queries
+    )
     assert all(
         "id=any" not in query.replace(" ", "").lower() for query in production.queries
     )
