@@ -9,10 +9,10 @@ describe('useDashboardNavigation', () => {
 
     expect(navigation.menuItems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: 'main_bot_menu', label: '主Bot菜单' }),
+        expect.objectContaining({ key: 'main_bot_menu', label: '入口控制' }),
       ])
     )
-    expect(navigation.currentTabTitle.value).toBe('主Bot菜单')
+    expect(navigation.currentTabTitle.value).toBe('入口控制')
   })
 
   it('keeps QQCC lazy bot settings out of the main dashboard shell', () => {

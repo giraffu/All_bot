@@ -31,8 +31,13 @@ def test_default_main_bot_menu_config_matches_current_menu_catalog():
         "menu.free_edit",
         "menu.video_lora",
         "menu.ltx_video",
+        "menu.advanced_video_pro",
         "menu.wan22_video_v2",
     ]
+    assert next(
+        item for item in config["main_menu"]["items"]
+        if item["key"] == "menu.advanced_video_pro"
+    )["visible"] is False
     assert config["submenus"] == {
         "menu.photo_edit": [
             {"key": "menu.photo_edit_faceswap", "visible": True},
@@ -74,7 +79,11 @@ def test_normalize_main_bot_menu_config_drops_unknowns_and_appends_missing_items
         {"key": "menu.profile", "visible": False},
         {"key": "menu.recharge", "visible": True},
     ]
-    assert len(config["main_menu"]["items"]) == 15
+    assert len(config["main_menu"]["items"]) == 16
+    assert next(
+        item for item in config["main_menu"]["items"]
+        if item["key"] == "menu.advanced_video_pro"
+    )["visible"] is False
     assert config["submenus"]["menu.photo_edit"] == [
         {"key": "menu.photo_edit_random_faceswap", "visible": False},
         {"key": "menu.photo_edit_faceswap", "visible": True},

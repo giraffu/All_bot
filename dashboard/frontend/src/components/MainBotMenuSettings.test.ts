@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   fetchMainBotMenuConfig: vi.fn(),
   updateMainBotMenuConfig: vi.fn(),
+  fetchFeatureEntryVisibilityConfig: vi.fn(),
+  updateFeatureEntryVisibilityConfig: vi.fn(),
 }))
 
 const messageMocks = vi.hoisted(() => ({
@@ -33,6 +35,7 @@ const mainItems = [
   'menu.free_edit',
   'menu.video_lora',
   'menu.ltx_video',
+  'menu.advanced_video_pro',
   'menu.wan22_video_v2',
 ]
 
@@ -58,12 +61,30 @@ const buildResponse = () => ({
   },
 })
 
+const buildEntryVisibilityResponse = () => ({
+  key: 'feature_entry_visibility_config:v1',
+  updated_at: null,
+  config: {
+    web: {
+      ltx_video: true,
+      minimax_h3: false,
+      character_assets: false,
+    },
+    gallery: { minimax_h3: false },
+  },
+})
+
 describe('MainBotMenuSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.fetchMainBotMenuConfig.mockResolvedValue(buildResponse())
+    apiMocks.fetchFeatureEntryVisibilityConfig.mockResolvedValue(buildEntryVisibilityResponse())
     apiMocks.updateMainBotMenuConfig.mockImplementation(async (payload) => ({
       ...buildResponse(),
+      config: payload,
+    }))
+    apiMocks.updateFeatureEntryVisibilityConfig.mockImplementation(async (payload) => ({
+      ...buildEntryVisibilityResponse(),
       config: payload,
     }))
   })
@@ -73,6 +94,9 @@ describe('MainBotMenuSettings', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('主 Bot 菜单')
+    expect(wrapper.text()).toContain('Web 端入口')
+    expect(wrapper.text()).toContain('修仙市集入口')
+    expect(wrapper.text()).toContain('高级图生视频 Pro')
     expect(wrapper.text()).toContain('懒人bot')
     expect(wrapper.text()).toContain('图片换脸 · 二级菜单')
     expect(wrapper.text()).toContain('快速换脸')
@@ -80,6 +104,27 @@ describe('MainBotMenuSettings', () => {
     expect(wrapper.text()).toContain('视频换脸')
     expect(wrapper.text()).toContain('返回主菜单固定可见')
     expect(wrapper.get('[data-testid="status-menu-photo_edit_random_faceswap"]').text()).toBe('隐藏')
+  })
+
+  it('saves Web and market visibility separately from the Bot menu', async () => {
+    const wrapper = mount(MainBotMenuSettings)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="entry-web-minimax_h3"]').setValue(true)
+    await wrapper.get('[data-testid="entry-gallery-minimax_h3"]').setValue(true)
+    await wrapper.get('[data-testid="save-feature-entry-visibility"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateFeatureEntryVisibilityConfig).toHaveBeenCalledWith({
+      web: {
+        ltx_video: true,
+        minimax_h3: true,
+        character_assets: false,
+      },
+      gallery: { minimax_h3: true },
+    })
+    expect(apiMocks.updateMainBotMenuConfig).not.toHaveBeenCalled()
+    expect(messageMocks.success).toHaveBeenCalledWith('Web 与修仙市集入口配置已保存')
   })
 
   it('changes row size, visibility, and main-menu order before saving', async () => {

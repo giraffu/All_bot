@@ -18,6 +18,7 @@ from jose import JWTError
 from dashboard.backend.auth import auth_router, get_current_user
 from dashboard.backend.routers import (
     gallery,
+    feature_entry_visibility,
     history,
     logs,
     main_bot_menu,
@@ -167,6 +168,7 @@ app.include_router(templates.router)
 app.include_router(system.router)
 app.include_router(logs.router)
 app.include_router(main_bot_menu.router)
+app.include_router(feature_entry_visibility.router)
 app.include_router(paid_group_guard.router)
 app.include_router(group_manage.router)
 app.include_router(workers.router)

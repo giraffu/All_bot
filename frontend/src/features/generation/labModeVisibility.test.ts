@@ -7,6 +7,7 @@ describe('test Web video feature visibility', () => {
     vi.resetModules()
     window.__ALLBOT_CONFIG__ = {
       enable_ltx_video: true,
+      enable_ltx_video_entry: true,
       enable_ltx_video_v2: false,
       enable_ltx_t2v: false,
       enable_character_assets: true,
@@ -15,6 +16,21 @@ describe('test Web video feature visibility', () => {
       enable_minimax_h3_entry: false,
       enable_minimax_h3_ref2v: true,
     }
+  })
+
+  it('keeps Web LTX and Pro entry switches independent from capabilities', async () => {
+    window.__ALLBOT_CONFIG__ = {
+      ...window.__ALLBOT_CONFIG__,
+      enable_ltx_video_entry: false,
+      enable_minimax_h3_entry: true,
+    }
+    vi.resetModules()
+
+    const { UNIFIED_LAB_MODES } = await import('./labModeConfig')
+    const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)
+
+    expect(visibleModeIds).not.toContain('ltx_video')
+    expect(visibleModeIds).toContain('minimax_h3')
   })
 
   it('shows original advanced video while hiding H3 Pro and character entry cards', async () => {

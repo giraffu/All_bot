@@ -152,17 +152,6 @@ async def post_shutdown(application):
 
 
 def build_advanced_video_entry_handler():
-    from src.services.advanced_video_entry_policy import (
-        minimax_h3_advanced_video_entry_enabled,
-    )
-
-    if minimax_h3_advanced_video_entry_enabled():
-        from src.handlers.fsm.advanced_video_pro_fsm import (
-            get_advanced_video_pro_fsm_handler,
-        )
-
-        return get_advanced_video_pro_fsm_handler()
-
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
 
     return get_ltx_video_fsm_handler()
@@ -170,11 +159,10 @@ def build_advanced_video_entry_handler():
 
 def build_advanced_video_compatibility_handlers():
     from src.services.advanced_video_entry_policy import (
-        minimax_h3_advanced_video_entry_enabled,
         minimax_h3_backend_enabled,
     )
 
-    if not minimax_h3_backend_enabled() or minimax_h3_advanced_video_entry_enabled():
+    if not minimax_h3_backend_enabled():
         return []
 
     from src.handlers.fsm.advanced_video_pro_fsm import (

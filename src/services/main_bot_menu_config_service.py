@@ -25,6 +25,7 @@ MAIN_MENU_KEYS = (
     "menu.free_edit",
     "menu.video_lora",
     "menu.ltx_video",
+    "menu.advanced_video_pro",
     "menu.wan22_video_v2",
 )
 
@@ -43,7 +44,13 @@ SUBMENU_KEYS = {
 DEFAULT_MAIN_BOT_MENU_CONFIG: dict[str, Any] = {
     "main_menu": {
         "buttons_per_row": 3,
-        "items": [{"key": key, "visible": True} for key in MAIN_MENU_KEYS],
+        "items": [
+            {
+                "key": key,
+                "visible": key != "menu.advanced_video_pro",
+            }
+            for key in MAIN_MENU_KEYS
+        ],
     },
     "submenus": {
         parent_key: [{"key": key, "visible": True} for key in item_keys]
@@ -79,7 +86,12 @@ def _normalize_items(raw: Any, allowed_keys: tuple[str, ...]) -> list[dict[str, 
         )
 
     normalized.extend(
-        {"key": key, "visible": True} for key in allowed_keys if key not in seen
+        {
+            "key": key,
+            "visible": key != "menu.advanced_video_pro",
+        }
+        for key in allowed_keys
+        if key not in seen
     )
     return normalized
 

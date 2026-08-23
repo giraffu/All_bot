@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
 
 import {
+  fetchFeatureEntryVisibilityConfig,
   fetchMainBotMenuConfig,
+  updateFeatureEntryVisibilityConfig,
   updateMainBotMenuConfig,
 } from '../api/api'
 
@@ -28,6 +30,23 @@ interface MainBotMenuConfigResponse {
   updated_at?: string | null
 }
 
+interface FeatureEntryVisibilityConfig {
+  web: {
+    ltx_video: boolean
+    minimax_h3: boolean
+    character_assets: boolean
+  }
+  gallery: {
+    minimax_h3: boolean
+  }
+}
+
+interface FeatureEntryVisibilityConfigResponse {
+  key: string
+  config: FeatureEntryVisibilityConfig
+  updated_at?: string | null
+}
+
 const MENU_LABELS: Record<string, string> = {
   'menu.lazy_bot': '懒人bot',
   'menu.recharge': '充值灵石',
@@ -43,6 +62,7 @@ const MENU_LABELS: Record<string, string> = {
   'menu.free_edit': '自由P图',
   'menu.video_lora': '图生视频',
   'menu.ltx_video': '高级图生视频',
+  'menu.advanced_video_pro': '高级图生视频 Pro',
   'menu.wan22_video_v2': '图生视频v2',
   'menu.photo_edit_faceswap': '快速换脸',
   'menu.photo_edit_random_faceswap': '随机换脸',
@@ -61,10 +81,29 @@ const emptyConfig = (): MainBotMenuConfig => ({
   submenus: {},
 })
 
+const emptyEntryConfig = (): FeatureEntryVisibilityConfig => ({
+  web: {
+    ltx_video: true,
+    minimax_h3: false,
+    character_assets: false,
+  },
+  gallery: { minimax_h3: false },
+})
+
+const WEB_ENTRY_OPTIONS = [
+  { key: 'ltx_video' as const, label: '高级图生视频', description: 'Web 练功房中的原高级图生视频入口' },
+  { key: 'minimax_h3' as const, label: '高级图生视频 Pro', description: 'Web 练功房中的 Pro 工作台入口' },
+  { key: 'character_assets' as const, label: '人物角色图', description: 'Web 练功房和人物资产导航入口' },
+]
+
 const loading = ref(false)
 const saving = ref(false)
+const entryLoading = ref(false)
+const entrySaving = ref(false)
 const updatedAt = ref<string | null>(null)
+const entryUpdatedAt = ref<string | null>(null)
 const config = ref<MainBotMenuConfig>(emptyConfig())
+const entryConfig = ref<FeatureEntryVisibilityConfig>(emptyEntryConfig())
 
 const visibleMainCount = computed(() =>
   config.value.main_menu.items.filter((item) => item.visible).length
@@ -83,6 +122,13 @@ const cloneConfig = (value: MainBotMenuConfig): MainBotMenuConfig => ({
   ),
 })
 
+const cloneEntryConfig = (
+  value: FeatureEntryVisibilityConfig,
+): FeatureEntryVisibilityConfig => ({
+  web: { ...value.web },
+  gallery: { ...value.gallery },
+})
+
 const testIdKey = (key: string) => key.replaceAll('.', '-')
 const labelFor = (key: string) => MENU_LABELS[key] ?? key
 
@@ -96,6 +142,11 @@ const applyResponse = (payload: MainBotMenuConfigResponse) => {
   updatedAt.value = payload.updated_at ?? null
 }
 
+const applyEntryResponse = (payload: FeatureEntryVisibilityConfigResponse) => {
+  entryConfig.value = cloneEntryConfig(payload.config)
+  entryUpdatedAt.value = payload.updated_at ?? null
+}
+
 const loadConfig = async () => {
   loading.value = true
   try {
@@ -105,6 +156,21 @@ const loadConfig = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadEntryConfig = async () => {
+  entryLoading.value = true
+  try {
+    applyEntryResponse(await fetchFeatureEntryVisibilityConfig())
+  } catch {
+    message.error('加载 Web 与修仙市集入口配置失败')
+  } finally {
+    entryLoading.value = false
+  }
+}
+
+const reloadAll = async () => {
+  await Promise.all([loadEntryConfig(), loadConfig()])
 }
 
 const moveMainItem = (index: number, offset: -1 | 1) => {
@@ -131,8 +197,23 @@ const saveConfig = async () => {
   }
 }
 
+const saveEntryConfig = async () => {
+  entrySaving.value = true
+  try {
+    const saved = await updateFeatureEntryVisibilityConfig(
+      cloneEntryConfig(entryConfig.value),
+    )
+    applyEntryResponse(saved)
+    message.success('Web 与修仙市集入口配置已保存')
+  } catch {
+    message.error('保存 Web 与修仙市集入口配置失败')
+  } finally {
+    entrySaving.value = false
+  }
+}
+
 onMounted(() => {
-  void loadConfig()
+  void reloadAll()
 })
 </script>
 
@@ -141,24 +222,19 @@ onMounted(() => {
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div class="header-row">
         <div>
-          <h2 class="text-lg font-semibold text-slate-950">主 Bot 菜单</h2>
+          <h2 class="text-lg font-semibold text-slate-950">入口与菜单控制</h2>
           <p class="mt-1 text-sm text-slate-500">
-            这里只控制 Telegram 菜单按钮是否展示，不会停用任务、旧按钮或文字入口。
+            分别管理 Web、修仙市集和主 Bot 的展示入口；不会停用任务、旧按钮、深链或文字命令。
           </p>
-          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(updatedAt) }}</p>
         </div>
         <div class="toolbar">
-          <button type="button" class="secondary-button" :disabled="loading" @click="loadConfig">
-            {{ loading ? '刷新中…' : '刷新' }}
-          </button>
           <button
             type="button"
-            class="primary-button"
-            data-testid="save-main-bot-menu"
-            :disabled="saving || loading"
-            @click="saveConfig"
+            class="secondary-button"
+            :disabled="loading || entryLoading"
+            @click="reloadAll"
           >
-            {{ saving ? '保存中…' : '保存配置' }}
+            {{ loading || entryLoading ? '刷新中…' : '全部刷新' }}
           </button>
         </div>
       </div>
@@ -167,18 +243,103 @@ onMounted(() => {
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div class="section-heading">
         <div>
-          <h3 class="text-base font-semibold text-slate-900">主菜单按钮</h3>
-          <p class="mt-1 text-sm text-slate-500">顺序从上到下排列，Bot 会按设置的每行数量自动换行。</p>
+          <h3 class="text-base font-semibold text-slate-900">Web 端入口</h3>
+          <p class="mt-1 text-sm text-slate-500">用户刷新或重新打开 Web 后读取最新配置。</p>
+          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(entryUpdatedAt) }}</p>
         </div>
-        <label class="row-size-control">
-          <span>每行按钮数</span>
-          <select
-            v-model.number="config.main_menu.buttons_per_row"
-            data-testid="buttons-per-row"
+        <button
+          type="button"
+          class="primary-button"
+          data-testid="save-feature-entry-visibility"
+          :disabled="entrySaving || entryLoading"
+          @click="saveEntryConfig"
+        >
+          {{ entrySaving ? '保存中…' : '保存 Web / 市集' }}
+        </button>
+      </div>
+
+      <div class="entry-scope-grid">
+        <article class="entry-scope-card">
+          <h4 class="font-semibold text-slate-900">Web 端入口</h4>
+          <p class="mt-1 text-xs text-slate-500">控制练功房及对应导航卡片。</p>
+          <div class="mt-3 space-y-2">
+            <div v-for="item in WEB_ENTRY_OPTIONS" :key="item.key" class="submenu-item">
+              <div>
+                <div class="text-sm font-medium text-slate-800">{{ item.label }}</div>
+                <div class="text-xs text-slate-400">{{ item.description }}</div>
+              </div>
+              <div class="menu-actions">
+                <span class="visibility-tag" :class="entryConfig.web[item.key] ? 'is-visible' : 'is-hidden'">
+                  {{ entryConfig.web[item.key] ? '可见' : '隐藏' }}
+                </span>
+                <label class="visibility-switch">
+                  <input
+                    v-model="entryConfig.web[item.key]"
+                    type="checkbox"
+                    :data-testid="`entry-web-${item.key}`"
+                  />
+                  <span class="switch-track" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="entry-scope-card">
+          <h4 class="font-semibold text-slate-900">修仙市集入口</h4>
+          <p class="mt-1 text-xs text-slate-500">只控制市集筛选入口，不隐藏已有作品。</p>
+          <div class="mt-3 space-y-2">
+            <div class="submenu-item">
+              <div>
+                <div class="text-sm font-medium text-slate-800">高级图生视频 Pro</div>
+                <div class="text-xs text-slate-400">市集类型筛选与分组页签</div>
+              </div>
+              <div class="menu-actions">
+                <span class="visibility-tag" :class="entryConfig.gallery.minimax_h3 ? 'is-visible' : 'is-hidden'">
+                  {{ entryConfig.gallery.minimax_h3 ? '可见' : '隐藏' }}
+                </span>
+                <label class="visibility-switch">
+                  <input
+                    v-model="entryConfig.gallery.minimax_h3"
+                    type="checkbox"
+                    data-testid="entry-gallery-minimax_h3"
+                  />
+                  <span class="switch-track" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="section-heading">
+        <div>
+          <h3 class="text-base font-semibold text-slate-900">主 Bot 菜单按钮</h3>
+          <p class="mt-1 text-sm text-slate-500">顺序从上到下排列，Bot 会按设置的每行数量自动换行。</p>
+          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(updatedAt) }}</p>
+        </div>
+        <div class="toolbar">
+          <label class="row-size-control">
+            <span>每行按钮数</span>
+            <select
+              v-model.number="config.main_menu.buttons_per_row"
+              data-testid="buttons-per-row"
+            >
+              <option v-for="count in 4" :key="count" :value="count">{{ count }}</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            class="primary-button"
+            data-testid="save-main-bot-menu"
+            :disabled="saving || loading"
+            @click="saveConfig"
           >
-            <option v-for="count in 4" :key="count" :value="count">{{ count }}</option>
-          </select>
-        </label>
+            {{ saving ? '保存中…' : '保存主 Bot' }}
+          </button>
+        </div>
       </div>
 
       <div class="menu-list">
@@ -300,6 +461,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .icon-button { width: 2rem; height: 2rem; padding: 0; }
 .submenu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .submenu-card { border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: 1rem; }
+.entry-scope-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.entry-scope-card { border: 1px solid #dbeafe; border-radius: .75rem; background: #f8fbff; padding: 1rem; }
 .fixed-back-item { border: 1px dashed #cbd5e1; border-radius: .6rem; padding: .65rem .8rem; color: #64748b; font-size: .8rem; text-align: center; }
 @media (max-width: 760px) {
   .main-bot-menu-settings > section { padding: .75rem; }
@@ -310,5 +473,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .menu-item, .submenu-item { padding: .65rem; }
   .menu-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .submenu-grid { grid-template-columns: 1fr; }
+  .entry-scope-grid { grid-template-columns: 1fr; }
 }
 </style>

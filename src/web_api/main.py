@@ -26,6 +26,7 @@ from src.database.core import engine
 from src.web_api.routers import (
     auth,
     characters,
+    entry_visibility,
     gallery,
     media_archive,
     payment,
@@ -267,6 +268,7 @@ app.include_router(
     tags=["Private Bots"],
 )
 app.include_router(site_notice.router)
+app.include_router(entry_visibility.router)
 
 
 @app.get("/api/health", tags=["Health"])

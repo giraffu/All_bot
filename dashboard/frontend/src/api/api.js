@@ -303,6 +303,12 @@ export const fetchMainBotMenuConfig = async () => get('/api/main-bot/menu-config
 export const updateMainBotMenuConfig = async (payload) =>
   put('/api/main-bot/menu-config', payload)
 
+export const fetchFeatureEntryVisibilityConfig = async () =>
+  get('/api/entry-visibility')
+
+export const updateFeatureEntryVisibilityConfig = async (payload) =>
+  put('/api/entry-visibility', payload)
+
 /**
  * @param {{ page?: number, pageSize?: number, reason?: string | null, userId?: string | null, startDate?: string | null, endDate?: string | null }} [options]
  */

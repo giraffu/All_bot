@@ -201,10 +201,10 @@ sequenceDiagram
   `lora_items`，同时返回 `required_image_count=1|2`；不返回任何可复用原图。
   缺少完整上下文的旧投稿继续支持社区互动，但禁用一键应用并返回
   `minimax_h3_context_missing`。T2V/REF2V 返回 `minimax_h3_mode_not_supported`。
-- Web 的 H3 Pro 入口还必须受 `enable_minimax_h3` 约束。正式环境关闭时，前端
-  隐藏 H3 Gallery 页签和投稿入口，并拒绝打开 H3 一键应用工作台；既有帖子仍可
-  在“全部”中展示和互动。测试环境开启该开关时才恢复上述 H3 入口。该 UI gate
-  不改变后端对历史数据、终态任务和社区互动的兼容。
+- Web 的 H3 Pro 能力还必须受 `enable_minimax_h3` 约束；修仙市集页签由 Dashboard
+  的 Gallery `minimax_h3` 入口开关独立控制，不再复用 Web 练功房的 Pro 入口开关。
+  任一能力 gate 关闭时都隐藏 H3 Gallery 页签；既有帖子仍可在“全部”中展示和互动，
+  详情、模板深链和后端历史兼容不受影响。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
 - 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。

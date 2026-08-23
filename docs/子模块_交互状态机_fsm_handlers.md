@@ -1,11 +1,12 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
-主菜单继续使用稳定配置键 `menu.ltx_video`，但公开入口跟随独立展示闸门：
-`MINIMAX_H3_ENTRY_ENABLED=true` 且后端能力开启时展示“高级图生视频pro”并注册
-`advanced_video_pro_fsm.py`；入口闸门关闭时展示“高级图生视频”并注册
-`ltx_video_fsm.py`。H3 后端能力可继续保持开启，隐藏入口不会改变 Web/API、任务执行面
-或 `/advanced_video_pro` 兼容命令；隐藏态的 H3 handler 不再抢占 `/ltx_video`、
-`fsm_start_ltx_video` 与旧 LTX callback。H3 入口选择四个公开模式、时长、画质档位与比例，
+主菜单把原高级图生视频与 Pro 分成稳定配置键 `menu.ltx_video` 和
+`menu.advanced_video_pro`。Dashboard 可分别排序和显隐两个按钮；Bot 每次发送新键盘时
+从数据库加载最新配置，不依赖代码发布或环境变量切换展示。LTX handler 始终注册；H3
+后端能力开启时另行注册只声明 `/advanced_video_pro` 和 Pro 文案的
+`advanced_video_pro_fsm.py`，不抢占 `/ltx_video`、`fsm_start_ltx_video` 与旧 LTX
+callback。隐藏入口不会改变 Web/API、任务执行面或 `/advanced_video_pro` 兼容命令。
+H3 入口选择四个公开模式、时长、画质档位与比例，
 再按模式收集 0/1/2 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
@@ -111,7 +112,7 @@ FSM 入口与过程中，当前推荐组合为：
 
 ### 3.3 主 Bot 与 QQCC 重复入口收口
 
-主 Bot 的 Reply Keyboard 支持运行时展示配置。事实源为 `src/services/main_bot_menu_config_service.py` 与 `runtime_checkpoints` 中的 `main_bot_menu_config:v1`；Dashboard 通过认证接口 `/api/main-bot/menu-config` 管理主菜单排序、每行 1–4 个按钮，以及主菜单和“图片换脸”“视频生视频”二级菜单的显隐。配置不引入数据库迁移；读取失败时必须回退完整默认菜单，避免故障期间误隐藏入口。
+主 Bot 的 Reply Keyboard 支持运行时展示配置。事实源为 `src/services/main_bot_menu_config_service.py` 与 `runtime_checkpoints` 中的 `main_bot_menu_config:v1`；Dashboard 通过认证接口 `/api/main-bot/menu-config` 管理主菜单排序、每行 1–4 个按钮，以及主菜单和“图片换脸”“视频生视频”二级菜单的显隐。原高级图生视频与 Pro 是两个独立项目；新增 Pro 项对旧 checkpoint 采用默认隐藏，避免升级后自行开放。配置不引入数据库迁移；读取失败时必须回退完整默认菜单，避免故障期间误隐藏入口。
 
 `/start`、`/cancel`、返回主菜单、语言切换、未知输入兜底、空闲图片提示和两个二级菜单入口都在发送新键盘前加载最新配置。Telegram 已经发出的旧键盘不会主动撤回；隐藏只影响后续 Reply Keyboard 展示，不停用 route、FSM、旧按钮或手工文本入口。二级菜单的“返回主菜单”固定可见，`QQCC_LAZY_BOT_ENABLED` 等既有安全/能力闸门仍优先，展示配置只能进一步隐藏。
 

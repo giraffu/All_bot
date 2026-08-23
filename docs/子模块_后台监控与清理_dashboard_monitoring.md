@@ -46,6 +46,11 @@ sequenceDiagram
 - 管理员显式触发的终止、清理与只读查询
 - 用户列表过滤/排序与用户资产迁移预览；用户转移接口支持 `dry_run=true` 先返回迁移计划且不修改数据库
 - 管理接口鉴权与审计
+- “入口控制”页分开管理 Web 练功房、修仙市集和主 Bot：Web/市集配置写入
+  `feature_entry_visibility_config:v1`，主 Bot 菜单继续写入
+  `main_bot_menu_config:v1`。展示开关只影响新页面/新键盘，不停用任务、历史详情、
+  模板深链、旧 Telegram 按钮或命令。Web 读取公开安全布尔值，写接口仍受 Dashboard
+  鉴权与 Cloudflare Access 双层保护。
 - Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
   查询、状态转换、Telegram 投递与事务提交已收口到
   `support_ticket_admin_service.py`。`private_bots.py` 与
