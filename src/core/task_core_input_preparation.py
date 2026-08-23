@@ -70,6 +70,7 @@ async def prepare_task_submission_payload(
     username: str,
     task_type: str,
     inputs: dict,
+    registry_task_id: str | None = None,
     strategy: Any,
     base_priority: int,
     is_template: bool,
@@ -80,6 +81,7 @@ async def prepare_task_submission_payload(
     get_user_priority_and_identity_func: Callable[[int], Awaitable[tuple[int, Any, Any]]],
     load_prompts_func: Callable[[], dict[str, str]],
     process_input_path_func: Callable[..., Awaitable[str]],
+    promote_staged_inputs_func: Callable[..., Awaitable[list[str]]] | None = None,
     bucket_name: str,
 ) -> TaskSubmissionContext:
     user_logger = user_logger_factory(user_id, username)
@@ -89,6 +91,12 @@ async def prepare_task_submission_payload(
         paths_to_upload=paths_to_upload,
         bucket_name=bucket_name,
     )
+    if promote_staged_inputs_func is not None and registry_task_id and paths_to_upload:
+        paths_to_upload = await promote_staged_inputs_func(
+            input_refs=paths_to_upload,
+            task_id=registry_task_id,
+            user_id=user_id,
+        )
 
     priority, _, _ = await get_user_priority_and_identity_func(user_id)
     final_priority = min(base_priority + priority, 100)

@@ -79,6 +79,7 @@ class TaskApplication:
                 username=command.username,
                 task_type=task_type,
                 inputs=command.inputs,
+                registry_task_id=registry_task_id,
                 base_priority=policy.base_priority,
                 is_template=policy.is_template,
                 request=request,

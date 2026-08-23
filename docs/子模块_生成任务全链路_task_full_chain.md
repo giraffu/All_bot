@@ -210,7 +210,8 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 
 生产 Web/Bot/QQCC/Dashboard 已全部使用该门面。旧 `process_and_submit_task(...)`
 只保留为要求显式 dependencies 的测试/兼容适配器；输入准备、扣费、派发、补偿
-和锁释放由 `task_core_process_flow.py` 的阶段函数实现。
+和锁释放由 `task_core_process_flow.py` 的阶段函数实现。其注入式输入门禁在
+扣费/派发前提升策略 staging 输入，覆盖 Bot 和 Web `face_swap` 命名字段。
 
 ### 6.2 provider / dependency 边界
 

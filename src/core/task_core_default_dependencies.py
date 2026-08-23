@@ -202,6 +202,7 @@ def build_default_task_core_process_input_builder(
     get_user_priority_and_identity_func,
     load_prompts_func,
     process_input_path_func,
+    promote_staged_inputs_func,
     bucket_name,
 ):
     async def prepare_task_submission_payload_func(**kwargs):
@@ -210,6 +211,7 @@ def build_default_task_core_process_input_builder(
             username=kwargs["username"],
             task_type=kwargs["task_type"],
             inputs=kwargs["inputs"],
+            registry_task_id=kwargs["registry_task_id"],
             strategy=kwargs["strategy"],
             base_priority=kwargs["base_priority"],
             is_template=kwargs["is_template"],
@@ -220,6 +222,7 @@ def build_default_task_core_process_input_builder(
             get_user_priority_and_identity_func=get_user_priority_and_identity_func,
             load_prompts_func=load_prompts_func,
             process_input_path_func=process_input_path_func,
+            promote_staged_inputs_func=promote_staged_inputs_func,
             bucket_name=bucket_name,
         )
 
@@ -275,6 +278,7 @@ def build_default_task_core_process_dependencies(
     get_user_priority_and_identity_func,
     load_prompts_func,
     process_input_path_func,
+    promote_staged_inputs_func=None,
     bucket_name,
     shield_func=asyncio.shield,
     logger_override=logger,
@@ -285,6 +289,7 @@ def build_default_task_core_process_dependencies(
         get_user_priority_and_identity_func=get_user_priority_and_identity_func,
         load_prompts_func=load_prompts_func,
         process_input_path_func=process_input_path_func,
+        promote_staged_inputs_func=promote_staged_inputs_func,
         bucket_name=bucket_name,
     )
     billing_bindings = build_default_task_core_process_billing_bindings(

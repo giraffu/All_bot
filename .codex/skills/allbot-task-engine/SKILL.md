@@ -25,9 +25,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 
 ## 2. 稳定接口与分层
 
-- `TaskApplication(dependencies=...).submit(command, policy, journal)` 是新的任务
-  提交 application seam：command 只放请求事实，policy 放入口控制/idempotency/
-  timeout，journal 承载 Web intent、Bot recovery 或私有 QQCC ledger 状态。
+- `TaskApplication(...).submit(...)` 是提交 seam；command、policy、journal 分别
+  承载请求事实、入口控制和恢复/账本。注入依赖在扣费/派发前按 registry task ID
+  提升策略 staging 输入，入口不得复制门禁。
 - `process_and_submit_task(...)` 只保留为测试/兼容适配层，调用时必须显式提供
   `TaskCoreProcessDependencies`；生产 Web/Bot/QQCC/Dashboard 不得再导入它，也不得
   增加 callback 参数。优先级只影响队列；`user_cancel_allowed=false`

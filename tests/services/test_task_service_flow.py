@@ -7,6 +7,11 @@ from unittest.mock import ANY, AsyncMock, Mock
 import pytest
 from asgi_correlation_id import correlation_id
 
+from src.core.task_application import TaskApplication
+from src.core.task_core_default_dependencies import (
+    build_default_task_core_process_dependencies,
+)
+from src.core.task_core_types import TaskSubmissionExecutionResult, VideoTaskRequest
 from src.services import task_service_flow
 from src.services.private_bot_update_admission import (
     PrivateBotUpdateAdmissionScope,
@@ -91,6 +96,109 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     assert policy.base_priority == 0
     assert policy.user_cancel_allowed is True
     assert journal.expected_registry_task_id == task_id
+
+
+@pytest.mark.asyncio
+async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
+    strategy = SimpleNamespace(
+        get_cost=lambda _inputs: 2,
+        get_file_paths_to_upload=lambda inputs: [
+            inputs["target_image"],
+            inputs["face_image"],
+        ],
+        get_metadata=lambda inputs: {
+            "saved_inputs": list(inputs["saved_input_images"])
+        },
+    )
+    promote = AsyncMock()
+
+    async def promote_for_task(*, input_refs, task_id, user_id):
+        assert input_refs == [
+            "staging/user-uploads/456/body.png",
+            "staging/user-uploads/456/face.png",
+        ]
+        assert user_id == 456
+        promoted = [
+            f"task-inputs/{task_id}/0.png",
+            f"task-inputs/{task_id}/1.png",
+        ]
+        promote.return_value = promoted
+        return promoted
+
+    promote.side_effect = promote_for_task
+
+    async def execute_saga(**kwargs):
+        context = kwargs["submission_context"]
+        await kwargs["before_dispatch_func"](
+            registry_task_id=kwargs["registry_task_id"],
+            cost=kwargs["cost"],
+            saved_inputs=context.saved_inputs,
+        )
+        return TaskSubmissionExecutionResult(
+            registry_task_id=kwargs["registry_task_id"],
+            backend_task_id="backend-1",
+            submission_context=context,
+        )
+
+    async def keep_object_key(user_logger, path, **_kwargs):
+        assert user_logger.user_id == 456
+        return path
+
+    async def get_priority(_user_id):
+        return 0, "user", "title"
+
+    dependencies = build_default_task_core_process_dependencies(
+        video_task_types=set(),
+        build_video_task_request_func=lambda *_args: VideoTaskRequest(),
+        check_concurrency_lock_func=AsyncMock(return_value=(True, "")),
+        check_and_deduct_credits_func=AsyncMock(return_value=(True, "")),
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=AsyncMock(),
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        get_strategy_func=lambda _task_type: strategy,
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id, username=username
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=get_priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=keep_object_key,
+        promote_staged_inputs_func=promote,
+        bucket_name="user-data-prod",
+        logger_override=Mock(),
+    )
+    runtime_state = SimpleNamespace(
+        task_submitted=False,
+        actual_cost=0,
+        registry_task_id=None,
+        backend_task_id=None,
+    )
+    submission = BotTaskSubmissionContext(
+        runtime_state=runtime_state,
+        internal_user_id=456,
+        username="tester",
+        task_type="face_swap",
+        inputs={
+            "target_image": "staging/user-uploads/456/body.png",
+            "face_image": "staging/user-uploads/456/face.png",
+            "prompt": "swap",
+        },
+        deduct_quota=False,
+    )
+
+    task_id, backend_task_id, saved_inputs = await task_service_flow.submit_bot_task(
+        submission=submission,
+        task_application=TaskApplication(dependencies=dependencies),
+    )
+
+    assert backend_task_id == "backend-1"
+    assert saved_inputs == [
+        f"task-inputs/{task_id}/0.png",
+        f"task-inputs/{task_id}/1.png",
+    ]
+    assert submission.inputs["saved_input_images"] == saved_inputs
+    assert promote.await_count == 1
 
 
 def test_select_result_saved_inputs_uses_requested_indices_with_fallback():
