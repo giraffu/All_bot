@@ -1175,19 +1175,26 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     replacement_paths = fsm_data.pop("reference_image_replacement_paths", {})
     fsm_data.pop("reference_image_replacement_file_ids", None)
-    unused_replacement_paths = [
+    all_replacement_paths = [
         str(path)
         for path in (
             replacement_paths.values()
             if isinstance(replacement_paths, dict)
             else []
         )
-        if path and str(path) != str(selected_reference_image_path or "")
+        if path
     ]
-    cleanup_fsm_temp_files(unused_replacement_paths)
-    submission_temp_paths = [
-        str(path) for path in (image_path, selected_reference_image_path) if path
-    ]
+    submission_temp_paths = list(
+        dict.fromkeys(
+            str(path)
+            for path in (
+                image_path,
+                selected_reference_image_path,
+                *all_replacement_paths,
+            )
+            if path
+        )
+    )
     if isinstance(plan, QuickVideoSubmissionReject):
         if qqcc_config is not None:
             await _reply_qqcc_feature_disabled(update, context)
