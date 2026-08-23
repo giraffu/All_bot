@@ -704,6 +704,9 @@ def build_bulk_retirement_successor_manifest(
     predecessor_quarantined_asset_coordinate_count: int,
     predecessor_quarantined_rowset_sha256: str,
     predecessor_quarantined_evidence_sha256: str,
+    predecessor_live_reference_retained_object_count: int,
+    predecessor_live_reference_retained_asset_coordinate_count: int,
+    predecessor_live_reference_retained_rowset_sha256: str,
     remaining_object_count: int,
     remaining_asset_coordinate_count: int,
     remaining_total_bytes: int,
@@ -754,9 +757,24 @@ def build_bulk_retirement_successor_manifest(
         or predecessor_quarantined_evidence_sha256 != empty_proof
     ):
         raise RuntimeError("bulk retirement empty quarantine proof is invalid")
+    if (
+        predecessor_live_reference_retained_object_count < 0
+        or predecessor_live_reference_retained_asset_coordinate_count < 0
+        or predecessor_live_reference_retained_object_count
+        > predecessor_retained_object_count
+        or predecessor_live_reference_retained_asset_coordinate_count
+        > predecessor_retained_asset_coordinate_count
+        or len(predecessor_live_reference_retained_rowset_sha256) != 64
+    ):
+        raise RuntimeError("bulk retirement live reference proof is invalid")
+    if not predecessor_live_reference_retained_object_count and (
+        predecessor_live_reference_retained_asset_coordinate_count
+        or predecessor_live_reference_retained_rowset_sha256 != empty_proof
+    ):
+        raise RuntimeError("bulk retirement empty live reference proof is invalid")
 
     manifest: dict[str, Any] = {
-        "schema": "allbot-history-media-r2-bulk-retirement-plan/v4",
+        "schema": "allbot-history-media-r2-bulk-retirement-plan/v5",
         "execution_mode": "bulk",
         "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
         "run_id": str(predecessor_manifest["run_id"]),
@@ -797,6 +815,15 @@ def build_bulk_retirement_successor_manifest(
         ),
         "predecessor_quarantined_evidence_sha256": str(
             predecessor_quarantined_evidence_sha256
+        ),
+        "predecessor_live_reference_retained_object_count": int(
+            predecessor_live_reference_retained_object_count
+        ),
+        "predecessor_live_reference_retained_asset_coordinate_count": int(
+            predecessor_live_reference_retained_asset_coordinate_count
+        ),
+        "predecessor_live_reference_retained_rowset_sha256": str(
+            predecessor_live_reference_retained_rowset_sha256
         ),
         "root_object_count": root_object_count,
         "object_count": int(remaining_object_count),
@@ -2671,9 +2698,11 @@ async def _materialize_bulk_retirement_order(
     )
 
 
-async def _bulk_production_has_live_refs(
+async def _materialize_bulk_production_live_source_hashes(
     ledger: asyncpg.Connection,
     production: asyncpg.Connection,
+    *,
+    eligible_only: bool,
 ) -> int:
     async with production.transaction():
         await production.execute(
@@ -2683,12 +2712,15 @@ async def _bulk_production_has_live_refs(
         await production.execute("set local work_mem='256MB'")
         await production.execute("set local max_parallel_workers_per_gather=0")
         async with ledger.transaction():
+            disposition_filter = (
+                "where retirement_disposition='eligible'" if eligible_only else ""
+            )
             statement = await ledger.prepare(
-                """select distinct sha256(convert_to(source_key,'UTF8'))
-                             source_key_sha256
-                      from bulk_retirement_candidates
-                     where retirement_disposition='eligible'
-                     order by source_key_sha256"""
+                f"""select distinct sha256(convert_to(source_key,'UTF8'))
+                              source_key_sha256
+                       from bulk_retirement_candidates
+                       {disposition_filter}
+                      order by source_key_sha256"""
             )
             pending: list[tuple[bytes]] = []
             async for row in statement.cursor(prefetch=10000):
@@ -2736,13 +2768,13 @@ async def _bulk_production_has_live_refs(
                 "select count(*) from bulk_retirement_live_source_hashes"
             )
         )
-        if not match_count:
-            return 0
         await ledger.execute(
             """create temporary table bulk_retirement_live_source_hashes(
                  source_key_sha256 bytea not null primary key)
                  on commit preserve rows"""
         )
+        if not match_count:
+            return 0
         statement = await production.prepare(
             """select source_key_sha256
                  from bulk_retirement_live_source_hashes
@@ -2766,20 +2798,34 @@ async def _bulk_production_has_live_refs(
                     records=pending,
                     columns=["source_key_sha256"],
                 )
-            updated = await ledger.fetchval(
-                """with changed as (
-                     update bulk_retirement_candidates c
-                        set retirement_disposition='deferred'
-                      where retirement_disposition='eligible'
-                        and sha256(convert_to(source_key,'UTF8')) in (
-                          select source_key_sha256
-                            from bulk_retirement_live_source_hashes)
-                      returning 1)
-                   select count(*) from changed"""
-            )
-        if int(updated) != match_count:
-            raise RuntimeError("bulk retirement live reference classification drifted")
         return match_count
+
+
+async def _bulk_production_has_live_refs(
+    ledger: asyncpg.Connection,
+    production: asyncpg.Connection,
+) -> int:
+    match_count = await _materialize_bulk_production_live_source_hashes(
+        ledger,
+        production,
+        eligible_only=True,
+    )
+    if not match_count:
+        return 0
+    updated = await ledger.fetchval(
+        """with changed as (
+             update bulk_retirement_candidates c
+                set retirement_disposition='deferred'
+              where retirement_disposition='eligible'
+                and sha256(convert_to(source_key,'UTF8')) in (
+                  select source_key_sha256
+                    from bulk_retirement_live_source_hashes)
+              returning 1)
+           select count(*) from changed"""
+    )
+    if int(updated) != match_count:
+        raise RuntimeError("bulk retirement live reference classification drifted")
+    return match_count
 
 
 def _candidate_from_bulk_stage(row: Any) -> dict[str, Any]:
@@ -2952,6 +2998,34 @@ async def _bulk_predecessor_quarantine_proof(
     return _sha256_json(identities), len(identities), asset_count
 
 
+async def _bulk_predecessor_live_reference_proof(
+    ledger: asyncpg.Connection,
+    plan_sha256: str,
+) -> tuple[str, int, int]:
+    rows = await ledger.fetch(
+        """select source_name,source_key,byte_size,source_etag,
+                  source_last_modified,asset_count,scope_asset_count,scope_facts,
+                  target_facts,retirement_disposition
+             from analytics_history_media_r2_retirement_objects
+            where plan_sha256=$1 and status='blocked'
+              and error_code='LIVE_HISTORY_REFERENCE'
+            order by source_key_sha256""",
+        plan_sha256,
+    )
+    identities: list[dict[str, Any]] = []
+    asset_count = 0
+    for row in rows:
+        candidate = {
+            **_candidate_from_bulk_stage(row),
+            "archive_sha256": "",
+            "nas_bucket": "",
+            "nas_key": "",
+        }
+        identities.append(_retirement_object_identity(candidate))
+        asset_count += int(row["scope_asset_count"])
+    return _sha256_json(identities), len(identities), asset_count
+
+
 async def _validate_bulk_successor_predecessor(
     ledger: asyncpg.Connection,
     manifest: dict[str, Any],
@@ -2994,6 +3068,9 @@ async def _validate_bulk_successor_predecessor(
     quarantine_sha, quarantine_objects, quarantine_assets = (
         await _bulk_predecessor_quarantine_proof(ledger, predecessor_sha)
     )
+    live_sha, live_objects, live_assets = (
+        await _bulk_predecessor_live_reference_proof(ledger, predecessor_sha)
+    )
     if (
         quarantine_sha
         != str(manifest.get("predecessor_quarantined_rowset_sha256") or "")
@@ -3001,11 +3078,27 @@ async def _validate_bulk_successor_predecessor(
         != int(manifest.get("predecessor_quarantined_object_count") or 0)
         or quarantine_assets
         != int(manifest.get("predecessor_quarantined_asset_coordinate_count") or 0)
+        or live_sha
+        != str(
+            manifest.get("predecessor_live_reference_retained_rowset_sha256")
+            or ""
+        )
+        or live_objects
+        != int(
+            manifest.get("predecessor_live_reference_retained_object_count") or 0
+        )
+        or live_assets
+        != int(
+            manifest.get(
+                "predecessor_live_reference_retained_asset_coordinate_count"
+            )
+            or 0
+        )
     ):
-        raise RuntimeError("bulk retirement predecessor quarantine proof changed")
+        raise RuntimeError("bulk retirement predecessor retained proof changed")
     if (
-        direct_objects != batch_objects + quarantine_objects
-        or direct_assets != batch_assets + quarantine_assets
+        direct_objects != batch_objects + quarantine_objects + live_objects
+        or direct_assets != batch_assets + quarantine_assets + live_assets
     ):
         raise RuntimeError("bulk retirement predecessor receipt coverage changed")
     inherited_objects = int(
@@ -3037,7 +3130,9 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
         archive_config=None,
     )
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
+    production: asyncpg.Connection | None = None
     try:
+        production = await _connect("PRODUCTION_DATABASE_URL")
         await ledger.execute(RETIREMENT_DDL)
         predecessor = await ledger.fetchrow(
             """select run_id,manifest,status
@@ -3178,6 +3273,42 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
                      where source_key_sha256=any($1::text[])""",
                 quarantine_hashes,
             )
+        live_reference_count = (
+            await _materialize_bulk_production_live_source_hashes(
+                ledger,
+                production,
+                eligible_only=False,
+            )
+        )
+        live_reference_rows = await ledger.fetch(
+            """select c.* from bulk_retirement_candidates c
+                 join bulk_retirement_live_source_hashes h
+                   on h.source_key_sha256=sha256(convert_to(c.source_key,'UTF8'))
+                order by h.source_key_sha256"""
+        )
+        if len(live_reference_rows) != live_reference_count:
+            raise RuntimeError(
+                "bulk retirement live reference retention coverage changed"
+            )
+        live_reference_candidates = [
+            _candidate_from_bulk_stage(row) for row in live_reference_rows
+        ]
+        live_reference_identities = [
+            _retirement_object_identity(candidate)
+            for candidate in live_reference_candidates
+        ]
+        live_reference_rowset_sha = _sha256_json(live_reference_identities)
+        live_reference_asset_count = sum(
+            int(candidate["scope_asset_count"])
+            for candidate in live_reference_candidates
+        )
+        if live_reference_count:
+            await ledger.execute(
+                """delete from bulk_retirement_candidates c
+                      where sha256(convert_to(c.source_key,'UTF8')) in (
+                        select source_key_sha256
+                          from bulk_retirement_live_source_hashes)"""
+            )
         live_ref_count = int(
             predecessor_manifest.get("deferred_live_history_ref_object_count") or 0
         )
@@ -3212,15 +3343,28 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             predecessor_plan_sha256=args.predecessor_plan_sha256,
             predecessor_completed_batches_sha256=completed_proof_sha,
             predecessor_retained_object_count=(
-                retained_objects + len(quarantine_candidates)
+                retained_objects
+                + len(quarantine_candidates)
+                + live_reference_count
             ),
             predecessor_retained_asset_coordinate_count=(
-                retained_assets + quarantine_asset_count
+                retained_assets
+                + quarantine_asset_count
+                + live_reference_asset_count
             ),
             predecessor_quarantined_object_count=len(quarantine_candidates),
             predecessor_quarantined_asset_coordinate_count=quarantine_asset_count,
             predecessor_quarantined_rowset_sha256=quarantine_rowset_sha,
             predecessor_quarantined_evidence_sha256=quarantine_evidence_sha,
+            predecessor_live_reference_retained_object_count=(
+                live_reference_count
+            ),
+            predecessor_live_reference_retained_asset_coordinate_count=(
+                live_reference_asset_count
+            ),
+            predecessor_live_reference_retained_rowset_sha256=(
+                live_reference_rowset_sha
+            ),
             remaining_object_count=object_count,
             remaining_asset_coordinate_count=asset_count,
             remaining_total_bytes=total_bytes,
@@ -3271,6 +3415,25 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             if quarantined_count != len(quarantine_hashes):
                 raise RuntimeError(
                     "target identity drift quarantine predecessor state changed"
+                )
+            live_reference_retained_count = int(
+                await ledger.fetchval(
+                    """with changed as (
+                         update analytics_history_media_r2_retirement_objects o
+                            set status='blocked',
+                                error_code='LIVE_HISTORY_REFERENCE',updated_at=now()
+                          where o.plan_sha256=$1 and o.status='planned'
+                            and sha256(convert_to(o.source_key,'UTF8')) in (
+                              select source_key_sha256
+                                from bulk_retirement_live_source_hashes)
+                        returning 1)
+                       select count(*) from changed""",
+                    args.predecessor_plan_sha256,
+                )
+            )
+            if live_reference_retained_count != live_reference_count:
+                raise RuntimeError(
+                    "live History reference retention predecessor state changed"
                 )
             await ledger.execute(
                 """insert into analytics_history_media_r2_retirement_plans(
@@ -3343,6 +3506,15 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
                         quarantine_asset_count
                     ),
                     "predecessor_quarantined_rowset_sha256": quarantine_rowset_sha,
+                    "predecessor_live_reference_retained_object_count": (
+                        live_reference_count
+                    ),
+                    "predecessor_live_reference_retained_asset_coordinate_count": (
+                        live_reference_asset_count
+                    ),
+                    "predecessor_live_reference_retained_rowset_sha256": (
+                        live_reference_rowset_sha
+                    ),
                     "object_count": object_count,
                     "asset_coordinate_count": asset_count,
                     "batch_count": len(batches),
@@ -3354,6 +3526,8 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             )
         )
     finally:
+        if production is not None:
+            await production.close()
         await ledger.close()
 
 

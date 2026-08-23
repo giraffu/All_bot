@@ -26,9 +26,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   仍需精确 SWITCH 令牌。
 - Bulk retirement 仅收精确 DELETE SHA；blocker deferred、source-is-target retained；
   删前 HEAD 源/目标，删后仅 HEAD 源，删除只重试失败 key。
-- 换 artifact 须暂停 predecessor；HEAD 后 successor 只冻 remaining planned。
-  目标 marker/ETag 漂移不得放宽，按旧源哈希复核后以
-  `TARGET_IDENTITY_DRIFT` 隔离保留；remaining 重新授权。
+- 换 artifact 须暂停 predecessor；successor 冻 remaining planned。按旧源哈希重查
+  生产引用，命中 `LIVE_HISTORY_REFERENCE` 保留；marker/ETag 漂移以
+  `TARGET_IDENTITY_DRIFT` 保留；其余重授权。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
 - 云 Copy/Switch 仅凭 HMAC 任务/回执跨信任域；本地独占账本，云端只连必要的 R2
   或生产库。successor 绑定 artifact/worker/route/rowset/CAS，仍需新的精确令牌。

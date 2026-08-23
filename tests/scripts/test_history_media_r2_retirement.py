@@ -1127,6 +1127,9 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
         predecessor_quarantined_asset_coordinate_count=1,
         predecessor_quarantined_rowset_sha256="q" * 64,
         predecessor_quarantined_evidence_sha256="v" * 64,
+        predecessor_live_reference_retained_object_count=1,
+        predecessor_live_reference_retained_asset_coordinate_count=1,
+        predecessor_live_reference_retained_rowset_sha256="l" * 64,
         remaining_object_count=5,
         remaining_asset_coordinate_count=7,
         remaining_total_bytes=500,
@@ -1138,7 +1141,7 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
         runtime_identity={"artifact_digest": "sha256:" + "f" * 64},
     )
 
-    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v4"
+    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v5"
     assert manifest["predecessor_plan_sha256"] == "p" * 64
     assert manifest["root_object_count"] == 8
     assert manifest["root_asset_coordinate_count"] == 10
@@ -1147,6 +1150,11 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
     assert manifest["predecessor_quarantined_asset_coordinate_count"] == 1
     assert manifest["predecessor_quarantined_rowset_sha256"] == "q" * 64
     assert manifest["predecessor_quarantined_evidence_sha256"] == "v" * 64
+    assert manifest["predecessor_live_reference_retained_object_count"] == 1
+    assert (
+        manifest["predecessor_live_reference_retained_asset_coordinate_count"] == 1
+    )
+    assert manifest["predecessor_live_reference_retained_rowset_sha256"] == "l" * 64
     assert manifest["object_count"] == 5
     assert manifest["asset_coordinate_count"] == 7
     assert manifest["retained_target_object_count"] == 0
@@ -1163,6 +1171,34 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
             predecessor_quarantined_asset_coordinate_count=1,
             predecessor_quarantined_rowset_sha256="q" * 64,
             predecessor_quarantined_evidence_sha256="v" * 64,
+            predecessor_live_reference_retained_object_count=1,
+            predecessor_live_reference_retained_asset_coordinate_count=1,
+            predecessor_live_reference_retained_rowset_sha256="l" * 64,
+            remaining_object_count=5,
+            remaining_asset_coordinate_count=7,
+            remaining_total_bytes=500,
+            remaining_rowset_sha256="e" * 64,
+            batches=batches,
+            disposition_summary={
+                "eligible": {"object_count": 5, "asset_coordinate_count": 7}
+            },
+            runtime_identity={},
+        )
+
+    with pytest.raises(RuntimeError, match="empty live reference proof"):
+        build_bulk_retirement_successor_manifest(
+            predecessor_manifest=predecessor,
+            predecessor_plan_sha256="p" * 64,
+            predecessor_completed_batches_sha256="d" * 64,
+            predecessor_retained_object_count=3,
+            predecessor_retained_asset_coordinate_count=3,
+            predecessor_quarantined_object_count=1,
+            predecessor_quarantined_asset_coordinate_count=1,
+            predecessor_quarantined_rowset_sha256="q" * 64,
+            predecessor_quarantined_evidence_sha256="v" * 64,
+            predecessor_live_reference_retained_object_count=0,
+            predecessor_live_reference_retained_asset_coordinate_count=0,
+            predecessor_live_reference_retained_rowset_sha256="l" * 64,
             remaining_object_count=5,
             remaining_asset_coordinate_count=7,
             remaining_total_bytes=500,
@@ -1350,7 +1386,9 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "retirement_disposition" in stage_source
     assert "retained_target" in stage_source
     assert "for candidate" not in stage_source
-    live_ref_source = inspect.getsource(module._bulk_production_has_live_refs)
+    live_ref_source = inspect.getsource(
+        module._materialize_bulk_production_live_source_hashes
+    )
     assert "retirement_disposition='eligible'" in live_ref_source
     assert "source_key_sha256 bytea" in live_ref_source
     assert "create unique index" in live_ref_source
@@ -1360,8 +1398,9 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "sha256(convert_to" in live_ref_source
     assert "source_key text" not in live_ref_source
     assert "bulk_retirement_live_source_hashes" in live_ref_source
-    assert "update bulk_retirement_candidates" in live_ref_source
-    assert "retirement_disposition='deferred'" in live_ref_source
+    classifier_source = inspect.getsource(module._bulk_production_has_live_refs)
+    assert "update bulk_retirement_candidates" in classifier_source
+    assert "retirement_disposition='deferred'" in classifier_source
 
     scope_source = inspect.getsource(module._bulk_scope_fingerprint)
     assert "10000" in scope_source
@@ -1384,6 +1423,19 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "r2_client.close" in successor_source
     assert "set status='paused'" in successor_source
     assert "_bulk_production_has_live_refs" not in successor_source
+    assert "_materialize_bulk_production_live_source_hashes" in successor_source
+    assert "eligible_only=False" in successor_source
+    assert "LIVE_HISTORY_REFERENCE" in successor_source
+    assert successor_source.index(
+        "_materialize_bulk_production_live_source_hashes"
+    ) < successor_source.index("_materialize_bulk_retirement_order")
+    predecessor_validator_source = inspect.getsource(
+        module._validate_bulk_successor_predecessor
+    )
+    assert "_bulk_predecessor_live_reference_proof" in predecessor_validator_source
+    assert "batch_objects + quarantine_objects + live_objects" in (
+        predecessor_validator_source
+    )
     assert "_live_reference_counts" in source
     assert "retirement_execution_policy" in inspect.getsource(
         module._retirement_runtime_identity
