@@ -2973,6 +2973,21 @@ async def _bulk_predecessor_retained_counts(
     return int(row["object_count"]), int(row["asset_coordinate_count"])
 
 
+def _bulk_predecessor_is_replaceable(
+    status: str,
+    *,
+    nonplanned_object_count: int,
+    nonpending_batch_count: int,
+) -> bool:
+    if status in {"running", "paused"}:
+        return True
+    return (
+        status == "frozen"
+        and nonplanned_object_count == 0
+        and nonpending_batch_count == 0
+    )
+
+
 async def _bulk_predecessor_quarantine_proof(
     ledger: asyncpg.Connection,
     plan_sha256: str,
@@ -3009,10 +3024,10 @@ async def _bulk_predecessor_live_reference_proof(
         """select source_name,source_key,byte_size,source_etag,
                   source_last_modified,asset_count,scope_asset_count,scope_facts,
                   target_facts,retirement_disposition
-             from analytics_history_media_r2_retirement_objects
+            from analytics_history_media_r2_retirement_objects
             where plan_sha256=$1 and status='blocked'
               and error_code='LIVE_HISTORY_REFERENCE'
-            order by source_key_sha256""",
+            order by sha256(convert_to(source_key,'UTF8'))""",
         plan_sha256,
     )
     identities: list[dict[str, Any]] = []
@@ -3138,15 +3153,24 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
         production = await _connect("PRODUCTION_DATABASE_URL")
         await ledger.execute(RETIREMENT_DDL)
         predecessor = await ledger.fetchrow(
-            """select run_id,manifest,status
-                 from analytics_history_media_r2_retirement_plans
-                where plan_sha256=$1""",
+            """select p.run_id,p.manifest,p.status,
+                      (select count(*)
+                         from analytics_history_media_r2_retirement_objects o
+                        where o.plan_sha256=p.plan_sha256
+                          and o.status<>'planned') nonplanned_object_count,
+                      (select count(*)
+                         from analytics_history_media_r2_retirement_batches b
+                        where b.plan_sha256=p.plan_sha256
+                          and b.status<>'pending') nonpending_batch_count
+                 from analytics_history_media_r2_retirement_plans p
+                where p.plan_sha256=$1""",
             args.predecessor_plan_sha256,
         )
-        if predecessor is None or str(predecessor["status"]) not in {
-            "running",
-            "paused",
-        }:
+        if predecessor is None or not _bulk_predecessor_is_replaceable(
+            str(predecessor["status"]),
+            nonplanned_object_count=int(predecessor["nonplanned_object_count"]),
+            nonpending_batch_count=int(predecessor["nonpending_batch_count"]),
+        ):
             raise RuntimeError("bulk retirement predecessor is not replaceable")
         predecessor_manifest = (
             json.loads(predecessor["manifest"])
@@ -3384,11 +3408,24 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
 
         async with ledger.transaction():
             locked = await ledger.fetchrow(
-                """select status from analytics_history_media_r2_retirement_plans
-                    where plan_sha256=$1 for update""",
+                """select p.status,
+                          (select count(*)
+                             from analytics_history_media_r2_retirement_objects o
+                            where o.plan_sha256=p.plan_sha256
+                              and o.status<>'planned') nonplanned_object_count,
+                          (select count(*)
+                             from analytics_history_media_r2_retirement_batches b
+                            where b.plan_sha256=p.plan_sha256
+                              and b.status<>'pending') nonpending_batch_count
+                     from analytics_history_media_r2_retirement_plans p
+                    where p.plan_sha256=$1 for update""",
                 args.predecessor_plan_sha256,
             )
-            if locked is None or str(locked["status"]) not in {"running", "paused"}:
+            if locked is None or not _bulk_predecessor_is_replaceable(
+                str(locked["status"]),
+                nonplanned_object_count=int(locked["nonplanned_object_count"]),
+                nonpending_batch_count=int(locked["nonpending_batch_count"]),
+            ):
                 raise RuntimeError("bulk retirement predecessor state changed")
             await ledger.execute(
                 """update analytics_history_media_r2_retirement_plans
