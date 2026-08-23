@@ -16,6 +16,7 @@ from src.services.qqcc_regeneration_service import (
 )
 from src.services.quick_image_submission_service import QuickImageSubmissionKind
 from src.services.quick_video_submission_service import QuickVideoSubmissionKind
+from src.domain_config.minimax_h3 import MINIMAX_H3_REF2V
 
 
 @pytest.mark.asyncio
@@ -198,6 +199,66 @@ async def test_prepare_qqcc_regeneration_reloads_latest_ai_video_scene(monkeypat
     assert submission.plan.default_prompt_text == "latest prompt"
     assert submission.plan.negative_prompt == "latest blur"
     assert submission.plan.duration == "20s"
+
+
+@pytest.mark.asyncio
+async def test_prepare_qqcc_regeneration_reuses_user_replacement_template(monkeypatch):
+    reference_key = "qqcc/config/ref2v/ai_video/ref/default/input"
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "参考运镜",
+                    "prompt": "prompt",
+                    "mode": "ref2v",
+                    "reference_images": [reference_key],
+                    "reference_image_names": ["小穴"],
+                }
+            ],
+        }
+    )
+    history = SimpleNamespace(
+        type=MINIMAX_H3_REF2V,
+        input_file="history/subject.png|history/user-template.png",
+        billing_resolution="preview",
+        requested_duration=5,
+        duration=5,
+        extra_outputs={
+            "_qqcc_regenerate": {
+                "kind": "quick_video",
+                "mode": MINIMAX_H3_REF2V,
+                "scene_id": "ref",
+                "scene_kind": "ai_video",
+                "display_mode_name": "参考运镜",
+                "selected_reference_image": reference_key,
+                "selected_reference_name": "小穴",
+                "selected_reference_source": "user_upload",
+            }
+        },
+    )
+    download_input = AsyncMock(
+        side_effect=["/tmp/subject.png", "/tmp/user-template.png"]
+    )
+    monkeypatch.setattr(
+        "src.services.qqcc_regeneration_service.download_history_input_file_to_fsm_temp",
+        download_input,
+    )
+
+    submission = await prepare_qqcc_regeneration_submission(
+        task_id="task-ref2v",
+        telegram_user_id=123,
+        username="tester",
+        load_history_func=AsyncMock(return_value=history),
+        load_config_func=AsyncMock(return_value=config),
+    )
+
+    assert submission.plan.kind == QuickVideoSubmissionKind.H3_REF2V
+    assert submission.plan.reference_images == [reference_key]
+    assert submission.plan.reference_image_paths == ["/tmp/user-template.png"]
+    assert download_input.await_args_list[0].kwargs["index"] == 0
+    assert download_input.await_args_list[1].kwargs["index"] == 1
 
 
 @pytest.mark.asyncio

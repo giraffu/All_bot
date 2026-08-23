@@ -137,6 +137,18 @@ QUICK_VIDEO_MODE_CONFIG_KEYS = {
 _t = translate_fsm_text
 
 
+def _quick_video_temp_paths(fsm_data: dict) -> list[str]:
+    return [
+        str(path)
+        for path in (
+            fsm_data.get("image_path"),
+            fsm_data.get("end_image_path"),
+            fsm_data.get("selected_reference_image_path"),
+        )
+        if path
+    ]
+
+
 async def _run_quick_video_submission_with_error_notice(
     *, context, chat_id: int, submission
 ):
@@ -154,7 +166,7 @@ async def _run_quick_video_submission_with_error_notice(
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
-    cleanup_fsm_temp_files([fsm_data.get("image_path"), fsm_data.get("end_image_path")])
+    cleanup_fsm_temp_files(_quick_video_temp_paths(fsm_data))
     draw_fsm_data = context.user_data.pop("quick_image_data", {})
     cleanup_fsm_temp_files([draw_fsm_data.get("image_path")])
 
@@ -167,10 +179,7 @@ def _replace_pending_quick_video_context(context: ContextTypes.DEFAULT_TYPE) -> 
     video_data = user_data.pop("quick_video_data", {})
     user_data.pop("in_conversation", None)
     cleanup_fsm_temp_files(
-        [
-            video_data.get("image_path") if isinstance(video_data, dict) else None,
-            video_data.get("end_image_path") if isinstance(video_data, dict) else None,
-        ]
+        _quick_video_temp_paths(video_data) if isinstance(video_data, dict) else []
     )
     return True
 
@@ -402,7 +411,7 @@ def _build_ref2v_template_markup(scene: dict[str, object]) -> InlineKeyboardMark
     reference_images = list(scene.get("reference_images") or [])
     buttons = [
         InlineKeyboardButton(
-            f"替换为：{reference_names[index] or f'模板 {index + 1}'}",
+            f"替换：{reference_names[index] or f'模板 {index + 1}'}",
             callback_data=build_quick_ref2v_template_callback_data(
                 str(scene["id"]), index
             ),
@@ -411,6 +420,32 @@ def _build_ref2v_template_markup(scene: dict[str, object]) -> InlineKeyboardMark
     ]
     return InlineKeyboardMarkup(
         [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    )
+
+
+def _build_ref2v_scene_prompt(
+    *, scene: dict[str, object], selected_name: str, replacement_confirmed: bool = False
+) -> str:
+    scene_name = str(scene.get("name") or "AI视频")
+    if replacement_confirmed:
+        status = f"✅ 已使用你发送的图片替换【{selected_name}】模板。"
+        action = (
+            "现在请发送女性人物图片（正面、脸部清晰），"
+            "我会使用当前模板生成视频。"
+        )
+    else:
+        status = f"✅ 当前默认模板【{selected_name}】。"
+        action = (
+            "你可以直接发送女性人物图片（正面、脸部清晰），"
+            "我会使用当前模板生成视频。"
+        )
+    return (
+        f"🎞️ {'已更新' if replacement_confirmed else '已切换到'}【{scene_name}】场景。\n\n"
+        f"{status}\n\n"
+        f"{action}\n\n"
+        "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片；"
+        "模板替换完成后，我会再次提示你发送女性人物图片。\n\n"
+        "随时可以发送 /cancel 退出流程。"
     )
 
 
@@ -620,12 +655,9 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if is_ref2v_scene and scene is not None:
         selected_name = str(quick_video_data.get("selected_reference_name") or "模板 1")
         reply_markup = _build_ref2v_template_markup(scene)
-        msg = (
-            f"🎞️ 已切换到【{scene.get('name') or mode_name}】模式。\n\n"
-            f"✅ 当前默认模板【{selected_name}】。\n\n"
-            "你也可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。\n\n"
-            "如需更换，点击下方按钮可以替换模板；可重复替换，最后选择的模板生效。\n\n"
-            "随时可以发送 /cancel 退出流程。"
+        msg = _build_ref2v_scene_prompt(
+            scene=scene,
+            selected_name=selected_name,
         )
     if scene is not None and qqcc_config is not None:
         draw_config = project_qqcc_config_for_scene_version(
@@ -708,34 +740,102 @@ async def select_ref2v_template(
             query, text="模板已更新，请重新选择", show_alert=True
         )
         return QuickVideoState.WAIT_IMAGE
-    _sync_qqcc_scene_to_quick_video_data(
-        fsm_data, scene, scene_kind="ai_video"
-    )
+    _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
     selected_name = str(
         names[template_index] if template_index < len(names) else f"模板 {template_index + 1}"
     )
-    fsm_data["selected_reference_image"] = references[template_index]
-    fsm_data["selected_reference_name"] = selected_name
-    selected_awaitable = send_qqcc_ref2v_reference_templates(
-        message=query.message,
-        bot=context.bot,
-        scene=scene,
-        template_index=template_index,
-    )
-    if is_qqcc_bot_context(context):
-        await run_qqcc_interaction_io(
-            selected_awaitable,
-            operation="quick_video_ref2v_selected_template",
-            logger=logger,
-        )
-    else:
-        await selected_awaitable
+    fsm_data["pending_reference_template_index"] = template_index
+    fsm_data["pending_reference_template_name"] = selected_name
     await robust_edit_text(
         query.message,
-        f"✅ 已替换模板为【{selected_name}】。\n\n"
-        "现在可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。\n\n"
-        "如需再次更换，可继续点击下方“替换为”按钮；最后选择的模板生效。\n\n"
+        f"🖼️ 请发送用于替换【{selected_name}】的模板图片。\n\n"
+        "这张图片只会替换当前场景的参考模板，不会直接开始生成视频。\n"
+        "替换完成后，我会重新发送场景提示，再等待女性人物图片。\n\n"
         "随时可以发送 /cancel 退出流程。",
+        reply_markup=_build_ref2v_template_markup(scene),
+    )
+    return QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
+
+
+async def receive_ref2v_template_replacement(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    user_id = update.effective_user.id if update.effective_user else 0
+    message = update.message or update.edited_message
+    fsm_data = context.user_data.get("quick_video_data")
+    if not isinstance(fsm_data, dict):
+        await robust_reply_text(message, _t(context, "fsm.common.expired_cleaned"))
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
+    template_index = fsm_data.get("pending_reference_template_index")
+    if not isinstance(template_index, int):
+        await robust_reply_text(message, "模板替换步骤已失效，请重新进入场景。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    scene_id = str(fsm_data.get("scene_id") or "")
+    scene = (
+        get_qqcc_ai_video_scene(qqcc_config, scene_id)
+        if qqcc_config is not None
+        else None
+    )
+    if (
+        scene is None
+        or str(scene.get("mode") or "") != "ref2v"
+        or not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
+    references = list(scene.get("reference_images") or [])
+    names = list(scene.get("reference_image_names") or [])
+    if template_index >= len(references):
+        await robust_reply_text(message, "模板配置已更新，请重新进入场景。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
+    file_id = _resolve_quick_video_file_id(message)
+    if not file_id:
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
+        return QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
+    try:
+        local_path = await _download_quick_video_input(
+            context=context,
+            file_id=file_id,
+        )
+    except Exception as exc:
+        logger.error("Failed to download REF2V replacement user=%s: %s", user_id, exc)
+        local_path = None
+    if not local_path:
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
+        return QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
+
+    previous_reference_path = fsm_data.get("selected_reference_image_path")
+    if previous_reference_path:
+        cleanup_fsm_temp_files([previous_reference_path])
+    _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
+    selected_name = str(
+        (names[template_index] if template_index < len(names) else "")
+        or f"模板 {template_index + 1}"
+    )
+    fsm_data["selected_reference_image"] = references[template_index]
+    fsm_data["selected_reference_name"] = selected_name
+    fsm_data["selected_reference_image_path"] = local_path
+    fsm_data.pop("pending_reference_template_index", None)
+    fsm_data.pop("pending_reference_template_name", None)
+
+    await robust_reply_text(
+        message,
+        _build_ref2v_scene_prompt(
+            scene=scene,
+            selected_name=selected_name,
+            replacement_confirmed=True,
+        ),
         reply_markup=_build_ref2v_template_markup(scene),
     )
     return QuickVideoState.WAIT_IMAGE
@@ -787,9 +887,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         from src.handlers.fsm.quick_image_fsm import receive_image as receive_quick_image
 
         video_data = context.user_data.pop("quick_video_data", {})
-        cleanup_fsm_temp_files(
-            [video_data.get("image_path"), video_data.get("end_image_path")]
-        )
+        cleanup_fsm_temp_files(_quick_video_temp_paths(video_data))
         return await receive_quick_image(update, context)
 
     user_id = update.effective_user.id
@@ -1018,15 +1116,21 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         qqcc_config=qqcc_config,
         allowed_resolutions=None,
     )
+    selected_reference_image_path = fsm_data.pop(
+        "selected_reference_image_path", None
+    )
+    submission_temp_paths = [
+        str(path) for path in (image_path, selected_reference_image_path) if path
+    ]
     if isinstance(plan, QuickVideoSubmissionReject):
         if qqcc_config is not None:
             await _reply_qqcc_feature_disabled(update, context)
-        cleanup_fsm_temp_files([image_path])
+        cleanup_fsm_temp_files(submission_temp_paths)
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     if not update.effective_user:
-        cleanup_fsm_temp_files([image_path])
+        cleanup_fsm_temp_files(submission_temp_paths)
         _cleanup_context(context, user_id)
         return ConversationHandler.END
     user = update.effective_user
@@ -1048,7 +1152,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
-            cleanup_fsm_temp_files([image_path])
+            cleanup_fsm_temp_files(submission_temp_paths)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         raise e
@@ -1160,7 +1264,7 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
             ),
         ],
         states={
-            QuickVideoState.WAIT_REFERENCE_TEMPLATE: [
+            QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD: [
                 CallbackQueryHandler(
                     start_quick_video,
                     pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
@@ -1168,6 +1272,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
                 CallbackQueryHandler(
                     select_ref2v_template,
                     pattern=QUICK_REF2V_TEMPLATE_CALLBACK_PATTERN,
+                ),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE,
+                    receive_ref2v_template_replacement,
                 ),
                 MessageHandler(
                     filters.ALL & ~filters.Regex(r"^/cancel$"), unexpected_input
