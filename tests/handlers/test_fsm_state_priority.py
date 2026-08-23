@@ -762,6 +762,10 @@ async def test_qqcc_quick_video_scene_reselection_replaces_pending_upload(
                 "image_path": "/tmp/old-quick-video.png",
                 "end_image_path": "/tmp/old-quick-video-end.png",
                 "selected_reference_image_path": "/tmp/old-user-template.png",
+                "reference_image_replacement_paths": {
+                    "0": "/tmp/old-user-template.png",
+                    "1": "/tmp/other-user-template.png",
+                },
             },
         },
         bot_data={"bot_client_type": "bot:qqcc"},
@@ -778,6 +782,7 @@ async def test_qqcc_quick_video_scene_reselection_replaces_pending_upload(
             "/tmp/old-quick-video.png",
             "/tmp/old-quick-video-end.png",
             "/tmp/old-user-template.png",
+            "/tmp/other-user-template.png",
         ]
     )
     answer_mock.assert_awaited_once()

@@ -62,6 +62,59 @@ async def test_ref2v_template_gallery_uses_cached_telegram_file_ids_and_names():
 
 
 @pytest.mark.asyncio
+async def test_ref2v_template_gallery_keeps_static_templates_around_user_replacement():
+    reply_media_group = AsyncMock(
+        return_value=[
+            SimpleNamespace(photo=[SimpleNamespace(file_id="fresh-a")]),
+            SimpleNamespace(photo=[SimpleNamespace(file_id="fresh-user-b")]),
+            SimpleNamespace(photo=[SimpleNamespace(file_id="fresh-c")]),
+        ]
+    )
+    message = SimpleNamespace(reply_media_group=reply_media_group)
+    cache = AsyncMock()
+    scene = {
+        "id": "ref",
+        "reference_images": ["key-a", "key-b", "key-c"],
+        "reference_image_names": ["乳房", "小穴", "阴茎"],
+        "reference_image_telegram_file_ids": [
+            {"999": "cached-a"},
+            {"999": "cached-b"},
+            {"999": "cached-c"},
+        ],
+    }
+
+    sent = await send_qqcc_ref2v_reference_templates(
+        message=message,
+        bot=SimpleNamespace(id=999),
+        scene=scene,
+        template_source_overrides={1: "user-upload-b"},
+        cache_file_ids_func=cache,
+        preview_url_builder=lambda _media: pytest.fail("cached file_id must be reused"),
+    )
+
+    assert sent is True
+    media = reply_media_group.await_args.kwargs["media"]
+    assert [item.media for item in media] == [
+        "cached-a",
+        "user-upload-b",
+        "cached-c",
+    ]
+    assert [item.caption for item in media] == [
+        "乳房",
+        "小穴（已替换）",
+        "阴茎",
+    ]
+    cache.assert_awaited_once_with(
+        scene_id="ref",
+        bot_id="999",
+        updates=[
+            {"object_key": "key-a", "file_id": "fresh-a"},
+            {"object_key": "key-c", "file_id": "fresh-c"},
+        ],
+    )
+
+
+@pytest.mark.asyncio
 async def test_ref2v_reference_upload_uses_restricted_unique_object_prefix():
     puts = []
     storage_service = SimpleNamespace(

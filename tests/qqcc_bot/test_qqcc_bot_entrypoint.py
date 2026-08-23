@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from telegram.ext import (
@@ -589,6 +589,8 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
         }
     )
     reply = AsyncMock()
+    gallery = AsyncMock(return_value=True)
+    cleanup = Mock()
     start_generation = AsyncMock()
     monkeypatch.setattr(
         quick_video_fsm,
@@ -601,6 +603,10 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
         AsyncMock(return_value="/tmp/user-replacement.png"),
     )
     monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        quick_video_fsm, "send_qqcc_ref2v_reference_templates", gallery
+    )
+    monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup)
     monkeypatch.setattr(quick_video_fsm, "start_generation", start_generation)
     user = SimpleNamespace(id=123, username="tester")
     message = SimpleNamespace(
@@ -626,6 +632,13 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
                 "pending_reference_template_name": "白色模板",
                 "selected_reference_image": references[0],
                 "selected_reference_name": "黑色模板",
+                "selected_reference_image_path": "/tmp/old-black-template.png",
+                "reference_image_replacement_paths": {
+                    "0": "/tmp/old-black-template.png"
+                },
+                "reference_image_replacement_file_ids": {
+                    "0": "old-black-file-id"
+                },
             },
         },
         lang="zh",
@@ -639,13 +652,37 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
     assert fsm_data["selected_reference_image"] == references[1]
     assert fsm_data["selected_reference_name"] == "白色模板"
     assert fsm_data["selected_reference_image_path"] == "/tmp/user-replacement.png"
+    assert fsm_data["reference_image_replacement_paths"] == {
+        "0": "/tmp/old-black-template.png",
+        "1": "/tmp/user-replacement.png",
+    }
+    assert fsm_data["reference_image_replacement_file_ids"] == {
+        "0": "old-black-file-id",
+        "1": "replacement-file-id",
+    }
     assert "pending_reference_template_index" not in fsm_data
     assert "image_path" not in fsm_data
     start_generation.assert_not_awaited()
+    cleanup.assert_not_called()
+    gallery.assert_awaited_once_with(
+        message=message,
+        bot=context.bot,
+        scene=config["ai_video_scenes"][0],
+        template_source_overrides={
+            0: "old-black-file-id",
+            1: "replacement-file-id",
+        },
+    )
     prompt = reply.await_args.args[1]
     assert "已使用你发送的图片替换【白色模板】模板" in prompt
+    assert "其他模板仍然保留" in prompt
     assert "现在请发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
+    buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
+    assert [button.text for row in buttons for button in row] == [
+        "替换：黑色模板",
+        "替换：白色模板",
+    ]
 
 
 @pytest.mark.asyncio

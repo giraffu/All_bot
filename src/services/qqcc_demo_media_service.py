@@ -618,6 +618,7 @@ def _qqcc_ref2v_template_descriptors(
     )
     return [
         {
+            "template_index": index,
             "object_key": str(object_keys[index]),
             "display_name": (
                 str(names[index]).strip()
@@ -670,7 +671,10 @@ async def _send_qqcc_ref2v_items(message, items):
     if len(items) > 1:
         return await message.reply_media_group(
             media=[
-                InputMediaPhoto(media=source, caption=media["display_name"])
+                InputMediaPhoto(
+                    media=source,
+                    caption=str(media.get("caption") or media["display_name"]),
+                )
                 for media, source in items
             ]
         )
@@ -678,7 +682,7 @@ async def _send_qqcc_ref2v_items(message, items):
     return [
         await message.reply_photo(
             photo=source,
-            caption=media["display_name"],
+            caption=str(media.get("caption") or media["display_name"]),
         )
     ]
 
@@ -689,6 +693,7 @@ async def send_qqcc_ref2v_reference_templates(
     bot,
     scene: dict[str, Any],
     template_index: int | None = None,
+    template_source_overrides: dict[int, str] | None = None,
     preview_url_builder=build_qqcc_demo_preview_url,
     cache_file_ids_func=None,
     storage_service=storage,
@@ -701,8 +706,20 @@ async def send_qqcc_ref2v_reference_templates(
     if not descriptors:
         return False
     bot_id = str(getattr(bot, "id", "") or "")
+    source_overrides = {
+        index: str(source).strip()
+        for index, source in (template_source_overrides or {}).items()
+        if isinstance(index, int) and str(source).strip()
+    }
+    for media in descriptors:
+        index = int(media["template_index"])
+        if index in source_overrides:
+            media["source_override"] = source_overrides[index]
+            media["caption"] = f"{media['display_name']}（已替换）"
 
     def _source(media: dict[str, Any], *, prefer_cache: bool):
+        if media.get("source_override"):
+            return str(media["source_override"])
         if prefer_cache:
             cached = media.get("telegram_file_ids")
             if isinstance(cached, dict) and str(cached.get(bot_id) or "").strip():
@@ -722,17 +739,16 @@ async def send_qqcc_ref2v_reference_templates(
             items, sent_messages = await _attempt(prefer_cache=False)
         except Exception:
             try:
-                items = [
-                    (
-                        media,
-                        await asyncio.to_thread(
+                items = []
+                for media in descriptors:
+                    source = media.get("source_override")
+                    if not source:
+                        source = await asyncio.to_thread(
                             _read_qqcc_ref2v_image_from_r2,
                             media,
                             storage_service=storage_service,
-                        ),
-                    )
-                    for media in descriptors
-                ]
+                        )
+                    items.append((media, source))
                 sent_messages = await _send_qqcc_ref2v_items(message, items)
             except Exception:
                 logger.exception("Failed to send QQCC REF2V templates")
@@ -740,6 +756,8 @@ async def send_qqcc_ref2v_reference_templates(
 
     updates = []
     for (media, _source_value), sent_message in zip(items, sent_messages):
+        if media.get("source_override"):
+            continue
         file_id = _extract_telegram_file_id(sent_message, media_type="image")
         if file_id:
             updates.append(
