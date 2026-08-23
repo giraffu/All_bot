@@ -138,7 +138,8 @@ _t = translate_fsm_text
 
 
 def _quick_video_temp_paths(fsm_data: dict) -> list[str]:
-    return [
+    replacement_paths = fsm_data.get("reference_image_replacement_paths")
+    paths = [
         str(path)
         for path in (
             fsm_data.get("image_path"),
@@ -147,6 +148,25 @@ def _quick_video_temp_paths(fsm_data: dict) -> list[str]:
         )
         if path
     ]
+    if isinstance(replacement_paths, dict):
+        paths.extend(str(path) for path in replacement_paths.values() if path)
+    return list(dict.fromkeys(paths))
+
+
+def _ref2v_template_source_overrides(fsm_data: dict) -> dict[int, str]:
+    file_ids = fsm_data.get("reference_image_replacement_file_ids")
+    if not isinstance(file_ids, dict):
+        return {}
+    overrides: dict[int, str] = {}
+    for raw_index, raw_file_id in file_ids.items():
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+        file_id = str(raw_file_id or "").strip()
+        if index >= 0 and file_id:
+            overrides[index] = file_id
+    return overrides
 
 
 async def _run_quick_video_submission_with_error_notice(
@@ -433,17 +453,23 @@ def _build_ref2v_scene_prompt(
             "现在请发送女性人物图片（正面、脸部清晰），"
             "我会使用当前模板生成视频。"
         )
+        replacement_tip = (
+            "其他模板仍然保留；如需继续替换，可点击下方对应的“替换：模板名称”按钮。"
+        )
     else:
         status = f"✅ 当前默认模板【{selected_name}】。"
         action = (
             "你可以直接发送女性人物图片（正面、脸部清晰），"
             "我会使用当前模板生成视频。"
         )
+        replacement_tip = (
+            "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片。"
+        )
     return (
         f"🎞️ {'已更新' if replacement_confirmed else '已切换到'}【{scene_name}】场景。\n\n"
         f"{status}\n\n"
         f"{action}\n\n"
-        "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片；"
+        f"{replacement_tip}"
         "模板替换完成后，我会再次提示你发送女性人物图片。\n\n"
         "随时可以发送 /cancel 退出流程。"
     )
@@ -815,9 +841,6 @@ async def receive_ref2v_template_replacement(
         )
         return QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
 
-    previous_reference_path = fsm_data.get("selected_reference_image_path")
-    if previous_reference_path:
-        cleanup_fsm_temp_files([previous_reference_path])
     _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
     selected_name = str(
         (names[template_index] if template_index < len(names) else "")
@@ -826,8 +849,39 @@ async def receive_ref2v_template_replacement(
     fsm_data["selected_reference_image"] = references[template_index]
     fsm_data["selected_reference_name"] = selected_name
     fsm_data["selected_reference_image_path"] = local_path
+    replacement_key = str(template_index)
+    replacement_paths = fsm_data.setdefault("reference_image_replacement_paths", {})
+    if not isinstance(replacement_paths, dict):
+        replacement_paths = {}
+        fsm_data["reference_image_replacement_paths"] = replacement_paths
+    previous_reference_path = replacement_paths.get(replacement_key)
+    if previous_reference_path and previous_reference_path != local_path:
+        cleanup_fsm_temp_files([previous_reference_path])
+    replacement_paths[replacement_key] = local_path
+    replacement_file_ids = fsm_data.setdefault(
+        "reference_image_replacement_file_ids", {}
+    )
+    if not isinstance(replacement_file_ids, dict):
+        replacement_file_ids = {}
+        fsm_data["reference_image_replacement_file_ids"] = replacement_file_ids
+    replacement_file_ids[replacement_key] = file_id
     fsm_data.pop("pending_reference_template_index", None)
     fsm_data.pop("pending_reference_template_name", None)
+
+    gallery_awaitable = send_qqcc_ref2v_reference_templates(
+        message=message,
+        bot=context.bot,
+        scene=scene,
+        template_source_overrides=_ref2v_template_source_overrides(fsm_data),
+    )
+    if is_qqcc_bot_context(context):
+        await run_qqcc_interaction_io(
+            gallery_awaitable,
+            operation="quick_video_ref2v_replacement_gallery",
+            logger=logger,
+        )
+    else:
+        await gallery_awaitable
 
     await robust_reply_text(
         message,
@@ -1119,6 +1173,18 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     selected_reference_image_path = fsm_data.pop(
         "selected_reference_image_path", None
     )
+    replacement_paths = fsm_data.pop("reference_image_replacement_paths", {})
+    fsm_data.pop("reference_image_replacement_file_ids", None)
+    unused_replacement_paths = [
+        str(path)
+        for path in (
+            replacement_paths.values()
+            if isinstance(replacement_paths, dict)
+            else []
+        )
+        if path and str(path) != str(selected_reference_image_path or "")
+    ]
+    cleanup_fsm_temp_files(unused_replacement_paths)
     submission_temp_paths = [
         str(path) for path in (image_path, selected_reference_image_path) if path
     ]
