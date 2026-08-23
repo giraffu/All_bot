@@ -552,8 +552,11 @@ NAS 模式的目标和 NAS SHA 同样必须在删前通过。R2/NAS 客户端、
 回执和对应批次 SHA 永久保留。`plan-bulk-delete-successor` 只冻结 predecessor 中仍为
 `planned` 的对象，证明累计保留对象与 successor 对象等于 root 对象/资产坐标总数，
 并把 predecessor 的非完成批次置为 paused。successor 沿用 predecessor 的 disposition，
-避免再次扫描完整生产 History；每个执行批次仍精确
-重检新增生产引用和本地 blocker。未提交的
+但冻结 remaining 前必须把候选旧源计算为 32-byte SHA-256 集合，并对生产 History 三种
+路径角色重新做一次集合半连接；命中者在 predecessor 中以 `LIVE_HISTORY_REFERENCE`
+终态隔离保留，不进入 successor。Bulk v5 successor 绑定这批保留对象的对象数、资产
+坐标数和 rowset SHA；累计已完成/继承保留、目标身份漂移隔离、实时引用隔离与 remaining
+必须共同等于 root 范围。每个执行批次仍精确重检新增生产引用和本地 blocker。未提交的
 在途删除可由 successor 以 source-already-missing 路径重新完成删后验证；两计划对象交集
 按状态为零。successor 绑定新 artifact、请求调度策略、rowset/batches SHA，仍需新的
 `DELETE_HISTORY_MEDIA_<successor-sha>`；旧 executor 必须保持停止，不能与 successor
