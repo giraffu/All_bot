@@ -4,6 +4,10 @@ import pytest
 from fastapi import HTTPException
 
 from src.core import task_core
+from src.core.task_application import TaskApplication
+from src.core.task_core_default_dependencies import (
+    build_default_task_core_process_dependencies,
+)
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import (
     SubmissionReconciliationPending,
@@ -55,6 +59,84 @@ class _FakeSession:
 
 def _build_current_user():
     return type("User", (), {"id": 123, "username": "tester"})()
+
+
+@pytest.mark.asyncio
+async def test_web_face_swap_promotes_named_staging_inputs_before_dispatch():
+    promote = AsyncMock(
+        return_value=[
+            "task-inputs/web-face-swap-1/0.png",
+            "task-inputs/web-face-swap-1/1.png",
+        ]
+    )
+    captured = {}
+
+    async def execute_saga(**kwargs):
+        captured["context"] = kwargs["submission_context"]
+        return TaskSubmissionExecutionResult(
+            registry_task_id=kwargs["registry_task_id"],
+            backend_task_id="backend-face-swap-1",
+            submission_context=kwargs["submission_context"],
+        )
+
+    async def keep_object_key(_user_logger=None, path="", **_kwargs):
+        return path
+
+    async def get_priority(_user_id):
+        return 0, "user", "title"
+
+    dependencies = build_default_task_core_process_dependencies(
+        video_task_types=set(),
+        build_video_task_request_func=lambda *_args: task_core.VideoTaskRequest(),
+        check_concurrency_lock_func=AsyncMock(return_value=(True, "")),
+        check_and_deduct_credits_func=AsyncMock(return_value=(True, "")),
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=AsyncMock(),
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        get_strategy_func=lambda task_type: task_core.StrategyFactory.get_strategy(
+            task_type
+        ),
+        user_logger_factory=lambda user_id, username: type(
+            "Logger", (), {"user_id": user_id, "username": username}
+        )(),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=get_priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=keep_object_key,
+        promote_staged_inputs_func=promote,
+        bucket_name="user-data-prod",
+        logger_override=task_core.logger,
+    )
+
+    response = await task_submission_service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="face_swap",
+            inputs={
+                "target_image": "staging/user-uploads/123/body.png",
+                "face_image": "staging/user-uploads/123/face.png",
+            },
+            prompt="swap",
+        ),
+        current_user=_build_current_user(),
+        get_balance=AsyncMock(return_value=98),
+        task_id_override="web-face-swap-1",
+        task_application=TaskApplication(dependencies=dependencies),
+    )
+
+    assert response.task_id == "web-face-swap-1"
+    promote.assert_awaited_once_with(
+        input_refs=[
+            "staging/user-uploads/123/body.png",
+            "staging/user-uploads/123/face.png",
+        ],
+        task_id="web-face-swap-1",
+        user_id=123,
+    )
+    assert captured["context"].saved_inputs == [
+        "task-inputs/web-face-swap-1/0.png",
+        "task-inputs/web-face-swap-1/1.png",
+    ]
 
 
 @pytest.mark.asyncio

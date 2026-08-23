@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -181,6 +181,73 @@ async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_s
     assert inputs["prompt"] == "默认提示词"
     assert inputs["saved_input_images"] == ["processed:local/a.png"]
     assert processed_paths == [(9, "tester", "local/a.png"), (9, "tester", "")]
+
+
+@pytest.mark.asyncio
+async def test_prepare_task_submission_payload_promotes_strategy_inputs_before_history():
+    strategy = MagicMock()
+    strategy.get_file_paths_to_upload.return_value = [
+        "staging/user-uploads/9/body.png",
+        "staging/user-uploads/9/face.png",
+    ]
+    strategy.get_metadata.side_effect = lambda inputs: {
+        "saved_inputs": list(inputs["saved_input_images"])
+    }
+    promote = AsyncMock(
+        return_value=[
+            "task-inputs/registry-1/0.png",
+            "task-inputs/registry-1/1.png",
+        ]
+    )
+
+    async def fake_get_priority(_user_id: int):
+        return 0, "user", "title"
+
+    async def keep_object_key(user_logger, path: str):
+        assert user_logger.user_id == 9
+        return path
+
+    inputs = {
+        "target_image": "staging/user-uploads/9/body.png",
+        "face_image": "staging/user-uploads/9/face.png",
+        "prompt": "swap",
+    }
+    result = await prepare_task_submission_payload(
+        user_id=9,
+        username="tester",
+        task_type="face_swap",
+        inputs=inputs,
+        registry_task_id="registry-1",
+        strategy=strategy,
+        base_priority=0,
+        is_template=False,
+        is_video_task=False,
+        video_request=VideoTaskRequest(),
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id, username=username
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=fake_get_priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=keep_object_key,
+        promote_staged_inputs_func=promote,
+        bucket_name="user-data-prod",
+    )
+
+    promote.assert_awaited_once_with(
+        input_refs=[
+            "staging/user-uploads/9/body.png",
+            "staging/user-uploads/9/face.png",
+        ],
+        task_id="registry-1",
+        user_id=9,
+    )
+    assert result.saved_inputs == [
+        "task-inputs/registry-1/0.png",
+        "task-inputs/registry-1/1.png",
+    ]
+    assert result.metadata["saved_inputs"] == result.saved_inputs
+    assert inputs["saved_input_images"] == result.saved_inputs
 
 
 @pytest.mark.asyncio

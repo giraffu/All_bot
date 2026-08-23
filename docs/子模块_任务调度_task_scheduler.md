@@ -105,6 +105,9 @@ sequenceDiagram
 职责：
 
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
+- 输入准备从 command 接收精确 `registry_task_id`，并通过 runtime
+  dependency 把策略选中的 staging 对象提升为 `task-inputs/`；该步骤覆盖
+  Web/Bot/QQCC，且必须早于扣费、journal dispatching 和 Central 派发
 - `task_application.py` 持有 dependencies 并编排 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`；`task_core.py` 的宽提交函数仅为待退出兼容层
 - `TaskSubmissionCommand` 保存用户、任务、输入、双 ID 关联数据；`TaskSubmissionPolicy` 保存入口控制、幂等键和 timeout；`SubmissionJournal` 统一 durable phase hook，避免继续向 facade 增加 callback
 - 进行并发锁检查与扣费
@@ -113,7 +116,11 @@ sequenceDiagram
 - 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
 
-默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。新增装配能力时应优先落在对应 builder，保持 `build_default_task_core_process_dependencies(...)` 作为聚合入口，而不是重新把基础设施解析堆回 facade。
+默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。input builder 持有可替换的 staging promotion capability，生产 adapter
+在 `src/task_core_process_defaults.py` 装配，core 只传递 ID、有序引用和结果。
+新增装配能力时应优先落在对应 builder，保持
+`build_default_task_core_process_dependencies(...)` 作为聚合入口，而不是重新把
+基础设施解析堆回 facade。
 
 ### 4.2 Web 监控门面
 

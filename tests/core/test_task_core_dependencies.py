@@ -579,6 +579,8 @@ async def test_runtime_default_dependencies_pass_free_edit_flag_to_dispatch(
     monkeypatch,
 ):
     import config
+    from src.services import storage_r2_promotion
+    from src.services.storage import storage
 
     captured = {}
 
@@ -610,6 +612,10 @@ async def test_runtime_default_dependencies_pass_free_edit_flag_to_dispatch(
         }
         return "backend-1"
 
+    promote_staged_inputs = AsyncMock(
+        return_value=["task-inputs/registry-1/0.png"]
+    )
+
     monkeypatch.setattr(config, "ENABLE_FREE_EDIT_V2", True)
     monkeypatch.setattr(
         task_core_process_defaults,
@@ -625,6 +631,11 @@ async def test_runtime_default_dependencies_pass_free_edit_flag_to_dispatch(
         task_dispatcher,
         "dispatch_to_worker",
         fake_dispatch_to_worker,
+    )
+    monkeypatch.setattr(
+        storage_r2_promotion,
+        "promote_staged_user_inputs",
+        promote_staged_inputs,
     )
 
     dependencies = (
@@ -647,5 +658,17 @@ async def test_runtime_default_dependencies_pass_free_edit_flag_to_dispatch(
         {"saved_input_images": ["ref.png"]},
         9,
     )
+    assert await dependencies.promote_staged_inputs_func(
+        input_refs=["staging/user-uploads/7/source.png"],
+        task_id="registry-1",
+        user_id=7,
+    ) == ["task-inputs/registry-1/0.png"]
 
     assert captured["dispatch"]["feature_flags"].free_edit_v2_enabled is True
+    promote_staged_inputs.assert_awaited_once_with(
+        input_refs=["staging/user-uploads/7/source.png"],
+        task_id="registry-1",
+        user_id=7,
+        bucket=config.MINIO_BUCKET,
+        client=storage.client,
+    )

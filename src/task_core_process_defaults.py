@@ -40,6 +40,8 @@ def build_runtime_default_task_core_process_dependencies(
     from src.services.task_web_side_effects import (
         attach_submission_side_effects_default,
     )
+    from src.services.storage import storage
+    from src.services.storage_r2_promotion import promote_staged_user_inputs
     from src.utils import load_prompts
 
     async def attach_submission_side_effects_func(**kwargs):
@@ -67,6 +69,15 @@ def build_runtime_default_task_core_process_dependencies(
             dispatch_to_worker_func=dispatch_to_worker_func,
         )
 
+    async def promote_staged_inputs_func(*, input_refs, task_id, user_id):
+        return await promote_staged_user_inputs(
+            input_refs=input_refs,
+            task_id=task_id,
+            user_id=user_id,
+            bucket=MINIO_BUCKET,
+            client=storage.client,
+        )
+
     return build_default_task_core_process_dependencies(
         video_task_types=VIDEO_TASK_TYPES,
         build_video_task_request_func=build_video_task_request,
@@ -85,6 +96,7 @@ def build_runtime_default_task_core_process_dependencies(
         get_user_priority_and_identity_func=get_user_priority_and_identity,
         load_prompts_func=load_prompts,
         process_input_path_func=process_input_path,
+        promote_staged_inputs_func=promote_staged_inputs_func,
         bucket_name=MINIO_BUCKET,
         shield_func=asyncio.shield,
         logger_override=logger_override,
