@@ -2740,6 +2740,16 @@ def test_copy_replacement_plan_retains_completed_and_supersedes_only_remainder()
     )
 
 
+def test_noncopy_rowset_uniqueness_allows_only_explicit_successor_lineage():
+    normalized = " ".join(MIGRATION_DDL.split())
+
+    assert "drop index if exists ux_history_media_migration_noncopy_rowset" in normalized
+    assert "ux_history_media_migration_noncopy_rowset_lineage" in normalized
+    assert "manifest->>'predecessor_switch_plan_sha256'" in normalized
+    assert "manifest->>'predecessor_probe_plan_sha256'" in normalized
+    assert "where plan_type<>'copy'" in normalized
+
+
 def test_copy_successor_verification_and_switch_aggregate_the_full_plan_chain():
     import inspect
 
