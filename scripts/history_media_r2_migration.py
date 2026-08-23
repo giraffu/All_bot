@@ -443,8 +443,18 @@ alter table analytics_history_media_migration_plans
   drop constraint if exists analytics_history_media_migration_plans_run_id_plan_type_rowset_sha256_key;
 create index if not exists ix_history_media_migration_plans_rowset
   on analytics_history_media_migration_plans(run_id,plan_type,rowset_sha256);
-create unique index if not exists ux_history_media_migration_noncopy_rowset
-  on analytics_history_media_migration_plans(run_id,plan_type,rowset_sha256)
+drop index if exists ux_history_media_migration_noncopy_rowset;
+create unique index if not exists ux_history_media_migration_noncopy_rowset_lineage
+  on analytics_history_media_migration_plans(
+    run_id,
+    plan_type,
+    rowset_sha256,
+    (coalesce(
+      manifest->>'predecessor_switch_plan_sha256',
+      manifest->>'predecessor_probe_plan_sha256',
+      ''
+    ))
+  )
   where plan_type<>'copy';
 create table if not exists analytics_history_media_migration_plan_batches (
     plan_sha256 char(64) not null references analytics_history_media_migration_plans(plan_sha256),
