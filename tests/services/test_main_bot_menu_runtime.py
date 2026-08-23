@@ -50,23 +50,36 @@ async def test_runtime_keyboard_falls_back_to_defaults_when_config_load_fails():
 
 
 @pytest.mark.asyncio
-async def test_runtime_keyboard_uses_ltx_label_in_prod_and_h3_label_in_test(monkeypatch):
+async def test_runtime_keyboard_can_show_ltx_and_h3_as_independent_entries(monkeypatch):
     config = normalize_main_bot_menu_config(DEFAULT_MAIN_BOT_MENU_CONFIG)
+    next(
+        item for item in config["main_menu"]["items"]
+        if item["key"] == "menu.advanced_video_pro"
+    )["visible"] = True
+    monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
 
-    monkeypatch.setenv("ALLBOT_ENV", "prod")
-    monkeypatch.delenv("MINIMAX_H3_BACKEND_ENABLED", raising=False)
-    prod_keyboard = await get_runtime_main_menu_keyboard(
+    keyboard = await get_runtime_main_menu_keyboard(
         "zh", load_config_func=AsyncMock(return_value=config)
     )
 
-    monkeypatch.setenv("ALLBOT_ENV", "test")
-    test_keyboard = await get_runtime_main_menu_keyboard(
+    labels = sum(_texts(keyboard), [])
+    assert get_text("menu.ltx_video", "zh") in labels
+    assert get_text("menu.advanced_video_pro", "zh") in labels
+
+
+@pytest.mark.asyncio
+async def test_runtime_keyboard_hides_h3_when_backend_capability_is_disabled(monkeypatch):
+    config = normalize_main_bot_menu_config(DEFAULT_MAIN_BOT_MENU_CONFIG)
+    next(
+        item for item in config["main_menu"]["items"]
+        if item["key"] == "menu.advanced_video_pro"
+    )["visible"] = True
+    monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "false")
+
+    keyboard = await get_runtime_main_menu_keyboard(
         "zh", load_config_func=AsyncMock(return_value=config)
     )
 
-    prod_labels = sum(_texts(prod_keyboard), [])
-    test_labels = sum(_texts(test_keyboard), [])
-    assert get_text("menu.ltx_video", "zh") in prod_labels
-    assert get_text("menu.advanced_video_pro", "zh") not in prod_labels
-    assert get_text("menu.advanced_video_pro", "zh") not in test_labels
-    assert get_text("menu.ltx_video", "zh") in test_labels
+    labels = sum(_texts(keyboard), [])
+    assert get_text("menu.ltx_video", "zh") in labels
+    assert get_text("menu.advanced_video_pro", "zh") not in labels

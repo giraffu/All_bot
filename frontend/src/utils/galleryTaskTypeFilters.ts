@@ -1,5 +1,8 @@
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
-import { isGenerationTaskTypeEntryEnabled } from '@/config/generationFeatureAvailability'
+import {
+  isGenerationTaskTypeEnabled,
+  isMinimaxH3GalleryEntryEnabled,
+} from '@/config/generationFeatureAvailability'
 
 export const GALLERY_EDIT_GROUP_TASK_TYPE = 'edit_group'
 export const GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE = 'free_edit_v3_group'
@@ -43,7 +46,12 @@ export function filterVisibleGalleryTaskTypes(
   return allowedTypes.filter((taskType) => (
     Boolean(taskType?.id)
     && !WEB_DISABLED_GALLERY_TASK_TYPES.has(taskType.id)
-    && isGenerationTaskTypeEntryEnabled(taskType.id)
+    && (
+      taskType.id === GALLERY_MINIMAX_H3_GROUP_TASK_TYPE
+      || taskType.id.startsWith('minimax_h3_')
+        ? isMinimaxH3GalleryEntryEnabled()
+        : isGenerationTaskTypeEnabled(taskType.id)
+    )
   ))
 }
 

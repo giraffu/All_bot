@@ -292,6 +292,27 @@ class MainBotMenuConfigResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class WebEntryVisibilityConfig(BaseModel):
+    ltx_video: bool = True
+    minimax_h3: bool = False
+    character_assets: bool = False
+
+
+class GalleryEntryVisibilityConfig(BaseModel):
+    minimax_h3: bool = False
+
+
+class FeatureEntryVisibilityConfigRequest(BaseModel):
+    web: WebEntryVisibilityConfig
+    gallery: GalleryEntryVisibilityConfig
+
+
+class FeatureEntryVisibilityConfigResponse(BaseModel):
+    key: str
+    config: Dict[str, Any]
+    updated_at: Optional[datetime] = None
+
+
 class QqccBotConfigRequest(BaseModel):
     scene_preset_version: Optional[int] = None
     global_enabled: Optional[bool] = None

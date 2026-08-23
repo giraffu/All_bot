@@ -19,10 +19,13 @@ checkpoint、LoRA 术语、作者资产名或物理文件名。Web 不渲染基�
 摘要只显示启用数量。下文模型名、目录 ID、强度和文件路径均是内部运行契约，不是
 用户文案；展示脱敏不得改变提交 payload 或 Worker 注入顺序。
 
-Web 由 `enable_minimax_h3` 控制，普通导航和修仙市集类型筛选另由
-`enable_minimax_h3_entry` 控制；
+Web 能力由发布配置 `enable_minimax_h3` 控制；普通导航由 Dashboard 的 Web
+`minimax_h3` 入口开关控制，修仙市集类型筛选另由 Gallery `minimax_h3` 入口开关
+独立控制。Web 启动时从公开只读接口 `/api/app/entry-visibility` 加载这些安全布尔值，
+Dashboard 通过认证接口 `/api/entry-visibility` 写入
+`feature_entry_visibility_config:v1`，无需重新发布代码；读取失败时沿用 Pages 发布配置。
 REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
-`MINIMAX_H3_BACKEND_ENABLED`、`MINIMAX_H3_ENTRY_ENABLED` 和
+`MINIMAX_H3_BACKEND_ENABLED` 和
 `MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不删除已有投稿，也不阻止作品详情、
 模板深链或 `/advanced_video_pro` 命令测试。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard

@@ -130,7 +130,7 @@ export const dashboardTabs: DashboardTabConfig[] = [
   },
   {
     key: 'main_bot_menu',
-    label: '主Bot菜单',
+    label: '入口控制',
     icon: MenuOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/MainBotMenuSettings.vue'))),
     containerClass: BASE_CONTAINER_CLASS,

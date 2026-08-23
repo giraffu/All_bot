@@ -17,7 +17,22 @@ describe('galleryTaskTypeFilters', () => {
       enable_ltx_video: true,
       enable_minimax_h3: true,
       enable_minimax_h3_entry: false,
+      enable_gallery_minimax_h3_entry: false,
     }
+  })
+
+  it('uses the market switch independently from the Web Pro workbench switch', () => {
+    window.__ALLBOT_CONFIG__ = {
+      enable_minimax_h3: true,
+      enable_minimax_h3_entry: false,
+      enable_gallery_minimax_h3_entry: true,
+    }
+
+    expect(filterVisibleGalleryTaskTypes([
+      { id: 'minimax_h3_i2v', name: '高级图生视频pro' },
+    ])).toEqual([
+      { id: 'minimax_h3_i2v', name: '高级图生视频pro' },
+    ])
   })
   it('groups new and historical free edits under v3', () => {
     const tabs = buildGalleryTaskTypeTabs([

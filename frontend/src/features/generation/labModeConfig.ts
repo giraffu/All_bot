@@ -236,6 +236,10 @@ export const FREE_EDIT_V3_ENABLED = getRuntimeFlag('enable_free_edit_v3', true)
 export const FREE_EDIT_V2_5_ENABLED = FREE_EDIT_V3_ENABLED
 export const WEB_I2I_DRAW_ENABLED = false
 export const WEB_LTX_VIDEO_ENABLED = getRuntimeFlag('enable_ltx_video', true)
+export const WEB_LTX_VIDEO_ENTRY_ENABLED = getRuntimeFlag(
+  'enable_ltx_video_entry',
+  WEB_LTX_VIDEO_ENABLED,
+)
 export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const WEB_LTX_VIDEO_V2_ENABLED = getRuntimeFlag('enable_ltx_video_v2', false)
 export const WEB_CHARACTER_ASSETS_ENABLED = getRuntimeFlag('enable_character_assets', false)
@@ -757,7 +761,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== 'character_reference' || (
     WEB_CHARACTER_ASSETS_ENABLED && WEB_CHARACTER_ASSETS_ENTRY_ENABLED
   ))
-  && (mode.id !== 'ltx_video' || WEB_LTX_VIDEO_ENABLED)
+  && (mode.id !== 'ltx_video' || (WEB_LTX_VIDEO_ENABLED && WEB_LTX_VIDEO_ENTRY_ENABLED))
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
   && (mode.id !== 'minimax_h3' || (WEB_MINIMAX_H3_ENABLED && WEB_MINIMAX_H3_ENTRY_ENABLED))
