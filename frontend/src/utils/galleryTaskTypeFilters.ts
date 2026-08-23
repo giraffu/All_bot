@@ -1,5 +1,5 @@
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
-import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
+import { isGenerationTaskTypeEntryEnabled } from '@/config/generationFeatureAvailability'
 
 export const GALLERY_EDIT_GROUP_TASK_TYPE = 'edit_group'
 export const GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE = 'free_edit_v3_group'
@@ -43,7 +43,7 @@ export function filterVisibleGalleryTaskTypes(
   return allowedTypes.filter((taskType) => (
     Boolean(taskType?.id)
     && !WEB_DISABLED_GALLERY_TASK_TYPES.has(taskType.id)
-    && isGenerationTaskTypeEnabled(taskType.id)
+    && isGenerationTaskTypeEntryEnabled(taskType.id)
   ))
 }
 
