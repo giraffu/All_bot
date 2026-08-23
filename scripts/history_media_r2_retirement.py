@@ -2637,6 +2637,7 @@ async def _materialize_bulk_retirement_order(
     *,
     canary_size: int,
     batch_size: int,
+    require_eligible: bool = True,
 ) -> None:
     disposition_rows = await ledger.fetch(
         """select retirement_disposition,count(*) object_count,
@@ -2649,10 +2650,12 @@ async def _materialize_bulk_retirement_order(
     }
     eligible_count = disposition_counts.get("eligible", 0)
     deferred_count = disposition_counts.get("deferred", 0)
-    if not eligible_count:
+    if require_eligible and not eligible_count:
         raise RuntimeError("bulk retirement scope has no immediately eligible source")
-    eligible_batch_count = 1 + max(
-        0, (eligible_count - canary_size + batch_size - 1) // batch_size
+    eligible_batch_count = (
+        1 + max(0, (eligible_count - canary_size + batch_size - 1) // batch_size)
+        if eligible_count
+        else 0
     )
     deferred_batch_count = (
         (deferred_count + batch_size - 1) // batch_size if deferred_count else 0
@@ -3316,6 +3319,7 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             ledger,
             canary_size=args.canary_size,
             batch_size=args.batch_size,
+            require_eligible=False,
         )
         rowset_sha, batches, object_count, total_bytes = (
             await _bulk_staged_identity(ledger)
