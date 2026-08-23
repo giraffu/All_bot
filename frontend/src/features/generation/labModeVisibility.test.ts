@@ -6,23 +6,27 @@ describe('test Web video feature visibility', () => {
   beforeEach(() => {
     vi.resetModules()
     window.__ALLBOT_CONFIG__ = {
-      enable_ltx_video: false,
+      enable_ltx_video: true,
       enable_ltx_video_v2: false,
       enable_ltx_t2v: false,
+      enable_character_assets: true,
+      enable_character_assets_entry: false,
       enable_minimax_h3: true,
-      enable_minimax_h3_entry: true,
+      enable_minimax_h3_entry: false,
       enable_minimax_h3_ref2v: true,
     }
   })
 
-  it('shows the H3 card when the test entry and capability flags are enabled', async () => {
+  it('shows original advanced video while hiding H3 Pro and character entry cards', async () => {
     const { UNIFIED_LAB_MODES, resolveLabModeIdFromTaskType } = await import('./labModeConfig')
     const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)
 
-    expect(visibleModeIds).toContain('minimax_h3')
-    expect(visibleModeIds).not.toContain('ltx_video')
+    expect(visibleModeIds).toContain('ltx_video')
+    expect(visibleModeIds).not.toContain('minimax_h3')
+    expect(visibleModeIds).not.toContain('character_reference')
     expect(visibleModeIds).not.toContain('ltx_video_v2')
     expect(visibleModeIds).not.toContain('ltx_t2v')
+    expect(resolveLabModeIdFromTaskType('character_reference')).toBe('character_reference')
     expect(resolveLabModeIdFromTaskType('minimax_h3_ref2v')).toBe('minimax_h3')
   })
 

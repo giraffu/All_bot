@@ -76,6 +76,7 @@ PUBLIC_WEB_RUNTIME_FIELDS = {
     "enable_ltx_t2v",
     "enable_ltx_t2v_msr",
     "enable_character_assets",
+    "enable_character_assets_entry",
     "enable_character_explicit_views",
     "enable_ltx_video_v2",
     "enable_minimax_h3",
