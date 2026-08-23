@@ -86,6 +86,24 @@ async def test_promotes_only_current_users_staged_inputs_and_preserves_other_ref
 
 
 @pytest.mark.asyncio
+async def test_retry_with_same_task_id_reuses_matching_durable_input():
+    client = FakeClient()
+    kwargs = {
+        "input_refs": ["staging/user-uploads/42/upload-1.png"],
+        "task_id": "registry-1",
+        "user_id": 42,
+        "bucket": "user-data-prod",
+        "client": client,
+    }
+
+    first = await promote_staged_user_inputs(**kwargs)
+    second = await promote_staged_user_inputs(**kwargs)
+
+    assert first == second == ["task-inputs/registry-1/0.png"]
+    assert len(client.copies) == 1
+
+
+@pytest.mark.asyncio
 async def test_rejects_cross_user_staging_reference():
     with pytest.raises(StagedInputPromotionError):
         await promote_staged_user_inputs(
