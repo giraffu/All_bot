@@ -165,6 +165,7 @@ class QuickVideoSubmissionPlan:
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
     qqcc_chain_segments: tuple[QqccVideoChainSegment, ...] = ()
     reference_images: list[str] = field(default_factory=list)
+    reference_image_paths: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -601,6 +602,9 @@ def build_quick_video_submission_plan(
         selected_reference_name = str(
             fsm_data.get("selected_reference_name") or ""
         ).strip()
+        selected_reference_image_path = str(
+            fsm_data.get("selected_reference_image_path") or ""
+        ).strip()
         scene_reference_images = list(scene.get("reference_images") or [])
         if scene_mode == "ref2v" and selected_reference_image not in scene_reference_images:
             return QuickVideoSubmissionReject(
@@ -656,6 +660,11 @@ def build_quick_video_submission_plan(
                 selected_reference_name=(
                     selected_reference_name if scene_mode == "ref2v" else None
                 ),
+                selected_reference_source=(
+                    "user_upload"
+                    if scene_mode == "ref2v" and selected_reference_image_path
+                    else None
+                ),
             ),
             lora_items=lora_items,
             tail_draw_chain=tail_draw_chain,
@@ -664,6 +673,11 @@ def build_quick_video_submission_plan(
             fixed_credit_cost=fixed_credit_cost,
             reference_images=(
                 [selected_reference_image] if scene_mode == "ref2v" else []
+            ),
+            reference_image_paths=(
+                [selected_reference_image_path]
+                if scene_mode == "ref2v" and selected_reference_image_path
+                else []
             ),
             aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
         )
@@ -1195,10 +1209,19 @@ async def run_quick_video_submission_plan(
             raise ValueError("QQCC REF2V requires one to four administrator references")
         downloaded_refs: list[str] = []
         try:
-            for index, object_key in enumerate(plan.reference_images, start=1):
-                downloaded_refs.append(
-                    str(await _maybe_await(download_reference_image_func(object_key, index)))
-                )
+            if plan.reference_image_paths:
+                if len(plan.reference_image_paths) != len(plan.reference_images):
+                    raise ValueError("QQCC REF2V replacement reference count mismatch")
+                downloaded_refs.extend(plan.reference_image_paths)
+            else:
+                for index, object_key in enumerate(plan.reference_images, start=1):
+                    downloaded_refs.append(
+                        str(
+                            await _maybe_await(
+                                download_reference_image_func(object_key, index)
+                            )
+                        )
+                    )
             task_kwargs = billing_state.allocate_task_billing()
             result = await _maybe_await(
                 process_generation_task_func(

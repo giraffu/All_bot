@@ -242,6 +242,19 @@ async def prepare_qqcc_regeneration_submission(
         index=0,
         name_hint="qqcc_regenerate_video",
     )
+    selected_reference_image_path = None
+    if meta.get("selected_reference_source") == "user_upload":
+        try:
+            selected_reference_image_path = (
+                await download_history_input_file_to_fsm_temp(
+                    history=history,
+                    index=1,
+                    name_hint="qqcc_regenerate_ref2v_template",
+                )
+            )
+        except Exception:
+            cleanup_fsm_temp_files([image_path])
+            raise
     try:
         plan = build_quick_video_submission_plan(
             fsm_data={
@@ -252,15 +265,16 @@ async def prepare_qqcc_regeneration_submission(
                 "duration": _coerce_quick_video_duration(history),
                 "selected_reference_image": meta.get("selected_reference_image"),
                 "selected_reference_name": meta.get("selected_reference_name"),
+                "selected_reference_image_path": selected_reference_image_path,
             },
             qqcc_config=qqcc_config,
             allowed_resolutions=None,
         )
     except Exception:
-        cleanup_fsm_temp_files([image_path])
+        cleanup_fsm_temp_files([image_path, selected_reference_image_path])
         raise
     if isinstance(plan, QuickVideoSubmissionReject):
-        cleanup_fsm_temp_files([image_path])
+        cleanup_fsm_temp_files([image_path, selected_reference_image_path])
         raise QQCCRegenerationError("功能暂未开放或配置已变更。")
     return QQCCRegenerationSubmission(
         kind=kind,

@@ -18,6 +18,7 @@ from src.services.qqcc_config_service import (
 )
 from src.services.quick_video_submission_service import (
     QuickVideoSubmissionKind,
+    QuickVideoSubmissionPlan,
     QuickVideoSubmissionReject,
     QuickVideoSubmissionRejectReason,
     QuickVideoSettingsReject,
@@ -561,6 +562,7 @@ async def test_qqcc_ref2v_uses_only_the_user_selected_template():
             "scene_id": "ref-scene",
             "selected_reference_image": references[1],
             "selected_reference_name": "白色模板",
+            "selected_reference_image_path": "/tmp/user-ref-b.png",
         },
         qqcc_config=normalize_qqcc_config(
             {
@@ -583,7 +585,7 @@ async def test_qqcc_ref2v_uses_only_the_user_selected_template():
         allowed_resolutions=[],
     )
     generation_task = AsyncMock(return_value={"output": "history/result.mp4"})
-    downloads = AsyncMock(return_value="/tmp/ref-b.png")
+    downloads = AsyncMock(side_effect=AssertionError("admin template must not download"))
 
     await run_quick_video_submission_plan(
         plan=plan,
@@ -602,15 +604,52 @@ async def test_qqcc_ref2v_uses_only_the_user_selected_template():
     assert plan.total_cost == 46
     assert plan.fixed_credit_cost == 46
     assert plan.reference_images == [references[1]]
+    assert plan.reference_image_paths == ["/tmp/user-ref-b.png"]
     assert plan.result_meta["_qqcc_regenerate"]["selected_reference_image"] == references[1]
     assert plan.result_meta["_qqcc_regenerate"]["selected_reference_name"] == "白色模板"
+    assert plan.result_meta["_qqcc_regenerate"]["selected_reference_source"] == "user_upload"
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
     assert generation_task.await_args.kwargs["images"] == [
         "/tmp/subject.png",
-        "/tmp/ref-b.png",
+        "/tmp/user-ref-b.png",
     ]
+    downloads.assert_not_awaited()
     assert generation_task.await_args.kwargs["aspect_ratio"] == "9:16"
     assert generation_task.await_args.kwargs["allow_contribute"] is False
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ref2v_downloads_admin_template_without_user_replacement():
+    plan = QuickVideoSubmissionPlan(
+        kind=QuickVideoSubmissionKind.H3_REF2V,
+        mode="minimax_h3_ref2v",
+        resolution="preview",
+        duration="5s",
+        total_cost=46,
+        default_prompt_key="minimax_h3_i2v",
+        default_prompt_text="prompt",
+        reference_images=["qqcc/config/ref2v/scene/default/input"],
+    )
+    generation_task = AsyncMock(return_value={"output": "history/result.mp4"})
+    downloads = AsyncMock(return_value="/tmp/admin-ref.png")
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/subject.png",
+        status_msg_id=77,
+        process_generation_task_func=generation_task,
+        download_reference_image_func=downloads,
+    )
+
+    downloads.assert_awaited_once()
+    assert generation_task.await_args.kwargs["images"] == [
+        "/tmp/subject.png",
+        "/tmp/admin-ref.png",
+    ]
 
 
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():

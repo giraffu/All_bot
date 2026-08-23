@@ -487,19 +487,19 @@ async def test_ref2v_scene_defaults_first_template_and_accepts_person_image_imme
     )
     buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
     assert [button.text for row in buttons for button in row] == [
-        "替换为：黑色模板",
-        "替换为：白色模板",
+        "替换：黑色模板",
+        "替换：白色模板",
     ]
     assert buttons[0][1].callback_data == build_quick_ref2v_template_callback_data("ref", 1)
     prompt = reply.await_args.args[1]
     assert "当前默认模板【黑色模板】" in prompt
-    assert "点击下方按钮可以替换模板" in prompt
-    assert "也可以直接发送女性人物图片" in prompt
+    assert "点击下方“替换：模板名称”按钮" in prompt
+    assert "可以直接发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
 
 
 @pytest.mark.asyncio
-async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(monkeypatch):
+async def test_ref2v_template_button_waits_for_replacement_image(monkeypatch):
     references = [
         "qqcc/config/ref2v/ai_video/ref/a/input",
         "qqcc/config/ref2v/ai_video/ref/b/input",
@@ -519,10 +519,8 @@ async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(m
             ],
         }
     )
-    selected_sender = AsyncMock(return_value=True)
     edit = AsyncMock()
     monkeypatch.setattr(quick_video_fsm, "load_runtime_qqcc_config", AsyncMock(return_value=config))
-    monkeypatch.setattr(quick_video_fsm, "send_qqcc_ref2v_reference_templates", selected_sender)
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", edit)
     user = SimpleNamespace(id=123, username="tester")
     callback_message = SimpleNamespace(chat_id=456)
@@ -541,7 +539,12 @@ async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(m
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={
             "in_conversation": "QUICK_VIDEO_ltx_video",
-            "quick_video_data": {"scene_id": "ref", "scene_kind": "ai_video"},
+            "quick_video_data": {
+                "scene_id": "ref",
+                "scene_kind": "ai_video",
+                "selected_reference_image": references[0],
+                "selected_reference_name": "黑色模板",
+            },
         },
         lang="zh",
         t=lambda key, **_kwargs: key,
@@ -549,24 +552,100 @@ async def test_ref2v_template_selection_sends_cached_image_then_waits_for_pic1(m
 
     result = await quick_video_fsm.select_ref2v_template(update, context)
 
-    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
-    assert context.user_data["quick_video_data"]["selected_reference_image"] == references[1]
-    assert context.user_data["quick_video_data"]["selected_reference_name"] == "白色模板"
-    selected_sender.assert_awaited_once_with(
-        message=callback_message,
-        bot=context.bot,
-        scene=config["ai_video_scenes"][0],
-        template_index=1,
-    )
-    assert "白色模板" in edit.await_args.args[1]
-    assert "已替换模板" in edit.await_args.args[1]
-    assert "直接发送女性人物图片" in edit.await_args.args[1]
-    assert "正面、脸部清晰" in edit.await_args.args[1]
+    assert result == quick_video_fsm.QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
+    assert context.user_data["quick_video_data"]["selected_reference_image"] == references[0]
+    assert context.user_data["quick_video_data"]["pending_reference_template_index"] == 1
+    assert context.user_data["quick_video_data"]["pending_reference_template_name"] == "白色模板"
+    assert "请发送用于替换【白色模板】的模板图片" in edit.await_args.args[1]
+    assert "不会直接开始生成视频" in edit.await_args.args[1]
     buttons = edit.await_args.kwargs["reply_markup"].inline_keyboard
     assert [button.text for row in buttons for button in row] == [
-        "替换为：黑色模板",
-        "替换为：白色模板",
+        "替换：黑色模板",
+        "替换：白色模板",
     ]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_replacement_image_updates_template_without_starting_generation(
+    monkeypatch,
+):
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/a/input",
+        "qqcc/config/ref2v/ai_video/ref/b/input",
+    ]
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "足交pro",
+                    "prompt": "prompt",
+                    "mode": "ref2v",
+                    "reference_images": references,
+                    "reference_image_names": ["黑色模板", "白色模板"],
+                }
+            ],
+        }
+    )
+    reply = AsyncMock()
+    start_generation = AsyncMock()
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "_download_quick_video_input",
+        AsyncMock(return_value="/tmp/user-replacement.png"),
+    )
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(quick_video_fsm, "start_generation", start_generation)
+    user = SimpleNamespace(id=123, username="tester")
+    message = SimpleNamespace(
+        photo=[SimpleNamespace(file_id="replacement-file-id")],
+        document=None,
+    )
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=456),
+        message=message,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "in_conversation": "QUICK_VIDEO_ltx_video",
+            "quick_video_data": {
+                "scene_id": "ref",
+                "scene_kind": "ai_video",
+                "mode": quick_video_fsm.MODE_LTX_VIDEO,
+                "pending_reference_template_index": 1,
+                "pending_reference_template_name": "白色模板",
+                "selected_reference_image": references[0],
+                "selected_reference_name": "黑色模板",
+            },
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_video_fsm.receive_ref2v_template_replacement(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    fsm_data = context.user_data["quick_video_data"]
+    assert fsm_data["selected_reference_image"] == references[1]
+    assert fsm_data["selected_reference_name"] == "白色模板"
+    assert fsm_data["selected_reference_image_path"] == "/tmp/user-replacement.png"
+    assert "pending_reference_template_index" not in fsm_data
+    assert "image_path" not in fsm_data
+    start_generation.assert_not_awaited()
+    prompt = reply.await_args.args[1]
+    assert "已使用你发送的图片替换【白色模板】模板" in prompt
+    assert "现在请发送女性人物图片" in prompt
+    assert "正面、脸部清晰" in prompt
 
 
 @pytest.mark.asyncio

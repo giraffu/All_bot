@@ -761,6 +761,7 @@ async def test_qqcc_quick_video_scene_reselection_replaces_pending_upload(
                 "scene_id": "old",
                 "image_path": "/tmp/old-quick-video.png",
                 "end_image_path": "/tmp/old-quick-video-end.png",
+                "selected_reference_image_path": "/tmp/old-user-template.png",
             },
         },
         bot_data={"bot_client_type": "bot:qqcc"},
@@ -773,7 +774,11 @@ async def test_qqcc_quick_video_scene_reselection_replaces_pending_upload(
     assert context.user_data["quick_video_data"]["scene_id"] == "new"
     assert context.user_data["in_conversation"].startswith("QUICK_VIDEO_")
     cleanup_mock.assert_called_once_with(
-        ["/tmp/old-quick-video.png", "/tmp/old-quick-video-end.png"]
+        [
+            "/tmp/old-quick-video.png",
+            "/tmp/old-quick-video-end.png",
+            "/tmp/old-user-template.png",
+        ]
     )
     answer_mock.assert_awaited_once()
 
