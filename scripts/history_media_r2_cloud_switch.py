@@ -227,6 +227,20 @@ def _bundle_sha256(bundle: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(bundle)).hexdigest()
 
 
+def _task_lease_datetime(bundle: dict[str, Any]) -> datetime:
+    """Return the signed task lease in asyncpg's timestamptz value type."""
+
+    try:
+        expires_at = datetime.fromisoformat(
+            str(bundle["lease_expires_at"]).replace("Z", "+00:00")
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("cloud Switch task lease changed") from None
+    if expires_at.tzinfo is None:
+        raise ValueError("cloud Switch task lease changed")
+    return expires_at.astimezone(timezone.utc)
+
+
 def validate_switch_task_gate(
     bundle: dict[str, Any],
     *,
@@ -253,13 +267,8 @@ def validate_switch_task_gate(
         raise ValueError("cloud Switch task identity changed")
     if confirm != f"SWITCH_HISTORY_MEDIA_{plan_sha256}":
         raise ValueError("exact cloud Switch confirmation is required")
-    try:
-        expires_at = datetime.fromisoformat(
-            str(bundle["lease_expires_at"]).replace("Z", "+00:00")
-        )
-    except (KeyError, TypeError, ValueError):
-        raise ValueError("cloud Switch task lease changed") from None
-    if expires_at.tzinfo is None or expires_at <= datetime.now(timezone.utc):
+    expires_at = _task_lease_datetime(bundle)
+    if expires_at <= datetime.now(timezone.utc):
         raise ValueError("cloud Switch task lease expired")
     rows = [_task_row(dict(row)) for row in bundle.get("rows", [])]
     if _task_rows_sha256(rows) != bundle.get("ledger_evidence_sha256") or sorted(
@@ -1013,7 +1022,7 @@ async def _export_task(args: argparse.Namespace) -> None:
                 batch["cas_state_sha256"],
                 bundle["ledger_ids"],
                 _bundle_sha256(bundle),
-                bundle["lease_expires_at"],
+                _task_lease_datetime(bundle),
             )
         print(
             json.dumps(

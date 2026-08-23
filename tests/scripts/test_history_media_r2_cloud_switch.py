@@ -176,6 +176,24 @@ def test_switch_task_and_receipt_bind_all_execution_identity() -> None:
             validate_switch_receipt(task, altered)
 
 
+def test_export_task_converts_signed_lease_to_timestamptz_value() -> None:
+    from scripts.history_media_r2_cloud_switch import _task_lease_datetime
+
+    task = _task()
+    signed_value = task["lease_expires_at"]
+
+    database_value = _task_lease_datetime(task)
+
+    assert isinstance(signed_value, str)
+    assert isinstance(database_value, datetime)
+    assert database_value.tzinfo is not None
+    assert database_value.isoformat() == signed_value
+
+    task["lease_expires_at"] = "not-a-timestamp"
+    with pytest.raises(ValueError, match="lease changed"):
+        _task_lease_datetime(task)
+
+
 @pytest.mark.asyncio
 async def test_cloud_batch_allows_idempotent_selected_targets_and_updates_once() -> (
     None
