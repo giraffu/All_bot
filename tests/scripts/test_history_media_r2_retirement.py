@@ -27,6 +27,8 @@ from scripts.history_media_r2_retirement import (
     _expected_switch_counts,
     _head_candidates,
     _head_source_candidates,
+    _bulk_predecessor_is_replaceable,
+    _bulk_predecessor_live_reference_proof,
     _live_reference_counts_with_retry,
     _parser,
     _mark_retirement_plan_paused,
@@ -1248,6 +1250,52 @@ async def test_bulk_retirement_successor_allows_deferred_only_canary():
 
     assert len(ledger.executions) == 3
     assert ledger.executions[-1][1] == (100, 1000, 0, 2)
+
+
+def test_bulk_retirement_replaces_only_unstarted_frozen_plan():
+    assert _bulk_predecessor_is_replaceable(
+        "frozen",
+        nonplanned_object_count=0,
+        nonpending_batch_count=0,
+    )
+    assert not _bulk_predecessor_is_replaceable(
+        "frozen",
+        nonplanned_object_count=1,
+        nonpending_batch_count=0,
+    )
+    assert not _bulk_predecessor_is_replaceable(
+        "frozen",
+        nonplanned_object_count=0,
+        nonpending_batch_count=1,
+    )
+    assert _bulk_predecessor_is_replaceable(
+        "paused",
+        nonplanned_object_count=10,
+        nonpending_batch_count=2,
+    )
+    assert not _bulk_predecessor_is_replaceable(
+        "completed",
+        nonplanned_object_count=10,
+        nonpending_batch_count=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_reference_proof_uses_frozen_source_hash_order():
+    class Ledger:
+        query = ""
+
+        async def fetch(self, query, _plan_sha256):
+            self.query = query
+            return []
+
+    ledger = Ledger()
+    proof = await _bulk_predecessor_live_reference_proof(ledger, "p" * 64)
+
+    assert proof == (_sha256_json([]), 0, 0)
+    assert "order by sha256(convert_to(source_key,'UTF8'))" in " ".join(
+        ledger.query.split()
+    )
 
 
 def test_target_identity_drift_quarantine_requires_intact_source_and_target_size():

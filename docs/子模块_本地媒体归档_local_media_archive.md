@@ -562,7 +562,10 @@ NAS 模式的目标和 NAS SHA 同样必须在删前通过。R2/NAS 客户端、
 `DELETE_HISTORY_MEDIA_<successor-sha>`；旧 executor 必须保持停止，不能与 successor
 竞争 paused 批次。初始 Bulk 计划仍必须有立即可执行的 `eligible` canary；若 successor
 剔除保留项后只剩 `deferred`，允许把第一个 deferred 批次冻结为 batch 0 canary，执行时
-仍须通过实时引用和本地 blocker 门禁后才可删除。
+仍须通过实时引用和本地 blocker 门禁后才可删除。若 frozen 计划在全局 preflight 前失败，
+只有全部对象仍为 `planned` 且全部批次仍为 `pending` 时才能成为 replacement predecessor；
+任一批次或对象已经开始便拒绝替换。实时引用保留 proof 必须与冻结器一致，按明文旧源
+key 的固定 SHA-256 排序后计算 rowset，不能改用带 source name 的账本身份摘要排序。
 
 若 predecessor 因标准持久目标的 marker/ETag 身份漂移暂停，禁止重启原执行器、改写
 原 manifest 或放宽目标门禁。操作者只向 successor 冻结器提供精确旧源身份哈希；冻结器
