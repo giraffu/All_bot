@@ -30,6 +30,7 @@ from scripts.history_media_r2_retirement import (
     _live_reference_counts_with_retry,
     _parser,
     _mark_retirement_plan_paused,
+    _materialize_bulk_retirement_order,
     _missing_retirement_blocker_indexes,
     _retirement_has_blockers,
     _retirement_head_controller,
@@ -1211,6 +1212,44 @@ def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_sco
         )
 
 
+@pytest.mark.asyncio
+async def test_bulk_retirement_successor_allows_deferred_only_canary():
+    class Ledger:
+        def __init__(self):
+            self.executions = []
+
+        async def fetch(self, _query):
+            return [
+                {
+                    "retirement_disposition": "deferred",
+                    "object_count": 1672,
+                    "asset_coordinate_count": 3284,
+                }
+            ]
+
+        async def execute(self, query, *args):
+            self.executions.append((query, args))
+
+    ledger = Ledger()
+    with pytest.raises(RuntimeError, match="no immediately eligible"):
+        await _materialize_bulk_retirement_order(
+            ledger,
+            canary_size=100,
+            batch_size=1000,
+        )
+    assert ledger.executions == []
+
+    await _materialize_bulk_retirement_order(
+        ledger,
+        canary_size=100,
+        batch_size=1000,
+        require_eligible=False,
+    )
+
+    assert len(ledger.executions) == 3
+    assert ledger.executions[-1][1] == (100, 1000, 0, 2)
+
+
 def test_target_identity_drift_quarantine_requires_intact_source_and_target_size():
     candidate = _candidate(
         durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
@@ -1426,6 +1465,8 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "_materialize_bulk_production_live_source_hashes" in successor_source
     assert "eligible_only=False" in successor_source
     assert "LIVE_HISTORY_REFERENCE" in successor_source
+    assert "require_eligible=False" in successor_source
+    assert "require_eligible=False" not in planner_source
     assert successor_source.index(
         "_materialize_bulk_production_live_source_hashes"
     ) < successor_source.index("_materialize_bulk_retirement_order")

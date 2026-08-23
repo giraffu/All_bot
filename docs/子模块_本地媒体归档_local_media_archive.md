@@ -560,7 +560,9 @@ NAS 模式的目标和 NAS SHA 同样必须在删前通过。R2/NAS 客户端、
 在途删除可由 successor 以 source-already-missing 路径重新完成删后验证；两计划对象交集
 按状态为零。successor 绑定新 artifact、请求调度策略、rowset/batches SHA，仍需新的
 `DELETE_HISTORY_MEDIA_<successor-sha>`；旧 executor 必须保持停止，不能与 successor
-竞争 paused 批次。
+竞争 paused 批次。初始 Bulk 计划仍必须有立即可执行的 `eligible` canary；若 successor
+剔除保留项后只剩 `deferred`，允许把第一个 deferred 批次冻结为 batch 0 canary，执行时
+仍须通过实时引用和本地 blocker 门禁后才可删除。
 
 若 predecessor 因标准持久目标的 marker/ETag 身份漂移暂停，禁止重启原执行器、改写
 原 manifest 或放宽目标门禁。操作者只向 successor 冻结器提供精确旧源身份哈希；冻结器
