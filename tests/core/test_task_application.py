@@ -13,6 +13,7 @@ from src.core.task_core_types import (
     TaskSubmissionPolicy,
     VideoTaskRequest,
 )
+from src.services.storage_r2_promotion import StagedInputPromotionError
 
 
 def _dependencies() -> TaskCoreProcessDependencies:
@@ -48,7 +49,7 @@ def _dependencies() -> TaskCoreProcessDependencies:
         attach_submission_side_effects_func=AsyncMock(),
         compensate_failed_submission_func=AsyncMock(),
         release_concurrency_lock_func=AsyncMock(),
-        shield_func=AsyncMock(),
+        shield_func=lambda coro: coro,
         logger=MagicMock(),
     )
 
@@ -128,3 +129,32 @@ async def test_application_journal_keeps_ambiguous_dispatch_for_reconciliation()
     assert journal.events == ["before_debit", "after_debit", "before_dispatch"]
     dependencies.compensate_failed_submission_func.assert_not_awaited()
     dependencies.release_concurrency_lock_func.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_application_releases_lock_without_debit_or_dispatch_when_promotion_fails():
+    dependencies = _dependencies()
+    dependencies.prepare_task_submission_payload_func.side_effect = (
+        StagedInputPromotionError("R2 input promotion failed")
+    )
+
+    with pytest.raises(StagedInputPromotionError, match="promotion failed"):
+        await TaskApplication(dependencies=dependencies).submit(
+            TaskSubmissionCommand(
+                internal_user_id=7,
+                username="user",
+                task_type="face_swap",
+                inputs={"images": ["/tmp/body.png", "/tmp/face.png"]},
+                task_id="task-promotion-failure",
+            ),
+            TaskSubmissionPolicy(client_type="bot", cost_override=3),
+            RecordingJournal(),
+        )
+
+    dependencies.check_and_deduct_credits_func.assert_not_awaited()
+    dependencies.execute_task_submission_saga_func.assert_not_awaited()
+    dependencies.compensate_failed_submission_func.assert_not_awaited()
+    dependencies.release_concurrency_lock_func.assert_awaited_once_with(
+        7,
+        idempotency_key="task_concurrency:task-promotion-failure",
+    )

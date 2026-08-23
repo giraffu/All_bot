@@ -270,9 +270,9 @@ key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 
 `task-results/{backend_task_id}/extras/<role>-<ordinal>.{ext}`。输出缺少持久账本中的
 明确 backend task ID、双 ID 映射冲突、角色/序号异常一律 `unresolved`；外部 URL
 或无法确定属于受管存储的引用一律 `blocked`，不得以文件名猜测。
-在线新任务的 Web/Bot/QQCC 共享 `TaskApplication` 输入准备门禁：策略选中
-的 `staging/user-uploads/` 对象必须在扣费和派发前复制验证到上述
-`task-inputs/` key，后续 registry、Worker 和 History 只保存提升后引用。
+在线新任务的 Web/Bot/QQCC 共享 `TaskApplication` 输入准备门禁：策略输入
+先归一为对象 key（本地文件先上传 staging），再于扣费和派发前复制验证到
+`task-inputs/`，后续 registry、Worker 和 History 只保存提升后引用。
 这一前向门禁不会自动修复既有 History；既有 staging 引用仍需独立冻结
 Copy/Switch 计划，在完成前不得缩短 staging 保留或删除对象。
 

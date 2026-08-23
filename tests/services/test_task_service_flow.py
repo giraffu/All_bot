@@ -11,6 +11,10 @@ from src.core.task_application import TaskApplication
 from src.core.task_core_default_dependencies import (
     build_default_task_core_process_dependencies,
 )
+from src.core.task_core_input_preparation import (
+    process_input_path,
+    validate_local_input_paths,
+)
 from src.core.task_core_types import TaskSubmissionExecutionResult, VideoTaskRequest
 from src.services import task_service_flow
 from src.services.private_bot_update_admission import (
@@ -99,13 +103,10 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
 
 
 @pytest.mark.asyncio
-async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
+async def test_submit_bot_face_swap_promotes_local_inputs_after_staging_upload(tmp_path):
     strategy = SimpleNamespace(
         get_cost=lambda _inputs: 2,
-        get_file_paths_to_upload=lambda inputs: [
-            inputs["target_image"],
-            inputs["face_image"],
-        ],
+        get_file_paths_to_upload=lambda inputs: list(inputs["images"]),
         get_metadata=lambda inputs: {
             "saved_inputs": list(inputs["saved_input_images"])
         },
@@ -127,6 +128,15 @@ async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
 
     promote.side_effect = promote_for_task
 
+    class FakeUserLogger:
+        def __init__(self, user_id, username):
+            self.user_id = user_id
+            self.username = username
+
+        def save_input_image(self, path):
+            filename = str(path).rsplit("/", 1)[-1]
+            return f"staging/user-uploads/{self.user_id}/{filename}"
+
     async def execute_saga(**kwargs):
         context = kwargs["submission_context"]
         await kwargs["before_dispatch_func"](
@@ -139,10 +149,6 @@ async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
             backend_task_id="backend-1",
             submission_context=context,
         )
-
-    async def keep_object_key(user_logger, path, **_kwargs):
-        assert user_logger.user_id == 456
-        return path
 
     async def get_priority(_user_id):
         return 0, "user", "title"
@@ -157,13 +163,11 @@ async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
         compensate_failed_submission_func=AsyncMock(),
         release_concurrency_lock_func=AsyncMock(),
         get_strategy_func=lambda _task_type: strategy,
-        user_logger_factory=lambda user_id, username: SimpleNamespace(
-            user_id=user_id, username=username
-        ),
-        validate_local_input_paths_func=lambda **_kwargs: None,
+        user_logger_factory=FakeUserLogger,
+        validate_local_input_paths_func=validate_local_input_paths,
         get_user_priority_and_identity_func=get_priority,
         load_prompts_func=lambda: {},
-        process_input_path_func=keep_object_key,
+        process_input_path_func=process_input_path,
         promote_staged_inputs_func=promote,
         bucket_name="user-data-prod",
         logger_override=Mock(),
@@ -174,14 +178,17 @@ async def test_submit_bot_task_promotes_staging_inputs_before_dispatch():
         registry_task_id=None,
         backend_task_id=None,
     )
+    body_path = tmp_path / "body.png"
+    face_path = tmp_path / "face.png"
+    body_path.write_bytes(b"body")
+    face_path.write_bytes(b"face")
     submission = BotTaskSubmissionContext(
         runtime_state=runtime_state,
         internal_user_id=456,
         username="tester",
         task_type="face_swap",
         inputs={
-            "target_image": "staging/user-uploads/456/body.png",
-            "face_image": "staging/user-uploads/456/face.png",
+            "images": [str(body_path), str(face_path)],
             "prompt": "swap",
         },
         deduct_quota=False,

@@ -251,6 +251,61 @@ async def test_prepare_task_submission_payload_promotes_strategy_inputs_before_h
 
 
 @pytest.mark.asyncio
+async def test_input_promotion_preserves_strategy_ordinals_after_path_processing():
+    strategy = MagicMock()
+    strategy.get_file_paths_to_upload.return_value = ["body.local", "", "face.local"]
+    strategy.get_metadata.return_value = {}
+    promote = AsyncMock(
+        side_effect=lambda *, input_refs, **_kwargs: [
+            f"task-inputs/registry-1/{index}.png" if ref else ""
+            for index, ref in enumerate(input_refs)
+        ]
+    )
+
+    async def process(_user_logger=None, path="", **_kwargs):
+        return f"staging/user-uploads/9/{path}" if path else ""
+
+    async def priority(_user_id):
+        return 0, "user", "title"
+
+    result = await prepare_task_submission_payload(
+        user_id=9,
+        username="tester",
+        task_type="face_swap",
+        inputs={"prompt": "swap"},
+        registry_task_id="registry-1",
+        strategy=strategy,
+        base_priority=0,
+        is_template=False,
+        is_video_task=False,
+        video_request=VideoTaskRequest(),
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id, username=username
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=process,
+        promote_staged_inputs_func=promote,
+        bucket_name="user-data-prod",
+    )
+
+    promote.assert_awaited_once_with(
+        input_refs=[
+            "staging/user-uploads/9/body.local",
+            "",
+            "staging/user-uploads/9/face.local",
+        ],
+        task_id="registry-1",
+        user_id=9,
+    )
+    assert result.saved_inputs == [
+        "task-inputs/registry-1/0.png",
+        "task-inputs/registry-1/2.png",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_prepare_task_submission_payload_caps_priority_at_100():
     strategy = MagicMock()
     strategy.get_file_paths_to_upload.return_value = []

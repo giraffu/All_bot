@@ -91,13 +91,6 @@ async def prepare_task_submission_payload(
         paths_to_upload=paths_to_upload,
         bucket_name=bucket_name,
     )
-    if promote_staged_inputs_func is not None and registry_task_id and paths_to_upload:
-        paths_to_upload = await promote_staged_inputs_func(
-            input_refs=paths_to_upload,
-            task_id=registry_task_id,
-            user_id=user_id,
-        )
-
     priority, _, _ = await get_user_priority_and_identity_func(user_id)
     final_priority = min(base_priority + priority, 100)
 
@@ -106,7 +99,7 @@ async def prepare_task_submission_payload(
     if not prompt or prompt.strip() == "":
         prompt = prompts_config.get(task_type, task_type)
 
-    saved_inputs = []
+    processed_input_refs = []
     for path in paths_to_upload:
         processed_img = await _call_with_supported_kwargs(
             process_input_path_func,
@@ -114,8 +107,18 @@ async def prepare_task_submission_payload(
             path=path,
             bucket_name=bucket_name,
         )
-        if processed_img:
-            saved_inputs.append(processed_img)
+        processed_input_refs.append(processed_img or "")
+    if (
+        promote_staged_inputs_func is not None
+        and registry_task_id
+        and processed_input_refs
+    ):
+        processed_input_refs = await promote_staged_inputs_func(
+            input_refs=processed_input_refs,
+            task_id=registry_task_id,
+            user_id=user_id,
+        )
+    saved_inputs = [ref for ref in processed_input_refs if ref]
 
     submission_context = TaskSubmissionContext(
         task_type=task_type,
