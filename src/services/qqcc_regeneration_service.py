@@ -13,11 +13,13 @@ from src.constants import (
 from src.core import user_core
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
+from src.domain_config.minimax_h3 import MINIMAX_H3_REF2V
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
+    get_qqcc_ai_video_scene,
     load_runtime_qqcc_config,
 )
 from src.services.qqcc_regenerate_metadata import (
@@ -242,18 +244,29 @@ async def prepare_qqcc_regeneration_submission(
         index=0,
         name_hint="qqcc_regenerate_video",
     )
-    selected_reference_image_path = None
-    if meta.get("selected_reference_source") == "user_upload":
-        try:
-            selected_reference_image_path = (
-                await download_history_input_file_to_fsm_temp(
-                    history=history,
-                    index=1,
-                    name_hint="qqcc_regenerate_ref2v_template",
-                )
-            )
-        except Exception:
+    reference_image_paths: list[str] = []
+    if mode == MINIMAX_H3_REF2V:
+        scene = get_qqcc_ai_video_scene(qqcc_config, meta.get("scene_id"))
+        reference_images = list(scene.get("reference_images") or []) if scene else []
+        input_files = resolve_history_input_files(history)
+        if not 1 <= len(reference_images) <= 4 or len(input_files) != 1 + len(
+            reference_images
+        ):
             cleanup_fsm_temp_files([image_path])
+            raise QQCCRegenerationError(
+                "这条记录缺少完整的参考模板组，无法按原输入重新生成。"
+            )
+        try:
+            for index in range(len(reference_images)):
+                reference_image_paths.append(
+                    await download_history_input_file_to_fsm_temp(
+                        history=history,
+                        index=index + 1,
+                        name_hint=f"qqcc_regenerate_ref2v_template_{index + 1}",
+                    )
+                )
+        except Exception:
+            cleanup_fsm_temp_files([image_path, *reference_image_paths])
             raise
     try:
         plan = build_quick_video_submission_plan(
@@ -265,16 +278,19 @@ async def prepare_qqcc_regeneration_submission(
                 "duration": _coerce_quick_video_duration(history),
                 "selected_reference_image": meta.get("selected_reference_image"),
                 "selected_reference_name": meta.get("selected_reference_name"),
-                "selected_reference_image_path": selected_reference_image_path,
+                "reference_image_replacement_paths": {
+                    str(index): path
+                    for index, path in enumerate(reference_image_paths)
+                },
             },
             qqcc_config=qqcc_config,
             allowed_resolutions=None,
         )
     except Exception:
-        cleanup_fsm_temp_files([image_path, selected_reference_image_path])
+        cleanup_fsm_temp_files([image_path, *reference_image_paths])
         raise
     if isinstance(plan, QuickVideoSubmissionReject):
-        cleanup_fsm_temp_files([image_path, selected_reference_image_path])
+        cleanup_fsm_temp_files([image_path, *reference_image_paths])
         raise QQCCRegenerationError("功能暂未开放或配置已变更。")
     return QQCCRegenerationSubmission(
         kind=kind,

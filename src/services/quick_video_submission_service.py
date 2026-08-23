@@ -165,7 +165,7 @@ class QuickVideoSubmissionPlan:
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
     qqcc_chain_segments: tuple[QqccVideoChainSegment, ...] = ()
     reference_images: list[str] = field(default_factory=list)
-    reference_image_paths: list[str] = field(default_factory=list)
+    reference_image_paths: list[str | None] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -606,11 +606,56 @@ def build_quick_video_submission_plan(
             fsm_data.get("selected_reference_image_path") or ""
         ).strip()
         scene_reference_images = list(scene.get("reference_images") or [])
-        if scene_mode == "ref2v" and selected_reference_image not in scene_reference_images:
+        if (
+            scene_mode == "ref2v"
+            and selected_reference_image not in scene_reference_images
+        ):
             return QuickVideoSubmissionReject(
                 QuickVideoSubmissionRejectReason.INVALID_SETTINGS
             )
-        tail_draw_scene = None if scene_mode == "ref2v" else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+        reference_image_paths: list[str | None] = []
+        if scene_mode == "ref2v":
+            replacement_paths = fsm_data.get("reference_image_replacement_paths")
+            indexed_replacements: dict[int, str] = {}
+            if replacement_paths is not None and not isinstance(
+                replacement_paths, dict
+            ):
+                return QuickVideoSubmissionReject(
+                    QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+                )
+            for raw_index, raw_path in (replacement_paths or {}).items():
+                try:
+                    replacement_index = int(raw_index)
+                except (TypeError, ValueError):
+                    return QuickVideoSubmissionReject(
+                        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+                    )
+                replacement_path = str(raw_path or "").strip()
+                if (
+                    not 0 <= replacement_index < len(scene_reference_images)
+                    or not replacement_path
+                ):
+                    return QuickVideoSubmissionReject(
+                        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+                    )
+                indexed_replacements[replacement_index] = replacement_path
+
+            # Compatibility for sessions created before per-slot replacement maps.
+            if selected_reference_image_path:
+                selected_index = scene_reference_images.index(selected_reference_image)
+                indexed_replacements.setdefault(
+                    selected_index, selected_reference_image_path
+                )
+            if indexed_replacements:
+                reference_image_paths = [
+                    indexed_replacements.get(index)
+                    for index in range(len(scene_reference_images))
+                ]
+        tail_draw_scene = (
+            None
+            if scene_mode == "ref2v"
+            else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+        )
         tail_draw_chain = (
             resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
             if tail_draw_scene is not None
@@ -662,7 +707,7 @@ def build_quick_video_submission_plan(
                 ),
                 selected_reference_source=(
                     "user_upload"
-                    if scene_mode == "ref2v" and selected_reference_image_path
+                    if scene_mode == "ref2v" and reference_image_paths
                     else None
                 ),
             ),
@@ -672,13 +717,9 @@ def build_quick_video_submission_plan(
             qqcc_chain_segments=chain_segments,
             fixed_credit_cost=fixed_credit_cost,
             reference_images=(
-                [selected_reference_image] if scene_mode == "ref2v" else []
+                scene_reference_images if scene_mode == "ref2v" else []
             ),
-            reference_image_paths=(
-                [selected_reference_image_path]
-                if scene_mode == "ref2v" and selected_reference_image_path
-                else []
-            ),
+            reference_image_paths=reference_image_paths,
             aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
         )
 
@@ -1212,7 +1253,20 @@ async def run_quick_video_submission_plan(
             if plan.reference_image_paths:
                 if len(plan.reference_image_paths) != len(plan.reference_images):
                     raise ValueError("QQCC REF2V replacement reference count mismatch")
-                downloaded_refs.extend(plan.reference_image_paths)
+                for index, (object_key, replacement_path) in enumerate(
+                    zip(plan.reference_images, plan.reference_image_paths),
+                    start=1,
+                ):
+                    if replacement_path:
+                        downloaded_refs.append(replacement_path)
+                    else:
+                        downloaded_refs.append(
+                            str(
+                                await _maybe_await(
+                                    download_reference_image_func(object_key, index)
+                                )
+                            )
+                        )
             else:
                 for index, object_key in enumerate(plan.reference_images, start=1):
                     downloaded_refs.append(

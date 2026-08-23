@@ -203,7 +203,11 @@ async def test_prepare_qqcc_regeneration_reloads_latest_ai_video_scene(monkeypat
 
 @pytest.mark.asyncio
 async def test_prepare_qqcc_regeneration_reuses_user_replacement_template(monkeypatch):
-    reference_key = "qqcc/config/ref2v/ai_video/ref/default/input"
+    reference_keys = [
+        "qqcc/config/ref2v/ai_video/ref/a/input",
+        "qqcc/config/ref2v/ai_video/ref/b/input",
+        "qqcc/config/ref2v/ai_video/ref/c/input",
+    ]
     config = normalize_qqcc_config(
         {
             "main_buttons": {"ai_video": True},
@@ -213,15 +217,18 @@ async def test_prepare_qqcc_regeneration_reuses_user_replacement_template(monkey
                     "name": "参考运镜",
                     "prompt": "prompt",
                     "mode": "ref2v",
-                    "reference_images": [reference_key],
-                    "reference_image_names": ["小穴"],
+                    "reference_images": reference_keys,
+                    "reference_image_names": ["乳房", "小穴", "阴茎"],
                 }
             ],
         }
     )
     history = SimpleNamespace(
         type=MINIMAX_H3_REF2V,
-        input_file="history/subject.png|history/user-template.png",
+        input_file=(
+            "history/subject.png|history/user-template-a.png|"
+            "history/admin-template-b.png|history/user-template-c.png"
+        ),
         billing_resolution="preview",
         requested_duration=5,
         duration=5,
@@ -232,14 +239,19 @@ async def test_prepare_qqcc_regeneration_reuses_user_replacement_template(monkey
                 "scene_id": "ref",
                 "scene_kind": "ai_video",
                 "display_mode_name": "参考运镜",
-                "selected_reference_image": reference_key,
-                "selected_reference_name": "小穴",
+                "selected_reference_image": reference_keys[2],
+                "selected_reference_name": "阴茎",
                 "selected_reference_source": "user_upload",
             }
         },
     )
     download_input = AsyncMock(
-        side_effect=["/tmp/subject.png", "/tmp/user-template.png"]
+        side_effect=[
+            "/tmp/subject.png",
+            "/tmp/user-template-a.png",
+            "/tmp/admin-template-b.png",
+            "/tmp/user-template-c.png",
+        ]
     )
     monkeypatch.setattr(
         "src.services.qqcc_regeneration_service.download_history_input_file_to_fsm_temp",
@@ -255,10 +267,18 @@ async def test_prepare_qqcc_regeneration_reuses_user_replacement_template(monkey
     )
 
     assert submission.plan.kind == QuickVideoSubmissionKind.H3_REF2V
-    assert submission.plan.reference_images == [reference_key]
-    assert submission.plan.reference_image_paths == ["/tmp/user-template.png"]
-    assert download_input.await_args_list[0].kwargs["index"] == 0
-    assert download_input.await_args_list[1].kwargs["index"] == 1
+    assert submission.plan.reference_images == reference_keys
+    assert submission.plan.reference_image_paths == [
+        "/tmp/user-template-a.png",
+        "/tmp/admin-template-b.png",
+        "/tmp/user-template-c.png",
+    ]
+    assert [call.kwargs["index"] for call in download_input.await_args_list] == [
+        0,
+        1,
+        2,
+        3,
+    ]
 
 
 @pytest.mark.asyncio

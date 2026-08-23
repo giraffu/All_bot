@@ -3561,6 +3561,110 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(
 
 
 @pytest.mark.asyncio
+async def test_ref2v_submission_keeps_all_replacement_files_until_background_run(
+    monkeypatch,
+):
+    references = [
+        "qqcc/config/ref2v/ai_video/ref/reference-a/input",
+        "qqcc/config/ref2v/ai_video/ref/reference-b/input",
+        "qqcc/config/ref2v/ai_video/ref/reference-c/input",
+    ]
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "ref",
+                    "name": "参考运镜",
+                    "mode": "ref2v",
+                    "prompt": "prompt",
+                    "reference_images": references,
+                }
+            ],
+        }
+    )
+    scheduled = []
+    cleanup_mock = Mock()
+    captured = {}
+
+    async def fake_run_plan(**kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "_load_qqcc_config_for_context",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup_mock)
+    monkeypatch.setattr(
+        quick_video_fsm, "run_quick_video_submission_plan", fake_run_plan
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "create_background_task",
+        lambda _context, coroutine: scheduled.append(coroutine),
+    )
+
+    query = SimpleNamespace(
+        from_user=_build_user(),
+        message=SimpleNamespace(chat_id=10001, message_id=777),
+        answer=AsyncMock(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        bot_data={},
+        user_data={
+            "quick_video_data": {
+                "scene_kind": "ai_video",
+                "scene_id": "ref",
+                "image_path": "/tmp/subject.png",
+                "selected_reference_image": references[2],
+                "selected_reference_name": "模板 C",
+                "selected_reference_image_path": "/tmp/user-ref-c.png",
+                "reference_image_replacement_paths": {
+                    "0": "/tmp/user-ref-a.png",
+                    "2": "/tmp/user-ref-c.png",
+                },
+            }
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_video_fsm.start_generation(update, context)
+
+    assert result == ConversationHandler.END
+    cleaned_paths = {
+        str(path)
+        for call in cleanup_mock.call_args_list
+        for path in call.args[0]
+        if path
+    }
+    assert cleaned_paths.isdisjoint(
+        {"/tmp/subject.png", "/tmp/user-ref-a.png", "/tmp/user-ref-c.png"}
+    )
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["plan"].reference_image_paths == [
+        "/tmp/user-ref-a.png",
+        None,
+        "/tmp/user-ref-c.png",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_quick_video_submission_uses_explicit_settings_without_user_data_bridge(
     monkeypatch,
 ):

@@ -64,7 +64,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   `applied_count`。
 - 示范媒体先发再提示，`file_id` 失效才回退 R2；Backend/Bot 共用 key allowlist。
   REF2V 默认第一张模板；替换按钮先收模板图且不得生成，再收主体图。当轮替换按
-  槽位保留并重发完整模板组；提交与重生成使用最终模板，后台按 key 合并管理员缓存。
+  槽位保留；提交与重生成使用完整有序模板组，仅覆盖同槽位；后台按 key 合并缓存。
 - Config 示例生成不扣费、不占用户并发、不写 History。长时监视不得持有
   request-scoped DB session；浏览器关闭后仍应由服务端完成监视和幂等回写。
 - 主 Bot 的旧懒人入口只跳转 QQCC 或提示入口未配置，不能恢复任务提交；
