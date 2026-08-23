@@ -15,7 +15,8 @@ describe('galleryTaskTypeFilters', () => {
   beforeEach(() => {
     window.__ALLBOT_CONFIG__ = {
       enable_ltx_video: true,
-      enable_minimax_h3: false,
+      enable_minimax_h3: true,
+      enable_minimax_h3_entry: false,
     }
   })
   it('groups new and historical free edits under v3', () => {
@@ -67,7 +68,7 @@ describe('galleryTaskTypeFilters', () => {
     expect(isGalleryGroupedTaskType('minimax_h3')).toBe(true)
   })
 
-  it('hides disabled Web gallery task types from config consumers', () => {
+  it('hides H3 Pro from the market when only its ordinary entry is disabled', () => {
     const visibleTypes = filterVisibleGalleryTaskTypes([
       { id: 'i2i_pro', name: '图片生成' },
       { id: 'i2i_draw', name: '局部重绘' },

@@ -19,11 +19,12 @@ checkpoint、LoRA 术语、作者资产名或物理文件名。Web 不渲染基�
 摘要只显示启用数量。下文模型名、目录 ID、强度和文件路径均是内部运行契约，不是
 用户文案；展示脱敏不得改变提交 payload 或 Worker 注入顺序。
 
-Web 由 `enable_minimax_h3` 控制，普通导航另由 `enable_minimax_h3_entry` 控制；
+Web 由 `enable_minimax_h3` 控制，普通导航和修仙市集类型筛选另由
+`enable_minimax_h3_entry` 控制；
 REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 `MINIMAX_H3_BACKEND_ENABLED`、`MINIMAX_H3_ENTRY_ENABLED` 和
-`MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不阻止测试深链或
-`/advanced_video_pro` 命令测试。
+`MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不删除已有投稿，也不阻止作品详情、
+模板深链或 `/advanced_video_pro` 命令测试。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard
 可分别维护共享场景配置 `minimax_h3`，但开关关闭时 Web/Bot 不展示优化入口。
 
