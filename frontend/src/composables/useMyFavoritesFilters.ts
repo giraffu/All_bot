@@ -4,6 +4,12 @@ import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
 import { getRuntimeFlag } from '@/config/runtime'
 import { resolveGalleryTaskTypeLabel } from '@/utils/galleryPresentation'
 
+const isCharacterAssetsEnabled = () => getRuntimeFlag('enable_character_assets', false)
+const isCharacterAssetsEntryEnabled = () => getRuntimeFlag(
+  'enable_character_assets_entry',
+  isCharacterAssetsEnabled(),
+)
+
 export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'prompt_templates' | 'submissions' | 'characters'
 
 function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
@@ -13,7 +19,7 @@ function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
     || value === 'apply'
     || value === 'prompt_templates'
     || value === 'submissions'
-    || (value === 'characters' && getRuntimeFlag('enable_character_assets', false))
+    || (value === 'characters' && isCharacterAssetsEnabled())
   ) {
     return value
   }
@@ -44,7 +50,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
       { id: 'prompt_templates' as FavoriteFilterTab, name: options.t('my_notes.tabs.prompt_templates') },
       { id: 'submissions' as FavoriteFilterTab, name: options.t('my_notes.tabs.submissions') },
     ]
-    if (getRuntimeFlag('enable_character_assets', false)) {
+    if (isCharacterAssetsEnabled() && isCharacterAssetsEntryEnabled()) {
       tabs.push({ id: 'characters', name: options.t('my_notes.tabs.characters') })
     }
     return tabs

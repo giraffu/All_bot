@@ -921,16 +921,18 @@ def test_repository_web_runtime_config_uses_canonical_environment_endpoints():
     assert prod_values["telegram_bot_username"] == "AIVision1111_bot"
     assert test_values["enable_ltx_t2v_msr"] is False
     assert prod_values["enable_ltx_t2v_msr"] is False
-    assert test_values["enable_ltx_video"] is False
+    assert test_values["enable_ltx_video"] is True
     assert test_values["enable_ltx_video_v2"] is False
     assert test_values["enable_ltx_t2v"] is False
     assert test_values["enable_character_assets"] is True
+    assert test_values["enable_character_assets_entry"] is False
     assert test_values["enable_character_explicit_views"] is True
     assert test_values["enable_minimax_h3"] is True
-    assert test_values["enable_minimax_h3_entry"] is True
+    assert test_values["enable_minimax_h3_entry"] is False
     assert test_values["enable_minimax_h3_ref2v"] is True
     assert prod_values["enable_ltx_video"] is True
     assert prod_values["enable_character_assets"] is False
+    assert prod_values["enable_character_assets_entry"] is False
     assert prod_values["enable_character_explicit_views"] is False
     assert prod_values["enable_minimax_h3"] is False
     assert prod_values["enable_minimax_h3_entry"] is False

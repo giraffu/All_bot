@@ -153,10 +153,10 @@ async def post_shutdown(application):
 
 def build_advanced_video_entry_handler():
     from src.services.advanced_video_entry_policy import (
-        minimax_h3_backend_enabled,
+        minimax_h3_advanced_video_entry_enabled,
     )
 
-    if minimax_h3_backend_enabled():
+    if minimax_h3_advanced_video_entry_enabled():
         from src.handlers.fsm.advanced_video_pro_fsm import (
             get_advanced_video_pro_fsm_handler,
         )
@@ -166,6 +166,24 @@ def build_advanced_video_entry_handler():
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
 
     return get_ltx_video_fsm_handler()
+
+
+def build_advanced_video_compatibility_handlers():
+    from src.services.advanced_video_entry_policy import (
+        minimax_h3_advanced_video_entry_enabled,
+        minimax_h3_backend_enabled,
+    )
+
+    if not minimax_h3_backend_enabled() or minimax_h3_advanced_video_entry_enabled():
+        return []
+
+    from src.handlers.fsm.advanced_video_pro_fsm import (
+        get_advanced_video_pro_fsm_handler,
+    )
+
+    return [
+        get_advanced_video_pro_fsm_handler(include_ltx_compatibility_routes=False)
+    ]
 
 
 def main():
@@ -234,6 +252,8 @@ def main():
     app.add_handler(get_txt2img_fsm_handler())
     app.add_handler(get_edit_image_fsm_handler())
     app.add_handler(build_advanced_video_entry_handler())
+    for compatibility_handler in build_advanced_video_compatibility_handlers():
+        app.add_handler(compatibility_handler)
     app.add_handler(get_image_to_video_fsm_handler())
     app.add_handler(get_wan22_video_v2_fsm_handler())
     app.add_handler(get_quick_image_fsm_handler())

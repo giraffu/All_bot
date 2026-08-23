@@ -798,16 +798,24 @@ async def unexpected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
 
 
-def get_advanced_video_pro_fsm_handler() -> ConversationHandler:
+def get_advanced_video_pro_fsm_handler(
+    *, include_ltx_compatibility_routes: bool = True
+) -> ConversationHandler:
     legacy_pattern = r"^(ltx_mode_|set_ltx|ltx_setup_confirm|toggle_ltx_lora_|done_ltx_lora|clear_ltx_lora|skip_ltx_lora)"
+    entry_points = [
+        CommandHandler("advanced_video_pro", start),
+        MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
+    ]
+    if include_ltx_compatibility_routes:
+        entry_points.extend(
+            [
+                CommandHandler("ltx_video", start),
+                CallbackQueryHandler(start, pattern=r"^fsm_start_ltx_video$"),
+                CallbackQueryHandler(legacy_callback, pattern=legacy_pattern),
+            ]
+        )
     return ConversationHandler(
-        entry_points=[
-            CommandHandler("advanced_video_pro", start),
-            CommandHandler("ltx_video", start),
-            MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
-            CallbackQueryHandler(start, pattern=r"^fsm_start_ltx_video$"),
-            CallbackQueryHandler(legacy_callback, pattern=legacy_pattern),
-        ],
+        entry_points=entry_points,
         states={
             AdvancedVideoProState.WAIT_SETTINGS: [
                 CallbackQueryHandler(settings_callback, pattern=r"^avp_")

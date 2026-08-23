@@ -1,10 +1,11 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
-主菜单继续使用稳定配置键 `menu.ltx_video`，但实际入口跟随环境能力闸门：正式
-环境在 `MINIMAX_H3_BACKEND_ENABLED=false` 时展示“高级图生视频”并注册
-`ltx_video_fsm.py`；测试环境在该闸门开启时展示“高级图生视频pro”并注册
-`advanced_video_pro_fsm.py`。这使正式 Bot 与 Web 的 LTX 能力保持一致，同时不把
-测试 H3 入口晋级到正式环境。H3 入口选择三个公开模式、时长、画质档位与比例，
+主菜单继续使用稳定配置键 `menu.ltx_video`，但公开入口跟随独立展示闸门：
+`MINIMAX_H3_ENTRY_ENABLED=true` 且后端能力开启时展示“高级图生视频pro”并注册
+`advanced_video_pro_fsm.py`；入口闸门关闭时展示“高级图生视频”并注册
+`ltx_video_fsm.py`。H3 后端能力可继续保持开启，隐藏入口不会改变 Web/API、任务执行面
+或 `/advanced_video_pro` 兼容命令；隐藏态的 H3 handler 不再抢占 `/ltx_video`、
+`fsm_start_ltx_video` 与旧 LTX callback。H3 入口选择四个公开模式、时长、画质档位与比例，
 再按模式收集 0/1/2 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
