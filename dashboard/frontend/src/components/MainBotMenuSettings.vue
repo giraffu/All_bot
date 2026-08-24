@@ -32,8 +32,22 @@ interface MainBotMenuConfigResponse {
 
 interface FeatureEntryVisibilityConfig {
   web: {
+    edit: boolean
+    edit_v2_5: boolean
+    edit_v3: boolean
+    txt2img: boolean
+    i2i_pro: boolean
+    custom_video: boolean
+    face_swap: boolean
+    random_faceswap: boolean
     ltx_video: boolean
+    ltx_video_v2: boolean
+    ltx_t2v: boolean
     minimax_h3: boolean
+    wan22_video_v2: boolean
+    scail2_action_transfer: boolean
+    scail2_video_replacement: boolean
+    scail2_face_swap_v2: boolean
     character_assets: boolean
   }
   gallery: {
@@ -83,17 +97,57 @@ const emptyConfig = (): MainBotMenuConfig => ({
 
 const emptyEntryConfig = (): FeatureEntryVisibilityConfig => ({
   web: {
+    edit: true,
+    edit_v2_5: true,
+    edit_v3: true,
+    txt2img: true,
+    i2i_pro: true,
+    custom_video: true,
+    face_swap: true,
+    random_faceswap: true,
     ltx_video: true,
+    ltx_video_v2: true,
+    ltx_t2v: true,
     minimax_h3: false,
+    wan22_video_v2: true,
+    scail2_action_transfer: true,
+    scail2_video_replacement: true,
+    scail2_face_swap_v2: true,
     character_assets: false,
   },
   gallery: { minimax_h3: false },
 })
 
 const WEB_ENTRY_OPTIONS = [
-  { key: 'ltx_video' as const, label: '高级图生视频', description: 'Web 练功房中的原高级图生视频入口' },
-  { key: 'minimax_h3' as const, label: '高级图生视频 Pro', description: 'Web 练功房中的 Pro 工作台入口' },
-  { key: 'character_assets' as const, label: '人物角色图', description: 'Web 练功房和人物资产导航入口' },
+  { key: 'edit', label: '自由P图', description: '基础自由编辑工作台' },
+  { key: 'edit_v2_5', label: '自由P图 v2.5', description: '一至两张图片自由编辑' },
+  { key: 'edit_v3', label: '自由P图 v3', description: '新一代单图自由编辑' },
+  { key: 'txt2img', label: '文生图', description: '文字生成图片' },
+  { key: 'i2i_pro', label: '幻想换脸', description: '图片与提示词生成' },
+  { key: 'face_swap', label: '快速换脸', description: '双图人脸替换' },
+  { key: 'random_faceswap', label: '随机换脸', description: '单图随机模板换脸' },
+  { key: 'character_assets', label: '人物角色图', description: '人物资产创建和入口' },
+  { key: 'custom_video', label: '图生视频', description: '原图生视频工作台' },
+  { key: 'wan22_video_v2', label: '图生视频 v2', description: 'Wan 2.2 图生视频' },
+  { key: 'ltx_video', label: '高级图生视频', description: '原高级图生视频入口' },
+  { key: 'ltx_video_v2', label: '高级图生视频 v2', description: 'LTX v2 工作台入口' },
+  { key: 'ltx_t2v', label: '高级文生视频', description: 'LTX 文生视频入口' },
+  { key: 'minimax_h3', label: '高级图生视频 Pro', description: 'MiniMax H3 Pro 工作台' },
+  { key: 'scail2_action_transfer', label: '动作迁移', description: '参考动作迁移到人物' },
+  { key: 'scail2_video_replacement', label: '视频换人', description: '替换视频中的人物' },
+  { key: 'scail2_face_swap_v2', label: '视频换脸', description: '新版视频换脸工作台' },
+] as const satisfies ReadonlyArray<{
+  key: keyof FeatureEntryVisibilityConfig['web']
+  label: string
+  description: string
+}>
+
+type EntryScope = 'web' | 'bot' | 'gallery'
+
+const ENTRY_SCOPE_TABS: ReadonlyArray<{ key: EntryScope; label: string }> = [
+  { key: 'web', label: 'Web 端' },
+  { key: 'bot', label: '主 Bot' },
+  { key: 'gallery', label: '修仙市集' },
 ]
 
 const loading = ref(false)
@@ -104,6 +158,7 @@ const updatedAt = ref<string | null>(null)
 const entryUpdatedAt = ref<string | null>(null)
 const config = ref<MainBotMenuConfig>(emptyConfig())
 const entryConfig = ref<FeatureEntryVisibilityConfig>(emptyEntryConfig())
+const activeScope = ref<EntryScope>('web')
 
 const visibleMainCount = computed(() =>
   config.value.main_menu.items.filter((item) => item.visible).length
@@ -197,16 +252,16 @@ const saveConfig = async () => {
   }
 }
 
-const saveEntryConfig = async () => {
+const saveEntryConfig = async (scope: 'web' | 'gallery') => {
   entrySaving.value = true
   try {
     const saved = await updateFeatureEntryVisibilityConfig(
       cloneEntryConfig(entryConfig.value),
     )
     applyEntryResponse(saved)
-    message.success('Web 与修仙市集入口配置已保存')
+    message.success(scope === 'web' ? 'Web 端入口配置已保存' : '修仙市集入口配置已保存')
   } catch {
-    message.error('保存 Web 与修仙市集入口配置失败')
+    message.error(scope === 'web' ? '保存 Web 端入口配置失败' : '保存修仙市集入口配置失败')
   } finally {
     entrySaving.value = false
   }
@@ -238,9 +293,26 @@ onMounted(() => {
           </button>
         </div>
       </div>
+      <nav class="scope-tabs" aria-label="入口控制范围">
+        <button
+          v-for="tab in ENTRY_SCOPE_TABS"
+          :key="tab.key"
+          type="button"
+          class="scope-tab"
+          :class="{ 'is-active': activeScope === tab.key }"
+          :data-testid="`scope-tab-${tab.key}`"
+          @click="activeScope = tab.key"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
     </section>
 
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section
+      v-if="activeScope === 'web'"
+      data-testid="web-entry-panel"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
       <div class="section-heading">
         <div>
           <h3 class="text-base font-semibold text-slate-900">Web 端入口</h3>
@@ -250,70 +322,45 @@ onMounted(() => {
         <button
           type="button"
           class="primary-button"
-          data-testid="save-feature-entry-visibility"
+          data-testid="save-web-entry-visibility"
           :disabled="entrySaving || entryLoading"
-          @click="saveEntryConfig"
+          @click="saveEntryConfig('web')"
         >
-          {{ entrySaving ? '保存中…' : '保存 Web / 市集' }}
+          {{ entrySaving ? '保存中…' : '保存 Web 端' }}
         </button>
       </div>
 
-      <div class="entry-scope-grid">
-        <article class="entry-scope-card">
-          <h4 class="font-semibold text-slate-900">Web 端入口</h4>
-          <p class="mt-1 text-xs text-slate-500">控制练功房及对应导航卡片。</p>
-          <div class="mt-3 space-y-2">
-            <div v-for="item in WEB_ENTRY_OPTIONS" :key="item.key" class="submenu-item">
-              <div>
-                <div class="text-sm font-medium text-slate-800">{{ item.label }}</div>
-                <div class="text-xs text-slate-400">{{ item.description }}</div>
-              </div>
-              <div class="menu-actions">
-                <span class="visibility-tag" :class="entryConfig.web[item.key] ? 'is-visible' : 'is-hidden'">
-                  {{ entryConfig.web[item.key] ? '可见' : '隐藏' }}
-                </span>
-                <label class="visibility-switch">
-                  <input
-                    v-model="entryConfig.web[item.key]"
-                    type="checkbox"
-                    :data-testid="`entry-web-${item.key}`"
-                  />
-                  <span class="switch-track" aria-hidden="true"></span>
-                </label>
-              </div>
-            </div>
+      <p class="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+        开关只控制练功房功能入口；能力未发布时即使设为可见也不会开放，历史记录和模板深链不受影响。
+      </p>
+      <div class="web-entry-grid">
+        <div v-for="item in WEB_ENTRY_OPTIONS" :key="item.key" class="submenu-item">
+          <div>
+            <div class="text-sm font-medium text-slate-800">{{ item.label }}</div>
+            <div class="text-xs text-slate-400">{{ item.description }}</div>
           </div>
-        </article>
-
-        <article class="entry-scope-card">
-          <h4 class="font-semibold text-slate-900">修仙市集入口</h4>
-          <p class="mt-1 text-xs text-slate-500">只控制市集筛选入口，不隐藏已有作品。</p>
-          <div class="mt-3 space-y-2">
-            <div class="submenu-item">
-              <div>
-                <div class="text-sm font-medium text-slate-800">高级图生视频 Pro</div>
-                <div class="text-xs text-slate-400">市集类型筛选与分组页签</div>
-              </div>
-              <div class="menu-actions">
-                <span class="visibility-tag" :class="entryConfig.gallery.minimax_h3 ? 'is-visible' : 'is-hidden'">
-                  {{ entryConfig.gallery.minimax_h3 ? '可见' : '隐藏' }}
-                </span>
-                <label class="visibility-switch">
-                  <input
-                    v-model="entryConfig.gallery.minimax_h3"
-                    type="checkbox"
-                    data-testid="entry-gallery-minimax_h3"
-                  />
-                  <span class="switch-track" aria-hidden="true"></span>
-                </label>
-              </div>
-            </div>
+          <div class="menu-actions">
+            <span class="visibility-tag" :class="entryConfig.web[item.key] ? 'is-visible' : 'is-hidden'">
+              {{ entryConfig.web[item.key] ? '可见' : '隐藏' }}
+            </span>
+            <label class="visibility-switch">
+              <input
+                v-model="entryConfig.web[item.key]"
+                type="checkbox"
+                :data-testid="`entry-web-${item.key}`"
+              />
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
           </div>
-        </article>
+        </div>
       </div>
     </section>
 
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section
+      v-if="activeScope === 'bot'"
+      data-testid="bot-entry-panel"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
       <div class="section-heading">
         <div>
           <h3 class="text-base font-semibold text-slate-900">主 Bot 菜单按钮</h3>
@@ -390,7 +437,10 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section
+      v-if="activeScope === 'bot'"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
       <div class="mb-4">
         <h3 class="text-base font-semibold text-slate-900">二级菜单</h3>
         <p class="mt-1 text-sm text-slate-500">二级功能保持固定顺序，每行最多两个按钮。</p>
@@ -430,6 +480,51 @@ onMounted(() => {
         </article>
       </div>
     </section>
+
+    <section
+      v-if="activeScope === 'gallery'"
+      data-testid="gallery-entry-panel"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div class="section-heading">
+        <div>
+          <h3 class="text-base font-semibold text-slate-900">修仙市集入口</h3>
+          <p class="mt-1 text-sm text-slate-500">控制市集类型筛选与分组页签，不隐藏已有作品。</p>
+          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(entryUpdatedAt) }}</p>
+        </div>
+        <button
+          type="button"
+          class="primary-button"
+          data-testid="save-gallery-entry-visibility"
+          :disabled="entrySaving || entryLoading"
+          @click="saveEntryConfig('gallery')"
+        >
+          {{ entrySaving ? '保存中…' : '保存修仙市集' }}
+        </button>
+      </div>
+
+      <div class="mt-4 max-w-2xl">
+        <div class="submenu-item">
+          <div>
+            <div class="text-sm font-medium text-slate-800">高级图生视频 Pro</div>
+            <div class="text-xs text-slate-400">市集类型筛选与分组页签</div>
+          </div>
+          <div class="menu-actions">
+            <span class="visibility-tag" :class="entryConfig.gallery.minimax_h3 ? 'is-visible' : 'is-hidden'">
+              {{ entryConfig.gallery.minimax_h3 ? '可见' : '隐藏' }}
+            </span>
+            <label class="visibility-switch">
+              <input
+                v-model="entryConfig.gallery.minimax_h3"
+                type="checkbox"
+                data-testid="entry-gallery-minimax_h3"
+              />
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -437,6 +532,10 @@ onMounted(() => {
 .main-bot-menu-settings { min-width: 0; }
 .header-row, .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .toolbar, .menu-actions { display: flex; align-items: center; gap: .5rem; }
+.scope-tabs { margin-top: 1.1rem; display: flex; gap: .35rem; overflow-x: auto; border-bottom: 1px solid #e2e8f0; }
+.scope-tab { flex: 0 0 auto; border-bottom: 2px solid transparent; padding: .65rem 1.2rem; color: #64748b; font-size: .9rem; font-weight: 600; transition: .15s ease; }
+.scope-tab:hover { color: #2563eb; }
+.scope-tab.is-active { border-bottom-color: #2563eb; color: #1d4ed8; }
 .primary-button, .secondary-button, .icon-button { border-radius: .5rem; border: 1px solid #cbd5e1; padding: .5rem .85rem; font-size: .875rem; transition: .15s ease; }
 .primary-button { border-color: #2563eb; background: #2563eb; color: white; }
 .secondary-button, .icon-button { background: white; color: #334155; }
@@ -461,8 +560,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .icon-button { width: 2rem; height: 2rem; padding: 0; }
 .submenu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .submenu-card { border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: 1rem; }
-.entry-scope-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.entry-scope-card { border: 1px solid #dbeafe; border-radius: .75rem; background: #f8fbff; padding: 1rem; }
+.web-entry-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
 .fixed-back-item { border: 1px dashed #cbd5e1; border-radius: .6rem; padding: .65rem .8rem; color: #64748b; font-size: .8rem; text-align: center; }
 @media (max-width: 760px) {
   .main-bot-menu-settings > section { padding: .75rem; }
@@ -473,6 +571,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .menu-item, .submenu-item { padding: .65rem; }
   .menu-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .submenu-grid { grid-template-columns: 1fr; }
-  .entry-scope-grid { grid-template-columns: 1fr; }
+  .web-entry-grid { grid-template-columns: 1fr; }
+  .scope-tab { flex: 1 0 auto; padding-inline: .8rem; text-align: center; }
 }
 </style>

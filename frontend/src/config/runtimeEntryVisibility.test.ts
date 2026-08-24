@@ -21,6 +21,8 @@ describe('runtime entry visibility hydration', () => {
       ok: true,
       json: async () => ({
         flags: {
+          enable_edit_entry: false,
+          enable_custom_video_entry: false,
           enable_ltx_video_entry: true,
           enable_minimax_h3_entry: true,
           enable_character_assets_entry: false,
@@ -37,6 +39,8 @@ describe('runtime entry visibility hydration', () => {
     )
     expect(window.__ALLBOT_CONFIG__).toMatchObject({
       enable_ltx_video: true,
+      enable_edit_entry: false,
+      enable_custom_video_entry: false,
       enable_minimax_h3_entry: true,
       enable_gallery_minimax_h3_entry: false,
     })

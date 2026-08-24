@@ -12,13 +12,47 @@ FEATURE_ENTRY_VISIBILITY_CONFIG_KEY = "feature_entry_visibility_config:v1"
 
 DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG: dict[str, dict[str, bool]] = {
     "web": {
+        "edit": True,
+        "edit_v2_5": True,
+        "edit_v3": True,
+        "txt2img": True,
+        "i2i_pro": True,
+        "custom_video": True,
+        "face_swap": True,
+        "random_faceswap": True,
         "ltx_video": True,
+        "ltx_video_v2": True,
+        "ltx_t2v": True,
         "minimax_h3": False,
+        "wan22_video_v2": True,
+        "scail2_action_transfer": True,
+        "scail2_video_replacement": True,
+        "scail2_face_swap_v2": True,
         "character_assets": False,
     },
     "gallery": {
         "minimax_h3": False,
     },
+}
+
+WEB_ENTRY_FLAG_NAMES: dict[str, str] = {
+    "edit": "enable_edit_entry",
+    "edit_v2_5": "enable_edit_v2_5_entry",
+    "edit_v3": "enable_edit_v3_entry",
+    "txt2img": "enable_txt2img_entry",
+    "i2i_pro": "enable_i2i_pro_entry",
+    "custom_video": "enable_custom_video_entry",
+    "face_swap": "enable_face_swap_entry",
+    "random_faceswap": "enable_random_faceswap_entry",
+    "ltx_video": "enable_ltx_video_entry",
+    "ltx_video_v2": "enable_ltx_video_v2_entry",
+    "ltx_t2v": "enable_ltx_t2v_entry",
+    "minimax_h3": "enable_minimax_h3_entry",
+    "wan22_video_v2": "enable_wan22_video_v2_entry",
+    "scail2_action_transfer": "enable_scail2_action_transfer_entry",
+    "scail2_video_replacement": "enable_scail2_video_replacement_entry",
+    "scail2_face_swap_v2": "enable_scail2_face_swap_v2_entry",
+    "character_assets": "enable_character_assets_entry",
 }
 
 
@@ -44,9 +78,10 @@ def normalize_feature_entry_visibility_config(
 def build_public_entry_visibility_flags(raw: Any) -> dict[str, bool]:
     config = normalize_feature_entry_visibility_config(raw)
     return {
-        "enable_ltx_video_entry": config["web"]["ltx_video"],
-        "enable_minimax_h3_entry": config["web"]["minimax_h3"],
-        "enable_character_assets_entry": config["web"]["character_assets"],
+        **{
+            flag_name: config["web"][config_key]
+            for config_key, flag_name in WEB_ENTRY_FLAG_NAMES.items()
+        },
         "enable_gallery_minimax_h3_entry": config["gallery"]["minimax_h3"],
     }
 

@@ -33,6 +33,8 @@ async def test_public_entry_visibility_returns_only_safe_flags_without_cache():
             key=FEATURE_ENTRY_VISIBILITY_CONFIG_KEY,
             value={
                 "web": {
+                    "edit": False,
+                    "custom_video": False,
                     "ltx_video": True,
                     "minimax_h3": False,
                     "character_assets": False,
@@ -59,8 +61,22 @@ async def test_public_entry_visibility_returns_only_safe_flags_without_cache():
     assert response.headers["cache-control"] == "no-store"
     assert response.json() == {
         "flags": {
+            "enable_edit_entry": False,
+            "enable_edit_v2_5_entry": True,
+            "enable_edit_v3_entry": True,
+            "enable_txt2img_entry": True,
+            "enable_i2i_pro_entry": True,
+            "enable_custom_video_entry": False,
+            "enable_face_swap_entry": True,
+            "enable_random_faceswap_entry": True,
             "enable_ltx_video_entry": True,
+            "enable_ltx_video_v2_entry": True,
+            "enable_ltx_t2v_entry": True,
             "enable_minimax_h3_entry": False,
+            "enable_wan22_video_v2_entry": True,
+            "enable_scail2_action_transfer_entry": True,
+            "enable_scail2_video_replacement_entry": True,
+            "enable_scail2_face_swap_v2_entry": True,
             "enable_character_assets_entry": False,
             "enable_gallery_minimax_h3_entry": True,
         }

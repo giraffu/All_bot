@@ -293,8 +293,22 @@ class MainBotMenuConfigResponse(BaseModel):
 
 
 class WebEntryVisibilityConfig(BaseModel):
+    edit: bool = True
+    edit_v2_5: bool = True
+    edit_v3: bool = True
+    txt2img: bool = True
+    i2i_pro: bool = True
+    custom_video: bool = True
+    face_swap: bool = True
+    random_faceswap: bool = True
     ltx_video: bool = True
+    ltx_video_v2: bool = True
+    ltx_t2v: bool = True
     minimax_h3: bool = False
+    wan22_video_v2: bool = True
+    scail2_action_transfer: bool = True
+    scail2_video_replacement: bool = True
+    scail2_face_swap_v2: bool = True
     character_assets: bool = False
 
 

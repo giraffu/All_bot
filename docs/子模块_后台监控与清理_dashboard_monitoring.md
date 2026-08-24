@@ -46,11 +46,15 @@ sequenceDiagram
 - 管理员显式触发的终止、清理与只读查询
 - 用户列表过滤/排序与用户资产迁移预览；用户转移接口支持 `dry_run=true` 先返回迁移计划且不修改数据库
 - 管理接口鉴权与审计
-- “入口控制”页分开管理 Web 练功房、修仙市集和主 Bot：Web/市集配置写入
+- “入口控制”页以 Web 端、主 Bot、修仙市集三个同级横向子页管理展示入口。
+  Web 子页覆盖当前练功房全部正式入口，包括自由 P 图各版本、文生图、幻想换脸、
+  图生视频各版本、人物角色图、换脸、动作迁移、视频换人、LTX 和 H3 Pro；已被替代
+  或能力层明确停用的旧入口不伪装为可控项目。Web/市集配置写入
   `feature_entry_visibility_config:v1`，主 Bot 菜单继续写入
-  `main_bot_menu_config:v1`。展示开关只影响新页面/新键盘，不停用任务、历史详情、
-  模板深链、旧 Telegram 按钮或命令。Web 读取公开安全布尔值，写接口仍受 Dashboard
-  鉴权与 Cloudflare Access 双层保护。
+  `main_bot_menu_config:v1`。新增 Web 字段对旧 checkpoint 使用保持原展示状态的默认值，
+  H3 Pro 与人物角色图仍默认隐藏。展示开关只影响新页面/新键盘，不停用任务、历史详情、
+  模板深链、旧 Telegram 按钮或命令；默认入口被隐藏时 Web 选择下一个可见入口。
+  Web 读取公开安全布尔值，写接口仍受 Dashboard 鉴权与 Cloudflare Access 双层保护。
 - Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
   查询、状态转换、Telegram 投递与事务提交已收口到
   `support_ticket_admin_service.py`。`private_bots.py` 与

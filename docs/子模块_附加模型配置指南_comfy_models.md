@@ -220,6 +220,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
   - 仅供 QQCC 懒人 Bot 管理后台选择的模型不要加入上述公开目录；改写入 `src/qqcc_ltx_lora_catalog.py:QQCC_LTX23_LIBRARY_MODELS`。QQCC 后端会把公开目录与专用目录合并后下发给认证配置页，但主 Bot/Web 仍只读取公开目录。
   - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。普通入口直接发送起始帧图片即确认当前设置，单首帧上传 1 张图片，首尾帧再继续上传终止帧；旧视频配音回调只提示暂未开放。
   - Web 练功房 `custom_video` 与模板应用面板都支持 LTX 单首帧/首尾帧切换；一键应用上传 1 张起始帧时提交 `ltx_mode=i2v`，额外上传终止帧时提交 `ltx_mode=flf2v`、`use_end_frame=true`。练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
+  - Web 练功房所有正式模式的普通导航展示由 Dashboard `feature_entry_visibility_config:v1.web` 独立控制；Web 启动时先读取 `/api/app/entry-visibility` 的安全布尔值，再以“能力开关 AND 入口开关”生成模式栏。入口关闭不改变 task type、workflow、模板深链、History 或后端提交能力；旧 checkpoint 缺少新增入口字段时按原展示状态补齐。`i2i_draw` 和已被 SCAIL-2 替代的旧视频换脸不作为可控入口恢复。
   - Web 练功房与模板应用的 LTX 面板显示可选负面提示词；trim 后非空才写 `inputs.negative_prompt`，空白时完全省略。`backend/app/models.py`、API client、image service 与 dispatcher 的 I2V/FLF2V/V2V Audio 链路都接受该可选字段；主 Bot Telegram 高级 LTX FSM 不增加输入项，继续使用工作流默认。
   - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧；Bot 扩展入口可选直接续写或添加终止帧，面板不再展示确认按钮，发送提示词即直接续写，发送图片即作为终止帧。
 

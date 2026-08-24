@@ -1,5 +1,6 @@
 import type { PromptTarget } from './buildGenerationTaskPayload'
 import { getRuntimeFlag } from '@/config/runtime'
+import { isWebLabModeEntryEnabled } from '@/config/generationFeatureAvailability'
 import {
   DEFAULT_WAN22_VIDEO_V2_COST,
   IMAGE_TO_VIDEO_LORA_OPTIONS,
@@ -755,6 +756,7 @@ export const DEFAULT_LAB_MODE_ID: UnifiedLabModeId = 'edit'
 export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   mode.unified
   && mode.id !== 'face_video'
+  && isWebLabModeEntryEnabled(mode.id)
   && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
@@ -766,6 +768,10 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
   && (mode.id !== 'minimax_h3' || (WEB_MINIMAX_H3_ENABLED && WEB_MINIMAX_H3_ENTRY_ENABLED))
 )) as LabModeConfig[]
+
+export const DEFAULT_VISIBLE_LAB_MODE_ID = (
+  UNIFIED_LAB_MODES[0]?.id ?? DEFAULT_LAB_MODE_ID
+) as UnifiedLabModeId
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
   LAB_MODE_CONFIG_MAP[modeId]
