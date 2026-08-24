@@ -115,7 +115,8 @@ def test_minimax_h3_image_pins_parallel_nvidia_vfx_build_dependency():
         "e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905"
     ) in dockerfile
     assert "download_pinned_file.py" in dockerfile
-    assert "--parallelism 12" in dockerfile
+    assert "ARG NVIDIA_VFX_DOWNLOAD_PARALLELISM=1" in dockerfile
+    assert '--parallelism "${NVIDIA_VFX_DOWNLOAD_PARALLELISM}"' in dockerfile
 
 
 def test_minimax_h3_exposes_seventeen_local_addons_and_defaults_to_none():
