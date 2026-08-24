@@ -1147,22 +1147,47 @@ class SystemAdapters:
             if not account_id or not token:
                 return None
             project = PAGES_PROJECTS[environment]
-            value = _cloudflare_request(
-                (
-                    "https://api.cloudflare.com/client/v4/accounts/"
-                    f"{account_id}/pages/projects/{project}/deployments"
-                    + (
-                        "?env=production&per_page=1"
-                        if environment == "prod"
-                        else "?env=preview&per_page=1"
-                    )
-                ),
-                token,
+            project_url = (
+                "https://api.cloudflare.com/client/v4/accounts/"
+                f"{account_id}/pages/projects/{project}"
             )
-            try:
-                deployment_id = value["result"][0]["id"]
-            except (IndexError, KeyError, TypeError):
-                return None
+            if environment == "prod":
+                value = _cloudflare_request(project_url, token)
+                result = value.get("result")
+                canonical = (
+                    result.get("canonical_deployment")
+                    if isinstance(result, Mapping)
+                    else None
+                )
+                latest_stage = (
+                    canonical.get("latest_stage")
+                    if isinstance(canonical, Mapping)
+                    else None
+                )
+                if (
+                    not isinstance(canonical, Mapping)
+                    or canonical.get("environment") != "production"
+                    or canonical.get("is_skipped") is True
+                    or not isinstance(latest_stage, Mapping)
+                    or latest_stage.get("name") != "deploy"
+                    or latest_stage.get("status") != "success"
+                ):
+                    raise ReleaseError(
+                        "Pages canonical deployment is not a successful "
+                        "production deployment"
+                    )
+                deployment_id = canonical.get("id")
+            else:
+                value = _cloudflare_request(
+                    f"{project_url}/deployments?env=preview&per_page=1",
+                    token,
+                )
+                try:
+                    deployment_id = value["result"][0]["id"]
+                except (IndexError, KeyError, TypeError):
+                    return None
+            if not isinstance(deployment_id, str) or not deployment_id:
+                raise ReleaseError("Pages rollback deployment identity is unavailable")
             return f"pages://{project}/{deployment_id}"
         if adapter == "gpu":
             operator = str(context.get("operator") or "")
