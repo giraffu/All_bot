@@ -127,6 +127,11 @@ LAN/RunPod execution profile maps both face-swap task types to
 
 LAN model cache uses the dedicated MinIO service at `192.168.1.115:9010` with
 bucket `allbot-model-cache`; do not reuse runtime `user-data-*` buckets.
+The endpoint may be a compatibility proxy to the NAS-local service declared in
+`ops/lan_artifact_nas/`; workers must continue using the established endpoint
+and digest-addressed manifests. The model source registry may be a hard NFS mount
+from the same NAS at `/srv/allbot/model-registry`, but runtime model workspaces
+remain local to each GPU node.
 Use a redacted loader for `.env.lan.model-cache`. The all-task helper builds
 canonical manifests on top of a shared object pool:
 

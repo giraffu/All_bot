@@ -1,0 +1,14 @@
+[Unit]
+Description=AllBot LAN model cache compatibility sockets
+After=network-online.target
+Wants=network-online.target
+
+[Socket]
+ListenStream=127.0.0.1:9010
+ListenStream=192.168.1.115:9010
+NoDelay=true
+FreeBind=true
+
+[Install]
+WantedBy=sockets.target
+

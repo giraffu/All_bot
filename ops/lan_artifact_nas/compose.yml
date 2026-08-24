@@ -1,0 +1,66 @@
+services:
+  registry:
+    image: ${REGISTRY_IMAGE:?Set an immutable registry image ID}
+    container_name: allbot-nas-registry
+    restart: unless-stopped
+    ports:
+      - "${NAS_DIRECT_BIND_IP:?required}:5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+    volumes:
+      - ${REGISTRY_DATA_PATH:-/volume1/AllBotInfra/docker-registry}:/var/lib/registry
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  model-cache:
+    image: ${MODEL_CACHE_IMAGE:?Set an immutable MinIO image ID}
+    container_name: allbot-nas-model-cache
+    restart: unless-stopped
+    command: server /data --address ":9010" --console-address ":9011"
+    ports:
+      - "${NAS_DIRECT_BIND_IP:?required}:9010:9010"
+      - "${NAS_DIRECT_BIND_IP:?required}:9011:9011"
+    environment:
+      MINIO_ROOT_USER: ${LAN_MODEL_CACHE_ACCESS_KEY:?required}
+      MINIO_ROOT_PASSWORD: ${LAN_MODEL_CACHE_SECRET_KEY:?required}
+    volumes:
+      - ${MODEL_CACHE_DATA_PATH:-/volume1/AllBotInfra/model-cache-lan}:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:9010/minio/health/ready >/dev/null || exit 1
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  model-cache-bootstrap:
+    image: ${MODEL_CACHE_MC_IMAGE:?Set an immutable MinIO MC image ID}
+    depends_on:
+      model-cache:
+        condition: service_healthy
+    restart: "no"
+    network_mode: host
+    environment:
+      LAN_MODEL_CACHE_ACCESS_KEY: ${LAN_MODEL_CACHE_ACCESS_KEY:?required}
+      LAN_MODEL_CACHE_SECRET_KEY: ${LAN_MODEL_CACHE_SECRET_KEY:?required}
+      NAS_DIRECT_BIND_IP: ${NAS_DIRECT_BIND_IP:?required}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set target "http://$${NAS_DIRECT_BIND_IP}:9010" \
+          "$${LAN_MODEL_CACHE_ACCESS_KEY}" "$${LAN_MODEL_CACHE_SECRET_KEY}" \
+          --api S3v4 --path auto >/dev/null
+        mc mb --ignore-existing target/allbot-model-cache >/dev/null
+        echo "NAS LAN model cache bucket is ready"
+

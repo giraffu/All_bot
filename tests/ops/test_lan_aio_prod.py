@@ -1950,6 +1950,70 @@ def test_node_storage_gc_dry_run_uses_exact_targets_and_reports_candidates():
     assert "rm -rf" not in ops.script
 
 
+def test_node_storage_gc_requires_explicit_builders_for_build_cache_pruning():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.script = ""
+
+        def _node_storage_gc_host(self, node_id: str) -> str:
+            assert node_id == "gpu-115"
+            return "__local__"
+
+        def _protected_node_containers(self, node_id: str) -> set[str]:
+            return set()
+
+        def _run_remote_root_script(self, host: str, script: str) -> str:
+            assert host == "__local__"
+            self.script = script
+            return (
+                'ALLBOT_NODE_STORAGE_GC_RESULT={"bytes_before":1000,'
+                '"bytes_after":1000,"containers":[],"workspaces":[],'
+                '"unused_images":[],"dangling_volumes":[],'
+                '"build_cache_builders":["allbot-lan-insecure"]}'
+            )
+
+    ops = RecordingOps()
+    result = ops.node_storage_gc(
+        node_id="gpu-115",
+        remove_containers=[],
+        remove_workspaces=[],
+        prune_unused_images=False,
+        prune_dangling_volumes=False,
+        prune_build_cache_builders=["allbot-lan-insecure"],
+        execute=False,
+    )
+
+    assert result["build_cache_builders"] == ["allbot-lan-insecure"]
+    assert '"prune_build_cache_builders": ["allbot-lan-insecure"]' in ops.script
+    assert 'run("docker", "buildx", "prune", "--builder", builder, "-a", "-f")' in ops.script
+
+
+def test_node_storage_gc_rejects_unsafe_build_cache_builder_name():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe buildx builder"):
+        ops.node_storage_gc(
+            node_id="gpu-115",
+            remove_containers=[],
+            remove_workspaces=[],
+            prune_unused_images=False,
+            prune_dangling_volumes=False,
+            prune_build_cache_builders=["builder;docker system prune"],
+            execute=False,
+        )
+
+
 def test_node_storage_gc_execute_is_audited_and_preserves_current_identity(tmp_path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):

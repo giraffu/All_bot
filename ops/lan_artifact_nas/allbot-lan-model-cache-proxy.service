@@ -1,0 +1,12 @@
+[Unit]
+Description=Proxy the established AllBot LAN model cache endpoint to NAS
+Requires=allbot-lan-model-cache-proxy.socket
+After=network-online.target
+
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd 10.250.150.2:9010
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+
