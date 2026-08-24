@@ -523,7 +523,7 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "aspect_ratio": "16:9",
             "lora_items": [
                 {"name": "motion_booster", "strength": 0.75},
-                {"name": "mystic_xxx", "strength": 0.75},
+                {"name": "mystic_xxx", "strength": 0.9},
             ],
             "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
@@ -601,7 +601,7 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 5
+    assert options["ai_video_addon_models_version"] == 6
     assert options["ai_video_addon_models"] == [
         {
             "value": model.id,
@@ -622,6 +622,16 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
         for item in options["ai_video_addon_models"]
         if item["value"] == "motion_booster_ref2va"
     )["supported_modes"] == ["ref2v"]
+    assert next(
+        item
+        for item in options["ai_video_addon_models"]
+        if item["value"] == "mystic_xxx"
+    ) == {
+        "value": "mystic_xxx",
+        "label": "Mystic XXX v3（人体结构增强）",
+        "default_strength": 0.9,
+        "supported_modes": ["t2v", "i2v", "flf2v", "ref2v"],
+    }
 
 
 def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():

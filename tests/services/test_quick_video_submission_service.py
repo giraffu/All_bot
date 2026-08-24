@@ -358,7 +358,7 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
     assert plan.negative_prompt == "blur, jitter"
     assert plan.lora_items == [
         {"name": "motion_booster", "strength": 0.75},
-        {"name": "mystic_xxx", "strength": 0.75},
+        {"name": "mystic_xxx", "strength": 0.9},
     ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
 

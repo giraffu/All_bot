@@ -133,7 +133,7 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
 
 十七个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
 （0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、原生 REF2VA Motion v0.2
-（0.7，触发词 `dynv2`，仅 REF2V）、Mystic XXX v2（0.75，
+（0.7，触发词 `dynv2`，仅 REF2V）、Mystic XXX v3（0.9，
 无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
 `inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
 Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
@@ -196,8 +196,12 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02`、23 个文件的字节数与
-SHA256，总计 110,641,008,959 bytes。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3`、23 个文件的字节数与
+SHA256，总计 110,767,210,711 bytes。Mystic XXX v3 使用 modelVersion `3260276`、
+file `3143593`，文件 `MysticXXX_MMH3-V3.safetensors` 为 298,259,688 bytes，
+SHA256 `99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6`；作者建议
+v3 可在较高强度下使用并以 `0.9` 为示例，因此新选择默认使用 `0.9`，已有场景中
+显式保存的强度保持不变。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

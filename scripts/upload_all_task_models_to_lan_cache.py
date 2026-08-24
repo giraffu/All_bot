@@ -114,9 +114,9 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="minimax_h3",
-        prefix="minimax_h3/2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02",
-        manifest_key="minimax_h3/2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02/manifest.json",
-        bundle_versions=(("minimax_h3_runtime", "2026-08-22-10eros-turbo-ref2va-addon17-ref-motion-v02"),),
+        prefix="minimax_h3/2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3",
+        manifest_key="minimax_h3/2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3/manifest.json",
+        bundle_versions=(("minimax_h3_runtime", "2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3"),),
     ),
 )
 TARGETS_BY_NAME = {

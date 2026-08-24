@@ -99,7 +99,7 @@ export const MINIMAX_H3_ADDON_OPTIONS = [
     defaultStrength: 0.7,
     supportedModes: ['ref2v'] as readonly MiniMaxH3Mode[],
   },
-  { value: 'mystic_xxx', labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx', defaultStrength: 0.75 },
+  { value: 'mystic_xxx', labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx', defaultStrength: 0.9 },
   { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
   { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
   { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },
