@@ -40,16 +40,18 @@ if [ "$mode" = "execute" ]; then
   mirror_mode=""
 fi
 docker run --rm --network host \
-  -e "MC_ACCESS_KEY=${LAN_MODEL_CACHE_ACCESS_KEY}" \
-  -e "MC_SECRET_KEY=${LAN_MODEL_CACHE_SECRET_KEY}" \
+  --env-file "${script_dir}/.env" \
   -e "MC_SOURCE_ENDPOINT=${source_endpoint}" \
   -e "MC_TARGET_ENDPOINT=${target_endpoint}" \
   -e "MC_MIRROR_MODE=${mirror_mode}" \
+  -e "MC_MAX_WORKERS=${MODEL_CACHE_MIRROR_WORKERS:-8}" \
   --entrypoint /bin/sh \
   "$MODEL_CACHE_MC_IMAGE" -ec '
-    mc alias set source "$MC_SOURCE_ENDPOINT" "$MC_ACCESS_KEY" "$MC_SECRET_KEY" --api S3v4 --path auto >/dev/null
-    mc alias set target "$MC_TARGET_ENDPOINT" "$MC_ACCESS_KEY" "$MC_SECRET_KEY" --api S3v4 --path auto >/dev/null
-    mc mirror $MC_MIRROR_MODE --overwrite --preserve source/allbot-model-cache target/allbot-model-cache
+    mc alias set source "$MC_SOURCE_ENDPOINT" "$LAN_MODEL_CACHE_ACCESS_KEY" "$LAN_MODEL_CACHE_SECRET_KEY" --api S3v4 --path auto >/dev/null
+    mc alias set target "$MC_TARGET_ENDPOINT" "$LAN_MODEL_CACHE_ACCESS_KEY" "$LAN_MODEL_CACHE_SECRET_KEY" --api S3v4 --path auto >/dev/null
+    mc mirror $MC_MIRROR_MODE --overwrite --preserve --retry \
+      --max-workers "$MC_MAX_WORKERS" \
+      source/allbot-model-cache target/allbot-model-cache
     if [ -z "$MC_MIRROR_MODE" ]; then
       differences="$(mc diff --json source/allbot-model-cache target/allbot-model-cache)"
       if [ -n "$differences" ]; then
@@ -64,4 +66,3 @@ if [ "$mode" = "execute" ]; then
 else
   echo "model cache mirror dry-run passed"
 fi
-
