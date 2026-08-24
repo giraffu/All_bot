@@ -148,6 +148,11 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
 6. 验证健康检查、三个桶、archive 桶 versioning、Worker 无 DeleteObject 权限、
    analytics 只读、容器重启恢复、日志轮转和磁盘满 fail-closed。
 
+LAN Registry、模型分发缓存和模型源仓库使用独立的
+`/volume1/AllBotInfra` Btrfs 子卷与 `ops/lan_artifact_nas/` 契约。它们不得复用
+`AllBotArchive` 目录、归档 MinIO 实例、账号、桶、快照或清理策略；媒体归档容量
+门禁也不能把可重建 artifact cache 计作已归档媒体。
+
 仓库不保存真实凭据或镜像占位 digest。没有 NAS 管理权限时只能准备部署包，
 不得声称已部署。
 

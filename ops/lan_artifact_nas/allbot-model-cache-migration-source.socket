@@ -1,0 +1,12 @@
+[Unit]
+Description=Temporary direct-link source socket for LAN model cache migration
+After=network-online.target
+Wants=network-online.target
+
+[Socket]
+ListenStream=10.250.150.1:19010
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target
+

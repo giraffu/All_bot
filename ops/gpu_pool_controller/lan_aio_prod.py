@@ -2355,14 +2355,20 @@ printf "%s|%s\\n" "$before" "$after"
         prune_unused_images: bool,
         prune_dangling_volumes: bool,
         execute: bool,
+        prune_build_cache_builders: list[str] | None = None,
     ) -> dict[str, Any]:
         containers = sorted(set(remove_containers))
         workspaces = sorted(set(remove_workspaces))
+        build_cache_builders = sorted(set(prune_build_cache_builders or []))
+        for builder in build_cache_builders:
+            if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", builder):
+                raise RuntimeError(f"unsafe buildx builder: {builder}")
         if not (
             containers
             or workspaces
             or prune_unused_images
             or prune_dangling_volumes
+            or build_cache_builders
         ):
             raise RuntimeError("node storage GC requires at least one explicit target")
         self._validate_node_storage_gc_targets(
@@ -2385,6 +2391,7 @@ printf "%s|%s\\n" "$before" "$after"
             "protected_containers": sorted(protected_containers),
             "prune_unused_images": bool(prune_unused_images),
             "prune_dangling_volumes": bool(prune_dangling_volumes),
+            "prune_build_cache_builders": build_cache_builders,
             "execute": bool(execute),
         }
         plan_json = json.dumps(plan, sort_keys=True)
@@ -2500,6 +2507,12 @@ if plan["prune_dangling_volumes"]:
         name for name, owners in volume_users.items() if owners and owners <= targets
     )
     volume_candidates = sorted(predicted_volumes)
+build_cache_builders = []
+for builder in plan["prune_build_cache_builders"]:
+    inspected = run("docker", "buildx", "inspect", builder, check=False)
+    if inspected.returncode != 0:
+        raise RuntimeError(f"buildx builder is missing or unavailable: {{builder}}")
+    build_cache_builders.append(builder)
 disk_before = shutil.disk_usage("/")
 
 if plan["execute"]:
@@ -2540,6 +2553,8 @@ if plan["execute"]:
     if plan["prune_dangling_volumes"]:
         if volume_candidates:
             run("docker", "volume", "rm", *volume_candidates)
+    for builder in build_cache_builders:
+        run("docker", "buildx", "prune", "--builder", builder, "-a", "-f")
 
 disk_after = shutil.disk_usage("/")
 result = {{
@@ -2551,6 +2566,7 @@ result = {{
     "workspaces": workspace_rows,
     "unused_images": image_candidates,
     "dangling_volumes": volume_candidates,
+    "build_cache_builders": build_cache_builders,
 }}
 print("ALLBOT_NODE_STORAGE_GC_RESULT=" + json.dumps(result, sort_keys=True))
 PY
@@ -4336,6 +4352,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remove-workspace", action="append", default=[])
     parser.add_argument("--prune-unused-images", action="store_true")
     parser.add_argument("--prune-dangling-volumes", action="store_true")
+    parser.add_argument("--prune-build-cache-builder", action="append", default=[])
     return parser
 
 
@@ -4603,6 +4620,7 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
             prune_unused_images=args.prune_unused_images,
             prune_dangling_volumes=args.prune_dangling_volumes,
             execute=args.execute,
+            prune_build_cache_builders=args.prune_build_cache_builder,
         )
         payload = (
             ops.execute_node_storage_mutation(

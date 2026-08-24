@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AllBot model source registry snapshot
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

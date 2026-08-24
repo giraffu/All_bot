@@ -1,0 +1,53 @@
+# LAN artifact stores on NAS
+
+This directory owns the stable deployment contract for moving the LAN OCI
+registry, LAN model-cache MinIO, and model source registry to NAS Btrfs. It does
+not move Docker's data root, active databases, container volumes, or GPU model
+workspaces.
+
+## Stable topology
+
+- NAS-local Docker stores Registry v2 data in
+  `/volume1/AllBotInfra/docker-registry` and model-cache MinIO data in
+  `/volume1/AllBotInfra/model-cache-lan`.
+- NAS exports only `/volume1/AllBotInfra/model-registry` to the dedicated main
+  server address `10.250.150.1`.
+- The main server preserves `127.0.0.1/192.168.1.115:5000` and `:9010` with
+  socket-activated TCP proxies to the NAS direct-link backends.
+- GPU nodes keep their local exact-digest images and verified model workspaces.
+  NAS loss blocks new pulls, warm-cache and profile changes, but does not make a
+  healthy current runtime read models over NFS.
+- `AllBotInfra` is separate from `AllBotArchive`; credentials, buckets,
+  snapshots and lifecycle policies are never shared.
+
+## Migration transaction
+
+1. Record local disk usage, model-cache object count/bytes/manifests, Registry
+   catalog/tag/digests, model source tree size, fleet status and unfinished
+   operations. Stop if catalog, ledger and live state drift.
+2. Offline-import exact Registry/MinIO/MC image identities to NAS. Create the
+   three Btrfs subvolumes and private `.env`, then run `preflight.sh` and
+   `bootstrap.sh` with their exact confirmations.
+3. Install and start the temporary migration-source socket on the main server.
+   Run `mirror-model-cache.sh` on NAS. It never uses `--remove`; execute succeeds
+   only when `mc diff` is empty.
+4. Pre-copy model source and Registry filesystem trees with `rsync -aH` over the
+   dedicated link. A final quiesced Registry delta must make `rsync --dry-run
+   --delete --itemize-changes` empty. Run `verify-registry.sh` before cutover.
+5. Wait for model upload/build/push operations to stop. Stop only the two old
+   central store containers, start the compatibility proxy sockets, and verify
+   the established endpoints. Do not drain or restart GPU runtimes.
+6. Move the local model source directory to an exact rollback path, install the
+   managed `model-registry.fstab` entry, mount NFS at the original path, and
+   verify the complete source tree and model import dry-run.
+7. Pull a pinned Registry manifest and run one existing-slot model-cache
+   preflight through the fleet helper. Verify current image/profile identities
+   and Central/ComfyUI health remain unchanged.
+8. Create a readonly NAS snapshot. Only after all checks pass may the exact old
+   local store directories be retired. Rollback stops proxy sockets, unmounts
+   NFS, restores the exact local source path and recreates the original two
+   Compose services.
+
+Repository files never contain the private `.env`, NAS sudo password or model
+credentials. Runtime evidence belongs in `logs/` and is not committed.
+

@@ -1,0 +1,11 @@
+[Unit]
+Description=Temporary direct-link source proxy for LAN model cache migration
+Requires=allbot-model-cache-migration-source.socket
+
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd 127.0.0.1:9010
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+

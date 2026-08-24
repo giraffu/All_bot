@@ -1,0 +1,8 @@
+[Unit]
+Description=Create a readonly snapshot of the AllBot model source registry
+RequiresMountsFor=/volume1/AllBotInfra/model-registry
+
+[Service]
+Type=oneshot
+ExecStart=/volume1/AllBotInfra/deploy/snapshot-model-registry.sh
+
