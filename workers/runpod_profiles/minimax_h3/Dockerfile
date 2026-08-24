@@ -18,6 +18,7 @@ ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG NVIDIA_VFX_WHEEL_URL=https://pypi.nvidia.com/nvidia-vfx/nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 ARG NVIDIA_VFX_WHEEL_SHA256=e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905
 ARG NVIDIA_VFX_WHEEL_SIZE=597321055
+ARG NVIDIA_VFX_DOWNLOAD_PARALLELISM=1
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
@@ -48,7 +49,7 @@ RUN set -euo pipefail; \
 RUN set -euo pipefail; \
     pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache --index-url "${PIP_INDEX_URL}" "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     nvidia_vfx_wheel=/tmp/nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; \
-    python3 /tmp/download_pinned_file.py --url "${NVIDIA_VFX_WHEEL_URL}" --output "$nvidia_vfx_wheel" --size "${NVIDIA_VFX_WHEEL_SIZE}" --sha256 "${NVIDIA_VFX_WHEEL_SHA256}" --parallelism 12; \
+    python3 /tmp/download_pinned_file.py --url "${NVIDIA_VFX_WHEEL_URL}" --output "$nvidia_vfx_wheel" --size "${NVIDIA_VFX_WHEEL_SIZE}" --sha256 "${NVIDIA_VFX_WHEEL_SHA256}" --parallelism "${NVIDIA_VFX_DOWNLOAD_PARALLELISM}"; \
     pip_install_with_retry "$nvidia_vfx_wheel"; \
     rm -f "$nvidia_vfx_wheel"; \
     install_node() { repo="$1"; ref="$2"; sha="$3"; name="$4"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; archive="/tmp/${name}.tar.gz"; repo_path="${repo#https://github.com/}"; repo_path="${repo_path%.git}"; \
