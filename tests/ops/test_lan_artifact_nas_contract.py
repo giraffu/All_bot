@@ -9,6 +9,7 @@ OPS = ROOT / "ops/lan_artifact_nas"
 def test_nas_compose_keeps_artifact_data_on_btrfs_and_direct_link_only():
     compose = (OPS / "compose.yml").read_text(encoding="utf-8")
 
+    assert compose.startswith("name: allbot-lan-artifact-nas\n")
     assert "${NAS_DIRECT_BIND_IP:?required}:5000:5000" in compose
     assert "${NAS_DIRECT_BIND_IP:?required}:9010:9010" in compose
     assert "192.168.1.150:5000" not in compose
