@@ -186,8 +186,12 @@ def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
         "（人体结构增强）"
     )
     assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.startswith(
-        "Mystic XXX v2"
+        "Mystic XXX v3"
     )
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].model_path == (
+        "MiniMaxH3/MysticXXX_MMH3-V3.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].default_strength == 0.9
 
 
 def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
@@ -212,7 +216,7 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ("naughty_times", 0.8),
         ("sex_pose", 0.5),
         ("motion_booster", 0.7),
-        ("mystic_xxx", 0.75),
+        ("mystic_xxx", 0.9),
         ("breast_play", 0.75),
         ("innie", 0.8),
         ("deepthroat", 0.75),

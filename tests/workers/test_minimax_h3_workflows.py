@@ -232,7 +232,7 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
             "prompt": "scene",
             "lora_items": [
                 {"name": "motion_booster", "strength": 0.7},
-                {"name": "mystic_xxx", "strength": 0.75},
+                {"name": "mystic_xxx"},
             ],
         },
     )
@@ -244,8 +244,8 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
     }
     assert workflow["101"]["inputs"] == {
         "model": ["100", 0],
-        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
-        "strength_model": 0.75,
+        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V3.safetensors",
+        "strength_model": 0.9,
     }
     assert workflow["2"]["inputs"]["model"] == ["101", 0]
     assert workflow["30"]["inputs"]["prompt"] == "dynv2, scene"

@@ -56,10 +56,10 @@ def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
         155_110_288,
         "https://civitai.red/api/download/models/3246346?fileId=3129119",
     )
-    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors"][1:4] == (
-        "2fc32615f20465e0831a5c8069df4006422fc9638a0b7faa216e04a6ddfee8de",
-        172_057_936,
-        "https://civitai.red/api/download/models/3242519?fileId=3125221",
+    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V3.safetensors"][1:4] == (
+        "99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6",
+        298_259_688,
+        "https://civitai.red/api/download/models/3260276?fileId=3143593",
     )
     assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
         "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
@@ -116,7 +116,7 @@ def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
     assert len(files) == 23
-    assert sum(entry[2] for entry in module.FILES) == 110_641_008_959
+    assert sum(entry[2] for entry in module.FILES) == 110_767_210_711
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

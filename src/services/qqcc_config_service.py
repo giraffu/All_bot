@@ -1906,7 +1906,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ai_video_addon_models_version": 5,
+        "ai_video_addon_models_version": 6,
         "ai_video_addon_models": [
             {
                 "value": model.id,

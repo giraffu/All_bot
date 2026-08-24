@@ -39,7 +39,7 @@ describe('labModeConfig', () => {
     expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
       value: 'mystic_xxx',
       labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx',
-      defaultStrength: 0.75,
+      defaultStrength: 0.9,
     })
     expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
       value: 'cumshot',
