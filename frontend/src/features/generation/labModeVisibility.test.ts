@@ -33,6 +33,30 @@ describe('test Web video feature visibility', () => {
     expect(visibleModeIds).toContain('minimax_h3')
   })
 
+  it('independently hides ordinary Web tools without disabling their deep links', async () => {
+    window.__ALLBOT_CONFIG__ = {
+      ...window.__ALLBOT_CONFIG__,
+      enable_edit_entry: false,
+      enable_custom_video_entry: false,
+      enable_txt2img_entry: true,
+    }
+    vi.resetModules()
+
+    const {
+      DEFAULT_VISIBLE_LAB_MODE_ID,
+      UNIFIED_LAB_MODES,
+      resolveLabModeIdFromTaskType,
+    } = await import('./labModeConfig')
+    const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)
+
+    expect(visibleModeIds).not.toContain('edit')
+    expect(visibleModeIds).not.toContain('custom_video')
+    expect(visibleModeIds).toContain('txt2img')
+    expect(DEFAULT_VISIBLE_LAB_MODE_ID).toBe('edit_v2_5')
+    expect(resolveLabModeIdFromTaskType('edit')).toBe('edit')
+    expect(resolveLabModeIdFromTaskType('custom_video')).toBe('custom_video')
+  })
+
   it('shows original advanced video while hiding H3 Pro and character entry cards', async () => {
     const { UNIFIED_LAB_MODES, resolveLabModeIdFromTaskType } = await import('./labModeConfig')
     const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)

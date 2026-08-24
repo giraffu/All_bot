@@ -1,5 +1,30 @@
 import { getRuntimeFlag } from '@/config/runtime'
 
+const WEB_LAB_MODE_ENTRY_FLAGS: Record<string, string> = {
+  edit: 'enable_edit_entry',
+  edit_v2_5: 'enable_edit_v2_5_entry',
+  edit_v3: 'enable_edit_v3_entry',
+  txt2img: 'enable_txt2img_entry',
+  i2i_pro: 'enable_i2i_pro_entry',
+  custom_video: 'enable_custom_video_entry',
+  face_swap: 'enable_face_swap_entry',
+  random_faceswap: 'enable_random_faceswap_entry',
+  ltx_video: 'enable_ltx_video_entry',
+  ltx_video_v2: 'enable_ltx_video_v2_entry',
+  ltx_t2v: 'enable_ltx_t2v_entry',
+  minimax_h3: 'enable_minimax_h3_entry',
+  wan22_video_v2: 'enable_wan22_video_v2_entry',
+  scail2_action_transfer: 'enable_scail2_action_transfer_entry',
+  scail2_video_replacement: 'enable_scail2_video_replacement_entry',
+  scail2_face_swap_v2: 'enable_scail2_face_swap_v2_entry',
+  character_reference: 'enable_character_assets_entry',
+}
+
+export const isWebLabModeEntryEnabled = (modeId: string): boolean => {
+  const flagName = WEB_LAB_MODE_ENTRY_FLAGS[modeId]
+  return flagName ? getRuntimeFlag(flagName, true) : true
+}
+
 export const isLtxVideoFeatureEnabled = (): boolean =>
   getRuntimeFlag('enable_ltx_video', true)
 

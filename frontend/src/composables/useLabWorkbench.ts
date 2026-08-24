@@ -11,7 +11,7 @@ import { useTasksStore } from '@/stores/tasks'
 import type { PromptOptimizationOriginDraft } from '@/stores/taskStoreTypes'
 import api from '@/api'
 import {
-  DEFAULT_LAB_MODE_ID,
+  DEFAULT_VISIBLE_LAB_MODE_ID,
   DEFAULT_VIDEO_DURATION,
   EDIT_LORA_DEFAULT_STRENGTHS,
   EDIT_LORA_OPTIONS,
@@ -75,7 +75,7 @@ export function useLabWorkbench() {
   const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
   const tasksStore = useTasksStore()
 
-  const currentModeId = ref<UnifiedLabModeId>(DEFAULT_LAB_MODE_ID)
+  const currentModeId = ref<UnifiedLabModeId>(DEFAULT_VISIBLE_LAB_MODE_ID)
   const prompt = ref('')
   const audioPrompt = ref('')
   const selectedEditLora = ref('')
@@ -85,7 +85,7 @@ export function useLabWorkbench() {
   const selectedLtxLoraNames = ref<string[]>([])
   const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
-  const resolution = ref(getDefaultResolutionForMode(DEFAULT_LAB_MODE_ID))
+  const resolution = ref(getDefaultResolutionForMode(DEFAULT_VISIBLE_LAB_MODE_ID))
   const duration = ref(DEFAULT_VIDEO_DURATION)
   const selectedCharacterIds = ref<string[]>([])
   const useT2VReferences = ref(false)
@@ -225,7 +225,7 @@ export function useLabWorkbench() {
     minimaxH3AddonItems.value = []
     negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
     wan22ResolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
-    resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
+    resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_VISIBLE_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
     selectedCharacterIds.value = []
     useT2VReferences.value = false
@@ -236,7 +236,7 @@ export function useLabWorkbench() {
     ltx.resetLtxExtensionState()
 
     if (!options?.preserveMode) {
-      currentModeId.value = DEFAULT_LAB_MODE_ID
+      currentModeId.value = DEFAULT_VISIBLE_LAB_MODE_ID
     }
 
     setSubmittedTaskId(null)
