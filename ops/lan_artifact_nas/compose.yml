@@ -1,3 +1,5 @@
+name: allbot-lan-artifact-nas
+
 services:
   registry:
     image: ${REGISTRY_IMAGE:?Set an immutable registry image ID}
@@ -63,4 +65,3 @@ services:
           --api S3v4 --path auto >/dev/null
         mc mb --ignore-existing target/allbot-model-cache >/dev/null
         echo "NAS LAN model cache bucket is ready"
-
