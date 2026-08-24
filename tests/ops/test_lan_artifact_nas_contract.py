@@ -119,6 +119,11 @@ def test_model_cache_mirror_is_dry_run_by_default_and_fail_closed():
 
     assert "mc mirror" in text
     assert "--preserve" in text
+    assert "--retry" in text
+    assert "--max-workers" in text
+    assert "--env-file" in text
+    assert '-e "MC_ACCESS_KEY=' not in text
+    assert '-e "MC_SECRET_KEY=' not in text
     assert "mc diff" in text
     assert "COPY_MODEL_CACHE_TO_NAS" in text
     assert "--remove" not in text
