@@ -374,7 +374,11 @@ class _ProbeHeadActivity:
 MIGRATION_DDL = """
 create table if not exists analytics_history_media_migration_runs (
     id uuid primary key,
+    history_min_id integer not null default 1 check (history_min_id >= 1),
     history_watermark integer not null check (history_watermark >= 0),
+    history_reference_prefix text,
+    history_source text not null default 'local-shadow',
+    history_source_route_sha256 char(64),
     status text not null check (status in ('running','paused','completed','failed')),
     phase text not null,
     cursor_history_id integer not null default 0,
@@ -406,7 +410,8 @@ create table if not exists analytics_history_media_r2_migrations (
     source_last_modified timestamptz,
     status text not null check (status in (
       'pending_probe','copy_required','target_verified','copied_verified',
-      'target_conflict','source_missing','source_offline','blocked','unresolved','failed'
+      'target_conflict','source_missing','source_offline','blocked','unresolved',
+      'failed','scope_context'
     )),
     error_code text,
     error_detail text,
@@ -495,6 +500,23 @@ alter table analytics_history_media_r2_migrations
   add column if not exists copy_method text;
 alter table analytics_history_media_r2_migrations
   add column if not exists probe_plan_sha256 char(64);
+alter table analytics_history_media_migration_runs
+  add column if not exists history_min_id integer not null default 1;
+alter table analytics_history_media_migration_runs
+  add column if not exists history_reference_prefix text;
+alter table analytics_history_media_migration_runs
+  add column if not exists history_source text not null default 'local-shadow';
+alter table analytics_history_media_migration_runs
+  add column if not exists history_source_route_sha256 char(64);
+alter table analytics_history_media_r2_migrations
+  drop constraint if exists analytics_history_media_r2_migrations_status_check;
+alter table analytics_history_media_r2_migrations
+  add constraint analytics_history_media_r2_migrations_status_check
+  check (status in (
+    'pending_probe','copy_required','target_verified','copied_verified',
+    'target_conflict','source_missing','source_offline','blocked','unresolved',
+    'failed','scope_context'
+  ));
 do $$
 declare plan_constraint record;
 begin
@@ -830,6 +852,107 @@ def validate_resume_identity(
     return stored_watermark
 
 
+def validate_seed_scope_identity(
+    *,
+    stored_history_min_id: int,
+    requested_history_min_id: int | None,
+    stored_history_reference_prefix: str | None,
+    requested_history_reference_prefix: str | None,
+) -> tuple[int, str | None]:
+    """Return a frozen seed scope or reject a resume that changes it."""
+    history_min_id = int(stored_history_min_id)
+    if requested_history_min_id is not None and int(requested_history_min_id) != history_min_id:
+        raise ValueError("resume identity does not match frozen History seed scope")
+    prefix = str(stored_history_reference_prefix) if stored_history_reference_prefix else None
+    if (
+        requested_history_reference_prefix is not None
+        and requested_history_reference_prefix != prefix
+    ):
+        raise ValueError("resume identity does not match frozen History seed scope")
+    return history_min_id, prefix
+
+
+def validate_seed_source_identity(
+    *,
+    stored_history_source: str,
+    requested_history_source: str | None,
+    stored_history_source_route_sha256: str | None,
+    actual_history_source_route_sha256: str | None,
+) -> str:
+    source = str(stored_history_source)
+    if requested_history_source is not None and requested_history_source != source:
+        raise ValueError("resume identity does not match frozen History seed source")
+    if stored_history_source_route_sha256 != actual_history_source_route_sha256:
+        raise ValueError("resume identity does not match frozen History seed source route")
+    return source
+
+
+def build_seed_scope_identity(
+    *,
+    history_min_id: int,
+    history_watermark: int,
+    history_reference_prefix: str | None,
+    history_source: str = "local-shadow",
+    history_source_route_sha256: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "history_min_id": int(history_min_id),
+        "history_watermark": int(history_watermark),
+        "history_reference_prefix": history_reference_prefix,
+        "history_source": history_source,
+        "history_source_route_sha256": history_source_route_sha256,
+        "complete_history_manifests": True,
+    }
+
+
+def validate_plan_seed_scope(
+    *, manifest: dict[str, Any], expected_scope: dict[str, Any]
+) -> None:
+    actual = manifest.get("seed_scope")
+    default_scope = build_seed_scope_identity(
+        history_min_id=1,
+        history_watermark=int(expected_scope["history_watermark"]),
+        history_reference_prefix=None,
+    )
+    if actual is None and expected_scope == default_scope:
+        return
+    if actual != expected_scope:
+        raise RuntimeError("plan History seed scope changed")
+
+
+def _seed_scope_from_run(run: Any) -> dict[str, Any]:
+    return build_seed_scope_identity(
+        history_min_id=int(run["history_min_id"]),
+        history_watermark=int(run["history_watermark"]),
+        history_reference_prefix=run["history_reference_prefix"],
+        history_source=str(run["history_source"]),
+        history_source_route_sha256=run["history_source_route_sha256"],
+    )
+
+
+def _nondefault_seed_scope(run: Any) -> dict[str, Any] | None:
+    scope = _seed_scope_from_run(run)
+    if scope["history_min_id"] == 1 and scope["history_reference_prefix"] is None:
+        return None
+    return scope
+
+
+def select_history_assets_for_seed(
+    assets: Iterable[AssetIdentity],
+    *,
+    history_reference_prefix: str | None,
+) -> list[tuple[AssetIdentity, bool]]:
+    """Select whole History manifests while marking prefix-matched migration assets."""
+    frozen = list(assets)
+    if history_reference_prefix is None:
+        return [(asset, True) for asset in frozen]
+    selected = [
+        (asset, asset.source_ref.startswith(history_reference_prefix))
+        for asset in frozen
+    ]
+    return selected if any(in_scope for _asset, in_scope in selected) else []
+
+
 PLAN_ROW_FIELDS = (
     "history_id",
     "role",
@@ -935,6 +1058,7 @@ def build_copy_plan(
     rows: Iterable[dict[str, Any]],
     sha_bytes_read: int,
     diagnostics: Iterable[dict[str, Any]] = (),
+    seed_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     bound_rows = _plan_rows(rows)
     counts = Counter(str(row["status"]) for row in bound_rows)
@@ -951,12 +1075,18 @@ def build_copy_plan(
         "diagnostics": list(diagnostics)[:MAX_DIAGNOSTICS],
         "rowset_sha256": _sha256_json(bound_rows),
     }
+    if seed_scope is not None:
+        manifest["seed_scope"] = dict(seed_scope)
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest
 
 
 def build_switch_plan(
-    *, run_id: str, history_watermark: int, rows: Iterable[dict[str, Any]]
+    *,
+    run_id: str,
+    history_watermark: int,
+    rows: Iterable[dict[str, Any]],
+    seed_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     eligible = _plan_rows(rows)
     manifest: dict[str, Any] = {
@@ -967,6 +1097,8 @@ def build_switch_plan(
         "bytes": sum(int(row.get("byte_size") or 0) for row in eligible),
         "rowset_sha256": _sha256_json(eligible),
     }
+    if seed_scope is not None:
+        manifest["seed_scope"] = dict(seed_scope)
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest
 
@@ -1015,6 +1147,7 @@ def build_probe_plan(
     rows: Iterable[dict[str, Any]],
     batch_size: int = PROBE_BATCH_SIZE,
     runtime_identity: dict[str, Any] | None = None,
+    seed_scope: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if batch_size <= 0:
         raise ValueError("probe batch size must be positive")
@@ -1047,6 +1180,8 @@ def build_probe_plan(
         "batches_sha256": batch_digest.hexdigest(),
         "runtime_identity": dict(runtime_identity or {}),
     }
+    if seed_scope is not None:
+        manifest["seed_scope"] = dict(seed_scope)
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest, batches
 
@@ -1193,6 +1328,7 @@ def build_successor_copy_plan(
     history_watermark: int | None = None,
     batch_size: int = COPY_BATCH_SIZE,
     runtime_identity: dict[str, Any] | None = None,
+    seed_scope: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Freeze a zero-overlap Copy successor while conserving the root rowset."""
     if batch_size <= 0:
@@ -1234,6 +1370,10 @@ def build_successor_copy_plan(
             raise RuntimeError("successor Copy History watermark changed")
         run_id = expected_run_id
         history_watermark = expected_watermark
+        predecessor_scope = predecessor_manifest.get("seed_scope")
+        if seed_scope is not None and seed_scope != predecessor_scope:
+            raise RuntimeError("successor Copy History seed scope changed")
+        seed_scope = predecessor_scope
     else:
         if not run_id or history_watermark is None:
             raise ValueError("initial Copy plan requires run_id and history_watermark")
@@ -1284,6 +1424,8 @@ def build_successor_copy_plan(
         "conserved_asset_count": len(retained) + len(normalized_remaining),
         "runtime_identity": dict(runtime_identity or {}),
     }
+    if seed_scope is not None:
+        manifest["seed_scope"] = dict(seed_scope)
     if predecessor_chain:
         manifest["predecessor_copy_plan_sha256s"] = list(predecessor_chain)
         manifest["supersedes_copy_plan_sha256"] = predecessor_chain[-1]
@@ -1345,6 +1487,8 @@ def build_copy_predecessor_recovery_plan(
         "rowset_sha256": rowset.hexdigest(),
         "runtime_identity": dict(runtime_identity or {}),
     }
+    if current_manifest.get("seed_scope") is not None:
+        manifest["seed_scope"] = dict(current_manifest["seed_scope"])
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest, [batch]
 
@@ -1431,6 +1575,7 @@ def build_successor_probe_plan(
         rows=remaining,
         batch_size=batch_size,
         runtime_identity=runtime_identity,
+        seed_scope=predecessor_manifest.get("seed_scope"),
     )
     retained_outcomes: Counter[str] = Counter()
     for batch in canonical_retained_batches:
@@ -1462,6 +1607,8 @@ def build_successor_probe_plan(
         "conserved_asset_count": len(retained) + len(remaining),
         "runtime_identity": dict(runtime_identity or {}),
     }
+    if predecessor_manifest.get("seed_scope") is not None:
+        manifest["seed_scope"] = dict(predecessor_manifest["seed_scope"])
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest, batches
 
@@ -1648,6 +1795,18 @@ def normalize_asyncpg_dsn(value: str) -> tuple[str, str | None]:
         (parsed.scheme, parsed.netloc, parsed.path, clean_query, parsed.fragment)
     )
     return clean, "require" if ssl_value else None
+
+
+def database_route_sha256(value: str) -> str:
+    parsed = urlsplit(value.replace("postgresql+asyncpg://", "postgresql://", 1))
+    route = {
+        "scheme": parsed.scheme.lower(),
+        "host": (parsed.hostname or "").lower(),
+        "port": parsed.port or 5432,
+        "database": parsed.path.lstrip("/"),
+        "ssl": any(key == "ssl" for key, _item in parse_qsl(parsed.query)),
+    }
+    return _sha256_json(route)
 
 
 async def _connect_env(name: str) -> asyncpg.Connection:
@@ -2619,13 +2778,17 @@ async def _ensure_schema(conn: asyncpg.Connection) -> None:
 
 async def _seed(args: argparse.Namespace) -> None:
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    history_source_conn = conn
     try:
         await _ensure_schema(conn)
         await conn.execute(SEED_STAGE_DDL)
         if args.resume_run_id:
             run_id = uuid.UUID(args.resume_run_id)
             row = await conn.fetchrow(
-                "select history_watermark,phase from analytics_history_media_migration_runs where id=$1",
+                """select history_min_id,history_watermark,
+                          history_reference_prefix,history_source,
+                          history_source_route_sha256,phase
+                     from analytics_history_media_migration_runs where id=$1""",
                 run_id,
             )
             if not row:
@@ -2633,6 +2796,31 @@ async def _seed(args: argparse.Namespace) -> None:
             watermark = validate_resume_identity(
                 stored_watermark=int(row["history_watermark"]),
                 requested_watermark=args.history_watermark,
+            )
+            history_min_id, history_reference_prefix = validate_seed_scope_identity(
+                stored_history_min_id=int(row["history_min_id"]),
+                requested_history_min_id=args.history_min_id,
+                stored_history_reference_prefix=row["history_reference_prefix"],
+                requested_history_reference_prefix=args.history_reference_prefix,
+            )
+            history_source = str(row["history_source"])
+            source_env = (
+                "PRODUCTION_DATABASE_URL"
+                if history_source == "production-read-only"
+                else "LOCAL_ANALYTICS_DATABASE_URL"
+            )
+            source_route_sha256 = (
+                database_route_sha256(_dsn(source_env))
+                if history_source == "production-read-only"
+                else None
+            )
+            validate_seed_source_identity(
+                stored_history_source=history_source,
+                requested_history_source=args.history_source,
+                stored_history_source_route_sha256=row[
+                    "history_source_route_sha256"
+                ],
+                actual_history_source_route_sha256=source_route_sha256,
             )
             start = (
                 int(
@@ -2644,13 +2832,44 @@ async def _seed(args: argparse.Namespace) -> None:
                 + 1
             )
         else:
-            watermark = int(
-                args.history_watermark
-                if args.history_watermark is not None
-                else await conn.fetchval("select coalesce(max(id),0) from history")
+            history_source = args.history_source or "local-shadow"
+            source_env = (
+                "PRODUCTION_DATABASE_URL"
+                if history_source == "production-read-only"
+                else "LOCAL_ANALYTICS_DATABASE_URL"
             )
+            source_route_sha256 = (
+                database_route_sha256(_dsn(source_env))
+                if history_source == "production-read-only"
+                else None
+            )
+            history_min_id = int(args.history_min_id or 1)
+            if history_min_id < 1:
+                raise ValueError("History minimum id must be positive")
+            history_reference_prefix = args.history_reference_prefix
+            if history_reference_prefix == "":
+                raise ValueError("History reference prefix must not be empty")
+            watermark = (
+                int(args.history_watermark)
+                if args.history_watermark is not None
+                else -1
+            )
+        if history_source == "production-read-only":
+            history_source_conn = await _connect_env("PRODUCTION_DATABASE_URL")
+            await history_source_conn.execute(
+                "set default_transaction_read_only = on"
+            )
+        if not args.resume_run_id:
+            if watermark < 0:
+                watermark = int(
+                    await history_source_conn.fetchval(
+                        "select coalesce(max(id),0) from history"
+                    )
+                )
+            if history_min_id > watermark:
+                raise ValueError("History minimum id exceeds frozen watermark")
             run_id = uuid.uuid4()
-            start = 1
+            start = history_min_id
             await conn.execute(
                 """insert into analytics_media_runs(id,run_type,status,cursor)
                    values($1,'history-r2-migration','running',
@@ -2659,14 +2878,23 @@ async def _seed(args: argparse.Namespace) -> None:
                 watermark,
             )
             await conn.execute(
-                "insert into analytics_history_media_migration_runs(id,history_watermark,status,phase) values($1,$2,'running','seed')",
+                """insert into analytics_history_media_migration_runs(
+                       id,history_min_id,history_watermark,history_reference_prefix,
+                       history_source,history_source_route_sha256,
+                       status,phase,cursor_history_id)
+                     values($1,$2,$3,$4,$5,$6,'running','seed',$2 - 1)""",
                 run_id,
+                history_min_id,
                 watermark,
+                history_reference_prefix,
+                history_source,
+                source_route_sha256,
             )
 
+        start = max(start, history_min_id)
         for batch_start in range(start, watermark + 1, args.batch_size):
             batch_end = min(watermark, batch_start + args.batch_size - 1)
-            histories = await conn.fetch(
+            histories = await history_source_conn.fetch(
                 """select id,task_id,user_id,created_at,input_file,output_file,extra_outputs
                      from history where id between $1 and $2 order by id""",
                 batch_start,
@@ -2680,7 +2908,7 @@ async def _seed(args: argparse.Namespace) -> None:
                 }
             )
             backend_rows = (
-                await conn.fetch(BACKEND_BATCH_SQL, registry_ids)
+                await history_source_conn.fetch(BACKEND_BATCH_SQL, registry_ids)
                 if registry_ids
                 else []
             )
@@ -2708,12 +2936,18 @@ async def _seed(args: argparse.Namespace) -> None:
             missing_catalog: list[tuple[Any, ...]] = []
             for history in histories:
                 assets = history_assets_from_record(history)
+                scoped_assets = select_history_assets_for_seed(
+                    assets,
+                    history_reference_prefix=history_reference_prefix,
+                )
+                if not scoped_assets:
+                    continue
                 manifest_sha = media_manifest_hash(assets)
                 registry_id = str(history["task_id"] or "").strip() or None
                 backend = backend_map.get(registry_id or "")
                 backend_id = backend[0] if backend and backend[1] == 1 else None
                 backend_ambiguous = bool(backend and backend[1] > 1)
-                for asset in assets:
+                for asset, in_scope in scoped_assets:
                     identity = AssetIdentity(
                         asset.history_id, asset.role, asset.ordinal, asset.source_ref
                     )
@@ -2723,11 +2957,11 @@ async def _seed(args: argparse.Namespace) -> None:
                         backend_task_id=backend_id,
                     )
                     ref_class = classify_reference(asset.source_ref)
-                    status = "pending_probe"
+                    status = "pending_probe" if in_scope else "scope_context"
                     error = None
-                    if ref_class == "blocked":
+                    if in_scope and ref_class == "blocked":
                         status, error = "blocked", "EXTERNAL_OR_UNMANAGED_REFERENCE"
-                    elif target is None:
+                    elif in_scope and target is None:
                         status = "unresolved"
                         error = (
                             "AMBIGUOUS_BACKEND_TASK_ID"
@@ -2844,7 +3078,18 @@ async def _seed(args: argparse.Namespace) -> None:
             "update analytics_media_runs set status='completed',completed_at=now() where id=$1",
             run_id,
         )
-        print(json.dumps({"run_id": str(run_id), "history_watermark": watermark}))
+        print(
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "history_min_id": history_min_id,
+                    "history_watermark": watermark,
+                    "history_reference_prefix": history_reference_prefix,
+                    "history_source": history_source,
+                    "history_source_route_sha256": source_route_sha256,
+                }
+            )
+        )
     except Exception as exc:
         if "run_id" in locals():
             await conn.execute(
@@ -2854,6 +3099,8 @@ async def _seed(args: argparse.Namespace) -> None:
             )
         raise
     finally:
+        if history_source_conn is not conn:
+            await history_source_conn.close()
         await conn.close()
 
 
@@ -3804,7 +4051,9 @@ async def _create_probe_plan(args: argparse.Namespace) -> None:
     try:
         await _ensure_schema(conn)
         run = await conn.fetchrow(
-            "select history_watermark from analytics_history_media_migration_runs where id=$1",
+            """select history_min_id,history_watermark,history_reference_prefix,
+                      history_source,history_source_route_sha256
+                 from analytics_history_media_migration_runs where id=$1""",
             run_id,
         )
         if not run:
@@ -3867,6 +4116,9 @@ async def _create_probe_plan(args: argparse.Namespace) -> None:
                 artifact_digest=args.artifact_digest, config=config
             ),
         }
+        seed_scope = _nondefault_seed_scope(run)
+        if seed_scope is not None:
+            manifest["seed_scope"] = seed_scope
         manifest["plan_sha256"] = _sha256_json(manifest)
         await _insert_plan_with_batches(
             conn, manifest=manifest, plan_type="probe", batches=batches
@@ -3958,7 +4210,9 @@ async def _create_successor_probe_plan(args: argparse.Namespace) -> None:
                 raise RuntimeError("predecessor Probe plan is already superseded")
 
             run = await conn.fetchrow(
-                """select history_watermark
+                """select history_min_id,history_watermark,
+                          history_reference_prefix,history_source,
+                          history_source_route_sha256
                      from analytics_history_media_migration_runs
                     where id=$1 for update""",
                 run_id,
@@ -5065,7 +5319,9 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
     try:
         await _ensure_schema(conn)
         run = await conn.fetchrow(
-            "select history_watermark,sha_bytes_read,status from analytics_history_media_migration_runs where id=$1",
+            """select history_min_id,history_watermark,history_reference_prefix,
+                      history_source,history_source_route_sha256,sha_bytes_read,status
+                 from analytics_history_media_migration_runs where id=$1""",
             run_id,
         )
         if not run:
@@ -5269,6 +5525,9 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     artifact_digest=args.artifact_digest, config=config
                 ),
             }
+            seed_scope = _nondefault_seed_scope(run)
+            if seed_scope is not None:
+                manifest["seed_scope"] = seed_scope
             if supersedes_plan_sha256:
                 manifest.update(
                     {
@@ -5443,6 +5702,9 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     artifact_digest=args.artifact_digest
                 ),
             }
+            seed_scope = _nondefault_seed_scope(run)
+            if seed_scope is not None:
+                manifest["seed_scope"] = seed_scope
             if rolling_scope is not None:
                 manifest.update(
                     {
@@ -5518,7 +5780,12 @@ async def _load_plan(
     conn: asyncpg.Connection, plan_sha: str, plan_type: str
 ) -> tuple[uuid.UUID, dict[str, Any]]:
     row = await conn.fetchrow(
-        "select run_id,manifest from analytics_history_media_migration_plans where plan_sha256=$1 and plan_type=$2",
+        """select p.run_id,p.manifest,r.history_min_id,r.history_watermark,
+                  r.history_reference_prefix,r.history_source,
+                  r.history_source_route_sha256
+             from analytics_history_media_migration_plans p
+             join analytics_history_media_migration_runs r on r.id=p.run_id
+            where p.plan_sha256=$1 and p.plan_type=$2""",
         plan_sha,
         plan_type,
     )
@@ -5536,6 +5803,10 @@ async def _load_plan(
         != plan_sha
     ):
         raise RuntimeError("stored plan identity is invalid")
+    validate_plan_seed_scope(
+        manifest=manifest,
+        expected_scope=_seed_scope_from_run(row),
+    )
     return row["run_id"], manifest
 
 
@@ -6615,6 +6886,9 @@ async def _report(args: argparse.Namespace) -> None:
             "plans": [dict(row) for row in plans],
             "diagnostics": [_diagnostic(row) for row in diagnostic_rows],
         }
+        seed_scope = _nondefault_seed_scope(run)
+        if seed_scope is not None:
+            report["seed_scope"] = seed_scope
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(_canonical_json(report) + b"\n")
@@ -6688,7 +6962,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     seed = commands.add_parser("seed")
+    seed.add_argument("--history-min-id", type=int)
     seed.add_argument("--history-watermark", type=int)
+    seed.add_argument("--history-reference-prefix")
+    seed.add_argument(
+        "--history-source",
+        choices=("local-shadow", "production-read-only"),
+    )
     seed.add_argument("--resume-run-id")
     seed.add_argument("--batch-size", type=int, default=1000)
     probe = commands.add_parser("probe")
