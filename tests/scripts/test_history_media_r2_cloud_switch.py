@@ -58,6 +58,12 @@ def test_successor_manifest_conserves_predecessor_and_has_zero_overlap() -> None
         "count": 3,
         "parent_copy_plan_sha256": "1" * 64,
         "copy_chain_plan_sha256s": ["1" * 64],
+        "seed_scope": {
+            "history_min_id": 100,
+            "history_watermark": 999,
+            "history_reference_prefix": "staging/user-uploads/",
+            "complete_history_manifests": True,
+        },
     }
     retained = [_ledger_row(1)]
     successor = [_ledger_row(2), _ledger_row(3)]
@@ -94,6 +100,7 @@ def test_successor_manifest_conserves_predecessor_and_has_zero_overlap() -> None
     assert manifest["intersection_asset_count"] == 0
     assert manifest["predecessor_switch_plan_sha256"] == PREDECESSOR
     assert manifest["switch_execution"]["production_route_sha256"] == ROUTE
+    assert manifest["seed_scope"] == predecessor["seed_scope"]
 
     with pytest.raises(RuntimeError, match="overlap"):
         build_cloud_switch_successor_manifest(

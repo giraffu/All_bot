@@ -56,6 +56,7 @@ from scripts.history_media_r2_migration import (
     build_copy_plan,
     build_copy_predecessor_recovery_plan,
     build_probe_plan,
+    build_seed_scope_identity,
     build_rolling_switch_scope_identity,
     build_standard_target,
     build_successor_copy_plan,
@@ -66,6 +67,7 @@ from scripts.history_media_r2_migration import (
     classify_r2_head_outcomes,
     classify_reference,
     classify_target_status,
+    database_route_sha256,
     evaluate_missing_round,
     group_copy_candidates,
     hash_body,
@@ -80,7 +82,10 @@ from scripts.history_media_r2_migration import (
     validate_copy_verification_heads,
     validate_probe_gate,
     validate_resume_identity,
+    validate_seed_scope_identity,
+    validate_plan_seed_scope,
     validate_switch_gate,
+    select_history_assets_for_seed,
 )
 
 
@@ -2367,7 +2372,7 @@ def test_seed_uses_one_bulk_copy_stage_per_history_batch():
     source = inspect.getsource(module._seed)
     assert "copy_records_to_table" in source
     assert "BACKEND_BATCH_SQL" in source
-    assert "for asset in assets" in source
+    assert "for asset, in_scope in scoped_assets" in source
     assert "await conn.fetchrow(BACKEND" not in source
     assert (
         "select id from analytics_media_asset_catalog where history_id=$1" not in source
@@ -2620,6 +2625,130 @@ def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "probe_plan_sha256" in MIGRATION_DDL
     assert "('probe','copy','switch')" in MIGRATION_DDL
     assert "'paused','superseded'" in MIGRATION_DDL
+
+
+def test_scoped_seed_freezes_complete_history_manifests_without_reseeding_old_histories():
+    scoped = _parser().parse_args(
+        [
+            "seed",
+            "--history-min-id",
+            "3284301",
+            "--history-watermark",
+            "3756599",
+            "--history-reference-prefix",
+            "staging/user-uploads/",
+            "--history-source",
+            "production-read-only",
+        ]
+    )
+
+    assert scoped.history_min_id == 3284301
+    assert scoped.history_watermark == 3756599
+    assert scoped.history_reference_prefix == "staging/user-uploads/"
+    assert scoped.history_source == "production-read-only"
+    assert "history_min_id" in MIGRATION_DDL
+    assert "history_reference_prefix" in MIGRATION_DDL
+    assert "history_source" in MIGRATION_DDL
+    assert "history_source_route_sha256" in MIGRATION_DDL
+    assert "scope_context" in MIGRATION_DDL
+
+    assets = [
+        AssetIdentity(1, "input", 0, "staging/user-uploads/u/source.png"),
+        AssetIdentity(1, "output", 0, "task-results/b/primary.png"),
+    ]
+    selected = select_history_assets_for_seed(
+        assets, history_reference_prefix="staging/user-uploads/"
+    )
+
+    assert [(asset.role, in_scope) for asset, in_scope in selected] == [
+        ("input", True),
+        ("output", False),
+    ]
+    assert (
+        select_history_assets_for_seed(
+            [AssetIdentity(2, "output", 0, "task-results/b/primary.png")],
+            history_reference_prefix="staging/user-uploads/",
+        )
+        == []
+    )
+
+
+def test_scoped_seed_resume_rejects_any_scope_drift():
+    assert validate_seed_scope_identity(
+        stored_history_min_id=3284301,
+        requested_history_min_id=3284301,
+        stored_history_reference_prefix="staging/user-uploads/",
+        requested_history_reference_prefix="staging/user-uploads/",
+    ) == (3284301, "staging/user-uploads/")
+
+    with pytest.raises(ValueError, match="seed scope"):
+        validate_seed_scope_identity(
+            stored_history_min_id=3284301,
+            requested_history_min_id=3284302,
+            stored_history_reference_prefix="staging/user-uploads/",
+            requested_history_reference_prefix="staging/user-uploads/",
+        )
+    with pytest.raises(ValueError, match="seed scope"):
+        validate_seed_scope_identity(
+            stored_history_min_id=3284301,
+            requested_history_min_id=3284301,
+            stored_history_reference_prefix="staging/user-uploads/",
+            requested_history_reference_prefix="staging/worker-results/",
+        )
+
+
+def test_scoped_seed_identity_is_bound_into_probe_plan_and_revalidated():
+    scope = build_seed_scope_identity(
+        history_min_id=3284301,
+        history_watermark=3756599,
+        history_reference_prefix="staging/user-uploads/",
+    )
+    manifest, _batches = build_probe_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=3756599,
+        rows=[
+            {
+                "id": 1,
+                "history_id": 3284301,
+                "role": "input",
+                "ordinal": 0,
+                "original_ref": "staging/user-uploads/u/source.png",
+                "target_key": "task-inputs/t/0.png",
+                "registry_task_id": "t",
+                "history_manifest_sha256": "a" * 64,
+            }
+        ],
+        seed_scope=scope,
+    )
+
+    assert manifest["seed_scope"] == scope
+    validate_plan_seed_scope(manifest=manifest, expected_scope=scope)
+    with pytest.raises(RuntimeError, match="seed scope"):
+        validate_plan_seed_scope(
+            manifest=manifest,
+            expected_scope={**scope, "history_watermark": 3756600},
+        )
+
+
+def test_production_seed_source_uses_only_a_nonsecret_route_fingerprint():
+    first = database_route_sha256(
+        "postgresql://user:secret-a@db.example:5432/allbot?ssl=require"
+    )
+    second = database_route_sha256(
+        "postgresql://other:secret-b@db.example:5432/allbot?ssl=require"
+    )
+    changed = database_route_sha256(
+        "postgresql://user:secret-a@db.example:5432/not-prod?ssl=require"
+    )
+
+    assert first == second
+    assert first != changed
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._seed)
+    assert "default_transaction_read_only" in source
 
 
 def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_assets():

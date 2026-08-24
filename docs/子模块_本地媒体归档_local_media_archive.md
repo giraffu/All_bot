@@ -261,6 +261,16 @@ R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立
 必须绑定同一个 run 与 watermark。它只探测账本中的引用和明确候选
 key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 仅保留为历史治理
 实现，不得用于本轮迁移或启动新的 numeric/flat-root planner。
+针对已冻结全量 run 之后才暴露的单一引用前缀尾部，`seed` 可同时冻结
+`--history-min-id`、`--history-watermark` 与 `--history-reference-prefix`。前缀只用于
+选择 History；命中的 History 仍把完整媒体 manifest 落账，非前缀坐标标记为
+`scope_context`，只参与生产 CAS、不进入 Probe/Copy。该 seed scope 必须进入所有
+Probe/Copy/Switch manifest，并在恢复或 successor 执行时与 run 逐字段复核；不得把
+增量坐标追加进旧 run，也不得用前缀过滤后的残缺坐标集合更新 History。
+本地 shadow 落后冻结水位时，scoped seed 可把生产库作为只读 History 来源；生产连接
+必须先启用 session 级只读，来源类型与不含账号/密码的数据库路由 SHA-256 一并进入
+seed scope，本地分析库仍是迁移账本唯一写者。不得为生成计划解除 shadow pause guard，
+也不得把 seed 的只读来源能力扩成生产 schema 或 History 写入入口。
 `analytics_history_media_%` 迁移 run、对象账本、plan 和 SHA 事实表属于必须保留的
 本地分析数据；cloud production shadow 换库和从 previous shadow 恢复分析表时都必须
 携带这些表，不能因刷新 History 快照而丢失迁移 cursor 或精确 plan identity。

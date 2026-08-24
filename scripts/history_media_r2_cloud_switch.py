@@ -539,6 +539,8 @@ def build_cloud_switch_successor_manifest(
             "cloud_switch_script_sha256": cloud_switch_script_sha256,
         },
     }
+    if predecessor_manifest.get("seed_scope") is not None:
+        manifest["seed_scope"] = dict(predecessor_manifest["seed_scope"])
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest
 
