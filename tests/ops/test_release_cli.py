@@ -765,6 +765,101 @@ def test_status_reads_module_local_state(tmp_path):
     assert module.read_status(tmp_path, "prod", "payment-api")["current"] == "digest"
 
 
+def test_pages_prod_rollback_baseline_uses_canonical_deployment_when_list_has_newer_idle(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token")
+    canonical_id = "a4c93ba4-c47d-403d-8385-c330102ad441"
+    idle_id = "newer-idle-deployment"
+    requested_urls = []
+
+    def fake_cloudflare_request(url, _token, **_kwargs):
+        requested_urls.append(url)
+        if "/deployments" in url:
+            return {
+                "success": True,
+                "result": [
+                    {
+                        "id": idle_id,
+                        "environment": "production",
+                        "latest_stage": {"name": "queued", "status": "idle"},
+                    }
+                ],
+            }
+        return {
+            "success": True,
+            "result": {
+                "canonical_deployment": {
+                    "id": canonical_id,
+                    "environment": "production",
+                    "latest_stage": {"name": "deploy", "status": "success"},
+                }
+            },
+        }
+
+    monkeypatch.setattr(module, "_cloudflare_request", fake_cloudflare_request)
+
+    baseline = module.SystemAdapters({}).inspect(
+        "prod",
+        "public-web",
+        {"adapter": "pages"},
+        {
+            "cloudflare_account_id": "account-id",
+            "cloudflare_token_file": str(token_file),
+        },
+    )
+
+    assert baseline == f"pages://allbot-web-prod/{canonical_id}"
+    assert requested_urls == [
+        "https://api.cloudflare.com/client/v4/accounts/account-id/pages/projects/"
+        "allbot-web-prod"
+    ]
+
+
+@pytest.mark.parametrize(
+    "latest_stage",
+    [
+        {"name": "queued", "status": "active"},
+        {"name": "deploy", "status": "idle"},
+        {"name": "deploy", "status": "failure"},
+    ],
+)
+def test_pages_prod_rollback_baseline_rejects_non_successful_canonical_deployment(
+    tmp_path, monkeypatch, latest_stage
+):
+    module = _load_module()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token")
+
+    monkeypatch.setattr(
+        module,
+        "_cloudflare_request",
+        lambda *_args, **_kwargs: {
+            "success": True,
+            "result": {
+                "canonical_deployment": {
+                    "id": "not-a-stable-baseline",
+                    "environment": "production",
+                    "latest_stage": latest_stage,
+                }
+            },
+        },
+    )
+
+    with pytest.raises(module.ReleaseError, match="successful production"):
+        module.SystemAdapters({}).inspect(
+            "prod",
+            "public-web",
+            {"adapter": "pages"},
+            {
+                "cloudflare_account_id": "account-id",
+                "cloudflare_token_file": str(token_file),
+            },
+        )
+
+
 @pytest.mark.parametrize(
     ("environment", "expected_api", "expected_bot", "expected_branch"),
     [
