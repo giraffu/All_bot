@@ -12,7 +12,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-gallery-storage` | Gallery、互动、举报、R2、apply-context |
 | `allbot-tg-fsm` | Telegram FSM、callback、菜单、文件、更新并发与独立 Bot 隔离 |
 | `allbot-qqcc-lazy-bot` | QQCC 官方/私有 Bot、配置、webhook 和租户归属 |
-| `allbot-ops-deployment` | 不可变发布、服务启停/重建、env/config、数据库迁移/恢复和灾备 |
+| `allbot-ops-deployment` | 不可变发布、服务启停/重建、env/config、NAS artifact、数据库迁移/恢复和灾备 |
 | `allbot-concurrent-workspaces` | A–H worktree、claim、handoff 和 main 单写者集成 |
 | `allbot-cloudflare-ops` | DNS、Tunnel、Access、Pages、R2 公网入口 |
 | `allbot-cloud-ssh` | 云主机 SSH 连接、认证、主机密钥与救援入口 |
@@ -24,7 +24,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-lan-resource-manager` | LAN 资源平台、可信构建、部署与 runner |
 | `allbot-lan-media-gallery` | LAN 只读备份图库、媒体白名单与索引缓存 |
 | `allbot-local-analytics-prompt-semantics` | 本地分析提示词词元治理 |
-| `allbot-local-media-archive` | History 全量目录、NAS MinIO、恢复、丢失确认与 R2 清理门禁 |
+| `allbot-local-media-archive` | History 全量目录、NAS 媒体归档、恢复、丢失确认与 R2 清理门禁 |
 | `allbot-kb-auto-updater` | docs/Skills/术语/矩阵一致性 |
 | `allbot-diagnosing-bugs` | 可复现反馈环、假设、插桩和回归 |
 | `allbot-tdd` | public seam 行为测试和纵切开发 |

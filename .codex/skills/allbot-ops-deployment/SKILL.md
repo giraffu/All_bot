@@ -11,7 +11,7 @@ description: "AllBot 发布与环境 mutation 总门禁。构建/部署/回滚�
 | --- | --- |
 | 模块构建、部署、状态、回滚 | `docs/子模块_Git不可变发布_git_immutable_release.md` |
 | test/prod 拓扑 | 对应 cloud test/prod 控制面文档 |
-| GPU/RunPod/LAN | GPU 控制器文档；LAN mutation 再加载 `allbot-lan-aio-operator` |
+| GPU/RunPod/LAN | GPU 控制器；artifact store 读 `ops/lan_artifact_nas/README.md`；单卡 mutation 加 `allbot-lan-aio-operator` |
 | Cloudflare Pages | `allbot-cloudflare-ops` |
 | 数据库/Redis 备份、恢复、迁移 | `docs/子模块_容灾与持久化_database_recovery.md` + 目标控制面文档 |
 | 服务不可用、5xx、容器退出 | 先用 `ops-log-monitor` + `allbot-diagnosing-bugs` 建立只读证据 |
