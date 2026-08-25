@@ -4,6 +4,17 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+try:
+    from agent_artifact_lifecycle import (
+        artifact_ref_from_comfy_response,
+        safe_artifact_component,
+    )
+except ImportError:  # pragma: no cover - package import in focused tests
+    from .agent_artifact_lifecycle import (
+        artifact_ref_from_comfy_response,
+        safe_artifact_component,
+    )
+
 
 def _cleanup_partial_downloads(local_path: str) -> None:
     for path in [local_path, *glob.glob(f"{local_path}.*.part.minio")]:
@@ -76,13 +87,15 @@ async def process_single_input_asset(
     *,
     params: dict[str, Any],
     downloaded_input_paths: list[str],
+    uploaded_input_artifacts: list[Any] | None = None,
+    comfy_filename_prefix: str = "",
     img_filename: str,
     param_key: str,
     comfy_input_dir: str,
     download_input_func: Callable[[str, str], Any],
     should_normalize_image_input_func: Callable[[str, str], bool],
     normalize_input_image_func: Callable[[str], str],
-    upload_prepared_input_func: Callable[..., Awaitable[None]],
+    upload_prepared_input_func: Callable[..., Awaitable[Any]],
     logger,
     download_timeout_seconds: float | None = None,
     download_retry_attempts: int = 1,
@@ -120,12 +133,27 @@ async def process_single_input_asset(
                 local_img_path,
                 upload_path,
             )
-        await upload_prepared_input_func(
+        safe_prefix = safe_artifact_component(comfy_filename_prefix)
+        comfy_upload_name = (
+            f"{safe_prefix}_{upload_name}" if safe_prefix else upload_name
+        )
+        upload_response = await upload_prepared_input_func(
             upload_path=upload_path,
-            upload_name=upload_name,
+            upload_name=comfy_upload_name,
             source_name=img_filename,
         )
-        params[param_key] = upload_name
+        if uploaded_input_artifacts is not None:
+            uploaded_input_artifacts.append(
+                artifact_ref_from_comfy_response(
+                    upload_response,
+                    fallback_name=comfy_upload_name,
+                )
+            )
+        params[param_key] = str(
+            upload_response.get("name")
+            if isinstance(upload_response, dict) and upload_response.get("name")
+            else comfy_upload_name
+        )
         params[f"_prepared_{param_key}_path"] = upload_path
     except Exception as exc:
         logger.error("Failed to process %s %s: %s", param_key, img_filename, exc)

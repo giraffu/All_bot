@@ -47,9 +47,7 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
 
     assert Path(spooled.primary.file_path).read_bytes() == b"primary"
     assert Path(spooled.extra_outputs["last_frame"].file_path).read_bytes() == b"extra"
-    assert spooled.primary.object_name == (
-        "staging/worker-results/task-1/primary.png"
-    )
+    assert spooled.primary.object_name == ("staging/worker-results/task-1/primary.png")
     assert spooled.primary.sha256 == (
         "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"
     )
@@ -60,6 +58,37 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
     assert spooled.extra_outputs["last_frame"].object_name == (
         "staging/worker-results/task-1/extras/last_frame-0.png"
     )
+
+
+@pytest.mark.asyncio
+async def test_spool_uses_a_hardlink_for_a_shared_comfy_output(tmp_path):
+    source = tmp_path / "comfy-output" / "result.mp4"
+    source.parent.mkdir()
+    source.write_bytes(b"video")
+    outputs = SimpleNamespace(
+        primary=SimpleNamespace(
+            object_name="result.mp4",
+            content_type="video/mp4",
+            file_data=b"video",
+            source_path=str(source),
+            width=1280,
+            height=720,
+            duration=5.0,
+        ),
+        extra_outputs={},
+    )
+    logger = SimpleNamespace(info=lambda *args, **kwargs: None)
+
+    spooled = await reporting.spool_materialized_outputs(
+        outputs=outputs,
+        spool_dir=str(tmp_path / "spool"),
+        task_id="task-1",
+        logger=logger,
+    )
+
+    spool_path = Path(spooled.primary.file_path)
+    assert spool_path.read_bytes() == b"video"
+    assert source.stat().st_ino == spool_path.stat().st_ino
 
 
 @pytest.mark.asyncio

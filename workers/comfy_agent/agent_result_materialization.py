@@ -18,6 +18,20 @@ from agent_result_assets import (
 )
 from shared.character_reference_sheet import compose_ingredients_character_panel
 
+try:
+    from agent_artifact_lifecycle import (
+        ComfyArtifactRef,
+        ComfyArtifactRoots,
+        resolve_artifact_path,
+    )
+except ImportError:  # pragma: no cover - package import in focused tests
+    from .agent_artifact_lifecycle import (
+        ComfyArtifactRef,
+        ComfyArtifactRoots,
+        resolve_artifact_path,
+    )
+
+
 @dataclass(frozen=True)
 class MaterializedPrimaryResult:
     object_name: str
@@ -29,6 +43,8 @@ class MaterializedPrimaryResult:
     width: int | None = None
     height: int | None = None
     duration: float | None = None
+    source_path: str | None = None
+    source_artifact: ComfyArtifactRef | None = None
 
 
 @dataclass(frozen=True)
@@ -40,12 +56,31 @@ class MaterializedExtraOutput:
     width: int | None = None
     height: int | None = None
     duration: float | None = None
+    source_path: str | None = None
+    source_artifact: ComfyArtifactRef | None = None
 
 
 @dataclass(frozen=True)
 class MaterializedTaskOutputs:
     primary: MaterializedPrimaryResult
     extra_outputs: dict[str, MaterializedExtraOutput]
+    source_artifacts: tuple[ComfyArtifactRef, ...] = ()
+
+
+def _build_source_artifact(
+    *,
+    filename: str,
+    subfolder: str,
+    view_type: str,
+    roots: ComfyArtifactRoots | None,
+) -> tuple[ComfyArtifactRef, str | None]:
+    artifact = ComfyArtifactRef(
+        kind=view_type if view_type in {"input", "output", "temp"} else "output",
+        filename=filename,
+        subfolder=subfolder,
+    )
+    path = resolve_artifact_path(roots, artifact) if roots is not None else None
+    return artifact, str(path) if path is not None and path.is_file() else None
 
 
 def _resolve_content_type(file_name: str) -> str:
@@ -271,11 +306,19 @@ def _compose_character_sheet(images: list[bytes]) -> bytes:
 
 
 async def _materialize_character_reference(
-    *, comfy_client, execution, history
+    *, comfy_client, execution, history, artifact_roots=None
 ) -> MaterializedTaskOutputs:
     assets = _character_view_assets(history, execution.prompt_id)
     image_bytes = []
+    source_artifacts = []
     for asset in assets:
+        source_artifact, _source_path = _build_source_artifact(
+            filename=asset["filename"],
+            subfolder=asset.get("subfolder", ""),
+            view_type=asset.get("type", "output"),
+            roots=artifact_roots,
+        )
+        source_artifacts.append(source_artifact)
         image_bytes.append(
             await comfy_client.get_view(
                 asset["filename"],
@@ -306,11 +349,12 @@ async def _materialize_character_reference(
             duration=duration,
         ),
         extra_outputs={},
+        source_artifacts=tuple(source_artifacts),
     )
 
 
 async def _materialize_character_reference_view(
-    *, comfy_client, execution, history, view_index: int
+    *, comfy_client, execution, history, view_index: int, artifact_roots=None
 ) -> MaterializedTaskOutputs:
     prompt_history = history.get(execution.prompt_id) or {}
     outputs = prompt_history.get("outputs") or {}
@@ -327,6 +371,12 @@ async def _materialize_character_reference_view(
     if len(matched) != 1:
         raise RuntimeError(f"character reference workflow expected one {marker} output")
     asset = matched[0]
+    source_artifact, source_path = _build_source_artifact(
+        filename=asset["filename"],
+        subfolder=asset.get("subfolder", ""),
+        view_type=asset.get("type", "output"),
+        roots=artifact_roots,
+    )
     payload = await comfy_client.get_view(
         asset["filename"],
         asset.get("subfolder", ""),
@@ -353,8 +403,11 @@ async def _materialize_character_reference_view(
             width=width,
             height=height,
             duration=duration,
+            source_path=source_path,
+            source_artifact=source_artifact,
         ),
         extra_outputs={},
+        source_artifacts=(source_artifact,),
     )
 
 
@@ -364,6 +417,7 @@ async def materialize_task_outputs(
     execution,
     task_type: str,
     logger,
+    artifact_roots: ComfyArtifactRoots | None = None,
 ) -> MaterializedTaskOutputs:
     history = await comfy_client.get_history(execution.prompt_id)
     if task_type == "character_reference_build":
@@ -374,11 +428,13 @@ async def materialize_task_outputs(
                 execution=execution,
                 history=history,
                 view_index=view_index,
+                artifact_roots=artifact_roots,
             )
         return await _materialize_character_reference(
             comfy_client=comfy_client,
             execution=execution,
             history=history,
+            artifact_roots=artifact_roots,
         )
     history_result = resolve_history_result_asset(
         history,
@@ -405,6 +461,12 @@ async def materialize_task_outputs(
     original_filename = history_result["filename"]
     original_subfolder = history_result["subfolder"]
     view_type = resolve_comfy_view_type(history_result)
+    primary_source_artifact, primary_source_path = _build_source_artifact(
+        filename=original_filename,
+        subfolder=original_subfolder,
+        view_type=view_type,
+        roots=artifact_roots,
+    )
     logger.info(
         "Fetching result %s from ComfyUI API (subfolder: '%s', type: '%s')",
         original_filename,
@@ -432,6 +494,8 @@ async def materialize_task_outputs(
         width=primary_width,
         height=primary_height,
         duration=primary_duration,
+        source_path=primary_source_path,
+        source_artifact=primary_source_artifact,
     )
 
     materialized_extra_outputs: dict[str, MaterializedExtraOutput] = {}
@@ -441,6 +505,12 @@ async def materialize_task_outputs(
         if not extra_filename or extra_subfolder is None:
             continue
         extra_view_type = extra_output.get("type", "output")
+        extra_source_artifact, extra_source_path = _build_source_artifact(
+            filename=extra_filename,
+            subfolder=extra_subfolder,
+            view_type=extra_view_type,
+            roots=artifact_roots,
+        )
         extra_file_data = await comfy_client.get_view(
             extra_filename,
             extra_subfolder,
@@ -460,6 +530,8 @@ async def materialize_task_outputs(
             width=extra_width,
             height=extra_height,
             duration=extra_duration,
+            source_path=extra_source_path,
+            source_artifact=extra_source_artifact,
         )
 
     if (
@@ -473,12 +545,14 @@ async def materialize_task_outputs(
             logger,
         )
         if fallback_last_frame:
-            fallback_width, fallback_height, fallback_duration = (
-                await asyncio.to_thread(
-                    _probe_materialized_media_metadata,
-                    fallback_last_frame,
-                    "image/png",
-                )
+            (
+                fallback_width,
+                fallback_height,
+                fallback_duration,
+            ) = await asyncio.to_thread(
+                _probe_materialized_media_metadata,
+                fallback_last_frame,
+                "image/png",
             )
             materialized_extra_outputs["last_frame"] = MaterializedExtraOutput(
                 object_name=_build_fallback_last_frame_object_name(primary.object_name),
@@ -493,6 +567,17 @@ async def materialize_task_outputs(
     return MaterializedTaskOutputs(
         primary=primary,
         extra_outputs=materialized_extra_outputs,
+        source_artifacts=tuple(
+            artifact
+            for artifact in [
+                primary.source_artifact,
+                *(
+                    output.source_artifact
+                    for output in materialized_extra_outputs.values()
+                ),
+            ]
+            if artifact is not None
+        ),
     )
 
 

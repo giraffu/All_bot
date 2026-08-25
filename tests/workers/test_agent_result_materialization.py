@@ -40,7 +40,9 @@ class DummyComfyClient:
 
 
 @pytest.mark.asyncio
-async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
+async def test_materialize_wan22_aio_extracts_fallback_last_frame(
+    monkeypatch, tmp_path
+):
     monkeypatch.setattr(
         materialization,
         "_extract_last_frame_from_video_bytes",
@@ -50,9 +52,7 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
         materialization,
         "_probe_materialized_media_metadata",
         lambda _payload, content_type: (
-            (1280, 720, 5.25)
-            if content_type == "video/mp4"
-            else (640, 360, None)
+            (1280, 720, 5.25) if content_type == "video/mp4" else (640, 360, None)
         ),
     )
     execution = SimpleNamespace(
@@ -61,25 +61,46 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
         task_result=None,
         task_result_priority=0,
     )
+    artifact_root = tmp_path / "test-materialized-source"
+    output_root = artifact_root / "output"
+    output_root.mkdir(parents=True, exist_ok=True)
+    source_file = output_root / "image_to_video_42_video_00001.mp4"
+    source_file.write_bytes(b"video-bytes")
 
-    outputs = await materialization.materialize_task_outputs(
-        comfy_client=DummyComfyClient(),
-        execution=execution,
-        task_type="image_to_video",
-        logger=SimpleNamespace(
-            warning=lambda *args, **kwargs: None,
-            info=lambda *args, **kwargs: None,
-        ),
-    )
+    try:
+        outputs = await materialization.materialize_task_outputs(
+            comfy_client=DummyComfyClient(),
+            execution=execution,
+            task_type="image_to_video",
+            artifact_roots=materialization.ComfyArtifactRoots(
+                output_dir=str(output_root)
+            ),
+            logger=SimpleNamespace(
+                warning=lambda *args, **kwargs: None,
+                info=lambda *args, **kwargs: None,
+            ),
+        )
+    finally:
+        source_file.unlink(missing_ok=True)
+        output_root.rmdir()
+        artifact_root.rmdir()
 
     assert outputs.primary.object_name == "task-1__image_to_video_42_video_00001.mp4"
     assert (outputs.primary.width, outputs.primary.height) == (1280, 720)
     assert outputs.primary.duration == 5.25
+    assert outputs.primary.source_path == str(source_file)
+    assert outputs.source_artifacts == (
+        materialization.ComfyArtifactRef(
+            kind="output",
+            filename="image_to_video_42_video_00001.mp4",
+        ),
+    )
     assert outputs.extra_outputs["last_frame"].object_name == (
         "task-1__image_to_video_42_last_frame_00001.png"
     )
     assert outputs.extra_outputs["last_frame"].media_type == "image"
     assert outputs.extra_outputs["last_frame"].file_data == b"png-bytes"
+    assert outputs.extra_outputs["last_frame"].source_artifact is None
     assert (
         outputs.extra_outputs["last_frame"].width,
         outputs.extra_outputs["last_frame"].height,
@@ -122,9 +143,7 @@ async def test_materialize_ltx_video_extracts_fallback_last_frame(
     )
 
     assert outputs.primary.file_data == b"video-bytes"
-    assert outputs.extra_outputs["last_frame"].file_data == (
-        b"last-frame:video-bytes"
-    )
+    assert outputs.extra_outputs["last_frame"].file_data == (b"last-frame:video-bytes")
 
 
 @pytest.mark.asyncio

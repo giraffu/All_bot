@@ -34,9 +34,7 @@ class AgentPrefetchManager:
     def eligible_prefetch_types(self) -> str:
         pop_types = self.agent._build_pop_params(pipeline=True).get("types", "")
         eligible_types = {
-            task_type.strip()
-            for task_type in pop_types.split(",")
-            if task_type.strip()
+            task_type.strip() for task_type in pop_types.split(",") if task_type.strip()
         } & self.agent._prefetch_task_types
         return ",".join(sorted(eligible_types))
 
@@ -57,6 +55,9 @@ class AgentPrefetchManager:
             cached = self.agent._prefetch_cache.pop(cached_task_id, None)
             if cached:
                 self.cleanup_input_paths(cached.get("downloaded_input_paths", []))
+                self.agent._cleanup_comfy_artifacts(
+                    cached.get("comfy_input_artifacts", [])
+                )
 
     async def wait_for_prefetch_settle(
         self,
@@ -96,6 +97,7 @@ class AgentPrefetchManager:
             return None
         if cached.get("task_type") != task_type:
             self.cleanup_input_paths(cached.get("downloaded_input_paths", []))
+            self.agent._cleanup_comfy_artifacts(cached.get("comfy_input_artifacts", []))
             return None
         self.logger.info("Using prefetched inputs for task %s", task_id)
         return cached
@@ -117,6 +119,8 @@ class AgentPrefetchManager:
         if not prefetch_types:
             return
         params = {"limit": prefetch_depth, "types": prefetch_types}
+        downloaded_input_paths: list[str] = []
+        comfy_input_artifacts: list[Any] = []
 
         try:
             endpoint = "/api/agent/task/peek"
@@ -167,10 +171,11 @@ class AgentPrefetchManager:
                 return
 
             prefetch_params = self.parse_task_params(task)
-            downloaded_input_paths: list[str] = []
             await self.agent._prepare_task_inputs(
                 params=prefetch_params,
                 downloaded_input_paths=downloaded_input_paths,
+                uploaded_input_artifacts=comfy_input_artifacts,
+                comfy_filename_prefix=task_id,
                 comfy_input_dir=cache_dir,
             )
             self.discard_prefetch_cache()
@@ -179,6 +184,7 @@ class AgentPrefetchManager:
                 "task_type": task_type,
                 "params": prefetch_params,
                 "downloaded_input_paths": downloaded_input_paths,
+                "comfy_input_artifacts": comfy_input_artifacts,
             }
             self.logger.info(
                 "Prefetched inputs for pending task %s (%s)",
@@ -186,8 +192,12 @@ class AgentPrefetchManager:
                 task_type,
             )
         except asyncio.CancelledError:
+            self.cleanup_input_paths(downloaded_input_paths)
+            self.agent._cleanup_comfy_artifacts(comfy_input_artifacts)
             raise
         except Exception as exc:
+            self.cleanup_input_paths(downloaded_input_paths)
+            self.agent._cleanup_comfy_artifacts(comfy_input_artifacts)
             self.logger.warning("Prefetch failed: %s", exc)
 
     def schedule_prefetch(

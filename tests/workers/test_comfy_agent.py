@@ -94,6 +94,30 @@ def load_workflow_execution_module(module_path: Path):
     return module
 
 
+def test_artifact_disk_gate_marks_worker_error_and_recovers(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    monkeypatch.setattr(
+        module,
+        "artifact_disk_capacity",
+        lambda **_kwargs: (False, 1024, "/workspace/ComfyUI/output"),
+    )
+
+    assert agent._artifact_disk_has_capacity() is False
+    assert agent._worker_status() == "error"
+    assert agent.health_reason == "artifact_disk_low"
+
+    monkeypatch.setattr(
+        module,
+        "artifact_disk_capacity",
+        lambda **_kwargs: (True, 20 * 1024**3, "/workspace/ComfyUI/output"),
+    )
+
+    assert agent._artifact_disk_has_capacity() is True
+    assert agent.health_reason == ""
+    assert agent.is_error_state is False
+
+
 @pytest.mark.asyncio
 async def test_quality_retry_waits_for_a_free_comfy_slot(monkeypatch):
     module = build_agent_module(monkeypatch)
@@ -432,9 +456,7 @@ async def test_standard_worker_reserved_prefetch_discards_active_task(monkeypatc
 
 @pytest.mark.parametrize(
     "module_path",
-    (
-        ROOT / "workers" / "comfy_agent" / "agent_main.py",
-    ),
+    (ROOT / "workers" / "comfy_agent" / "agent_main.py",),
 )
 def test_worker_rejects_duplicate_execution_start_without_overwriting_prompt(
     module_path, monkeypatch
@@ -569,9 +591,7 @@ def test_normalize_mislabeled_jpeg_preserves_compact_jpeg(tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "module_path",
-    (
-        ROOT / "workers" / "comfy_agent" / "agent_main.py",
-    ),
+    (ROOT / "workers" / "comfy_agent" / "agent_main.py",),
 )
 async def test_all_profile_releases_comfy_memory_before_each_submission(
     monkeypatch,
@@ -599,9 +619,7 @@ async def test_all_profile_releases_comfy_memory_before_each_submission(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "module_path",
-    (
-        ROOT / "workers" / "comfy_agent" / "agent_main.py",
-    ),
+    (ROOT / "workers" / "comfy_agent" / "agent_main.py",),
 )
 async def test_explicit_multi_model_profile_releases_comfy_memory(
     monkeypatch,
@@ -636,7 +654,9 @@ async def test_non_all_profile_keeps_resident_comfy_models(monkeypatch):
 
     class UnexpectedComfyClient:
         async def free_memory(self):
-            raise AssertionError("non-all worker must preserve its resident model cache")
+            raise AssertionError(
+                "non-all worker must preserve its resident model cache"
+            )
 
     agent = module.ComfyAgent.__new__(module.ComfyAgent)
     agent.comfy_client = UnexpectedComfyClient()
@@ -754,7 +774,7 @@ async def test_reserved_prefetch_considers_all_eligible_worker_types(monkeypatch
         return SimpleNamespace(status_code=200, json=lambda: {"task": task})
 
     async def fake_prepare_task_inputs(
-        *, params, downloaded_input_paths, comfy_input_dir
+        *, params, downloaded_input_paths, comfy_input_dir, **_kwargs
     ):
         params["image"] = "prefetched.png"
         downloaded_input_paths.append("/tmp/prefetched.png")
@@ -869,15 +889,23 @@ async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparat
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
     task = {"task_id": "task-next", "type": "face_swap", "params": "{}"}
+    cleaned_local = []
+    cleaned_comfy = []
 
     async def fake_master_get(_path, *, params=None):
         return SimpleNamespace(status_code=200, json=lambda: {"task": task})
 
     async def failed_prepare(**_kwargs):
+        _kwargs["downloaded_input_paths"].append("/tmp/partial-input.png")
+        _kwargs["uploaded_input_artifacts"].append("comfy-input-ref")
         raise RuntimeError("temporary download failure")
 
     agent._master_get = fake_master_get
     agent._prepare_task_inputs = failed_prepare
+    agent._prefetch_manager.cleanup_input_paths = lambda paths: cleaned_local.extend(
+        paths
+    )
+    agent._cleanup_comfy_artifacts = lambda refs: cleaned_comfy.extend(refs)
     agent._prefetch_task_types = {"face_swap"}
 
     await agent._prefetch_manager.prefetch_next_task_inputs(
@@ -889,6 +917,8 @@ async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparat
 
     assert agent._prefetch_cache == {}
     assert await agent._pop_next_task(pipeline=True) == task
+    assert cleaned_local == ["/tmp/partial-input.png"]
+    assert cleaned_comfy == ["comfy-input-ref"]
 
 
 @pytest.mark.asyncio
@@ -1028,17 +1058,13 @@ def test_ltx_v2_result_pick_prefers_video_over_last_frame(monkeypatch, task_type
         "minimax_h3_ref2v",
     ],
 )
-def test_minimax_h3_result_pick_prefers_video_over_last_frame(
-    monkeypatch, task_type
-):
+def test_minimax_h3_result_pick_prefers_video_over_last_frame(monkeypatch, task_type):
     module = build_agent_module(monkeypatch)
     outputs = {
         "last_frame_node": {
             "images": [{"filename": f"{task_type}_42_last_frame_00001.png"}]
         },
-        "video_node": {
-            "gifs": [{"filename": f"{task_type}_42_video_00001.mp4"}]
-        },
+        "video_node": {"gifs": [{"filename": f"{task_type}_42_video_00001.mp4"}]},
     }
 
     asset = module.pick_first_output_asset(outputs, task_type=task_type)
@@ -1727,9 +1753,7 @@ def test_pipeline_pop_params_omit_preferred_types_outside_pipeline_subset(monkey
 
 @pytest.mark.parametrize(
     "module_path",
-    (
-        ROOT / "workers" / "comfy_agent" / "agent_main.py",
-    ),
+    (ROOT / "workers" / "comfy_agent" / "agent_main.py",),
 )
 def test_agent_rejects_preferred_types_outside_supported_set(monkeypatch, module_path):
     monkeypatch.setenv("SUPPORTED_TASK_TYPES", "img2img")

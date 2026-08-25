@@ -168,6 +168,7 @@ class AgentPipelineCoordinator:
             execution.phase = "preparing"
             self.agent._active_execution = execution
         downloaded_input_paths = execution.downloaded_input_paths
+        comfy_input_artifacts = execution.comfy_input_artifacts
 
         if allow_cancel_check and await self.agent.check_task_cancelled(task_id):
             self.logger.info("Task %s was cancelled before processing.", task_id)
@@ -193,11 +194,16 @@ class AgentPipelineCoordinator:
             downloaded_input_paths.extend(
                 prefetched_inputs.get("downloaded_input_paths", [])
             )
+            comfy_input_artifacts.extend(
+                prefetched_inputs.get("comfy_input_artifacts", [])
+            )
         else:
             await self.agent._cancel_prefetch_task()
             await self.agent._prepare_task_inputs(
                 params=params,
                 downloaded_input_paths=downloaded_input_paths,
+                uploaded_input_artifacts=comfy_input_artifacts,
+                comfy_filename_prefix=task_id,
             )
 
         if before_submit_func is not None:
@@ -235,7 +241,9 @@ class AgentPipelineCoordinator:
             )
             if not execution:
                 return
-            finalizer_task = asyncio.create_task(self.agent._finalize_execution(execution))
+            finalizer_task = asyncio.create_task(
+                self.agent._finalize_execution(execution)
+            )
             self.agent._track_execution_task(finalizer_task)
         except Exception as exc:
             self.logger.error(
@@ -250,3 +258,4 @@ class AgentPipelineCoordinator:
             if execution:
                 self.agent._clear_task_execution(execution)
                 self.agent._cleanup_input_paths(execution.downloaded_input_paths)
+                self.agent._cleanup_comfy_artifacts(execution.comfy_input_artifacts)

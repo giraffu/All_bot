@@ -294,22 +294,68 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
             "primary.png",
             b"primary",
             "image/png",
-            {"sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"},
+            {
+                "sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"
+            },
         ),
         (
             "user-data-prod",
             "last_frame.png",
             b"extra",
             "image/png",
-            {"sha256": "c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96"},
+            {
+                "sha256": "c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96"
+            },
         ),
     ]
     assert not primary_path.exists()
     assert not extra_path.exists()
 
 
+def test_uploaded_spool_cleanup_removes_empty_task_directory(monkeypatch, tmp_path):
+    spool_root = tmp_path / "spool"
+    task_dir = spool_root / "task-1"
+    task_dir.mkdir(parents=True)
+    result = task_dir / "result.png"
+    result.write_bytes(b"result")
+    monkeypatch.setattr(relay, "RESULT_SPOOL_DIR", str(spool_root))
+
+    relay._cleanup_uploaded_files(
+        [
+            relay.UploadAsset(
+                file_path=str(result),
+                object_name="result.png",
+                sha256="a" * 64,
+                byte_size=6,
+            )
+        ]
+    )
+
+    assert not task_dir.exists()
+
+
+def test_orphan_spool_cleanup_removes_old_files_without_waiting_for_restart(
+    monkeypatch, tmp_path
+):
+    spool_root = tmp_path / "spool"
+    task_dir = spool_root / "task-1"
+    task_dir.mkdir(parents=True)
+    old_result = task_dir / "result.png"
+    old_result.write_bytes(b"result")
+    old = relay.time.time() - 7200
+    relay.os.utime(old_result, (old, old))
+    monkeypatch.setattr(relay, "RESULT_SPOOL_DIR", str(spool_root))
+    monkeypatch.setattr(relay, "SPOOL_ORPHAN_MAX_AGE_SECONDS", 3600)
+
+    relay._cleanup_orphan_spool_files()
+
+    assert not task_dir.exists()
+
+
 @pytest.mark.asyncio
-async def test_upload_retry_logs_the_underlying_spool_error(monkeypatch, tmp_path, caplog):
+async def test_upload_retry_logs_the_underlying_spool_error(
+    monkeypatch, tmp_path, caplog
+):
     missing_path = tmp_path / "missing.png"
     relay.state.minio_client = object()
     monkeypatch.setattr(relay, "UPLOAD_RETRY_ATTEMPTS", 1)
