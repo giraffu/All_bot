@@ -738,6 +738,42 @@ def test_disabled_optional_service_does_not_receive_or_require_projection():
     assert "private-bot-worker" not in snapshot.projections
 
 
+def test_local_bot_api_credentials_are_required_only_when_enabled():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    disabled = _environment("test")
+    disabled["TELEGRAM_LOCAL_API_ENABLED"] = "false"
+
+    snapshot = module.build_snapshot(
+        contract, "test", disabled, services={"telegram-local-api"}
+    )
+    assert "telegram-local-api" not in snapshot.projections
+
+    enabled = dict(disabled)
+    enabled["TELEGRAM_LOCAL_API_ENABLED"] = "true"
+    with pytest.raises(module.ContractError, match="TELEGRAM_API_ID"):
+        module.build_snapshot(
+            contract, "test", enabled, services={"telegram-local-api"}
+        )
+
+    enabled.update(
+        {
+            "TELEGRAM_API_ID": "123456",
+            "TELEGRAM_API_HASH": "synthetic-api-hash",
+        }
+    )
+    snapshot = module.build_snapshot(
+        contract, "test", enabled, services={"telegram-local-api"}
+    )
+    projection = snapshot.projections["telegram-local-api"]
+    assert projection["TELEGRAM_API_ID"] == "123456"
+    assert projection["TELEGRAM_API_HASH"] == "synthetic-api-hash"
+    assert projection["ALLBOT_ENV"] == "test"
+    assert "ALLBOT_CONFIG_REVISION" in projection
+    assert "BOT_TOKEN" not in projection
+    assert "UNRELATED_OPERATOR_SECRET" not in projection
+
+
 def test_environment_identity_mismatch_is_rejected():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)

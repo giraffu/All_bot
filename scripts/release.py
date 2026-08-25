@@ -1334,26 +1334,40 @@ class SystemAdapters:
         service = str(module["service"])
         image_env = str(module["image_env"])
         profile = str(module.get("profile", ""))
+        external_image = str(module.get("kind")) == "external-image"
         runtime_root = f"/var/lib/allbot/module-releases/{environment}"
+        revision_check = (
+            ""
+            if external_image
+            else f"""release_sha=$(docker image inspect --format '{{{{ index .Config.Labels "org.opencontainers.image.revision" }}}}' {artifact})
+[[ "$release_sha" =~ ^[0-9a-f]{{40}}$ ]] || {{ echo 'release image has no valid source revision' >&2; exit 1; }}
+"""
+        )
+        candidate_update = (
+            f"grep -v '^{image_env}=' \"$runtime\" > \"$candidate\" || true\n"
+            if external_image
+            else f"""grep -v '^{image_env}=' "$runtime" | grep -v '^ALLBOT_RELEASE_SHA=' > "$candidate" || true
+printf '%s=%s\\n' ALLBOT_RELEASE_SHA "$release_sha" >> "$candidate"
+"""
+        )
         script = f"""set -euo pipefail
 root={shlex.quote(root)}
 test -f "$root/deploy/docker-compose-cloud-base.yml"
 test -f "$root/{target["overlay"]}"
 docker pull {artifact}
-release_sha=$(docker image inspect --format '{{{{ index .Config.Labels "org.opencontainers.image.revision" }}}}' {artifact})
-[[ "$release_sha" =~ ^[0-9a-f]{{40}}$ ]] || {{ echo 'release image has no valid source revision' >&2; exit 1; }}
-install -d -m 700 {runtime_root}
+{revision_check}install -d -m 700 {runtime_root}
 runtime={runtime_root}/runtime.env
 if [ ! -f "$runtime" ]; then
   sha=$(python3 -c 'import json; print(json.load(open("/var/lib/allbot/deployments/{environment}/control-plane/current.json"))["git_sha"])' 2>/dev/null || true)
   old=/var/lib/allbot/releases/control-plane/$sha/release.env
   [ -f "$old" ] && cp "$old" "$runtime" || touch "$runtime"
+  if ! grep -q '^ALLBOT_RELEASE_SHA=' "$runtime" && [[ "$sha" =~ ^[0-9a-f]{{40}}$ ]]; then
+    printf '%s=%s\\n' ALLBOT_RELEASE_SHA "$sha" >> "$runtime"
+  fi
   chmod 600 "$runtime"
 fi
 candidate="$runtime.new"
-grep -v '^{image_env}=' "$runtime" | grep -v '^ALLBOT_RELEASE_SHA=' > "$candidate" || true
-printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
-printf '%s=%s\\n' ALLBOT_RELEASE_SHA "$release_sha" >> "$candidate"
+{candidate_update}printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
 compose=(sudo -n docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}

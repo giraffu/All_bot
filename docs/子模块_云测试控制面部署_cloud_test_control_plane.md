@@ -40,7 +40,9 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
   具体主机、容器数量和在线状态以当次 release identity 与 live observation 为准。
 - 管理面：`dashboard-backend`、`dashboard-frontend`、
   `qqcc-config-backend`、`qqcc-config-frontend`。
-- 公网与媒体：`public-web`、`imgproxy`。
+- 公网与媒体：`public-web`、`imgproxy`。可选的
+  `telegram-local-api`/`telegram-local-files` 使用同一 profile，仅在 Docker
+  内网提供 Bot API 与只读文件路径，不发布宿主机端口。
 - 基础设施契约：`postgres`、`redis`、`config-contract`、
   `compose-contract`、`database-migration`。
 - GPU profile：catalog 中声明可构建的 GPU 模块。普通“启动测试 Worker”不进入
@@ -113,6 +115,12 @@ python3 scripts/release.py rollback --env test --module <module>
   前端；回滚按相反顺序。
 - Bot 模块部署前确认同一 token 没有其它 polling 实例。private Bot 继续使用
   webhook，不切成 polling。
+- Telegram Local API 默认关闭；启用时必须先提供受控的
+  `TELEGRAM_API_ID/HASH`。从旧 Local API 迁移必须先停目标 polling，再按
+  Telegram 官方规则在旧实例 `logOut`，不得同时让两个实例消费同一 token。
+- 云测试 overlay 把 Local API/文件服务分别限制为 `384m/0.50 CPU` 和
+  `64m/0.25 CPU`。媒体目录会随 `getFile` 增长，canary 必须同时观察内存、磁盘
+  与下载流量；清理目录属于独立、可恢复的运维动作，不由部署脚本隐式执行。
 - test env 不设置 prod 资格。人工验收结果由操作者判断，不写入发布器门禁。
 
 ## 5. GPU 与 Worker 验收

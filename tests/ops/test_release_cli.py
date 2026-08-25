@@ -620,6 +620,32 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
     assert "grep -v '^ALLBOT_RELEASE_SHA='" in captured["script"]
 
 
+def test_compose_deploy_accepts_exact_external_image_without_source_label(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_remote_shell(_host, script):
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+    artifact = "docker.io/darthsim/imgproxy@sha256:" + "1" * 64
+
+    module.SystemAdapters(catalog)._deploy_compose(
+        "test",
+        catalog["imgproxy"],
+        artifact,
+        {"remote_host": "test-control"},
+    )
+
+    script = captured["script"]
+    assert f"docker pull {artifact}" in script
+    assert "org.opencontainers.image.revision" not in script
+    assert "release image has no valid source revision" not in script
+    assert "grep -v '^ALLBOT_RELEASE_SHA='" not in script
+
+
 def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

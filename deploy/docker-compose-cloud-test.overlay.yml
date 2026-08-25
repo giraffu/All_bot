@@ -73,6 +73,14 @@ services:
   imgproxy:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8084:8084"]
 
+  telegram-local-api:
+    mem_limit: 384m
+    cpus: 0.50
+
+  telegram-local-files:
+    mem_limit: 64m
+    cpus: 0.25
+
 volumes:
   cloud-postgres-test-data:
     external: true
