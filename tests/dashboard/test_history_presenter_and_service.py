@@ -41,11 +41,13 @@ class _FakeHistoryDb:
     def __init__(self, total, rows):
         self.total = total
         self.rows = list(rows)
+        self.executed_stmts = []
         self.execute_calls = 0
         self.rollback_calls = 0
         self.expunge_all_calls = 0
 
-    async def execute(self, _stmt):
+    async def execute(self, stmt):
+        self.executed_stmts.append(stmt)
         self.execute_calls += 1
         if self.execute_calls == 1:
             return _FakeScalarResult(self.total)
@@ -224,6 +226,103 @@ async def test_get_all_history_payload_releases_real_session_before_media_resolu
     assert result["total"] == 1
     assert result["items"][0]["task_id"] == "task-real-session"
     assert result["items"][0]["output_file_preview_url"] == "url://r2/thumb.webp"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_counts_each_task_once_with_repeated_worker_logs():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        for model in (User, History, WorkerLog):
+            await connection.run_sync(model.__table__.create)
+        await connection.exec_driver_sql(
+            "CREATE TABLE private_bot_task_submissions "
+            "(registry_task_id VARCHAR(64), client_type VARCHAR(128))"
+        )
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(User(id=123, username="tester", full_name="Tester"))
+        db.add(
+            History(
+                user_id=123,
+                task_id="task-with-retries",
+                type="img2img",
+                output_file="result.png",
+                source="web",
+            )
+        )
+        db.add_all(
+            [
+                WorkerLog(
+                    id=1,
+                    worker_id="worker-old",
+                    task_id="task-with-retries",
+                    status="failed",
+                    start_time=datetime(2026, 1, 1, 12, 0, 0),
+                    end_time=datetime(2026, 1, 1, 12, 0, 1),
+                    duration=1,
+                ),
+                WorkerLog(
+                    id=2,
+                    worker_id="worker-latest",
+                    task_id="task-with-retries",
+                    status="success",
+                    start_time=datetime(2026, 1, 1, 12, 0, 2),
+                    end_time=datetime(2026, 1, 1, 12, 0, 3),
+                    duration=1,
+                ),
+            ]
+        )
+        await db.commit()
+
+        result = await history_service.get_all_history_payload(
+            db=db,
+            page=1,
+            page_size=20,
+            storage_service=_FakeStorage(),
+            resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+        )
+
+    await engine.dispose()
+
+    assert result["total"] == 1
+    assert len(result["items"]) == 1
+    assert result["items"][0]["worker_id"] == "worker-latest"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_count_avoids_unfiltered_diagnostic_joins():
+    db = _FakeHistoryDb(total=0, rows=[])
+
+    await history_service.get_all_history_payload(
+        db=db,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    count_sql = str(db.executed_stmts[0]).lower()
+    assert "count(history.id)" in count_sql
+    assert "worker_logs" not in count_sql
+    assert "private_bot_task_submissions" not in count_sql
+    assert "order by" not in count_sql
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_worker_filter_uses_exists_without_duplicate_join():
+    db = _FakeHistoryDb(total=0, rows=[])
+
+    await history_service.get_all_history_payload(
+        db=db,
+        worker_id="worker-1",
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    count_sql = str(db.executed_stmts[0]).lower()
+    assert "exists" in count_sql
+    assert "worker_logs" in count_sql
+    assert "join worker_logs" not in count_sql
+    assert "order by" not in count_sql
 
 
 @pytest.mark.asyncio
