@@ -46,8 +46,9 @@ from dashboard.backend.services.runpod_autoscaler_service import (
     run_runpod_autoscaler_loop,
     should_start_runpod_autoscaler_loop,
 )
+from dashboard.backend.services.history_service import run_history_count_cache_warmer
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
-from src.database.core import init_db
+from src.database.core import AsyncSessionLocal, init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 from src.task_application_runtime import configure_task_application
 
@@ -98,6 +99,16 @@ async def startup_event():
     balance_task = asyncio.create_task(update_external_balances())
     background_tasks.add(balance_task)
     balance_task.add_done_callback(background_tasks.discard)
+
+    history_count_task = asyncio.create_task(
+        run_history_count_cache_warmer(
+            count_cache=history.history_count_cache,
+            session_factory=AsyncSessionLocal,
+            logger_override=logger,
+        )
+    )
+    background_tasks.add(history_count_task)
+    history_count_task.add_done_callback(background_tasks.discard)
 
     if should_start_runpod_autoscaler_loop():
         runpod_autoscaler_task = asyncio.create_task(run_runpod_autoscaler_loop())

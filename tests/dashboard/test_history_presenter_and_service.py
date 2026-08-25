@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -49,7 +50,7 @@ class _FakeHistoryDb:
     async def execute(self, stmt):
         self.executed_stmts.append(stmt)
         self.execute_calls += 1
-        if self.execute_calls == 1:
+        if "count(history.id)" in str(stmt).lower():
             return _FakeScalarResult(self.total)
         return _FakeRowsResult(self.rows)
 
@@ -179,6 +180,127 @@ async def test_get_all_history_payload_uses_presenter_for_items():
     assert db.expunge_all_calls == 1
     assert media_calls[0][1] == 1
     assert media_calls[0][0]["r2_lookup_strategy"] == "s3_cached"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_caches_only_total_while_rows_stay_live():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    first_history = _build_history(task_id="task-first")
+    second_history = _build_history(task_id="task-second")
+    first_db = _FakeHistoryDb(
+        total=10,
+        rows=[(first_history, "tester", "Tester", "worker-1", None)],
+    )
+    second_db = _FakeHistoryDb(
+        total=999,
+        rows=[(second_history, "tester", "Tester", "worker-1", None)],
+    )
+
+    first_result = await history_service.get_all_history_payload(
+        db=first_db,
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+    second_result = await history_service.get_all_history_payload(
+        db=second_db,
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    assert first_result["total"] == 10
+    assert second_result["total"] == 10
+    assert second_result["items"][0]["task_id"] == "task-second"
+    assert sum(
+        "count(history.id)" in str(stmt).lower()
+        for stmt in first_db.executed_stmts
+    ) == 1
+    assert all(
+        "count(history.id)" not in str(stmt).lower()
+        for stmt in second_db.executed_stmts
+    )
+
+
+@pytest.mark.asyncio
+async def test_history_count_cache_keeps_filter_totals_separate():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    web_db = _FakeHistoryDb(total=3, rows=[])
+    bot_db = _FakeHistoryDb(total=7, rows=[])
+
+    web_result = await history_service.get_all_history_payload(
+        db=web_db,
+        source="web",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+    bot_result = await history_service.get_all_history_payload(
+        db=bot_db,
+        source="bot",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    assert web_result["total"] == 3
+    assert bot_result["total"] == 7
+    assert web_db.execute_calls == 2
+    assert bot_db.execute_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_history_count_cache_single_flights_concurrent_loads():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    load_started = asyncio.Event()
+    release_load = asyncio.Event()
+    load_calls = 0
+
+    async def load_total():
+        nonlocal load_calls
+        load_calls += 1
+        load_started.set()
+        await release_load.wait()
+        return 42
+
+    first = asyncio.create_task(count_cache.get_or_load(("all",), load_total))
+    await load_started.wait()
+    second = asyncio.create_task(count_cache.get_or_load(("all",), load_total))
+    release_load.set()
+
+    assert await asyncio.gather(first, second) == [42, 42]
+    assert load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_default_history_count_cache_primes_unfiltered_total():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    warm_db = _FakeHistoryDb(total=23, rows=[])
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return warm_db
+
+        async def __aexit__(self, *_args):
+            return None
+
+    total = await history_service.refresh_default_history_count_cache(
+        count_cache=count_cache,
+        session_factory=_SessionContext,
+    )
+    request_db = _FakeHistoryDb(total=999, rows=[])
+    result = await history_service.get_all_history_payload(
+        db=request_db,
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    assert total == 23
+    assert result["total"] == 23
+    assert warm_db.execute_calls == 1
+    assert warm_db.rollback_calls == 1
+    assert request_db.execute_calls == 1
 
 
 @pytest.mark.asyncio
