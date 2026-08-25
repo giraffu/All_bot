@@ -18,8 +18,8 @@ TASKS = {
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
 TEN_EROS_V3_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
-OFFICIAL_FL2VA_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
-OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+OFFICIAL_FL2VA_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
@@ -210,6 +210,41 @@ def test_minimax_h3_patcher_selects_approved_official_main_model(
         assert patched["33"]["inputs"]["sampler_name"] == "euler"
         assert patched["34"]["class_type"] == "BasicScheduler"
         assert patched["34"]["inputs"]["steps"] == 8
+    else:
+        assert patched["2"]["inputs"]["model"] == ["1", 0]
+        assert patched["30"]["inputs"]["ref_image_size"] == "max"
+        assert patched["33"] == {
+            "inputs": {"sampler_name": "res_multistep"},
+            "class_type": "KSamplerSelect",
+        }
+        assert patched["34"] == {
+            "inputs": {
+                "model": ["7", 0],
+                "scheduler": "simple",
+                "steps": 20,
+                "denoise": 1.0,
+            },
+            "class_type": "BasicScheduler",
+        }
+
+
+def test_minimax_h3_patcher_keeps_10eros_ref2v_turbo_profile():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+
+    patched = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {"prompt": "scene", "image": "subject.png", "image2": "reference.png"},
+    )
+
+    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
+    assert patched["30"]["inputs"]["ref_image_size"] == "match"
+    assert patched["33"]["inputs"]["sampler_name"] == "er_sde"
+    assert patched["34"] == {
+        "inputs": {"sigmas": REF2V_SIGMAS},
+        "class_type": "ManualSigmas",
+    }
 
 
 def test_minimax_h3_patcher_rejects_unknown_main_model():

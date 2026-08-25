@@ -126,20 +126,23 @@ Optimizer 和最终生成都把它作为一个 `<Picture N>`，描述明确要�
 
 ## 可选主模型、固定基础链与作者资产
 
-`main_model=10eros` 保留现有默认链。`main_model=official` 仅在 Worker
-patcher 中把 `UNETLoader` 切换到 Comfy-Org 发布的官方裁剪 FP8 主模型：
+`main_model=10eros` 保留现有默认链。`main_model=official` 在 Worker patcher
+中同时切换 checkpoint 和模式专属执行 profile，不能只替换 `UNETLoader`。官方
+checkpoint 使用 Comfy-Org 推荐的裁剪 INT8 ConvRot 版本：
 
-- T2V/I2V/FLF2V：`diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors`，
-  20,958,205,608 bytes，SHA256
-  `12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993`；
-- REF2V：`diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors`，
-  20,958,205,608 bytes，SHA256
-  `f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9`。
+- T2V/I2V/FLF2V：`diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors`，
+  20,970,379,616 bytes，SHA256
+  `e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a`；
+- REF2V：`diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors`，
+  20,970,379,616 bytes，SHA256
+  `9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779`。
 
 两份文件均固定 Comfy-Org/MiniMax-H3 revision
-`4cc1d817b6184899b41293954329f576cb5ae86b`。patcher 在切换主模型时同时恢复其
-受控采样链：官方 FL2VA 使用 LightX2V 8-step，官方 REF2VA 使用 er_sde/ManualSigmas；
-用户不能覆盖采样器、sigma、steps 或其它节点。
+`4cc1d817b6184899b41293954329f576cb5ae86b`。官方 FL2VA 使用
+LightX2V + Euler/simple/8-step；官方 REF2VA 使用 `ref_image_size=max`、
+`res_multistep` 与 `BasicScheduler(simple, 20 steps)`。`max` 保留最多 2048px
+短边的参考图 token 以提高身份保真，但会增加速度与显存成本。用户不能覆盖
+checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
 
 四种模式的 `10eros` 默认基础链统一使用一个作者原始资产：
 
@@ -203,6 +206,12 @@ ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
 SamplerCustomAdvanced`；禁止 `BasicScheduler`。十七个候选 LoRA 中最多十三个仍按选择顺序注入；
 REF2VA Motion v0.2 只能进入这条 REF2V 链。
 
+`official + REF2V` 是独立执行 profile：同一基础节点在 patch 后切换为官方 INT8
+ConvRot Ref2VA、`ref_image_size="max"`、`KSamplerSelect("res_multistep")` 和
+`BasicScheduler("simple", 20, 1.0)`；不继承 10Eros 的 ManualSigmas。这里固定
+`simple` 是为了与当前 Comfy-Org 官方模板精确对齐；官方说明参考很多时 `beta` 或
+`normal` 往往优于 `simple`，后续若要调整必须作为新的受控 profile 单独 canary。
+
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
 10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA 和上述十七个可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
@@ -216,8 +225,8 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-26-10eros-v3-official-h3-addon17`、24 个文件的字节数与
-SHA256，总计 112,460,736,935 bytes，准备前要求模型卷至少 110 GiB 可用。
+`2026-08-26-10eros-v3-official-int8-h3-addon17`、24 个文件的字节数与
+SHA256，总计 112,485,084,951 bytes，准备前要求模型卷至少 110 GiB 可用。
 Mystic XXX v3 使用 modelVersion `3260276`、
 file `3143593`，文件 `MysticXXX_MMH3-V3.safetensors` 为 298,259,688 bytes，
 SHA256 `99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6`；作者建议

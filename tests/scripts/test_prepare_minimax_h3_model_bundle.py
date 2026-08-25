@@ -19,18 +19,18 @@ def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/47be06381f1a558f5fbd96e94d808d61fb164006/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
     )
     assert files[
-        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
     ][1:4] == (
-        "12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993",
-        20_958_205_608,
-        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+        "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+        20_970_379_616,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
     )
     assert files[
-        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
     ][1:4] == (
-        "f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9",
-        20_958_205_608,
-        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+        "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779",
+        20_970_379_616,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     )
     assert files["text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"][1:3] == (
         "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
@@ -123,7 +123,7 @@ def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
     assert len(files) == 24
-    assert sum(entry[2] for entry in module.FILES) == 112_460_736_935
+    assert sum(entry[2] for entry in module.FILES) == 112_485_084_951
     assert module.MIN_FREE_BYTES == 110 * 1024**3
 
 
