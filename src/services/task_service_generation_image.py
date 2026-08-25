@@ -77,6 +77,7 @@ async def process_standard_generation_task(
     reference_descriptions: list[str] | None = None,
     resolution_preset: str | None = None,
     aspect_ratio: str | None = None,
+    main_model: str | None = None,
     seed: int | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
@@ -182,6 +183,7 @@ async def process_standard_generation_task(
                 else aspect_ratio or "16:9"
             ),
             reference_descriptions=reference_descriptions or [],
+            main_model=main_model or "10eros",
             seed=seed,
         )
         if lora_items is not None:

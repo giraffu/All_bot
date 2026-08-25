@@ -170,5 +170,6 @@ async def test_submit_forwards_selected_addons():
         "requested_duration": 5,
         "minimax_h3_resolution_preset": "preview",
         "minimax_h3_aspect_ratio": "16:9",
+        "minimax_h3_main_model": "10eros",
         "lora_items": [{"name": "naughty_times", "strength": 0.65}],
     }

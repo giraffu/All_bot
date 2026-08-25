@@ -1498,13 +1498,18 @@ describe('QqccBotSettings', () => {
         }],
         ai_video_scenes: [{
           id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '  blur  ',
-          duration: 15, engine: 'ltx_video',
+          duration: 15, engine: 'ltx_video', main_model: '10eros',
           lora_items: [{ name: 'motion_booster', strength: 0.7 }],
           end_frame_draw_scene_id: 'tail',
         }],
       },
       options: {
         default_ai_video_engine: 'minimax_h3',
+        default_ai_video_main_model: '10eros',
+        ai_video_main_models: [
+          { value: '10eros', label: '10Eros Max H3' },
+          { value: 'official', label: 'MiniMax H3 官方模型' },
+        ],
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
         ai_video_addon_models_version: 3,
         ai_video_addon_models: [
@@ -1518,6 +1523,9 @@ describe('QqccBotSettings', () => {
 
     expect(wrapper.get('[data-testid="scene-tab-ai-video"]').text()).toContain('1')
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const mainModelSelector = wrapper.get('[data-testid="scene-ai-video-main-model-select"]')
+    expect(mainModelSelector.text()).toContain('MiniMax H3 官方模型')
+    await mainModelSelector.setValue('official')
     const selector = wrapper.findAllComponents(SelectStub)
       .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
     if (!selector) throw new Error('Missing AI video LoRA selector')
@@ -1536,6 +1544,7 @@ describe('QqccBotSettings', () => {
       negative_prompt: 'blur',
       duration: 15,
       engine: 'minimax_h3',
+      main_model: 'official',
       end_frame_draw_scene_id: 'tail',
       lora_items: [
         { name: 'motion_booster', strength: 0.7 },

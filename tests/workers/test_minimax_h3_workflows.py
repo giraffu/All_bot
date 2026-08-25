@@ -18,6 +18,8 @@ TASKS = {
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
 TEN_EROS_BETA2_MODEL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
+OFFICIAL_FL2VA_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
+OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
@@ -165,6 +167,53 @@ def test_minimax_h3_patcher_without_addon_keeps_10eros_plus_lightx2v_only():
     assert patched["2"]["inputs"]["model"] == ["8", 0]
     assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
     assert patched["30"]["inputs"]["prompt"] == "scene"
+
+
+@pytest.mark.parametrize(
+    ("task_type", "params", "expected_model"),
+    [
+        (
+            "minimax_h3_i2v",
+            {"image": "first.png", "aspect_ratio": "source"},
+            OFFICIAL_FL2VA_MODEL,
+        ),
+        (
+            "minimax_h3_ref2v",
+            {"image": "subject.png", "image2": "reference.png"},
+            OFFICIAL_REF2VA_MODEL,
+        ),
+    ],
+)
+def test_minimax_h3_patcher_selects_approved_official_main_model(
+    task_type, params, expected_model
+):
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow(task_type)
+
+    patched = patcher.patch_workflow(
+        task_type,
+        workflow,
+        {"prompt": "scene", "main_model": "official", **params},
+    )
+
+    assert patched["1"]["inputs"]["unet_name"] == expected_model
+
+
+def test_minimax_h3_patcher_rejects_unknown_main_model():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_i2v")
+
+    with pytest.raises(ValueError, match="main model"):
+        patcher.patch_workflow(
+            "minimax_h3_i2v",
+            workflow,
+            {
+                "prompt": "scene",
+                "image": "first.png",
+                "aspect_ratio": "source",
+                "main_model": "untrusted-checkpoint",
+            },
+        )
 
 
 def test_minimax_h3_patcher_injects_selected_addons_after_lightx2v_in_order():

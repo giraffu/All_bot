@@ -16,6 +16,8 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_MAX_ADDON_ITEMS,
     MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_REF2V,
+    MINIMAX_H3_DEFAULT_MAIN_MODEL,
+    MINIMAX_H3_MAIN_MODELS,
     build_minimax_h3_spec,
 )
 from src.qqcc_video_lora_catalog import (
@@ -899,6 +901,11 @@ def _normalize_ai_video_scene(
         duration = AI_VIDEO_DURATION_KEYS[0]
 
     mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
+    main_model = str(
+        raw_scene.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
+    ).strip().lower()
+    if main_model not in MINIMAX_H3_MAIN_MODELS:
+        main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
     lora_items: list[dict[str, Any]] = []
     seen_loras: set[str] = set()
     raw_lora_items = raw_scene.get("lora_items")
@@ -1015,6 +1022,7 @@ def _normalize_ai_video_scene(
         "duration": duration,
         "resolution": resolution,
         "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+        "main_model": main_model,
         "mode": mode,
         "reference_images": reference_images,
         "aspect_ratio": aspect_ratio,
@@ -1844,6 +1852,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
         "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+        "default_ai_video_main_model": MINIMAX_H3_DEFAULT_MAIN_MODEL,
         "default_video_resolution": DEFAULT_VIDEO_SCENE_RESOLUTION,
         "default_ai_video_resolution": DEFAULT_AI_VIDEO_SCENE_RESOLUTION,
         "video_resolutions": [
@@ -1890,6 +1899,10 @@ def build_qqcc_config_options() -> dict[str, Any]:
                 "value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
                 "supports_lora": True,
             }
+        ],
+        "ai_video_main_models": [
+            {"value": "10eros", "label": "10Eros Max H3"},
+            {"value": "official", "label": "MiniMax H3 官方模型"},
         ],
         "video_lora_models": [
             {

@@ -8,7 +8,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -24,6 +24,20 @@ def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
         "6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4",
         40_228_444_088,
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
+    )
+    assert files[
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
+    ][1:4] == (
+        "12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993",
+        20_958_205_608,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+    )
+    assert files[
+        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+    ][1:4] == (
+        "f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9",
+        20_958_205_608,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
     )
     assert files["text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"][1:3] == (
         "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
@@ -115,8 +129,9 @@ def test_split_author_stack_uses_exact_twenty_three_pinned_assets():
         155_110_304,
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
-    assert len(files) == 23
-    assert sum(entry[2] for entry in module.FILES) == 110_767_210_711
+    assert len(files) == 25
+    assert sum(entry[2] for entry in module.FILES) == 152_683_621_927
+    assert module.MIN_FREE_BYTES == 145 * 1024**3
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

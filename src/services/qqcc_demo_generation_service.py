@@ -178,6 +178,7 @@ async def _submit_scene(
                     if mode == "ref2v"
                     else "source"
                 ),
+                "main_model": str(scene.get("main_model") or "10eros"),
                 "lora_items": scene.get("lora_items") or [],
             },
         )
@@ -190,6 +191,7 @@ async def _submit_scene(
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,
             aspect_ratio=spec.aspect_ratio,
+            main_model=spec.main_model,
             width=spec.width,
             height=spec.height,
             frame_count=spec.frame_count,

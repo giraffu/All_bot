@@ -20,8 +20,8 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3"
-MIN_FREE_BYTES = 105 * 1024**3
+VERSION = "2026-08-25-10eros-official-h3-addon17"
+MIN_FREE_BYTES = 145 * 1024**3
 FILES = (
     (
         "diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
@@ -34,6 +34,18 @@ FILES = (
         "6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4",
         40_228_444_088,
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
+    ),
+    (
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+        "12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993",
+        20_958_205_608,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+    ),
+    (
+        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+        "f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9",
+        20_958_205_608,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
     ),
     (
         "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
@@ -208,7 +220,7 @@ def _download(url: str, partial: Path) -> None:
 def prepare(registry: ModelRegistry) -> Path:
     registry.ensure_layout()
     if shutil.disk_usage(registry.root).free < MIN_FREE_BYTES:
-        raise RuntimeError("MiniMax H3 split bundle requires at least 105 GiB free space")
+        raise RuntimeError("MiniMax H3 split bundle requires at least 145 GiB free space")
     temp_root = registry.root / "tmp" / f"{BUNDLE}-{VERSION}"
     temp_root.mkdir(parents=True, exist_ok=True)
     manifest_files = []

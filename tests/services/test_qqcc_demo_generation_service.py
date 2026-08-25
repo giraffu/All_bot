@@ -363,6 +363,7 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
         duration=15,
         resolution_preset="preview",
         aspect_ratio="source",
+        main_model="10eros",
         width=0,
         height=0,
         frame_count=362,

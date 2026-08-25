@@ -48,6 +48,7 @@ type AiVideoDurationKey = 5 | 10 | 15
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'minimax_h3'
+type AiVideoMainModel = '10eros' | 'official'
 type AiVideoMode = 'i2v' | 'ref2v'
 type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
@@ -126,6 +127,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   duration: AiVideoDurationKey
   resolution: AiVideoResolutionKey
   engine: AiVideoSceneEngine
+  main_model: AiVideoMainModel
   mode: AiVideoMode
   reference_images: string[]
   reference_image_names: string[]
@@ -211,6 +213,7 @@ interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
   default_ai_video_engine: AiVideoSceneEngine
+  default_ai_video_main_model: AiVideoMainModel
   default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
   video_aspect_ratios: VideoAspectRatio[]
@@ -222,6 +225,7 @@ interface QqccBotConfigOptions {
   image_lora_models: LoraModelOption[]
   video_resolutions: ResolutionOption<ResolutionKey>[]
   ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
+  ai_video_main_models: ResolutionOption<AiVideoMainModel>[]
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
@@ -284,6 +288,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   scene_preset_version: 1,
   default_video_engine: 'image_to_video',
   default_ai_video_engine: 'minimax_h3',
+  default_ai_video_main_model: '10eros',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
   video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
@@ -295,6 +300,10 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   image_lora_models: [],
   video_resolutions: [],
   ai_video_resolutions: [],
+  ai_video_main_models: [
+    { value: '10eros', label: '10Eros Max H3' },
+    { value: 'official', label: 'MiniMax H3 官方模型' },
+  ],
   default_video_resolution: '720p',
   default_ai_video_resolution: 'preview',
   default_scene_credit_costs: {},
@@ -582,6 +591,7 @@ const sceneConfig = reactive({
   duration: '5s' as DurationKey | AiVideoDurationKey,
   resolution: '720p' as ResolutionKey | AiVideoResolutionKey,
   engine: 'image_to_video',
+  main_model: '10eros' as AiVideoMainModel,
   mode: 'i2v' as AiVideoMode,
   aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
@@ -697,6 +707,8 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
   value === '9:16' || value === '16:9' || value === '1:1' ? value : 'source'
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'minimax_h3'
+const normalizeAiVideoMainModel = (value: unknown): AiVideoMainModel =>
+  value === 'official' ? 'official' : '10eros'
 const normalizeAiVideoMode = (value: unknown): AiVideoMode => value === 'ref2v' ? 'ref2v' : 'i2v'
 const normalizeAiVideoAspectRatio = (value: unknown): AiVideoAspectRatio =>
   value === '9:16' || value === '1:1' ? value : '16:9'
@@ -991,6 +1003,7 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   }
   merged.default_video_engine = normalizeVideoEngine(raw.default_video_engine)
   merged.default_ai_video_engine = normalizeAiVideoEngine(raw.default_ai_video_engine)
+  merged.default_ai_video_main_model = normalizeAiVideoMainModel(raw.default_ai_video_main_model)
   merged.default_draw_engine = normalizeDrawEngine(raw.default_draw_engine)
   if (resolutionOptions.includes(raw.default_video_resolution as ResolutionKey)) {
     merged.default_video_resolution = raw.default_video_resolution as ResolutionKey
@@ -1011,6 +1024,14 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
         aiVideoResolutionOptions.includes(item?.value as AiVideoResolutionKey)
         && typeof item?.label === 'string',
     )
+  }
+  if (Array.isArray(raw.ai_video_main_models)) {
+    const mainModels = raw.ai_video_main_models.filter(
+      (item): item is ResolutionOption<AiVideoMainModel> =>
+        (item?.value === '10eros' || item?.value === 'official')
+        && typeof item?.label === 'string',
+    )
+    if (mainModels.length > 0) merged.ai_video_main_models = mainModels
   }
   const rawCreditCosts = raw.default_scene_credit_costs
   if (rawCreditCosts && typeof rawCreditCosts === 'object') {
@@ -1397,6 +1418,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             ? scene.resolution as AiVideoResolutionKey
             : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
+          main_model: normalizeAiVideoMainModel(scene?.main_model),
           mode: normalizeAiVideoMode(scene?.mode),
           reference_images: referenceImages,
           reference_image_names: normalizeReferenceNames(
@@ -1494,6 +1516,7 @@ const addAiVideoScene = () => {
     duration: 5,
     resolution: modelOptions.default_ai_video_resolution,
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
+    main_model: normalizeAiVideoMainModel(modelOptions.default_ai_video_main_model),
     mode: 'i2v',
     reference_images: [],
     reference_image_names: [],
@@ -2039,6 +2062,7 @@ const buildPayload = (): QqccBotConfig => {
       prompt: scene.prompt.trim(),
       negative_prompt: scene.negative_prompt.trim(),
       engine: normalizeAiVideoEngine(scene.engine),
+      main_model: normalizeAiVideoMainModel(scene.main_model),
       mode: normalizeAiVideoMode(scene.mode),
       reference_images: normalizeReferenceImages(scene.reference_images),
       reference_image_names: normalizeReferenceNames(
@@ -2110,6 +2134,9 @@ const openSceneConfig = (
       ? (scene as AiVideoSceneConfig).resolution
       : modelOptions.default_video_resolution
   sceneConfig.engine = scene.engine
+  sceneConfig.main_model = kind === 'ai_video'
+    ? normalizeAiVideoMainModel((scene as AiVideoSceneConfig).main_model)
+    : modelOptions.default_ai_video_main_model
   sceneConfig.mode = kind === 'ai_video'
     ? normalizeAiVideoMode((scene as AiVideoSceneConfig).mode)
     : 'i2v'
@@ -2166,6 +2193,7 @@ const closeSceneConfig = () => {
   sceneConfig.duration = '5s'
   sceneConfig.resolution = modelOptions.default_video_resolution
   sceneConfig.lora_items = []
+  sceneConfig.main_model = modelOptions.default_ai_video_main_model
   sceneConfig.mode = 'i2v'
   sceneConfig.video_lora_items = []
   sceneConfig.aspect_ratio = 'source'
@@ -2216,6 +2244,7 @@ const confirmSceneConfig = () => {
     scene.resolution = sceneConfig.resolution as AiVideoResolutionKey
     scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
+    scene.main_model = normalizeAiVideoMainModel(sceneConfig.main_model)
     scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items, scene.mode)
     scene.end_frame_draw_scene_id = scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
@@ -2814,6 +2843,22 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
               :value="item.value"
             >
               {{ getEngineLabel(sceneConfig.kind, item.value) }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="主模型" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.main_model"
+            data-testid="scene-ai-video-main-model-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option
+              v-for="item in modelOptions.ai_video_main_models"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
             </a-select-option>
           </a-select>
         </a-form-item>

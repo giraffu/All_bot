@@ -14,6 +14,7 @@ export type AiVideoDurationKey = 5 | 10 | 15
 export type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 export type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 export type AiVideoSceneEngine = 'minimax_h3'
+export type AiVideoMainModel = '10eros' | 'official'
 export type AiVideoMode = 'i2v' | 'ref2v'
 export type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 export type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
@@ -73,6 +74,7 @@ export interface AiVideoSceneConfig extends SceneDemoFields {
   duration: AiVideoDurationKey
   resolution: AiVideoResolutionKey
   engine: AiVideoSceneEngine
+  main_model: AiVideoMainModel
   mode: AiVideoMode
   reference_images: string[]
   reference_image_names: string[]
@@ -146,6 +148,7 @@ export interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
   default_ai_video_engine: AiVideoSceneEngine
+  default_ai_video_main_model: AiVideoMainModel
   default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
   video_aspect_ratios: VideoAspectRatio[]
@@ -157,6 +160,7 @@ export interface QqccBotConfigOptions {
   image_lora_models: LoraModelOption[]
   video_resolutions: ResolutionOption<ResolutionKey>[]
   ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
+  ai_video_main_models: ResolutionOption<AiVideoMainModel>[]
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>

@@ -51,6 +51,7 @@ class AdvancedVideoProSubmissionPlan:
     duration: int
     resolution_preset: str
     aspect_ratio: str
+    main_model: str
     cost: int
     addon_items: tuple[dict[str, Any], ...]
 
@@ -64,6 +65,7 @@ def build_advanced_video_pro_submission_plan(
     duration: int | str = 5,
     resolution_preset: str = "preview",
     aspect_ratio: str = "16:9",
+    main_model: str = "10eros",
     addon_model: str | None = None,
     addon_strength: float | None = None,
     addon_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
@@ -87,6 +89,7 @@ def build_advanced_video_pro_submission_plan(
         "duration": duration,
         "resolution_preset": resolution_preset,
         "aspect_ratio": normalized_aspect_ratio,
+        "main_model": main_model,
         **(
             {"lora_items": list(addon_items)}
             if addon_items is not None
@@ -106,6 +109,7 @@ def build_advanced_video_pro_submission_plan(
         duration=spec.duration_seconds,
         resolution_preset=spec.resolution_preset,
         aspect_ratio=spec.aspect_ratio,
+        main_model=spec.main_model,
         cost=spec.cost,
         addon_items=tuple(
             {"name": item.name, "strength": item.strength}
@@ -140,6 +144,7 @@ async def submit_advanced_video_pro_plan(
         "requested_duration": plan.duration,
         "minimax_h3_resolution_preset": plan.resolution_preset,
         "minimax_h3_aspect_ratio": plan.aspect_ratio,
+        "minimax_h3_main_model": plan.main_model,
         "lora_items": list(plan.addon_items),
     }
     return await process_task_func(
@@ -155,6 +160,7 @@ async def submit_advanced_video_pro_plan(
         duration=plan.duration,
         resolution_preset=plan.resolution_preset,
         aspect_ratio=plan.aspect_ratio,
+        main_model=plan.main_model,
         lora_items=list(plan.addon_items) or None,
         status_msg_id=status_msg_id,
         cleanup=cleanup,
