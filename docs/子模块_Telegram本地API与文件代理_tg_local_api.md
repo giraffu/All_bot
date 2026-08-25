@@ -2,14 +2,17 @@
 
 ## 1. 目标与范围
 
-本模块致力于突破 Telegram 官方 Bot API 在云端下载 20MB、上传 50MB 的多媒体文件体积限制。通过在海外独立 VPS 部署官方提供的 `telegram-bot-api` 容器并开启 `TELEGRAM_LOCAL=1`，配合 Python HTTP 文件服务器和统一 Telegram runtime bootstrap，实现了针对高分辨率 AI 生成长视频的极速直传与下载能力。
+本模块通过 `telegram-bot-api --local`、只读文件网关和统一 Telegram runtime
+bootstrap 支持大媒体收发。Local API 可以部署在独立 VPS，也可以作为云控制面的
+内部模块运行；Bot 只依赖 `TELEGRAM_API_BASE_URL` 与
+`TELEGRAM_FILE_BASE_URL`，不依赖固定主机。
 
 仓库中的 prod Compose/env example 当前把下列地址作为 Local API 默认值：
 
 - API base：`http://69.63.220.115:8081`
 - File base：`http://69.63.220.115:8082`
 
-这是仓库配置默认值，不是本轮 live 验证。目标环境仍以受控
+这些地址只保留为 legacy fallback，不代表推荐拓扑或 live 状态。目标环境仍以受控
 `TELEGRAM_API_BASE_URL` / `TELEGRAM_FILE_BASE_URL` 为准；节点、端口、容器、
 磁盘和 SSH 状态必须当次只读探测，所以本资料在审计矩阵中标记为
 `runtime-verification-required`。
@@ -21,18 +24,18 @@ sequenceDiagram
     autonumber
     actor U as Telegram 客户端
     participant TG_Cloud as Telegram 官方云
-    participant VPS_API as 边缘节点: TG Local API (8081)
-    participant VPS_File as 边缘节点: HTTP File Server (8082)
-    participant Bot as 国内算力底座 (Tg-Bot)
+    participant Local_API as 受控节点: TG Local API (8081)
+    participant Local_File as 同节点: 内网文件网关 (80)
+    participant Bot as Tg-Bot
 
     U->>TG_Cloud: 1. 发送 100MB 高清视频
-    TG_Cloud->>VPS_API: 2. 推送 Update 到 8081 端口
-    VPS_API->>VPS_API: 3. 保存文件至宿主机挂载目录 /var/lib/...
-    VPS_API-->>Bot: 4. Bot 获取 file_info，得到物理绝对路径
+    TG_Cloud->>Local_API: 2. Local API 拉取 Update
+    Local_API->>Local_API: 3. 保存文件至受控目录 /var/lib/...
+    Local_API-->>Bot: 4. Bot 获取 file_info，得到物理绝对路径
     Bot->>Bot: 5. 触发 Monkey Patch 解析绝对路径
-    Bot->>VPS_File: 6. 将路径拼接至 8082 端口发起 HTTP GET
-    VPS_File-->>Bot: 7. 通过 ro 挂载直接提供大文件下载流
-    Bot->>U: 8. 同样通过 8081/8082 将新生成的大视频回传给用户
+    Bot->>Local_File: 6. 将路径拼接至文件 base 发起 HTTP GET
+    Local_File-->>Bot: 7. 通过 ro 挂载提供大文件下载流
+    Bot->>U: 8. 通过 Local API 回传生成结果
 ```
 
 ## 3. 核心代码片段
@@ -70,7 +73,7 @@ application = (
 本模块对外表现为 PTB 框架内的 `ApplicationBuilder` 参数配置：
 
 ```python
-# 必须显式将请求路由指向 VPS
+# 必须显式将请求路由指向当前受控 Local API
 application = (
     ApplicationBuilder()
     .token(BOT_TOKEN)
@@ -80,7 +83,22 @@ application = (
 )
 ```
 
-`TELEGRAM_API_BASE_URL` 默认 `http://69.63.220.115:8081`，`TELEGRAM_FILE_BASE_URL` 默认 `http://69.63.220.115:8082`。主 Bot 和 QQCC Bot 必须共用这组 helper，避免不同 polling 服务出现下载、Poll 兼容或语言注入行为漂移。
+云内模块的 Compose 网络地址固定为：
+
+- `TELEGRAM_API_BASE_URL=http://telegram-local-api:8081`
+- `TELEGRAM_FILE_BASE_URL=http://telegram-local-files`
+
+两个服务都不发布宿主机端口。Local API 可写
+`${ALLBOT_STATE_ROOT}/telegram-local-api`；文件网关把同一目录只读挂到与绝对
+`file_path` 一致的 URL 层级。主 Bot 和 QQCC Bot 必须共用 runtime helper，避免
+不同 polling 服务出现下载、Poll 兼容或语言注入行为漂移。
+
+模块由 `telegram-local-api` profile 控制，默认
+`TELEGRAM_LOCAL_API_ENABLED=false`。只有启用时，配置契约才要求并仅投影
+`TELEGRAM_API_ID`、`TELEGRAM_API_HASH`。二者必须由操作者从 Telegram 获取，
+不得使用 Bot token 替代、提交 Git 或写入 artifact。Local API 当前消费精确 digest
+固定的第三方 `aiogram/telegram-bot-api` 容器；二进制语义仍以 Telegram 官方
+`tdlib/telegram-bot-api` 为准，升级前必须重新做兼容与大文件 canary。
 
 ## 5. 单元与集成测试要求
 
@@ -102,6 +120,33 @@ application = (
 - 切回 Telegram 官方 API 会恢复官方文件大小限制，且属于目标 Bot 配置与
   重部署；必须按明确模块、环境和 exact digest 执行，不能在容器内临时改 env。
 
+### 6.1 云测试迁移顺序
+
+Telegram 官方明确说明：同一 Bot 同时登录多个 Local API 时不能保证收到全部
+updates；从旧 Local API 移动到新实例前，应在旧实例调用 `logOut`。因此测试迁移
+必须按 token 逐一执行，不能直接双开抢占：
+
+1. 记录旧 API/file URL、当前 module identity 和 config revision；确认
+   `TELEGRAM_API_ID/HASH` 已进入受控 test env。
+2. 部署并激活 `compose-contract`、`config-contract`，但先不切换 polling Bot。
+3. 部署 `telegram-local-api` 与 `telegram-local-files`，核对 health、无宿主机
+   端口、资源上限和共享目录权限。
+4. 停止目标测试 Bot 的 polling；在旧 Local API 对该 token 调用 `logOut`，响应
+   和命令都必须脱敏。没有旧节点文件级访问时，接受这一小段切换窗口，不声称
+   update 零丢失。
+5. 在 test env 把 API/file URL 改为上述 Docker 内网地址，重新激活
+   `config-contract`，再部署目标 Bot exact digest。
+6. 验证新 Local API `getMe`、单一 polling、一个无副作用 update，以及真实大文件
+   `getFile` 返回的绝对路径能经文件网关下载。
+
+需要零丢失迁移时，按 Telegram 官方流程先删除 webhook、调用 `close`，再把旧
+实例中该 Bot 的工作子目录搬到新实例。没有旧节点 SSH 和文件级事实时不得臆测或
+执行这条路径。
+
+回滚按相反方向执行：先停止测试 Bot，在新 Local API `logOut`，恢复旧 URL 与
+config revision，再启动 Bot 并确认单一 polling。仅停止新 Local API 而不恢复
+文件 base 会使绝对路径下载失败。
+
 ## 7. 观测与故障定位
 
 - 端口可达只证明 TCP listener，不证明指定 token 的 `getMe`、polling、共享
@@ -113,3 +158,6 @@ application = (
 - 修改 runtime bootstrap 时至少运行
   `tests/services/test_telegram_runtime_bootstrap.py` 和相关 Bot entrypoint
   隔离测试。
+
+参考：Telegram 官方
+[`tdlib/telegram-bot-api` 迁移说明](https://github.com/tdlib/telegram-bot-api#moving-a-bot-from-one-local-server-to-another)。

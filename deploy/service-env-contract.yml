@@ -137,6 +137,12 @@
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
       "patterns": ["SUPPORT_BOT_*", "TELEGRAM_*", "DATABASE_*", "R2_*"]
     },
+    "telegram-local-api": {
+      "environments": ["test", "prod"],
+      "enabled_if": {"key": "TELEGRAM_LOCAL_API_ENABLED", "equals": "true"},
+      "required": ["ALLBOT_ENV", "TELEGRAM_API_ID", "TELEGRAM_API_HASH"],
+      "patterns": []
+    },
     "postgres": {
       "environments": ["test"],
       "required": ["ALLBOT_ENV"],
