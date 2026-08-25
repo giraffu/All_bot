@@ -53,6 +53,19 @@ MINIMAX_H3_MODEL_FL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
 MINIMAX_H3_MODEL_REF = (
     "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
 )
+MINIMAX_H3_MAIN_MODEL_10EROS = "10eros"
+MINIMAX_H3_MAIN_MODEL_OFFICIAL = "official"
+MINIMAX_H3_DEFAULT_MAIN_MODEL = MINIMAX_H3_MAIN_MODEL_10EROS
+MINIMAX_H3_MAIN_MODELS = (
+    MINIMAX_H3_MAIN_MODEL_10EROS,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL,
+)
+MINIMAX_H3_OFFICIAL_MODEL_FL = (
+    "MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
+)
+MINIMAX_H3_OFFICIAL_MODEL_REF = (
+    "MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+)
 MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
 MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
 MINIMAX_H3_MODES = ("t2v", "i2v", "flf2v", "ref2v")
@@ -238,6 +251,7 @@ class MiniMaxH3Spec:
     cost: int
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
+    main_model: str
     model_name: str
     addon_items: tuple[MiniMaxH3AddonSelection, ...]
 
@@ -366,6 +380,11 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         inputs,
         mode=task_type.removeprefix("minimax_h3_"),
     )
+    main_model = str(
+        inputs.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
+    ).strip().lower()
+    if main_model not in MINIMAX_H3_MAIN_MODELS:
+        raise MiniMaxH3ValidationError("不支持该 MiniMax H3 主模型。")
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -435,8 +454,14 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         cost=base_cost * multiplier,
         images=images,
         reference_descriptions=descriptions,
+        main_model=main_model,
         model_name=(
-            MINIMAX_H3_MODEL_REF
+            MINIMAX_H3_OFFICIAL_MODEL_REF
+            if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
+            and task_type == MINIMAX_H3_REF2V
+            else MINIMAX_H3_OFFICIAL_MODEL_FL
+            if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
+            else MINIMAX_H3_MODEL_REF
             if task_type == MINIMAX_H3_REF2V
             else MINIMAX_H3_MODEL_FL
         ),

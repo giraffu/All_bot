@@ -36,6 +36,9 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 - 公共字段为非空 `prompt`、`duration=5|10|15`、
   `resolution_preset=preview|small|standard|hd` 和可选 `seed`。四档普通模式每 5 秒
   分别计 10/15/20/30 点。
+- `main_model` 只允许 `10eros|official`，缺失时为 `10eros`。该选择同时
+  覆盖 I2V/FLF2V 所用 FL2VA checkpoint 和 REF2V 所用 Ref2VA checkpoint；
+  未知值在领域层和 Worker 层都 fail closed。
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
 - REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
   REF2V 每 5 秒的 `preview/small/standard/hd` 价格为 `15/23/30/45`，10/15 秒按
@@ -68,7 +71,7 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   目录的事实源。新请求使用最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
-  主模型、采样器、steps、timeline、本地路径或参考音视频。
+  `main_model` 枚举之外的主模型、采样器、steps、timeline、本地路径或参考音视频。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
@@ -119,9 +122,23 @@ Optimizer 和最终生成都把它作为一个 `<Picture N>`，描述明确要�
 服装、局部、配饰和物件证据，不复现拼贴构图。私人人物入口由独立人物开关控制，
 显式局部子图另有 kill switch；生产两项默认关闭。
 
-## 固定基础链与可选作者资产
+## 可选主模型、固定基础链与作者资产
 
-T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
+`main_model=10eros` 保留现有默认链。`main_model=official` 仅在 Worker
+patcher 中把 `UNETLoader` 切换到 Comfy-Org 发布的官方裁剪 FP8 主模型：
+
+- T2V/I2V/FLF2V：`diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors`，
+  20,958,205,608 bytes，SHA256
+  `12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993`；
+- REF2V：`diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors`，
+  20,958,205,608 bytes，SHA256
+  `f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9`。
+
+两份文件均固定 Comfy-Org/MiniMax-H3 revision
+`4cc1d817b6184899b41293954329f576cb5ae86b`。采样器、sigma、LightX2V 和
+用户附加模型继续由模式 workflow 约束，主模型选择不授权其它节点覆盖。
+
+T2V/I2V/FLF2V 的 `10eros` 默认基础链固定两个作者原始资产：
 
 - 10Eros-Max Beta2 `10Eros_Max_h3_fl2va_beta2_pruned.safetensors`，revision
   `47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5`，40,222,933,592 bytes，SHA256
@@ -166,14 +183,14 @@ Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连�
 24fps，但公开 workflow guidance 为 1，因此只视为待 canary 候选。POV Missionary
 作者仍标记为早期实验版。五个新模型在实机 canary 完成前均不得标记为已验证。
 
-T2V/I2V/FLF2V 三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
+T2V/I2V/FLF2V 三个 workflow 使用同一基础顺序：`UNETLoader(选定主模型) →
 LoraLoaderModelOnly(LightX2V, 1.0) → [用户选中 LoRA 有序链] →
 ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift(12/3) →
 ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → MiniMaxH3ImageToVideo →
 Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再回退到
 25 steps。输出继续解码 H3 原生同步音轨。
 
-REF2V 独立固定
+REF2V 在 `10eros` 下默认使用
 `10Eros_Max_h3_TURBO_ref2va_beta2.safetensors`（revision
 `7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3`，40,228,444,088 bytes，SHA256
 `6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4`），不加载
@@ -184,7 +201,7 @@ SamplerCustomAdvanced`；禁止 `BasicScheduler`。十七个候选 LoRA 中最�
 REF2VA Motion v0.2 只能进入这条 REF2V 链。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
-FL2VA、TURBO Ref2VA 和上述十七个可选 LoRA，不包含 RedMix。旧 checkpoint、
+10Eros FL2VA/TURBO Ref2VA、官方 FL2VA/Ref2VA 和上述十七个可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续四模式 GPU canary 才能定论。
@@ -196,8 +213,9 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-24-10eros-turbo-ref2va-addon17-mystic-v3`、23 个文件的字节数与
-SHA256，总计 110,767,210,711 bytes。Mystic XXX v3 使用 modelVersion `3260276`、
+`2026-08-25-10eros-official-h3-addon17`、25 个文件的字节数与
+SHA256，总计 152,683,621,927 bytes，准备前要求模型卷至少 145 GiB 可用。
+Mystic XXX v3 使用 modelVersion `3260276`、
 file `3143593`，文件 `MysticXXX_MMH3-V3.safetensors` 为 298,259,688 bytes，
 SHA256 `99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6`；作者建议
 v3 可在较高强度下使用并以 `0.9` 为示例，因此新选择默认使用 `0.9`，已有场景中

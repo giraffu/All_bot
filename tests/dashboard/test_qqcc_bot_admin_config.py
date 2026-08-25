@@ -513,6 +513,7 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                     "negative_prompt": " blur, jitter ",
                     "duration": 10,
                     "engine": "ltx_video",
+                    "main_model": "official",
                     "end_frame_draw_scene_id": "tail_pose",
                     "lora_items": [
                         {"name": "motion_booster", "strength": 0.73},
@@ -544,6 +545,7 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "duration": 10,
                 "resolution": "preview",
                 "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "main_model": "official",
                 "mode": "i2v",
                 "reference_images": [],
                 "aspect_ratio": "16:9",
@@ -563,6 +565,7 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "duration": 5,
                 "resolution": "preview",
                 "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "main_model": "10eros",
                 "mode": "i2v",
                 "reference_images": [],
                 "aspect_ratio": "16:9",
@@ -624,6 +627,11 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
 
     options = config_service_module.build_qqcc_config_options()
     assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
+    assert options["default_ai_video_main_model"] == "10eros"
+    assert options["ai_video_main_models"] == [
+        {"value": "10eros", "label": "10Eros Max H3"},
+        {"value": "official", "label": "MiniMax H3 官方模型"},
+    ]
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]

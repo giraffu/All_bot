@@ -14,6 +14,7 @@ from src.domain_config.scail2_video import (
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
     MiniMaxH3ValidationError,
+    build_minimax_h3_spec,
     normalize_minimax_h3_addon_items,
 )
 from src.domain_config.wan22_aio_video import (
@@ -1455,12 +1456,27 @@ def patch_minimax_h3_workflow(
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
     try:
+        spec = build_minimax_h3_spec(
+            task_type,
+            {
+                **params,
+                "images": [
+                    str(params.get(key) or "").strip()
+                    for key in ("image", "image2", "image3", "image4", "image5")
+                    if str(params.get(key) or "").strip()
+                ],
+            },
+        )
         addon_items = normalize_minimax_h3_addon_items(
             params,
             mode=task_type.removeprefix("minimax_h3_"),
         )
     except MiniMaxH3ValidationError as exc:
-        raise ValueError(f"invalid MiniMax H3 addon configuration: {exc}") from exc
+        message = str(exc)
+        if "主模型" in message:
+            raise ValueError(f"invalid MiniMax H3 main model: {message}") from exc
+        raise ValueError(f"invalid MiniMax H3 addon configuration: {message}") from exc
+    workflow["1"]["inputs"]["unet_name"] = spec.model_name
     model_input = ["1", 0] if task_type == "minimax_h3_ref2v" else ["8", 0]
     prompt_parts: list[str] = []
     for offset, selection in enumerate(addon_items):

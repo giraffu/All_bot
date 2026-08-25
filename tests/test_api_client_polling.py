@@ -533,6 +533,7 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         {"name": "naughty_times", "strength": 0.8},
         {"name": "sex_pose", "strength": 0.45},
     ]
+    assert request.await_args.kwargs["json"]["main_model"] == "10eros"
 
 
 @pytest.mark.asyncio

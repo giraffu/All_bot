@@ -18,8 +18,9 @@
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
 - LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
-- MiniMax H3 四个公开模式的固定基础链（普通模式为 10Eros Beta2 + LightX2V 8-step，
-  REF2V 为 TURBO Ref2VA + er_sde/ManualSigmas）、
+- MiniMax H3 四个公开模式的受控主模型选择（`10eros|official`，默认
+  `10eros`）和固定模式链（T2V/I2V/FLF2V 为 LightX2V 8-step，REF2V 为
+  er_sde/ManualSigmas）、
   十七个候选 LoRA（单请求最多十三个，其中一项仅 REF2V）、API workflow、模型 bundle、镜像与 LAN canary 契约见
   [`子模块_MiniMaxH3视频服务_minimax_h3.md`](子模块_MiniMaxH3视频服务_minimax_h3.md)。
 

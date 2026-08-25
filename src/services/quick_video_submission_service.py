@@ -140,6 +140,7 @@ class QqccVideoChainSegment:
     lora_items: list[dict[str, Any]] = field(default_factory=list)
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
+    main_model: str = "10eros"
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,7 @@ class QuickVideoSubmissionPlan:
     scene_kind: str = "video"
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
+    main_model: str = "10eros"
     qqcc_chain_segments: tuple[QqccVideoChainSegment, ...] = ()
     reference_images: list[str] = field(default_factory=list)
     reference_image_paths: list[str | None] = field(default_factory=list)
@@ -480,6 +482,7 @@ def _build_qqcc_ai_video_chain_segment(
         lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
         aspect_ratio=str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE,
+        main_model=str(scene.get("main_model") or "10eros"),
     )
 
 
@@ -721,6 +724,7 @@ def build_quick_video_submission_plan(
             ),
             reference_image_paths=reference_image_paths,
             aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
+            main_model=str(scene.get("main_model") or "10eros"),
         )
 
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
@@ -918,6 +922,7 @@ def _build_private_qqcc_video_chain_stages(
                 "resolution_preset": segment.resolution,
                 "aspect_ratio": "source",
                 "duration": segment.duration,
+                "main_model": segment.main_model,
                 **common_kwargs,
             }
             executor = "generation"
@@ -1105,6 +1110,7 @@ async def run_quick_video_submission_plan(
                         "task_type": MINIMAX_H3_FLF2V,
                         "resolution_preset": plan.resolution,
                         "duration": plan.duration,
+                        "main_model": plan.main_model,
                         "cleanup": True,
                         "send_result": True,
                         "delete_status": True,
@@ -1290,6 +1296,7 @@ async def run_quick_video_submission_plan(
                     resolution_preset=plan.resolution,
                     aspect_ratio=plan.aspect_ratio,
                     duration=plan.duration,
+                    main_model=plan.main_model,
                     cleanup=True,
                     allow_contribute=False,
                     display_mode_name_override=plan.display_mode_name,
@@ -1321,6 +1328,7 @@ async def run_quick_video_submission_plan(
                 resolution_preset=plan.resolution,
                 aspect_ratio="source",
                 duration=plan.duration,
+                main_model=plan.main_model,
                 cleanup=True,
                 allow_contribute=False,
                 display_mode_name_override=plan.display_mode_name,
@@ -1477,6 +1485,7 @@ async def _run_tail_frame_video_plan(
                     resolution_preset=plan.resolution,
                     aspect_ratio="source",
                     duration=plan.duration,
+                    main_model=plan.main_model,
                     cleanup=True,
                     allow_contribute=False,
                     display_mode_name_override=plan.display_mode_name,

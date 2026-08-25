@@ -327,6 +327,7 @@ class MiniMaxH3Request(BaseModel):
     duration: int = Field(default=5)
     resolution_preset: str = "preview"
     aspect_ratio: str = "16:9"
+    main_model: str = "10eros"
     # Source-ratio I2V/FLF2V requests use the workflow calculator, represented
     # by zero here; fixed-aspect T2V/REF2V continue to send concrete Div32 sizes.
     width: int = Field(ge=0)

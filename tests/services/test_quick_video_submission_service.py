@@ -335,6 +335,7 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
                     "negative_prompt": "  blur, jitter  ",
                     "duration": 15,
                     "engine": "ltx_video",
+                    "main_model": "official",
                     "lora_items": [
                         {"name": "motion_booster", "strength": 0.73},
                         {"name": "mystic_xxx"},
@@ -355,12 +356,48 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
     assert plan.resolution == "preview"
     assert plan.duration == "15s"
     assert plan.total_cost == 30
+    assert plan.main_model == "official"
     assert plan.negative_prompt == "blur, jitter"
     assert plan.lora_items == [
         {"name": "motion_booster", "strength": 0.75},
         {"name": "mystic_xxx", "strength": 0.9},
     ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_video_forwards_official_main_model_to_generation():
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "cinema"},
+        qqcc_config=normalize_qqcc_config(
+            {
+                "main_buttons": {"ai_video": True},
+                "ai_video_scenes": [
+                    {
+                        "id": "cinema",
+                        "name": "电影运镜",
+                        "prompt": "camera orbit",
+                        "main_model": "official",
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=[],
+    )
+    generation_task = AsyncMock(return_value={"output": "history/result.mp4"})
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_generation_task_func=generation_task,
+    )
+
+    assert generation_task.await_args.kwargs["main_model"] == "official"
 
 
 def test_qqcc_video_chain_uses_each_scene_configured_resolution():

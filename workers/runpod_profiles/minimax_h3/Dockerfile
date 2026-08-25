@@ -108,7 +108,7 @@ RUN set -euo pipefail; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
-      org.opencontainers.image.description="Pinned 10Eros Beta2 FL2VA plus TURBO Ref2VA runtime with external model manifest" \
+      org.opencontainers.image.description="Selectable pinned 10Eros and official MiniMax H3 runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \
