@@ -1,8 +1,8 @@
 # 子模块：GPU 算力资源池控制器
 
-MiniMax H3 使用独立 `minimax_h3` manual-only profile；不加入 autoscaler。当前 25 文件
-模型包约 152.7GB，并要求至少 145GiB 空闲模型卷；它同时包含默认
-10Eros 与官方 FL2VA/Ref2VA checkpoint。首版 GPU allowlist 为 RTX 5090。REF2V 只扩展正式 LAN
+MiniMax H3 使用独立 `minimax_h3` manual-only profile；不加入 autoscaler。当前 24 文件
+模型包为 112,485,084,951 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认
+10Eros v3 TURBO 与官方 INT8 ConvRot FL2VA/Ref2VA checkpoint。首版 GPU allowlist 为 RTX 5090。REF2V 只扩展正式 LAN
 `gpu-177-gpu1-minimax_h3` 的四类 capability；RunPod profile/autoscaler 与
 `gpu-177-gpu1-minimax_h3_test` 候选不扩展。LAN 候选只能在 canonical 镜像
 digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。

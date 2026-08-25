@@ -243,6 +243,11 @@ def test_prepare_reuses_nine_existing_blobs_and_downloads_only_two(monkeypatch, 
     manifest = yaml.safe_load(manifest_path.read_text())
 
     assert downloads == [9, 10]
+    assert manifest["source"]["revision"] == (
+        "10eros-v3=47be0638; comfy-int8=4cc1d817; "
+        "comfy-support=014cd40f; lightx2v=62487ee6"
+    )
+    assert "official pruned INT8 ConvRot" in manifest["source"]["variant"]
     assert [item["relative_path"] for item in manifest["files"]] == sorted(
         item[0] for item in assets
     )
