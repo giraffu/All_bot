@@ -57,4 +57,55 @@ describe('HistoryTable source filters', () => {
       'bot:qqcc',
     )
   })
+
+  it('keeps responsive server pagination in the constrained table region', async () => {
+    const TableStub = defineComponent({
+      name: 'ATable',
+      inheritAttrs: false,
+      props: {
+        pagination: { type: Object, required: true },
+        scroll: { type: Object, required: true },
+      },
+      emits: ['change'],
+      template: '<div data-testid="history-table-stub" v-bind="$attrs" />',
+    })
+    const wrapper = shallowMount(HistoryTable, {
+      global: {
+        components: {
+          ATable: TableStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    const table = wrapper.getComponent(TableStub)
+    expect(wrapper.get('[data-testid="history-table-shell"]').classes()).toContain(
+      'min-h-0',
+    )
+    expect(wrapper.get('[data-testid="history-filter-strip"]').classes()).toContain(
+      'overflow-x-auto',
+    )
+    expect(table.classes()).toContain('min-h-0')
+    expect(table.props('scroll')).toMatchObject({ x: 1350 })
+    expect(table.props('pagination')).toMatchObject({
+      current: 1,
+      pageSize: 20,
+      total: 0,
+      responsive: true,
+      showLessItems: true,
+    })
+
+    table.vm.$emit('change', { current: 2, pageSize: 20 })
+    await flushPromises()
+
+    expect(apiMocks.fetchHistoryAll).toHaveBeenLastCalledWith(
+      2,
+      20,
+      null,
+      null,
+      null,
+      null,
+      null,
+    )
+  })
 })

@@ -290,6 +290,9 @@ describe('Dashboard App', () => {
 
     expect(initialRefreshCount).toBeGreaterThanOrEqual(1)
     expect(wrapper.find('.dashboard-sidebar-stub').exists()).toBe(true)
+    expect(wrapper.get('.dashboard-shell').classes()).toEqual(
+      expect.arrayContaining(['h-screen', 'overflow-hidden']),
+    )
     expect(wrapper.find('.dashboard-header-bar-stub').attributes('data-title')).toBe('数据大盘')
     expect(wrapper.find('.current-tab-stub').text()).toBe('home')
     expect(wrapper.find('.container-home').exists()).toBe(true)

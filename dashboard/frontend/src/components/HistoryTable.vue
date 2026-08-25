@@ -159,16 +159,32 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-white rounded-xl shadow-sm border p-6">
-    <div class="mb-4 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <h2 class="text-xl font-bold text-gray-800 m-0">历史生成记录</h2>
-          
-          <!-- Filters Group -->
-          <div class="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100 shadow-sm">
+  <div
+    data-testid="history-table-shell"
+    class="history-table-shell h-full min-h-0 min-w-0 flex flex-col bg-white rounded-xl shadow-sm border p-3 sm:p-4 xl:p-6"
+  >
+    <div class="mb-3 flex shrink-0 flex-col gap-3 xl:mb-4 xl:flex-row xl:items-center">
+      <div class="flex items-center justify-between gap-3 xl:shrink-0">
+        <h2 class="m-0 text-lg font-bold text-gray-800 sm:text-xl">历史生成记录</h2>
+        <a-button
+          @click="refreshData"
+          :loading="loading"
+          type="text"
+          class="flex items-center gap-1 text-gray-500 hover:text-blue-600 xl:hidden"
+        >
+          <template #icon><reload-outlined /></template>
+          刷新
+        </a-button>
+      </div>
+
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <!-- Filters Group -->
+        <div
+          data-testid="history-filter-strip"
+          class="history-filter-strip flex min-w-0 flex-1 items-center gap-3 overflow-x-auto rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 shadow-sm"
+        >
             <!-- Multiple Type Filter -->
-            <div class="flex items-center gap-2">
+            <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">类型:</span>
               <a-select
                 v-model:value="selectedTypes"
@@ -186,10 +202,10 @@ onMounted(() => {
               />
             </div>
 
-            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+            <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
 
             <!-- Rating Filter -->
-            <div class="flex items-center gap-2">
+            <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">评价:</span>
               <a-select
                 v-model:value="selectedRating"
@@ -202,10 +218,10 @@ onMounted(() => {
               />
             </div>
 
-            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+            <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
 
             <!-- Public Filter -->
-            <div class="flex items-center gap-2">
+            <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">状态:</span>
               <a-select
                 v-model:value="selectedPublic"
@@ -218,10 +234,10 @@ onMounted(() => {
               />
             </div>
 
-            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+            <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
 
             <!-- Worker Filter -->
-            <div class="flex items-center gap-2">
+            <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">节点:</span>
               <a-select
                 v-model:value="selectedWorker"
@@ -238,10 +254,10 @@ onMounted(() => {
               />
             </div>
 
-            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+            <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
 
             <!-- Source Filter -->
-            <div class="flex items-center gap-2">
+            <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">来源:</span>
               <a-select
                 v-model:value="selectedSource"
@@ -266,11 +282,15 @@ onMounted(() => {
               <template #icon><close-circle-filled /></template>
               重置
             </a-button>
-          </div>
         </div>
 
-        <div class="flex items-center gap-2">
-          <a-button @click="refreshData" :loading="loading" type="text" class="flex items-center gap-1 text-gray-500 hover:text-blue-600">
+        <div class="hidden shrink-0 items-center gap-2 xl:flex">
+          <a-button
+            @click="refreshData"
+            :loading="loading"
+            type="text"
+            class="flex items-center gap-1 text-gray-500 hover:text-blue-600"
+          >
             <template #icon><reload-outlined /></template>
             刷新
           </a-button>
@@ -287,12 +307,14 @@ onMounted(() => {
         pageSize: pageSize,
         total: total,
         showSizeChanger: false,
+        responsive: true,
+        showLessItems: true,
         showTotal: (total) => `共 ${total} 条`
       }"
       @change="handleTableChange"
       row-key="id"
-      class="flex-1 overflow-hidden"
-      :scroll="{ y: 'calc(100vh - 350px)' }"
+      class="history-results min-h-0 min-w-0 flex-1 overflow-hidden"
+      :scroll="{ x: 1350, y: 'calc(100dvh - 350px)' }"
     >
       <template #bodyCell="{ column, record }">
         <!-- Time -->
@@ -402,18 +424,57 @@ onMounted(() => {
 </template>
 
 <style scoped>
+:deep(.history-filter-strip) {
+  scrollbar-width: thin;
+}
+
 :deep(.ant-table-wrapper) {
   height: 100%;
+  min-height: 0;
 }
 :deep(.ant-spin-nested-loading) {
   height: 100%;
+  min-height: 0;
 }
 :deep(.ant-spin-container) {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 :deep(.ant-table) {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+:deep(.ant-table-container) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+:deep(.ant-table-header) {
+  flex: none;
+}
+:deep(.ant-table-body) {
+  min-height: 0;
+  max-height: none !important;
+  flex: 1;
+}
+:deep(.ant-pagination) {
+  flex: none;
+  margin: 12px 0 0;
+}
+
+@media (max-width: 767px) {
+  :deep(.ant-pagination) {
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  :deep(.ant-pagination-total-text) {
+    display: none;
+  }
 }
 </style>
