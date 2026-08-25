@@ -101,23 +101,20 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-25-10eros-official-h3-addon17
+    version: 2026-08-26-10eros-v3-official-h3-addon17
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-25-10eros-official-h3-addon17/files
-      discovered_size_gb: 142.20
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-26-10eros-v3-official-h3-addon17/files
+      discovered_size_gb: 104.74
       import_status: prepared_by_script
-      notes: Pinned 10Eros-Max Beta2 FL2VA/TURBO Ref2VA and official Comfy-Org pruned FP8 FL2VA/Ref2VA selectable bases, fixed LightX2V FL2VA 8-step acceleration, seventeen optional LoRAs including Mystic XXX v3, and official Qwen3-VL/video/audio VAE assets. Native Ref2VA Motion v0.2 is a REF2V-only candidate and does not replace H3 Motion Booster v2; HMPussy V1 Stills and Better Titfuck v0.5 likewise remain separate candidates. All twenty-five sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
+      notes: Pinned 10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA plus official Comfy-Org pruned FP8 selectable bases, LightX2V FL2VA 8-step acceleration for the official FL2VA path, seventeen optional LoRAs including Mystic XXX v3, and official Qwen3-VL/video/audio VAE assets. Native Ref2VA Motion v0.2 is a REF2V-only candidate and does not replace H3 Motion Booster v2; HMPussy V1 Stills and Better Titfuck v0.5 likewise remain separate candidates. All twenty-four sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
     files:
-      - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors
-        sha256: 57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20
-        size_bytes: 40222933592
-      - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors
-        sha256: 6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4
-        size_bytes: 40228444088
+      - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors
+        sha256: ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2
+        size_bytes: 40228492688
       - relative_path: diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors
         sha256: 12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993
         size_bytes: 20958205608

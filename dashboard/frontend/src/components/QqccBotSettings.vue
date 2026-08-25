@@ -306,7 +306,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   video_resolutions: [],
   ai_video_resolutions: [],
   ai_video_main_models: [
-    { value: '10eros', label: '10Eros Max H3' },
+    { value: '10eros', label: '10Eros Max H3 v3' },
     { value: 'official', label: 'MiniMax H3 官方模型' },
   ],
   default_video_resolution: '720p',

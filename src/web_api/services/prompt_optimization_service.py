@@ -310,8 +310,8 @@ async def submit_prompt_optimization(
                 "environment_description", ""
             ),
             "addon_summary": (
-                "Fixed 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 "
-                "stack; no user-selectable add-ons."
+                "10Eros-Max TURBO hybrid Beta3 with its native 7-step er_sde "
+                "schedule; optional add-ons are selected by the server."
             ),
             "addon_rules": trusted_context.get(
                 "addon_rules",

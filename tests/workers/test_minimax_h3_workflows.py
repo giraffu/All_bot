@@ -17,14 +17,13 @@ TASKS = {
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
-TEN_EROS_BETA2_MODEL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
+TEN_EROS_V3_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
 OFFICIAL_FL2VA_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
 OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
-TURBO_REF2VA_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
 REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 
 
@@ -35,12 +34,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
         main = Path("workers/comfy_agent/workflows") / filename
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
-        expected_model = (
-            TURBO_REF2VA_MODEL
-            if task_type == "minimax_h3_ref2v"
-            else TEN_EROS_BETA2_MODEL
-        )
-        assert workflow["1"]["inputs"]["unet_name"] == expected_model
+        assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
         assert "nodes" not in workflow
         if task_type == "minimax_h3_ref2v":
             assert "8" not in workflow
@@ -71,7 +65,14 @@ def test_minimax_h3_api_workflows_are_deterministic():
             "strength_model": 1.0,
         }
         assert workflow["2"] == {
-            "inputs": {"model": ["8", 0], "attention": "comfy kitchen attention"},
+            "inputs": {
+                "model": ["1", 0],
+                "attention": (
+                    "pytorch attention"
+                    if task_type == "minimax_h3_ref2v"
+                    else "comfy kitchen attention"
+                ),
+            },
             "class_type": "ModelAttentionBackend",
         }
         assert "9" not in workflow
@@ -88,10 +89,12 @@ def test_minimax_h3_api_workflows_are_deterministic():
         assert workflow["4"]["inputs"]["clip_name"] == OFFICIAL_CLIP
         assert workflow["5"]["inputs"]["vae_name"] == OFFICIAL_VIDEO_VAE
         assert workflow["32"]["inputs"]["model"] == ["7", 0]
-        assert workflow["34"]["inputs"]["model"] == ["7", 0]
-        assert workflow["34"]["inputs"]["steps"] == 8
+        assert workflow["34"] == {
+            "inputs": {"sigmas": REF2V_SIGMAS},
+            "class_type": "ManualSigmas",
+        }
         assert workflow["33"] == {
-            "inputs": {"sampler_name": "euler"},
+            "inputs": {"sampler_name": "er_sde"},
             "class_type": "KSamplerSelect",
         }
         assert not any(
@@ -154,18 +157,23 @@ def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
         },
     )
 
-    assert result["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
+    assert result["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
 
 
-def test_minimax_h3_patcher_without_addon_keeps_10eros_plus_lightx2v_only():
+def test_minimax_h3_patcher_without_addon_uses_10eros_v3_native_turbo_path():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
     assert not {"10", "11", "12", "13"} & patched.keys()
     assert patched["8"]["inputs"]["lora_name"] == LIGHTX2V_LORA
     assert "9" not in patched
-    assert patched["2"]["inputs"]["model"] == ["8", 0]
-    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
+    assert patched["2"]["inputs"]["model"] == ["1", 0]
+    assert patched["33"]["inputs"]["sampler_name"] == "er_sde"
+    assert patched["34"] == {
+        "inputs": {"sigmas": REF2V_SIGMAS},
+        "class_type": "ManualSigmas",
+    }
+    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
     assert patched["30"]["inputs"]["prompt"] == "scene"
 
 
@@ -197,6 +205,11 @@ def test_minimax_h3_patcher_selects_approved_official_main_model(
     )
 
     assert patched["1"]["inputs"]["unet_name"] == expected_model
+    if task_type == "minimax_h3_i2v":
+        assert patched["2"]["inputs"]["model"] == ["8", 0]
+        assert patched["33"]["inputs"]["sampler_name"] == "euler"
+        assert patched["34"]["class_type"] == "BasicScheduler"
+        assert patched["34"]["inputs"]["steps"] == 8
 
 
 def test_minimax_h3_patcher_rejects_unknown_main_model():
@@ -216,7 +229,7 @@ def test_minimax_h3_patcher_rejects_unknown_main_model():
         )
 
 
-def test_minimax_h3_patcher_injects_selected_addons_after_lightx2v_in_order():
+def test_minimax_h3_patcher_injects_selected_addons_after_v3_base_in_order():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow(
@@ -232,7 +245,7 @@ def test_minimax_h3_patcher_injects_selected_addons_after_lightx2v_in_order():
         },
     )
     assert patched["100"]["inputs"] == {
-        "model": ["8", 0],
+        "model": ["1", 0],
         "lora_name": NAUGHTYTIMES_LORA,
         "strength_model": 0.8,
     }
@@ -264,7 +277,7 @@ def test_minimax_h3_worker_injects_addon_chain():
             "lora_items": [{"name": "breasts", "strength": 1.2}],
         },
     )
-    assert workflow["100"]["inputs"]["model"] == ["8", 0]
+    assert workflow["100"]["inputs"]["model"] == ["1", 0]
     assert workflow["100"]["inputs"]["strength_model"] == 1.2
     assert workflow["2"]["inputs"]["model"] == ["100", 0]
     assert workflow["30"]["inputs"]["prompt"] == "HMBreasts, scene"
@@ -287,7 +300,7 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
     )
 
     assert workflow["100"]["inputs"] == {
-        "model": ["8", 0],
+        "model": ["1", 0],
         "lora_name": "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
         "strength_model": 0.7,
     }
@@ -354,7 +367,7 @@ def test_minimax_h3_worker_chains_new_stills_and_titjob_loras_with_triggers():
     )
 
     assert workflow["100"]["inputs"] == {
-        "model": ["8", 0],
+        "model": ["1", 0],
         "lora_name": "MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors",
         "strength_model": 0.35,
     }

@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "unet_name": "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
+      "unet_name": "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader"

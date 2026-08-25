@@ -1895,7 +1895,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
             }
         ],
         "ai_video_main_models": [
-            {"value": "10eros", "label": "10Eros Max H3"},
+            {"value": "10eros", "label": "10Eros Max H3 v3"},
             {"value": "official", "label": "MiniMax H3 官方模型"},
         ],
         "video_lora_models": [

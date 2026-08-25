@@ -34,7 +34,7 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
 
     assert config["display_name"] == "高级图生视频pro"
     assert config["revision"] == 0
-    assert config["template_ref"] == "minimax_h3_10eros_naughtytimes@4"
+    assert config["template_ref"] == "minimax_h3_10eros_naughtytimes@5"
     assert config["config_source"] == "built-in"
     assert config["compatibility_status"] == "current"
     assert config["fallback_reason"] == "no_saved_config"
@@ -103,8 +103,8 @@ def test_h3_fixed_naughtytimes_saved_config_falls_forward_to_optional_addons():
         display_name="fixed NaughtyTimes",
         description="old fixed stack",
         system_template=default["system_template"].replace(
-            "the MiniMax H3 10Eros-Max Beta2 base with fixed LightX2V 8-step "
-            "acceleration and optional server-selected add-ons",
+            "the MiniMax H3 10Eros-Max TURBO hybrid Beta3 base with its native "
+            "7-step er_sde schedule and optional server-selected add-ons",
             "the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and "
             "NaughtyTimes v2 stack",
         ),
