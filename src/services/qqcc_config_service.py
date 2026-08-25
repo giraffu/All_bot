@@ -181,11 +181,6 @@ def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
         for raw_scene in raw_scenes:
             if not isinstance(raw_scene, dict) or "credit_cost" not in raw_scene:
                 continue
-            if (
-                section == "ai_video_scenes"
-                and str(raw_scene.get("mode") or "i2v").strip() == "ref2v"
-            ):
-                continue
             raw_cost = raw_scene.get("credit_cost")
             if raw_cost is None:
                 continue
@@ -1025,9 +1020,8 @@ def _normalize_ai_video_scene(
         "aspect_ratio": aspect_ratio,
         "lora_items": lora_items,
         "credit_cost": (
-            derived_ref2v_cost
-            if mode == "ref2v"
-            else _normalize_scene_credit_cost(raw_scene.get("credit_cost"))
+            _normalize_scene_credit_cost(raw_scene.get("credit_cost"))
+            or derived_ref2v_cost
         ),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
             None if mode == "ref2v" else raw_scene.get("end_frame_draw_scene_id"),

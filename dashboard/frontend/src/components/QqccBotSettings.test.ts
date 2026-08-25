@@ -69,9 +69,9 @@ const InputStub = defineComponent({
 
 const InputNumberStub = defineComponent({
   name: 'InputNumberStub',
-  props: ['value', 'min', 'step', 'precision', 'placeholder'],
+  props: ['value', 'disabled', 'min', 'step', 'precision', 'placeholder'],
   emits: ['update:value'],
-  template: '<input type="number" :value="value ?? \'\'" :min="min" :step="step" :placeholder="placeholder" @input="$emit(\'update:value\', $event.target.value === \'\' ? null : Number($event.target.value))" />',
+  template: '<input type="number" :value="value ?? \'\'" :disabled="disabled" :min="min" :step="step" :placeholder="placeholder" @input="$emit(\'update:value\', $event.target.value === \'\' ? null : Number($event.target.value))" />',
 })
 
 const TextareaStub = defineComponent({
@@ -1017,6 +1017,42 @@ describe('QqccBotSettings', () => {
     expect(saved.reference_image_telegram_file_ids).toEqual([{ '123': 'tg-a' }, { '123': 'tg-b' }])
     expect(saved.reference_image_previews).toBeUndefined()
     expect(saved.credit_cost).toBe(46)
+  })
+
+  it('allows an official REF2V scene price to be edited and saved', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        scene_preset_version: 1,
+        global_enabled: true,
+        video_scenes: [],
+        ai_video_scenes: [{
+          id: 'ref', name: '参考视频', prompt: '<Picture 1> follows <Picture 2>',
+          negative_prompt: '', duration: 10, resolution: 'small', engine: 'minimax_h3',
+          mode: 'ref2v',
+          reference_images: ['qqcc/config/ref2v/ai_video/ref/reference-a/input'],
+          reference_image_names: ['黑色模板'],
+          reference_image_telegram_file_ids: [{}],
+          aspect_ratio: '9:16', lora_items: [], credit_cost: 46,
+          end_frame_draw_scene_id: '', next_scene_id: null,
+        }],
+        draw_scenes: [], filter_scenes: [],
+      },
+    })
+
+    const wrapper = mountSettings({ ref2vEnabled: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const creditCost = wrapper.get('[data-testid="scene-config-credit-cost"]')
+    expect(creditCost.attributes('disabled')).toBeUndefined()
+    await creditCost.setValue('73')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0].credit_cost).toBe(73)
   })
 
   it('adds and removes dynamic video scenes before saving', async () => {
