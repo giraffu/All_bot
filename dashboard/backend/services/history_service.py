@@ -55,57 +55,107 @@ async def get_all_history_payload(
 
     try:
         offset = (page - 1) * page_size
+        worker_id_value = (
+            select(WorkerLog.worker_id)
+            .where(WorkerLog.task_id == History.task_id)
+            .order_by(WorkerLog.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        private_client_type = (
+            select(PrivateBotTaskSubmission.client_type)
+            .where(
+                PrivateBotTaskSubmission.registry_task_id == History.task_id
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
         stmt = (
             select(
                 History,
                 User.username,
                 User.full_name,
-                WorkerLog.worker_id,
-                PrivateBotTaskSubmission.client_type,
+                worker_id_value,
+                private_client_type,
             )
             .join(User, History.user_id == User.id)
-            .outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
-            .outerjoin(
-                PrivateBotTaskSubmission,
-                History.task_id == PrivateBotTaskSubmission.registry_task_id,
-            )
             .order_by(desc(History.created_at))
         )
 
+        filters = []
         if type and type != "all":
-            stmt = stmt.where(History.type.in_(type.split(",")))
+            filters.append(History.type.in_(type.split(",")))
         if rating is not None:
-            stmt = stmt.where(History.rating == rating)
+            filters.append(History.rating == rating)
         if is_public is not None:
-            stmt = stmt.where(History.is_public == is_public)
+            filters.append(History.is_public == is_public)
         if worker_id is not None and worker_id != "all":
-            stmt = stmt.where(WorkerLog.worker_id == worker_id)
+            filters.append(
+                select(1)
+                .where(
+                    WorkerLog.task_id == History.task_id,
+                    WorkerLog.worker_id == worker_id,
+                )
+                .exists()
+            )
         qqcc_history = History.extra_outputs[QQCC_REGENERATE_CONTEXT_KEY].is_not(
             None
         )
-        private_qqcc_history = PrivateBotTaskSubmission.client_type.startswith(
-            "bot:qqcc-private:"
+        private_submission_exists = (
+            select(1)
+            .where(
+                PrivateBotTaskSubmission.registry_task_id == History.task_id
+            )
+            .exists()
+        )
+        private_qqcc_history = (
+            select(1)
+            .where(
+                PrivateBotTaskSubmission.registry_task_id == History.task_id,
+                PrivateBotTaskSubmission.client_type.startswith(
+                    "bot:qqcc-private:"
+                ),
+            )
+            .exists()
         )
         if source == "web":
-            stmt = stmt.where(History.source == "web")
+            filters.append(History.source == "web")
         elif source == "bot":
-            stmt = stmt.where(
-                History.source == "bot",
-                ~qqcc_history,
-                PrivateBotTaskSubmission.client_type.is_(None),
+            filters.extend(
+                (
+                    History.source == "bot",
+                    ~qqcc_history,
+                    ~private_submission_exists,
+                )
             )
         elif source == "bot:qqcc":
-            stmt = stmt.where(
-                History.source == "bot",
-                qqcc_history,
-                PrivateBotTaskSubmission.client_type.is_(None),
+            filters.extend(
+                (
+                    History.source == "bot",
+                    qqcc_history,
+                    ~private_submission_exists,
+                )
             )
         elif source == "bot:qqcc-private":
-            stmt = stmt.where(private_qqcc_history)
+            filters.append(private_qqcc_history)
         elif source and source.startswith("bot:qqcc-private:"):
-            stmt = stmt.where(PrivateBotTaskSubmission.client_type == source)
+            filters.append(
+                select(1)
+                .where(
+                    PrivateBotTaskSubmission.registry_task_id == History.task_id,
+                    PrivateBotTaskSubmission.client_type == source,
+                )
+                .exists()
+            )
 
-        total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        count_stmt = (
+            select(func.count(History.id))
+            .select_from(History)
+            .join(User, History.user_id == User.id)
+            .where(*filters)
+        )
+        total = (await db.execute(count_stmt)).scalar() or 0
+        stmt = stmt.where(*filters)
         result = await db.execute(stmt.offset(offset).limit(page_size))
         rows = list(result)
         db.expunge_all()
