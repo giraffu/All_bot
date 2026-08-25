@@ -16,8 +16,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 ## 固定边界
 
 - NAS 归档异步消费 outbox，禁止进入 GPU Worker/Central 完成同步链路。
-- 冷媒体恢复只写 restore outbox；Web 不直连 NAS。Worker 复验摘要、回填原件并
-  重建输出缩略图后才提交当前 revision 回执。
+- 冷恢复只写 restore outbox；Web 不直连 NAS。Worker 复验后只回填
+  `task-inputs/`、`task-results/` 精确键及相邻缩略图；旧引用兼容回填，HEAD
+  验证后提交 revision。
 - 永久原件按 SHA-256 寻址；History/原 key 映射保存在回执。
 - 迁移使用冻结账本和父计划限定的 Probe→Copy→Switch；并发默认值和批次参数从
   当前脚本 `--help`/代码读取，不写成 Skill 快照。禁止正文下载式探测和无界全桶扫描。

@@ -108,6 +108,43 @@ async def test_favorite_user_history_updates_flag_when_below_identity_limit():
 
 
 @pytest.mark.asyncio
+async def test_favorite_canonical_history_only_backfills_canonical_thumbnail():
+    history = History(
+        id=13,
+        user_id=123,
+        task_id="registry-1",
+        type="image",
+        output_file="task-results/backend-1/primary.png",
+        is_favorited=False,
+        is_visible=True,
+    )
+    db = _FakeSession(
+        _FakeResult(single=history),
+        _FakeResult(single=99),
+    )
+    background_tasks = MagicMock(spec=BackgroundTasks)
+    current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
+
+    async def enqueue_restore(_db, _selected, *, priority):
+        assert priority == 0
+
+    await mutation_service.favorite_user_history(
+        task_id="registry-1",
+        current_user=current_user,
+        db=db,
+        schedule_background_task=background_tasks.add_task,
+        enqueue_restore_func=enqueue_restore,
+    )
+
+    background_tasks.add_task.assert_called_once_with(
+        mutation_service.generate_and_upload_thumbnail,
+        "task-results/backend-1/primary.png",
+        "image",
+        "task-results/backend-1/primary_thumb.webp",
+    )
+
+
+@pytest.mark.asyncio
 async def test_favorite_user_history_prefers_latest_visible_duplicate_task_row():
     older_history = History(
         id=11,

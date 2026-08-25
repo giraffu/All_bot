@@ -57,8 +57,7 @@ _load_env_file_from_argv(sys.argv)
 
 from src.media_paths import (  # noqa: E402
     build_flat_r2_compatibility_key,
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
+    build_r2_media_materialization_plan,
     build_storage_r2_object_key,
     get_media_type_from_history,
     resolve_storage_object,
@@ -234,16 +233,20 @@ def build_history_r2_candidate(
         thumbnail_file
     )
 
-    media_r2_key = (
-        build_history_r2_media_key(task_id, output_file)
-        if task_id
-        else build_flat_r2_compatibility_key(output_file)
-    )
-    thumbnail_r2_key = (
-        build_history_r2_thumbnail_key(task_id, media_type)
-        if task_id
-        else build_flat_r2_compatibility_key(thumbnail_file)
-    )
+    if task_id:
+        materialization_plan = build_r2_media_materialization_plan(
+            task_id=task_id,
+            output_file=output_file,
+            media_type=media_type,
+        )
+        media_r2_key = (
+            materialization_plan.original_copy_key
+            or build_storage_r2_object_key(output_file)
+        )
+        thumbnail_r2_key = materialization_plan.thumbnail_key
+    else:
+        media_r2_key = build_flat_r2_compatibility_key(output_file)
+        thumbnail_r2_key = build_flat_r2_compatibility_key(thumbnail_file)
 
     return HistoryR2Candidate(
         history_id=history_id,

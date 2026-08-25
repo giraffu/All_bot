@@ -541,8 +541,8 @@ def _build_restore_thumbnail(source: Path, media_type: str, output: Path) -> Non
                 "1",
                 "-vf",
                 "scale=512:-2",
-                "-c:v",
-                "libwebp",
+                "-q:v",
+                "5",
                 str(output),
             ],
             check=True,
@@ -626,6 +626,7 @@ def restore_one_asset(
 
         thumbnail_keys: list[str] = []
         if asset["role"] == "output":
+            media_type = get_archive_media_type(history_type)
             thumbnail_keys = sorted(
                 plan_archive_thumbnail_restore_keys(
                     task_id=task_id,
@@ -633,11 +634,13 @@ def restore_one_asset(
                     history_type=history_type,
                 )
             )
-            thumbnail_path = temp_path.with_suffix(".thumb.webp")
+            thumbnail_path = temp_path.with_suffix(
+                ".thumb.jpg" if media_type == "video" else ".thumb.webp"
+            )
             try:
                 thumbnail_builder(
                     temp_path,
-                    get_archive_media_type(history_type),
+                    media_type,
                     thumbnail_path,
                 )
                 thumb_sha = hashlib.sha256(thumbnail_path.read_bytes()).hexdigest()
@@ -648,7 +651,9 @@ def restore_one_asset(
                         target_bucket,
                         key,
                         ExtraArgs={
-                            "ContentType": "image/webp",
+                            "ContentType": (
+                                "image/jpeg" if media_type == "video" else "image/webp"
+                            ),
                             "Metadata": {"sha256": thumb_sha},
                         },
                     )

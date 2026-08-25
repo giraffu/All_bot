@@ -5,6 +5,7 @@ from src.media_paths import (
     build_storage_r2_object_key,
     resolve_storage_object,
 )
+from shared.r2_retention_contract import normalize_durable_media_key
 
 
 def build_thumbnail_file_path(output_file: str, media_type: str) -> str:
@@ -25,8 +26,13 @@ def build_r2_media_key_candidates(
         return []
 
     candidates: list[str] = []
+    durable_key = normalize_durable_media_key(output_file)
     if preferred_r2_object_name:
         candidates.append(preferred_r2_object_name)
+    elif durable_key and durable_key.startswith("task-results/"):
+        candidates.append(durable_key)
+        if task_id:
+            candidates.append(build_history_r2_media_key(task_id, output_file))
     elif task_id:
         candidates.append(build_history_r2_media_key(task_id, output_file))
     candidates.append(build_storage_r2_object_key(output_file))
@@ -49,8 +55,13 @@ def build_r2_thumbnail_info(
         return "", []
 
     candidates: list[str] = []
+    durable_key = normalize_durable_media_key(output_file or "")
     if preferred_r2_object_name:
         candidates.append(preferred_r2_object_name)
+    elif durable_key and durable_key.startswith("task-results/"):
+        candidates.append(build_thumbnail_file_path(durable_key, media_type))
+        if task_id:
+            candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     elif task_id:
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     candidates.append(build_storage_r2_object_key(thumb_file))

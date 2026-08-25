@@ -3,8 +3,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-from src.media_paths import resolve_storage_object
-from src.media_paths import build_history_r2_media_key, build_history_r2_thumbnail_key
+from src.media_paths import build_r2_media_materialization_plan, resolve_storage_object
 from src.media_processor import generate_and_upload_thumbnail
 from src.core.task_core_default_dependencies import (
     build_default_task_core_warmup_dependencies,
@@ -38,21 +37,30 @@ def schedule_web_history_r2_warmup(
 
     async def _runner():
         started = time.monotonic()
-        bucket_name, object_name = resolve_storage_object_func(output_file)
-        warmup_results = await asyncio.gather(
-            copy_to_r2_func(
-                bucket_name,
-                object_name,
-                build_history_r2_media_key(task_id, output_file),
-            ),
+        plan = build_r2_media_materialization_plan(
+            task_id=task_id,
+            output_file=output_file,
+            media_type=media_type,
+        )
+        step_names = []
+        warmup_steps = []
+        if plan.original_copy_key:
+            bucket_name, object_name = resolve_storage_object_func(output_file)
+            step_names.append("copy")
+            warmup_steps.append(
+                copy_to_r2_func(bucket_name, object_name, plan.original_copy_key)
+            )
+        step_names.append("thumbnail")
+        warmup_steps.append(
             generate_and_upload_thumbnail_func(
                 output_file,
                 media_type,
-                build_history_r2_thumbnail_key(task_id, media_type),
-            ),
-            return_exceptions=True,
+                plan.thumbnail_key,
+            )
         )
-        for step_name, result in zip(("copy", "thumbnail"), warmup_results):
+        warmup_results = await asyncio.gather(*warmup_steps, return_exceptions=True)
+        result_by_step = dict(zip(step_names, warmup_results))
+        for step_name, result in result_by_step.items():
             if isinstance(result, Exception):
                 logger.warning(
                     "History R2 warmup %s failed for task %s user %s source %s: %s",
@@ -62,17 +70,30 @@ def schedule_web_history_r2_warmup(
                     source,
                     result,
                 )
+        event = (
+            "history_r2_compatibility_warmup_completed"
+            if plan.uses_history_compatibility
+            else "canonical_r2_media_materialization_completed"
+        )
         logger.info(
-            "history_r2_compatibility_warmup_completed",
+            event,
             extra={
-                "event": "history_r2_compatibility_warmup_completed",
+                "event": event,
                 "task_id": task_id,
                 "source": source,
                 "media_type": media_type,
-                "copy_succeeded": not isinstance(warmup_results[0], Exception),
+                "history_compatibility_used": plan.uses_history_compatibility,
+                "telemetry_key": (
+                    "compat.r2.history_media_prefix"
+                    if plan.uses_history_compatibility
+                    else None
+                ),
+                "copy_required": plan.original_copy_key is not None,
+                "copy_succeeded": not isinstance(
+                    result_by_step.get("copy"), Exception
+                ),
                 "thumbnail_succeeded": not isinstance(
-                    warmup_results[1],
-                    Exception,
+                    result_by_step["thumbnail"], Exception
                 ),
                 "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
             },

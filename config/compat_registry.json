@@ -62,6 +62,18 @@
       "historical_data": "not_applicable"
     },
     {
+      "id": "r2-history-media-prefix",
+      "status": "active-compat",
+      "entrypoint": "src/core/media_urls.py:build_r2_media_key_candidates",
+      "owner": "gallery-storage",
+      "telemetry_key": "compat.r2.history_media_prefix",
+      "telemetry_source": "structured_warmup_event_and_visible_hotset_migration_audit",
+      "replacement": "History references canonical task-inputs/task-results keys and output thumbnails use adjacent durable keys",
+      "exit_condition": "All supported History media references complete Probe-Copy-Switch, visible hotset audit has no history-prefix-only objects, and compatibility telemetry is zero for the full observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "legacy_history_media_references_must_be_migrated_or_retained_reader_supported"
+    },
+    {
       "id": "task-type-image-to-video-literal",
       "status": "active-compat",
       "entrypoint": "src/constants.py:MODE_IMAGE_TO_VIDEO_LITERAL",

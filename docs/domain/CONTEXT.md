@@ -58,6 +58,10 @@
 - **apply-context**：从 Gallery 帖子还原可复用生成上下文的服务端入口。
 - **提示词解锁**：用户消耗灵石查看完整 prompt，并给作者入账的幂等交易。
 - **R2 可见热集**：Web/Gallery/History 用户可见媒体在 R2 中应可读的对象集合。
+- **canonical R2 媒体键**：数据库直接引用、冷恢复精确回填且只保留一份原件的
+  `task-inputs/` 或 `task-results/` 受管持久对象键；输出缩略图位于相邻标准键。
+- **History R2 兼容前缀**：`history/{task_id}/...` 遗留读取和回填别名；不再为
+  canonical 结果创建原件副本，待历史引用迁移及零命中观察完成后退役。
 
 ## 数据分析
 

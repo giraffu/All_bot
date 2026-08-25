@@ -19,7 +19,6 @@ from src.web_api.services.gallery_service_queries import (
     get_gallery_apply_context_api_payload,
     get_gallery_apply_context_payload,
 )
-from src.services.gallery_apply_context_service import GalleryApplyContextError
 from src.web_api.services.gallery_service_support import (
     logger as gallery_support_logger,
     pick_gallery_media_urls,
@@ -1841,3 +1840,66 @@ def test_build_gallery_submit_side_effects_returns_copy_and_thumbnail_jobs():
     thumb_func, thumb_args = side_effects[1]
     assert thumb_func is thumbnail_job
     assert thumb_args == ("123/output_images/task-1.png", "image", "history/task-1/thumb.webp")
+
+
+def test_gallery_submit_reuses_canonical_result_and_only_builds_thumbnail():
+    copy_job = AsyncMock()
+    thumbnail_job = AsyncMock()
+
+    side_effects = gallery_submission_effects.build_gallery_submit_side_effects(
+        task_id="registry-1",
+        output_file="task-results/backend-1/primary.mp4",
+        media_type="video",
+        copy_to_r2_background_func=copy_job,
+        generate_thumbnail_func=thumbnail_job,
+    )
+
+    assert side_effects == [
+        (
+            thumbnail_job,
+            (
+                "task-results/backend-1/primary.mp4",
+                "video",
+                "task-results/backend-1/primary_thumb.jpg",
+            ),
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gallery_checks_canonical_result_before_history_compatibility_key():
+    checked_keys = []
+
+    async def exists(key):
+        checked_keys.append(key)
+        return key == "task-results/backend-1/primary.png"
+
+    result = await gallery_media_resolver.build_gallery_media_url(
+        "task-results/backend-1/primary.png",
+        task_id="registry-1",
+        async_r2_object_exists_fn=exists,
+        build_r2_presigned_url_fn=lambda key, **_kwargs: f"https://r2/{key}",
+    )
+
+    assert result == "https://r2/task-results/backend-1/primary.png"
+    assert checked_keys == ["task-results/backend-1/primary.png"]
+
+
+@pytest.mark.asyncio
+async def test_gallery_checks_canonical_thumbnail_before_history_compatibility_key():
+    checked_keys = []
+
+    async def exists(key):
+        checked_keys.append(key)
+        return key == "task-results/backend-1/primary_thumb.webp"
+
+    result = await gallery_media_resolver.build_gallery_thumbnail_url(
+        "task-results/backend-1/primary.png",
+        "image",
+        task_id="registry-1",
+        async_r2_object_exists_fn=exists,
+        build_r2_presigned_url_fn=lambda key, **_kwargs: f"https://r2/{key}",
+    )
+
+    assert result == "https://r2/task-results/backend-1/primary_thumb.webp"
+    assert checked_keys == ["task-results/backend-1/primary_thumb.webp"]

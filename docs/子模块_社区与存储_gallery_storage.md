@@ -232,11 +232,17 @@ sequenceDiagram
 
 - History、收藏、Gallery 等集合响应不在热路径对每个媒体做公网 `HEAD` 探测；统一使用 `storage.async_r2_object_exists(...)` 已有的进程内正/负缓存与 singleflight，R2 S3 key 命中时优先返回 R2 S3 短签 URL，预签不可用时才退回公网 URL。History `extra_outputs` 必须显式传入 `s3_cached` 列表策略，禁止隐式退回公网探测。
 - Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。
-- R2 key 候选顺序为标准历史 key、原始 object key、raw `output_file`、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`；若历史值本身包含 `bot-data/...` 且 R2 曾按该 raw 前缀镜像，也会继续探测 raw 路径，兼容迁移期多种对象位置。
+- `History.output_file` 已是 `task-results/` 时，R2 key 候选先检查该 canonical
+  持久 key及其相邻缩略图，再尝试 `history/{task_id}/...` fallback；Gallery 投稿、
+  收藏和任务成功 warmup 不再复制这类标准原件。旧数字目录、flat key 或其它遗留
+  引用仍先检查标准历史兼容 key，再探测原始 object key、raw `output_file` 和旧
+  basename，直到迁移完成。
 - 正式 Web/Dashboard 运行时只使用 R2：R2 miss 后返回当前 R2/S3 短签、空值或 `pending_result`，新生成数据写入 R2。
 - Web owner `/api/tasks/{id}/result` 是保留公网快速探测的延迟敏感路径。每个 Web worker 由 `R2PublicProbeService` 复用一个 `httpx.AsyncClient` 连接池，按规范化 object key singleflight，并缓存公网命中 60 秒、404 5 秒；同 key 并发请求在缓存窗口内只发一个公网 HEAD。公网 miss 但 R2 S3 命中时，图片可返回 R2 S3 短签，视频继续 `pending_result`。
 - `input_file_url` 只生成当前 R2/S3 短签。
-- 缩略图有独立的 R2 key 选择逻辑。迁移脚本可用 `--source-storage current --generate-missing-thumbnails` 从 R2 原文件生成缺失缩略图。
+- 缩略图有独立的 R2 key 选择逻辑。标准结果只保留相邻的
+  `task-results/.../primary_thumb.webp|jpg`；遗留结果继续使用 `history/.../thumb.*`
+  fallback。迁移脚本可从 R2 原文件生成缺失缩略图。
 - Web API 在历史、用户历史和 Gallery 响应构造中会尽量先释放只读数据库事务，再进行对象存储 URL 解析、R2 探测、短签生成或缩略图处理。新增读路径时不要在 DB 事务内等待慢对象存储。
 - R2 可见热集缺失核对使用只读脚本 `scripts/audit_visible_hotset_r2_objects.py`。默认审计范围为“Web 可见热集”：每用户最近 8 条可见历史、全部 Gallery 投稿、History 收藏、Gallery like/apply 关联 active posts、prompt unlock 关联 active posts；默认对象范围为历史原文件、标准缩略图和本地 `input_file`。脚本同时检查运行时 R2 候选 key（标准 `history/{task_id}/...`、原始 object key、raw `output_file`、旧 basename）和标准 key，因此报告能区分“用户运行时会 R2 miss”与“标准 key 未补齐但 fallback key 可命中”。
 - 云正式只读审计示例：

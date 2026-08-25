@@ -80,8 +80,7 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 - 正式 Web/Dashboard 只返回当前 R2/S3 短签、公网 URL、空值或
   `pending_result`，不能生成 legacy MinIO URL。
-- 新成功 History 应物化标准 R2 原文件和缩略图；对象 key 兼容候选顺序和
-  backfill 细节以专项文档/脚本为准。
+- 新协议 History 引用 `task-results/`；缩略图相邻，旧引用留 `history/` 回填
 - 列表热路径不得对每条媒体做公网 `HEAD`，也不得在持有 DB 事务时等待 R2
   探测或短签。集合路径复用 existence cache/singleflight。
 - owner `/result` 的延迟敏感探测可以使用连接池和按 key singleflight，但
@@ -92,10 +91,9 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
   当前 Gallery R2/S3 resolver 下载目标作品并刷新。测试 Bot 不持久化缓存。
 - Worker sidecar 上传必须等 R2 put 成功后才向 Central `/complete`；不能把
   本地 spool 成功误写成已交付。
-- 用户上传 staging 转 task input 时，每个 source 只 hash 一次，copy 写 checksum
-  metadata、目标只 HEAD；多输入默认最多 3 并发且保持顺序。正式结果的
-  task-result → History 兼容 warmup 尚未退出，必须保留成本 telemetry 后再按
-  retention/归档契约单独退场。
+- staging 转 task input 每个 source 只 hash 一次，目标只 HEAD；多输入最多 3
+  并发且保序。`task-results/` 不复制原件；旧引用的 History
+  warmup/fallback 以 `compat.r2.history_media_prefix` 观测，迁移且零命中后退场。
 - 存储异常应降级用户展示但保留可恢复信息；不能因一次慢探测阻断整个 feed。
 - R2 审计、backfill、缩略图补齐和 shadow 同步默认 dry-run。执行前明确
   env、bucket、范围、cursor、方向和授权，不得把生产 env 或预签 URL输出。
