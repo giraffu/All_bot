@@ -25,6 +25,26 @@
     "queue_unavailable": "⚠️ Live queue data is unavailable right now. Please try again later.",
     "callback_expired": "This button has expired or the system was upgraded. Please send the command again."
   },
+  "alipay_checkout": {
+    "go_back": "Go back",
+    "pay_now": "Pay now",
+    "scan_title": "Alipay QR Payment",
+    "loading": "Loading payment order…",
+    "expired": "Payment link expired",
+    "failed": "Unable to open this payment order",
+    "retry_hint": "Return to the Bot and create a new payment order.",
+    "success": "Payment successful",
+    "success_hint": "Return to Telegram to confirm delivery of your credits or membership.",
+    "order_number": "Order number",
+    "order_amount": "Amount",
+    "qr_alt": "Alipay payment QR code",
+    "scan_hint": "Scan this QR code with Alipay to complete payment",
+    "product": "Product",
+    "merchant_order": "Merchant order",
+    "created_at": "Created at",
+    "scan_with_alipay": "Open Alipay Scan",
+    "scan_to_finish": "Scan the QR code to pay"
+  },
   "notification": {
     "referral_reward": "🎉 **Sect Advancement Reward!**\n\nFellow cultivator {invitee_name} has successfully joined the sect.\nYou received a bonus reward: `{reward}` Credits."
   },

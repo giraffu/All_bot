@@ -48,6 +48,10 @@ draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback
   Telegram Stars 与人民币入口。USDT 两个按钮都进入主 Vue `/billing`，
   分别携带 `method=usdt-ton&kind=membership|credits`；旧原生 TON 深链保持
   `method=ton&kind=membership`，不得把两种链上资产混成同一按钮。
+- Telegram 人民币充值命中支付宝直连白名单时，Bot 只发送 AllBot 公开结算
+  短链接；手机和电脑在同一 Vue 路由内响应式展示，二维码与手机支付按钮复用
+  同一笔 WAP 交易。callback 不直接向用户暴露支付宝签名 URL，也不按客户端
+  类型创建两笔交易。
 - 文件下载、临时目录创建与清理由服务层承接，不应在各 FSM 内重复实现。
 - 主 Bot 返佣面板提供 USDT-TON 人工兑换申请：金额、主网钱包地址、确认三步，
   最低 5 USDT，300 秒超时并支持全局菜单打断；冻结统一进入

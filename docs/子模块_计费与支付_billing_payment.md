@@ -112,10 +112,17 @@ sequenceDiagram
   HTML、404、未知状态与字段缺失一律失败并保留重试。
 - RMB provider 路由以 `ALIPAY_DIRECT_ENABLED`、`users.alipay_direct_enabled` 与
   用户选择的支付方式共同决策：只有三者同时命中支付宝时走官方直连，微信始终
-  走 `HUANYUY`。Web 与 Bot 使用同一个 `internal_user_id` 白名单；电脑 Web
-  生成 `alipay.trade.page.pay` URL，手机 Web 与 Telegram Bot 生成
-  `alipay.trade.wap.pay` URL。提供方一经写入订单不可随全局开关变化；直连创建
-  失败将订单和补偿 job 收口为失败，禁止自动创建第二条环宇交易。
+  走 `HUANYUY`。Web 与 Bot 使用同一个 `internal_user_id` 白名单。支付宝直连
+  统一只创建一笔 `alipay.trade.wap.pay` 交易，再返回公开 Vue 结算短链接：手机
+  展示订单卡、二维码和“立即支付”，电脑展示金额、二维码与订单明细；二维码和
+  按钮都通过同一个 `/launch` 跳转到该笔 WAP 交易，不按 User-Agent 再创建第二笔
+  交易。提供方一经写入订单不可随全局开关变化；直连创建失败将订单和补偿 job
+  收口为失败，禁止自动创建第二条环宇交易。
+- 直连结算短链接使用高熵 bearer token，Redis 只保存 token 摘要及订单绑定，默认
+  30 分钟失效。读取时必须同时核对本地公开业务单号、内部订单号、金额、RMB
+  通道与 `ALIPAY_DIRECT` 提供方；`/launch` 仅允许 `PENDING` 订单，并再次限制
+  跳转目标为当前配置的支付宝 HTTPS gateway。公开详情不得返回内部 ID、真实
+  支付 URL、签名或证书信息。
 - 支付宝证书模式由 `alipay_direct_service` 使用 RSA2 完成应用请求签名、应用
   证书 SN、根证书 SN、支付宝响应/回调验签和主动查单。启动时仅当
   `ALIPAY_DIRECT_ENABLED=true` 才强制要求完整 `ALIPAY_*` 配置并校验应用私钥
@@ -243,6 +250,13 @@ sequenceDiagram
   - 返回支付用途 JWT；低阶用户可使用支付路由，不能据此访问其它受限 Web 能力。
 - Web 订单状态：`GET /api/payment/orders/{order_id}/status`
   - 仅允许订单所属用户查询；成功状态额外返回 `account` 白名单摘要。
+- 支付宝直连公开结算：
+  `GET /api/payment/alipay-checkout/{token}` 与
+  `GET /api/payment/alipay-checkout/{token}/launch`
+  - 前者只返回公开订单号、商品、金额、状态和创建时间，供响应式结算页展示与
+    轮询；后者仅在订单仍为 `PENDING` 时 302 跳转到已绑定的同一笔支付宝 WAP
+    交易。token 无效返回 404，缓存过期返回 410，订单终态或绑定不一致 fail
+    closed，不把真实支付宝 URL 暴露在 JSON 中。
 
 - RMB 支付回调：`GET|POST /api/pay/notify/huanyuy`
   - 仅适用于 RMB 网关异步通知。

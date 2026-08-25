@@ -189,6 +189,20 @@ describe('router template apply guard', () => {
     expect(router.currentRoute.value.hash).toBe('#tgWebAppData=encoded-init-data')
   })
 
+  it('allows a guest to open an Alipay checkout without a Web session', async () => {
+    authStoreMock.token = ''
+    authStoreMock.user = null as any
+    checkWebAccessMock.mockReturnValue(false)
+
+    const router = await loadRouter()
+    await router.push('/pay/alipay/checkout-token')
+    await router.isReady()
+
+    expect(router.currentRoute.value.name).toBe('AlipayCheckout')
+    expect(router.currentRoute.value.params.token).toBe('checkout-token')
+    expect(authStoreMock.logout).not.toHaveBeenCalled()
+  })
+
   it('allows a payment-only user into billing but not protected Web pages', async () => {
     authStoreMock.token = 'payment-token'
     authStoreMock.sessionPurpose = 'payment'

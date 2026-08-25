@@ -38,9 +38,9 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - RMB Webhook 与主动查单共用上述履约入口；查单必须由新订单的持久化
   reconciliation job 驱动，严格核对业务单、金额和外部流水。没有稳定服务端
   查单接口时保持关闭，禁止抓取商户后台或自动点击补发。
-- RMB provider 以订单 `payment_provider` 为事实源；支付宝白名单读取
-  `users.alipay_direct_enabled`，失败不得回退。签名、回调与查单集中在
-  `alipay_direct_service`，入口通过 `rmb_payment_provider_service` 分派。
+- RMB provider 以订单 `payment_provider` 为事实源，白名单失败不得回退；直连经
+  `alipay_direct_service` 创建并只返回短期结算链接，二维码与按钮复用同笔 WAP，
+  公开详情不含签名 URL 或内部 ID。
 - Affiliate、会员结算、灵石转账和任务退款必须穿过现有账本/provider seam，
   不允许入口直接改余额。
 - Affiliate 人工兑 USDT 使用 `PENDING OUT` 冻结，确认时原流水转 `SUCCESS`，
@@ -93,7 +93,7 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
   channel 隔离。
 - 履约：相同外部流水幂等、金额不符 fail fast、事务回滚无部分资产、通知失败
   不改变履约事实；RMB provider 固化、支付宝 RSA2/身份/金额、环宇回调、查单
-  竞态、lease 恢复和退避耗尽。
+  竞态、lease 恢复和退避耗尽；直连 token、绑定与终态 launch 必须 fail closed。
 - 账本：并发扣费/兑换/转账、同幂等同参数稳定返回、同键不同参数冲突。
 - 任务：单阶段与多阶段只扣一次，重复取消/终态只退一次，History/workflow
   override 不改变业务价格。
