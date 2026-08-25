@@ -1415,6 +1415,24 @@ _MINIMAX_H3_PRECISION_PRESETS = {
     "hd": "0.65 MP - Balanced",
 }
 _MINIMAX_H3_FRAME_COUNT_BY_DURATION = {5: 124, 10: 243, 15: 362}
+_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
+    "model_input": ["1", 0],
+    "sampler_name": "er_sde",
+    "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00",
+}
+_MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE = {
+    "model_input": ["8", 0],
+    "sampler_name": "euler",
+    "scheduler": "simple",
+    "steps": 8,
+}
+_MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE = {
+    "model_input": ["1", 0],
+    "sampler_name": "res_multistep",
+    "scheduler": "simple",
+    "steps": 20,
+    "ref_image_size": "max",
+}
 
 
 def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
@@ -1432,6 +1450,46 @@ def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
         return _MINIMAX_H3_FRAME_COUNT_BY_DURATION[duration]
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("invalid MiniMax H3 duration") from exc
+
+
+def _apply_minimax_h3_execution_profile(
+    workflow: dict[str, Any],
+    *,
+    main_model: str,
+    task_type: str,
+) -> list[Any]:
+    if main_model != MINIMAX_H3_MAIN_MODEL_OFFICIAL:
+        profile = _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
+    elif task_type == "minimax_h3_ref2v":
+        profile = _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE
+    else:
+        profile = _MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE
+
+    workflow["33"] = {
+        "inputs": {"sampler_name": profile["sampler_name"]},
+        "class_type": "KSamplerSelect",
+    }
+    sigmas = profile.get("sigmas")
+    if sigmas is not None:
+        workflow["34"] = {
+            "inputs": {"sigmas": sigmas},
+            "class_type": "ManualSigmas",
+        }
+    else:
+        workflow["34"] = {
+            "inputs": {
+                "model": ["7", 0],
+                "scheduler": profile["scheduler"],
+                "steps": profile["steps"],
+                "denoise": 1.0,
+            },
+            "class_type": "BasicScheduler",
+        }
+    if task_type == "minimax_h3_ref2v":
+        workflow["30"]["inputs"]["ref_image_size"] = profile.get(
+            "ref_image_size", "match"
+        )
+    return list(profile["model_input"])
 
 
 def patch_minimax_h3_workflow(
@@ -1478,37 +1536,11 @@ def patch_minimax_h3_workflow(
             raise ValueError(f"invalid MiniMax H3 main model: {message}") from exc
         raise ValueError(f"invalid MiniMax H3 addon configuration: {message}") from exc
     workflow["1"]["inputs"]["unet_name"] = spec.model_name
-    use_official_fl2va = (
-        spec.main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
-        and task_type != "minimax_h3_ref2v"
+    model_input = _apply_minimax_h3_execution_profile(
+        workflow,
+        main_model=spec.main_model,
+        task_type=task_type,
     )
-    if use_official_fl2va:
-        model_input = ["8", 0]
-        workflow["33"] = {
-            "inputs": {"sampler_name": "euler"},
-            "class_type": "KSamplerSelect",
-        }
-        workflow["34"] = {
-            "inputs": {
-                "model": ["7", 0],
-                "scheduler": "simple",
-                "steps": 8,
-                "denoise": 1.0,
-            },
-            "class_type": "BasicScheduler",
-        }
-    else:
-        model_input = ["1", 0]
-        workflow["33"] = {
-            "inputs": {"sampler_name": "er_sde"},
-            "class_type": "KSamplerSelect",
-        }
-        workflow["34"] = {
-            "inputs": {
-                "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
-            },
-            "class_type": "ManualSigmas",
-        }
     prompt_parts: list[str] = []
     for offset, selection in enumerate(addon_items):
         addon = MINIMAX_H3_ADDON_MODELS[selection.name]

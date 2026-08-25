@@ -59,10 +59,10 @@ MINIMAX_H3_MAIN_MODELS = (
     MINIMAX_H3_MAIN_MODEL_OFFICIAL,
 )
 MINIMAX_H3_OFFICIAL_MODEL_FL = (
-    "MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
+    "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 )
 MINIMAX_H3_OFFICIAL_MODEL_REF = (
-    "MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+    "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 )
 MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
 MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0

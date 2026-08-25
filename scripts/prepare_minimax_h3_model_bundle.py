@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-26-10eros-v3-official-h3-addon17"
+VERSION = "2026-08-26-10eros-v3-official-int8-h3-addon17"
 MIN_FREE_BYTES = 110 * 1024**3
 FILES = (
     (
@@ -30,16 +30,16 @@ FILES = (
         "https://huggingface.co/TenStrip/10Eros-Max/resolve/47be06381f1a558f5fbd96e94d808d61fb164006/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
     ),
     (
-        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
-        "12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993",
-        20_958_205_608,
-        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+        20_970_379_616,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
     ),
     (
-        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
-        "f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9",
-        20_958_205_608,
-        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779",
+        20_970_379_616,
+        "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/4cc1d817b6184899b41293954329f576cb5ae86b/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     ),
     (
         "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
