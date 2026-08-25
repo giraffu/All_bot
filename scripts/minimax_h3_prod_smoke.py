@@ -123,6 +123,7 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
         duration: int = 5,
         resolution_preset: str = "preview",
         images: list[str] | None = None,
+        main_model: str | None = None,
     ) -> dict[str, Any]:
         inputs: dict[str, Any] = {
             "duration": duration,
@@ -137,6 +138,8 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
         }
         if images is not None:
             inputs["images"] = images
+        if main_model is not None:
+            inputs["main_model"] = main_model
         return {
             "label": label,
             "expected_central_task_type": task_type,
@@ -160,6 +163,18 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
             "minimax_h3_flf2v_5s_preview",
             "minimax_h3_flf2v",
             images=[image_key, end_image_key],
+        ),
+        task(
+            "minimax_h3_ref2v_10eros_5s_preview",
+            "minimax_h3_ref2v",
+            images=[image_key],
+            main_model="10eros",
+        ),
+        task(
+            "minimax_h3_ref2v_official_5s_preview",
+            "minimax_h3_ref2v",
+            images=[image_key],
+            main_model="official",
         ),
         task(
             "minimax_h3_t2v_10s_standard",

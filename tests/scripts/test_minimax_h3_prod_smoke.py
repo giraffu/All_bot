@@ -27,22 +27,33 @@ def test_minimax_h3_smoke_uses_existing_operator_canary_jwt_channel(monkeypatch)
     assert config.web_bearer_token == ""
 
 
-def test_minimax_h3_smoke_builds_three_public_preview_modes_then_standard_t2v():
+def test_minimax_h3_smoke_covers_both_ref2v_execution_profiles():
     cases = build_cases(image_key="inputs/first.png", end_image_key="inputs/last.png")
 
     assert [case["expected_central_task_type"] for case in cases] == [
-        *EXPECTED_TYPES,
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+        "minimax_h3_ref2v",
         "minimax_h3_t2v",
     ]
-    assert [case["expected_duration"] for case in cases] == [5, 5, 5, 10]
+    assert [case["expected_duration"] for case in cases] == [5, 5, 5, 5, 5, 10]
     assert cases[2]["payload"]["inputs"]["images"] == [
         "inputs/first.png",
         "inputs/last.png",
     ]
-    assert cases[3]["payload"]["inputs"]["resolution_preset"] == "standard"
+    assert cases[3]["payload"]["inputs"]["main_model"] == "10eros"
+    assert cases[4]["payload"]["inputs"]["main_model"] == "official"
+    assert cases[3]["payload"]["inputs"]["images"] == ["inputs/first.png"]
+    assert cases[4]["payload"]["inputs"]["images"] == ["inputs/first.png"]
+    assert cases[5]["payload"]["inputs"]["resolution_preset"] == "standard"
     assert cases[0]["payload"]["inputs"]["aspect_ratio"] == "16:9"
     assert cases[1]["payload"]["inputs"]["aspect_ratio"] == "source"
     assert cases[2]["payload"]["inputs"]["aspect_ratio"] == "source"
+    assert set(EXPECTED_TYPES) == {
+        case["expected_central_task_type"] for case in cases
+    }
 
 
 def test_minimax_h3_smoke_rejects_all_black_video_signalstats():
