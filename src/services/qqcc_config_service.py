@@ -18,7 +18,8 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_REF2V,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
     MINIMAX_H3_MAIN_MODELS,
-    build_minimax_h3_spec,
+    MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
+    MINIMAX_H3_REF2V_PRICE_BY_DURATION,
 )
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
@@ -115,7 +116,6 @@ DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
 FILTER_SCENE_MAX_COUNT = 20
 DEFAULT_SCENE_CREDIT_COSTS = {
     "video": 6,
-    "ai_video": 10,
     "draw": 2,
     "filter": 2,
 }
@@ -995,19 +995,6 @@ def _normalize_ai_video_scene(
         and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
         else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
     )
-    derived_ref2v_cost = (
-        build_minimax_h3_spec(
-            MINIMAX_H3_REF2V,
-            {
-                "images": ["subject", "selected-template"],
-                "duration": duration,
-                "resolution_preset": resolution,
-                "aspect_ratio": aspect_ratio,
-            },
-        ).cost
-        if mode == "ref2v"
-        else None
-    )
     scene = {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
@@ -1027,10 +1014,7 @@ def _normalize_ai_video_scene(
         "reference_images": reference_images,
         "aspect_ratio": aspect_ratio,
         "lora_items": lora_items,
-        "credit_cost": (
-            _normalize_scene_credit_cost(raw_scene.get("credit_cost"))
-            or derived_ref2v_cost
-        ),
+        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
             None if mode == "ref2v" else raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
@@ -1865,6 +1849,16 @@ def build_qqcc_config_options() -> dict[str, Any]:
             {"value": "hd", "label": "高清（约 810p）"},
         ],
         "default_scene_credit_costs": dict(DEFAULT_SCENE_CREDIT_COSTS),
+        "ai_video_credit_costs": {
+            "i2v": {
+                duration: dict(costs)
+                for duration, costs in MINIMAX_H3_NORMAL_PRICE_BY_DURATION.items()
+            },
+            "ref2v": {
+                duration: dict(costs)
+                for duration, costs in MINIMAX_H3_REF2V_PRICE_BY_DURATION.items()
+            },
+        },
         "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),
         "video_engines": [
             {

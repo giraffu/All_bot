@@ -34,15 +34,17 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 ## 请求契约
 
 - 公共字段为非空 `prompt`、`duration=5|10|15`、
-  `resolution_preset=preview|small|standard|hd` 和可选 `seed`。四档普通模式每 5 秒
-  分别计 10/15/20/30 点。
+  `resolution_preset=preview|small|standard|hd` 和可选 `seed`。普通模式按
+  `5/10/15` 秒分别使用完整四档价格矩阵：`9/10/13/15`、
+  `12/15/24/30`、`17/24/38/53`；不再用 5 秒基础价线性倍乘。
 - `main_model` 只允许 `10eros|official`，缺失时为 `10eros`。该选择同时
   覆盖 I2V/FLF2V 所用 FL2VA checkpoint 和 REF2V 所用 Ref2VA checkpoint；
   未知值在领域层和 Worker 层都 fail closed。
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
 - REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
-  REF2V 每 5 秒的 `preview/small/standard/hd` 价格为 `15/23/30/45`，10/15 秒按
-  2/3 倍计算。
+  REF2V 按 `5/10/15` 秒分别使用完整四档价格矩阵：`10/11/15/20`、
+  `15/21/33/45`、`23/34/58/82`。矩阵来自 5 秒 GPU/灵石基准的整数价格，
+  普通模式应用 `1.05`、REF2V 应用 `1.15` 系数后再次向上取整。
 - Web REF2V 使用有序 `reference_refs`。当前用户从私人人物中逐张选择 ready 子图，
   同一人物可选择多个不同视图，也可与临时上传混排：
 

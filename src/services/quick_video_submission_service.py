@@ -26,7 +26,7 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_REF2V,
-    build_minimax_h3_spec,
+    get_minimax_h3_cost,
 )
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.video_frame_aspect_service import validate_video_frame_aspects
@@ -453,18 +453,12 @@ def _build_qqcc_ai_video_chain_segment(
         ),
         resolution=str(scene.get("resolution") or "preview"),
         duration=f"{duration_seconds}s",
-        cost=(
-            build_minimax_h3_spec(
-                MINIMAX_H3_REF2V,
-                {
-                    "images": ["subject", *scene.get("reference_images", [])],
-                    "duration": duration_seconds,
-                    "resolution_preset": str(scene.get("resolution") or "preview"),
-                    "aspect_ratio": str(scene.get("aspect_ratio") or "16:9"),
-                },
-            ).cost
+        cost=get_minimax_h3_cost(
+            MINIMAX_H3_REF2V
             if scene_mode == "ref2v"
-            else 10 * (duration_seconds // 5)
+            else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+            duration=duration_seconds,
+            resolution_preset=str(scene.get("resolution") or "preview"),
         )
         + calculate_qqcc_draw_chain_cost(tail_draw_chain),
         default_prompt_key=MINIMAX_H3_I2V,

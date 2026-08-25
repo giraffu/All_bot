@@ -59,6 +59,7 @@ import { useLtxChainEditor } from './lab-workbench/useLtxChainEditor'
 import { useLabTemplateHydration } from './lab-workbench/useLabTemplateHydration'
 import { useLabSubmitPayload } from './lab-workbench/useLabSubmitPayload'
 import { usePromptOptimizer } from './lab-workbench/usePromptOptimizer'
+import { getMinimaxH3Cost } from '@/utils/minimaxH3Template'
 
 export {
   SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
@@ -348,10 +349,11 @@ export function useLabWorkbench() {
     hasCharacter: useT2VReferences.value,
   }))
   const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
-      ? ((minimaxH3Mode.value === 'ref2v'
-        ? { preview: 15, small: 23, standard: 30, hd: 45 }
-        : { preview: 10, small: 15, standard: 20, hd: 30 }
-      )[minimaxH3ResolutionPreset.value]) * Number(duration.value) / 5
+      ? getMinimaxH3Cost(
+        minimaxH3Mode.value === 'ref2v' ? 'ref2v' : 'normal',
+        minimaxH3ResolutionPreset.value,
+        Number(duration.value),
+      )
     : cost.value)
 
   const costHint = computed(() => {

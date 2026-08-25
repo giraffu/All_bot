@@ -51,6 +51,10 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
 )
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
+    MINIMAX_H3_REF2V_PRICE_BY_DURATION,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,7 +532,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile="minimax_h3",
         is_generation=True,
         is_video=True,
-        cost=10,
+        cost=MINIMAX_H3_NORMAL_PRICE_BY_DURATION[5]["preview"],
     ),
     MODE_MINIMAX_H3_I2V: _entry(
         MODE_MINIMAX_H3_I2V,
@@ -538,7 +542,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         is_generation=True,
         is_video=True,
         gallery_supported=True,
-        cost=10,
+        cost=MINIMAX_H3_NORMAL_PRICE_BY_DURATION[5]["preview"],
     ),
     MODE_MINIMAX_H3_FLF2V: _entry(
         MODE_MINIMAX_H3_FLF2V,
@@ -548,7 +552,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         is_generation=True,
         is_video=True,
         gallery_supported=True,
-        cost=10,
+        cost=MINIMAX_H3_NORMAL_PRICE_BY_DURATION[5]["preview"],
     ),
     MODE_MINIMAX_H3_REF2V: _entry(
         MODE_MINIMAX_H3_REF2V,
@@ -557,7 +561,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile=None,
         is_generation=True,
         is_video=True,
-        cost=15,
+        cost=MINIMAX_H3_REF2V_PRICE_BY_DURATION[5]["preview"],
     ),
     MODE_CHARACTER_REFERENCE_BUILD: _entry(
         MODE_CHARACTER_REFERENCE_BUILD,

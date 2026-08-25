@@ -80,7 +80,7 @@ def test_qqcc_ref2v_scene_preserves_custom_price_and_reference_order(reference_c
     assert scene["next_scene_id"] is None
 
 
-def test_qqcc_ref2v_scene_uses_price_matrix_when_custom_price_is_empty():
+def test_qqcc_ref2v_scene_keeps_dynamic_model_price_when_custom_price_is_empty():
     scene = normalize_qqcc_config(
         {
             "ai_video_scenes": [
@@ -100,7 +100,7 @@ def test_qqcc_ref2v_scene_uses_price_matrix_when_custom_price_is_empty():
         }
     )["ai_video_scenes"][0]
 
-    assert scene["credit_cost"] == 135
+    assert scene["credit_cost"] is None
 
 
 def test_qqcc_ref2v_templates_preserve_display_names_and_telegram_file_ids():
@@ -348,9 +348,23 @@ def test_validate_qqcc_scene_credit_costs_rejects_invalid_explicit_values(
 def test_build_qqcc_config_options_exposes_scene_credit_cost_defaults():
     assert build_qqcc_config_options()["default_scene_credit_costs"] == {
         "video": 6,
-        "ai_video": 10,
         "draw": 2,
         "filter": 2,
+    }
+
+
+def test_build_qqcc_config_options_exposes_h3_dynamic_price_matrix():
+    assert build_qqcc_config_options()["ai_video_credit_costs"] == {
+        "i2v": {
+            5: {"preview": 9, "small": 10, "standard": 13, "hd": 15},
+            10: {"preview": 12, "small": 15, "standard": 24, "hd": 30},
+            15: {"preview": 17, "small": 24, "standard": 38, "hd": 53},
+        },
+        "ref2v": {
+            5: {"preview": 10, "small": 11, "standard": 15, "hd": 20},
+            10: {"preview": 15, "small": 21, "standard": 33, "hd": 45},
+            15: {"preview": 23, "small": 34, "standard": 58, "hd": 82},
+        },
     }
 
 

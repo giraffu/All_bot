@@ -16,6 +16,10 @@ export type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 export type AiVideoSceneEngine = 'minimax_h3'
 export type AiVideoMainModel = '10eros' | 'official'
 export type AiVideoMode = 'i2v' | 'ref2v'
+export type AiVideoCreditCosts = Partial<Record<
+  AiVideoMode,
+  Partial<Record<AiVideoDurationKey, Partial<Record<AiVideoResolutionKey, number>>>>
+>>
 export type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 export type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 export type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
@@ -164,6 +168,7 @@ export interface QqccBotConfigOptions {
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
+  ai_video_credit_costs: AiVideoCreditCosts
 }
 
 export interface QqccBotConfigResponse {

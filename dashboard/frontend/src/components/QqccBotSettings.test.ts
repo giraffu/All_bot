@@ -382,9 +382,20 @@ describe('QqccBotSettings', () => {
         ],
         default_scene_credit_costs: {
           video: 6,
-          ai_video: 10,
           draw: 2,
           filter: 2,
+        },
+        ai_video_credit_costs: {
+          i2v: {
+            5: { preview: 9, small: 10, standard: 13, hd: 15 },
+            10: { preview: 12, small: 15, standard: 24, hd: 30 },
+            15: { preview: 17, small: 24, standard: 38, hd: 53 },
+          },
+          ref2v: {
+            5: { preview: 10, small: 11, standard: 15, hd: 20 },
+            10: { preview: 15, small: 21, standard: 33, hd: 45 },
+            15: { preview: 23, small: 34, standard: 58, hd: 82 },
+          },
         },
       },
     })
@@ -974,6 +985,47 @@ describe('QqccBotSettings', () => {
       .toBe('small')
   })
 
+  it('shows the dynamic H3 default price for the selected scene parameters', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        scene_preset_version: 1,
+        global_enabled: true,
+        video_scenes: [],
+        ai_video_scenes: [{
+          id: 'priced-video',
+          name: '清晰视频',
+          prompt: 'camera orbit',
+          negative_prompt: '',
+          duration: 10,
+          resolution: 'small',
+          engine: 'minimax_h3',
+          mode: 'i2v',
+          lora_items: [],
+          credit_cost: null,
+        }],
+        draw_scenes: [],
+        filter_scenes: [],
+      },
+      options: {
+        ai_video_credit_costs: {
+          i2v: {
+            10: { small: 15 },
+          },
+        },
+      },
+    })
+
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="scene-config-credit-cost"]').attributes('placeholder'))
+      .toBe('未配置/默认 15 灵石')
+  })
+
   it('opens official REF2V scenes with ordered reference previews and omits signed URLs on save', async () => {
     const references = [
       'qqcc/config/ref2v/ai_video/ref/reference-a/input',
@@ -1079,7 +1131,7 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
   })
 
-  it('loads legacy scene prices as empty and uses backend defaults for new scenes', async () => {
+  it('keeps H3 prices dynamic while applying fixed defaults to other new scenes', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
@@ -1100,12 +1152,16 @@ describe('QqccBotSettings', () => {
 
     for (const [testId, expected] of [
       ['config-video-scene-1', '6'],
-      ['config-ai-video-scene-0', '10'],
+      ['config-ai-video-scene-0', ''],
       ['config-draw-scene-3', '2'],
       ['config-filter-scene-1', '2'],
     ]) {
       await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
       expect((wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value).toBe(expected)
+      if (testId === 'config-ai-video-scene-0') {
+        expect(wrapper.get('[data-testid="scene-config-credit-cost"]').attributes('placeholder'))
+          .toBe('未配置/默认 9 灵石')
+      }
       await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     }
   })
