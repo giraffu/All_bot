@@ -20,6 +20,8 @@ from scripts.history_media_r2_retirement import (
     RETIREMENT_DDL,
     RetirementRequestExecutors,
     RetirementHeadConcurrencyController,
+    _bulk_predecessor_is_replaceable,
+    _bulk_predecessor_live_reference_proof,
     _durability_archive_config,
     _delete_sources,
     _ensure_retirement_blocker_indexes,
@@ -27,8 +29,6 @@ from scripts.history_media_r2_retirement import (
     _expected_switch_counts,
     _head_candidates,
     _head_source_candidates,
-    _bulk_predecessor_is_replaceable,
-    _bulk_predecessor_live_reference_proof,
     _live_reference_counts_with_retry,
     _parser,
     _mark_retirement_plan_paused,
@@ -43,6 +43,7 @@ from scripts.history_media_r2_retirement import (
     _validate_retirement_execution_policy,
     build_bulk_retirement_plan,
     build_bulk_retirement_successor_manifest,
+    build_bulk_switch_scope_facts,
     build_retirement_plan,
     classify_retirement_candidate,
     validate_delete_gate,
@@ -1374,6 +1375,164 @@ def test_bulk_switch_count_parser_is_exact_and_fail_closed():
         _expected_switch_counts(["a" * 64 + "=1", "a" * 64 + "=1"])
 
 
+def test_bulk_switch_scope_accepts_terminal_rolling_predecessor_with_exact_successor():
+    predecessor = "a" * 64
+    successor = "b" * 64
+    plan_rows = [
+        {
+            "plan_sha256": predecessor,
+            "rowset_sha256": "c" * 64,
+            "manifest": {
+                "plan_sha256": predecessor,
+                "count": 4,
+            },
+        },
+        {
+            "plan_sha256": successor,
+            "rowset_sha256": "d" * 64,
+            "manifest": {
+                "plan_sha256": successor,
+                "count": 2,
+                "predecessor_switch_plan_sha256s": [predecessor],
+            },
+        },
+    ]
+    batch_rows = [
+        {
+            "plan_sha256": predecessor,
+            "batch_no": 0,
+            "status": "completed",
+            "asset_count": 2,
+            "rowset_sha256": "1" * 64,
+        },
+        {
+            "plan_sha256": predecessor,
+            "batch_no": 1,
+            "status": "superseded",
+            "asset_count": 2,
+            "rowset_sha256": "2" * 64,
+        },
+        {
+            "plan_sha256": successor,
+            "batch_no": 0,
+            "status": "completed",
+            "asset_count": 2,
+            "rowset_sha256": "2" * 64,
+        },
+    ]
+
+    facts = build_bulk_switch_scope_facts(
+        plan_rows=plan_rows,
+        batch_rows=batch_rows,
+        expected_counts={predecessor: 2, successor: 2},
+    )
+
+    assert facts[predecessor]["asset_coordinate_count"] == 2
+    assert facts[predecessor]["root_asset_coordinate_count"] == 4
+    assert facts[predecessor]["superseded_asset_coordinate_count"] == 2
+    assert facts[predecessor]["terminal_successor_plan_sha256"] == successor
+    assert facts[predecessor]["completed_batches_sha256"] != facts[predecessor][
+        "superseded_batches_sha256"
+    ]
+    assert facts[successor]["superseded_asset_coordinate_count"] == 0
+
+
+def test_bulk_switch_scope_rejects_unconserved_rolling_predecessor():
+    predecessor = "a" * 64
+    successor = "b" * 64
+    plan_rows = [
+        {
+            "plan_sha256": predecessor,
+            "rowset_sha256": "c" * 64,
+            "manifest": {"plan_sha256": predecessor, "count": 4},
+        },
+        {
+            "plan_sha256": successor,
+            "rowset_sha256": "d" * 64,
+            "manifest": {
+                "plan_sha256": successor,
+                "count": 2,
+                "predecessor_switch_plan_sha256s": [predecessor],
+            },
+        },
+    ]
+    batch_rows = [
+        {
+            "plan_sha256": predecessor,
+            "batch_no": 0,
+            "status": "completed",
+            "asset_count": 2,
+            "rowset_sha256": "1" * 64,
+        },
+        {
+            "plan_sha256": predecessor,
+            "batch_no": 1,
+            "status": "superseded",
+            "asset_count": 2,
+            "rowset_sha256": "2" * 64,
+        },
+        {
+            "plan_sha256": successor,
+            "batch_no": 0,
+            "status": "completed",
+            "asset_count": 2,
+            "rowset_sha256": "3" * 64,
+        },
+    ]
+
+    with pytest.raises(RuntimeError, match="superseded Switch scope"):
+        build_bulk_switch_scope_facts(
+            plan_rows=plan_rows,
+            batch_rows=batch_rows,
+            expected_counts={predecessor: 2, successor: 2},
+        )
+
+
+def test_bulk_switch_scope_accepts_exact_legacy_plan_without_batch_ledger():
+    plan_sha = "a" * 64
+
+    facts = build_bulk_switch_scope_facts(
+        plan_rows=[
+            {
+                "plan_sha256": plan_sha,
+                "rowset_sha256": "b" * 64,
+                "manifest": {"plan_sha256": plan_sha, "count": 3},
+            }
+        ],
+        batch_rows=[],
+        expected_counts={plan_sha: 3},
+    )
+
+    assert facts[plan_sha]["terminal_scope_mode"] == "legacy-plan-rowset"
+    assert facts[plan_sha]["root_asset_coordinate_count"] == 3
+    assert facts[plan_sha]["superseded_asset_coordinate_count"] == 0
+
+
+def test_bulk_switch_scope_rejects_nonterminal_batch_status():
+    plan_sha = "a" * 64
+
+    with pytest.raises(RuntimeError, match="parent Switch is incomplete"):
+        build_bulk_switch_scope_facts(
+            plan_rows=[
+                {
+                    "plan_sha256": plan_sha,
+                    "rowset_sha256": "b" * 64,
+                    "manifest": {"plan_sha256": plan_sha, "count": 3},
+                }
+            ],
+            batch_rows=[
+                {
+                    "plan_sha256": plan_sha,
+                    "batch_no": 0,
+                    "status": "running",
+                    "asset_count": 3,
+                    "rowset_sha256": "c" * 64,
+                }
+            ],
+            expected_counts={plan_sha: 3},
+        )
+
+
 def test_delete_gate_is_distinct_from_copy_and_switch_tokens():
     plan = "a" * 64
     validate_delete_gate(
@@ -1456,6 +1615,7 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "delete_bucket" not in bulk_source
 
     planner_source = inspect.getsource(module._plan_bulk_delete)
+    assert "build_bulk_switch_scope_facts" in planner_source
     assert "_bulk_scope_fingerprint" in planner_source
     assert "_prepare_bulk_retirement_stage" in planner_source
     assert "_bulk_production_has_live_refs" in planner_source
@@ -1494,6 +1654,7 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "sha256" in scope_source
     assert ".cursor(" not in scope_source
     preflight_source = inspect.getsource(module._bulk_global_preflight)
+    assert "build_bulk_switch_scope_facts" in preflight_source
     assert "_bulk_plan_coverage_counts" in preflight_source
     assert "batches_sha256" in preflight_source
     finalizer_source = inspect.getsource(module._finalize_bulk_delete)

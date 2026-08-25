@@ -2444,6 +2444,168 @@ def _expected_switch_counts(values: Iterable[str]) -> dict[str, int]:
     return parsed
 
 
+def _switch_batch_proof(
+    rows: Iterable[dict[str, Any]], *, include_batch_no: bool
+) -> str:
+    identities = []
+    for row in sorted(rows, key=lambda item: int(item["batch_no"])):
+        identity = {
+            "asset_count": int(row["asset_count"]),
+            "rowset_sha256": str(row["rowset_sha256"]),
+        }
+        if include_batch_no:
+            identity["batch_no"] = int(row["batch_no"])
+        identities.append(identity)
+    return _sha256_json(identities)
+
+
+def build_bulk_switch_scope_facts(
+    *,
+    plan_rows: Iterable[dict[str, Any]],
+    batch_rows: Iterable[dict[str, Any]],
+    expected_counts: dict[str, int],
+) -> dict[str, dict[str, Any]]:
+    """Freeze exact completed Switch scopes, including terminal predecessors."""
+
+    plans: dict[str, dict[str, Any]] = {}
+    for raw in plan_rows:
+        row = dict(raw)
+        plan_sha = str(row["plan_sha256"])
+        manifest = (
+            json.loads(row["manifest"])
+            if isinstance(row["manifest"], str)
+            else dict(row["manifest"])
+        )
+        plans[plan_sha] = {
+            "manifest": manifest,
+            "rowset_sha256": str(row["rowset_sha256"]),
+        }
+    if set(plans) != set(expected_counts):
+        raise RuntimeError("bulk retirement Switch plan set changed")
+
+    batches_by_plan: dict[str, list[dict[str, Any]]] = {
+        plan_sha: [] for plan_sha in plans
+    }
+    for raw in batch_rows:
+        row = dict(raw)
+        plan_sha = str(row["plan_sha256"])
+        if plan_sha not in batches_by_plan:
+            raise RuntimeError("bulk retirement Switch batch owner changed")
+        batches_by_plan[plan_sha].append(row)
+
+    facts: dict[str, dict[str, Any]] = {}
+    normalized_completed_proofs: dict[str, str] = {}
+    for plan_sha in sorted(plans):
+        manifest = plans[plan_sha]["manifest"]
+        expected_count = int(expected_counts[plan_sha])
+        root_count = int(manifest.get("count") or 0)
+        if root_count < expected_count:
+            raise RuntimeError("bulk retirement Switch root scope changed")
+        rows = sorted(
+            batches_by_plan[plan_sha], key=lambda item: int(item["batch_no"])
+        )
+        if not rows:
+            if root_count != expected_count:
+                raise RuntimeError("legacy bulk retirement Switch scope changed")
+            empty_proof = _sha256_json([])
+            normalized_completed_proofs[plan_sha] = empty_proof
+            facts[plan_sha] = {
+                "switch_plan_sha256": plan_sha,
+                "asset_coordinate_count": expected_count,
+                "rowset_sha256": plans[plan_sha]["rowset_sha256"],
+                "terminal_scope_mode": "legacy-plan-rowset",
+                "root_asset_coordinate_count": root_count,
+                "completed_batch_count": 0,
+                "completed_batches_sha256": empty_proof,
+                "superseded_batch_count": 0,
+                "superseded_asset_coordinate_count": 0,
+                "superseded_batches_sha256": empty_proof,
+            }
+            continue
+
+        batch_nos = [int(row["batch_no"]) for row in rows]
+        if batch_nos != list(range(len(rows))):
+            raise RuntimeError("bulk retirement Switch batch sequence changed")
+
+        invalid_statuses = {
+            str(row["status"])
+            for row in rows
+            if str(row["status"]) not in {"completed", "superseded"}
+        }
+        if invalid_statuses:
+            raise RuntimeError("bulk retirement parent Switch is incomplete")
+        completed = [row for row in rows if str(row["status"]) == "completed"]
+        superseded = [row for row in rows if str(row["status"]) == "superseded"]
+        if not completed:
+            raise RuntimeError("bulk retirement completed Switch scope changed")
+        if superseded and int(completed[-1]["batch_no"]) >= int(
+            superseded[0]["batch_no"]
+        ):
+            raise RuntimeError("bulk retirement Switch terminal boundary changed")
+        completed_count = sum(int(row["asset_count"]) for row in completed)
+        superseded_count = sum(int(row["asset_count"]) for row in superseded)
+        if completed_count != expected_count:
+            raise RuntimeError("bulk retirement completed Switch scope changed")
+        if completed_count + superseded_count != root_count:
+            raise RuntimeError("bulk retirement Switch root conservation changed")
+        normalized_completed_proofs[plan_sha] = _switch_batch_proof(
+            completed, include_batch_no=False
+        )
+        facts[plan_sha] = {
+            "switch_plan_sha256": plan_sha,
+            "asset_coordinate_count": expected_count,
+            "rowset_sha256": plans[plan_sha]["rowset_sha256"],
+            "terminal_scope_mode": "completed-batches",
+            "root_asset_coordinate_count": root_count,
+            "completed_batch_count": len(completed),
+            "completed_batches_sha256": _switch_batch_proof(
+                completed, include_batch_no=True
+            ),
+            "superseded_batch_count": len(superseded),
+            "superseded_asset_coordinate_count": superseded_count,
+            "superseded_batches_sha256": _switch_batch_proof(
+                superseded, include_batch_no=False
+            ),
+        }
+
+    for plan_sha, scope in facts.items():
+        superseded_count = int(scope["superseded_asset_coordinate_count"])
+        if not superseded_count:
+            continue
+        successors = []
+        for candidate_sha, candidate in facts.items():
+            if candidate_sha == plan_sha or int(
+                candidate["superseded_asset_coordinate_count"]
+            ):
+                continue
+            candidate_manifest = plans[candidate_sha]["manifest"]
+            predecessor_chain = {
+                str(value)
+                for value in candidate_manifest.get(
+                    "predecessor_switch_plan_sha256s", []
+                )
+            }
+            single_predecessor = str(
+                candidate_manifest.get("predecessor_switch_plan_sha256") or ""
+            )
+            if single_predecessor:
+                predecessor_chain.add(single_predecessor)
+            if (
+                plan_sha in predecessor_chain
+                and int(candidate["asset_coordinate_count"]) == superseded_count
+                and normalized_completed_proofs[candidate_sha]
+                == scope["superseded_batches_sha256"]
+            ):
+                successors.append(candidate_sha)
+        if len(successors) != 1:
+            raise RuntimeError(
+                "bulk retirement superseded Switch scope is not conserved"
+            )
+        scope["terminal_successor_plan_sha256"] = successors[0]
+
+    return facts
+
+
 def _stream_json_identity(
     hasher: Any, identity: dict[str, Any], *, first: bool
 ) -> bool:
@@ -3623,23 +3785,18 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         run_ids = {str(row["run_id"]) for row in plan_rows}
         if len(run_ids) != 1:
             raise RuntimeError("bulk retirement Switch plans belong to different runs")
-        switch_rowsets = {
-            str(row["plan_sha256"]): str(row["rowset_sha256"]) for row in plan_rows
-        }
-        batch_proofs = await ledger.fetch(
-            """select plan_sha256,count(*) batch_count,
-                      count(*) filter(where status<>'completed') incomplete_batches,
-                      coalesce(sum(asset_count),0) asset_count
+        switch_batch_rows = await ledger.fetch(
+            """select plan_sha256,batch_no,status,asset_count,rowset_sha256
                  from analytics_history_media_migration_plan_batches
-                where plan_sha256=any($1::text[]) group by plan_sha256""",
+                where plan_sha256=any($1::text[])
+                order by plan_sha256,batch_no""",
             switch_plans,
         )
-        for proof in batch_proofs:
-            plan_sha = str(proof["plan_sha256"])
-            if int(proof["incomplete_batches"]) or int(
-                proof["asset_count"]
-            ) != expected_counts[plan_sha]:
-                raise RuntimeError("bulk retirement parent Switch is incomplete")
+        switch_scope_facts = build_bulk_switch_scope_facts(
+            plan_rows=[dict(row) for row in plan_rows],
+            batch_rows=[dict(row) for row in switch_batch_rows],
+            expected_counts=expected_counts,
+        )
         asset_scope_sha, actual_counts, copy_plans = await _bulk_scope_fingerprint(
             ledger, sorted(switch_plans)
         )
@@ -3680,15 +3837,10 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             for row in disposition_rows
         }
         switch_scopes = [
-            {
-                "switch_plan_sha256": plan_sha,
-                "asset_coordinate_count": expected_counts[plan_sha],
-                "rowset_sha256": switch_rowsets[plan_sha],
-            }
-            for plan_sha in sorted(switch_plans)
+            switch_scope_facts[plan_sha] for plan_sha in sorted(switch_plans)
         ]
         manifest: dict[str, Any] = {
-            "schema": "allbot-history-media-r2-bulk-retirement-plan/v2",
+            "schema": "allbot-history-media-r2-bulk-retirement-plan/v3",
             "execution_mode": "bulk",
             "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
             "run_id": next(iter(run_ids)),
@@ -4162,15 +4314,75 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError("bulk retirement runtime identity changed")
         _validate_retirement_execution_policy(manifest, args)
         switch_plans = [str(value) for value in manifest["parent_switch_plan_sha256s"]]
-        scope_sha, counts, copy_plans = await _bulk_scope_fingerprint(
-            ledger, switch_plans
-        )
         expected_counts = {
             str(item["switch_plan_sha256"]): int(item["asset_coordinate_count"])
             for item in manifest["switch_scopes"]
         }
+        switch_plan_rows = await ledger.fetch(
+            """select plan_sha256,run_id,rowset_sha256,manifest from
+                 analytics_history_media_migration_plans
+                where plan_type='switch' and plan_sha256=any($1::text[])
+                order by plan_sha256""",
+            switch_plans,
+        )
+        switch_batch_rows = await ledger.fetch(
+            """select plan_sha256,batch_no,status,asset_count,rowset_sha256
+                 from analytics_history_media_migration_plan_batches
+                where plan_sha256=any($1::text[])
+                order by plan_sha256,batch_no""",
+            switch_plans,
+        )
+        for row in switch_plan_rows:
+            switch_manifest = (
+                json.loads(row["manifest"])
+                if isinstance(row["manifest"], str)
+                else dict(row["manifest"])
+            )
+            if (
+                str(switch_manifest.get("plan_sha256") or "")
+                != str(row["plan_sha256"])
+                or _sha256_json(
+                    {
+                        key: value
+                        for key, value in switch_manifest.items()
+                        if key != "plan_sha256"
+                    }
+                )
+                != str(row["plan_sha256"])
+            ):
+                raise RuntimeError("bulk retirement parent Switch identity changed")
+        if {str(row["run_id"]) for row in switch_plan_rows} != {
+            str(manifest["run_id"])
+        }:
+            raise RuntimeError("bulk retirement Switch run identity changed")
+        actual_switch_scope_facts = build_bulk_switch_scope_facts(
+            plan_rows=[dict(item) for item in switch_plan_rows],
+            batch_rows=[dict(item) for item in switch_batch_rows],
+            expected_counts=expected_counts,
+        )
+        actual_switch_scopes = [
+            actual_switch_scope_facts[plan_sha] for plan_sha in sorted(switch_plans)
+        ]
+        stored_switch_scopes = list(manifest["switch_scopes"])
+        if any("terminal_scope_mode" in item for item in stored_switch_scopes):
+            switch_scope_identity_changed = (
+                actual_switch_scopes != stored_switch_scopes
+            )
+        else:
+            switch_scope_identity_changed = [
+                {
+                    "switch_plan_sha256": item["switch_plan_sha256"],
+                    "asset_coordinate_count": item["asset_coordinate_count"],
+                    "rowset_sha256": item["rowset_sha256"],
+                }
+                for item in actual_switch_scopes
+            ] != stored_switch_scopes
+        scope_sha, counts, copy_plans = await _bulk_scope_fingerprint(
+            ledger, switch_plans
+        )
         if (
-            scope_sha != manifest["asset_scope_sha256"]
+            switch_scope_identity_changed
+            or scope_sha != manifest["asset_scope_sha256"]
             or counts != expected_counts
             or sorted(copy_plans) != manifest["parent_copy_plan_sha256s"]
         ):
