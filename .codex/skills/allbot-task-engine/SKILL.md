@@ -106,7 +106,8 @@ finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独�
 - 新 Worker media completion 携带 SHA-256、byte size、content type 和可选实际
   维度。Central 只完整校验 staging 一次（原生 checksum 可零读取），durable
   copy 后只 HEAD；Web 仅在 durable key 与完整可信 metadata 一致时零下载写
-  History，legacy/缺字段必须保留下载兜底。
+  History。`task-results/` 不复制原件到 `history/`，只生成相邻缩略图；legacy
+  保留下载和 History 兜底。
 - 文本 Worker 的 `text_delta`/snapshot 仅属于可恢复运行态；attempt、sequence、
   owner 和字段契约必须在 Central 原子校验。重复 chunk 不重复追加，跳号用快照
   修复；计费、退款和成功持久化仍只跟随权威终态。

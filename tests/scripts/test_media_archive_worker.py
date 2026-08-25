@@ -248,7 +248,20 @@ def test_route_preflight_rejects_any_routable_tunnel_address(monkeypatch):
         validate_direct_route("mixed-route.example")
 
 
-def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tmp_path):
+@pytest.mark.parametrize(
+    ("media_type", "result_suffix", "thumbnail_suffix", "thumbnail_content_type"),
+    [
+        ("image", ".png", "_thumb.webp", "image/webp"),
+        ("video", ".mp4", "_thumb.jpg", "image/jpeg"),
+    ],
+)
+def test_restore_revalidates_nas_then_only_rehydrates_canonical_result_and_thumbnail(
+    tmp_path,
+    media_type,
+    result_suffix,
+    thumbnail_suffix,
+    thumbnail_content_type,
+):
     payload = b"verified-archive-bytes"
     digest = __import__("hashlib").sha256(payload).hexdigest()
 
@@ -262,10 +275,12 @@ def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tm
     class FakeR2:
         def __init__(self):
             self.objects = {}
+            self.extra_args = {}
 
         def upload_file(self, path, bucket, key, ExtraArgs):
             body = Path(path).read_bytes()
             self.objects[(bucket, key)] = (body, ExtraArgs["Metadata"])
+            self.extra_args[(bucket, key)] = ExtraArgs
 
         def head_object(self, Bucket, Key):
             body, metadata = self.objects[(Bucket, Key)]
@@ -280,19 +295,21 @@ def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tm
         output.write_bytes(b"thumbnail")
 
     budget = SpoolBudget(tmp_path, capacity_bytes=1024, pause_bytes=900)
+    result_key = f"task-results/backend-1/primary{result_suffix}"
+    thumbnail_key = f"task-results/backend-1/primary{thumbnail_suffix}"
     result = restore_one_asset(
         {
             "role": "output",
             "ordinal": 0,
-            "source_ref": "outputs/result.png",
+            "source_ref": result_key,
             "sha256": digest,
             "byte_size": len(payload),
-            "mime_type": "image/png",
+            "mime_type": "video/mp4" if media_type == "video" else "image/png",
             "nas_bucket": "archive",
             "nas_key": "blobs/result.png",
         },
         "task-1",
-        "image",
+        media_type,
         {"name": "nas"},
         {"name": "r2", "bucket": "prod"},
         tmp_path,
@@ -302,8 +319,10 @@ def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tm
         thumbnail_builder=thumbnail_builder,
     )
 
-    assert result["r2_keys"]
-    assert result["thumbnail_keys"]
+    assert result["r2_keys"] == [result_key]
+    assert result["thumbnail_keys"] == [thumbnail_key]
     assert all(("prod", key) in r2.objects for key in result["r2_keys"])
     assert all(("prod", key) in r2.objects for key in result["thumbnail_keys"])
+    assert r2.extra_args[("prod", thumbnail_key)]["ContentType"] == thumbnail_content_type
+    assert len(r2.objects) == 2
     assert budget.used_bytes == 0

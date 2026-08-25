@@ -1,10 +1,21 @@
+from dataclasses import dataclass
 from pathlib import Path
 from config import MINIO_BUCKET, MINIO_RESULT_BUCKET
-from shared.r2_retention_contract import normalize_r2_object_key
+from shared.r2_retention_contract import (
+    normalize_durable_media_key,
+    normalize_r2_object_key,
+)
 from src.constants import VIDEO_TASK_TYPES
 
 
 _VIDEO_TASK_TYPE_SET = {task_type.lower() for task_type in VIDEO_TASK_TYPES}
+
+
+@dataclass(frozen=True)
+class R2MediaMaterializationPlan:
+    original_copy_key: str | None
+    thumbnail_key: str
+    uses_history_compatibility: bool
 
 
 def normalize_storage_object_key(reference: str) -> str:
@@ -95,6 +106,23 @@ def build_history_r2_media_key(task_id: str, output_file: str) -> str:
 def build_history_r2_thumbnail_key(task_id: str, media_type: str) -> str:
     ext = ".jpg" if media_type == "video" else ".webp"
     return f"history/{task_id}/thumb{ext}"
+
+
+def build_r2_media_materialization_plan(
+    *, task_id: str, output_file: str, media_type: str
+) -> R2MediaMaterializationPlan:
+    durable_key = normalize_durable_media_key(output_file)
+    if durable_key and durable_key.startswith("task-results/"):
+        return R2MediaMaterializationPlan(
+            original_copy_key=None,
+            thumbnail_key=build_thumbnail_object_name(durable_key, media_type),
+            uses_history_compatibility=False,
+        )
+    return R2MediaMaterializationPlan(
+        original_copy_key=build_history_r2_media_key(task_id, output_file),
+        thumbnail_key=build_history_r2_thumbnail_key(task_id, media_type),
+        uses_history_compatibility=True,
+    )
 
 
 def build_storage_r2_object_key(output_file: str) -> str:

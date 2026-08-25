@@ -31,9 +31,15 @@ class _FakeResult:
 class _FakeSession:
     def __init__(self, history):
         self._history = history
+        self._execute_count = 0
         self.commit = AsyncMock()
+        self.flush = AsyncMock()
+        self.add = MagicMock()
 
     async def execute(self, _stmt):
+        self._execute_count += 1
+        if self._execute_count >= 3:
+            return _FakeResult(single=None)
         return _FakeResult(single=self._history)
 
 

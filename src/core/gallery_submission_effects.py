@@ -1,6 +1,5 @@
 from src.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
+    build_r2_media_materialization_plan,
     resolve_storage_object,
 )
 from src.media_processor import generate_and_upload_thumbnail
@@ -44,16 +43,24 @@ def build_gallery_submit_side_effects(
         generate_thumbnail_func or generate_and_upload_thumbnail
     )
     resolve_storage_object_func = resolve_storage_object_func or resolve_storage_object
-    bucket_name, object_name = resolve_storage_object_func(output_file)
-    r2_object_name = build_history_r2_media_key(task_id, output_file)
-    thumbnail_key = build_history_r2_thumbnail_key(task_id, media_type)
-    return [
-        (
-            copy_to_r2_background_func,
-            (bucket_name, object_name, r2_object_name),
-        ),
+    plan = build_r2_media_materialization_plan(
+        task_id=task_id,
+        output_file=output_file,
+        media_type=media_type,
+    )
+    effects = []
+    if plan.original_copy_key:
+        bucket_name, object_name = resolve_storage_object_func(output_file)
+        effects.append(
+            (
+                copy_to_r2_background_func,
+                (bucket_name, object_name, plan.original_copy_key),
+            )
+        )
+    effects.append(
         (
             generate_thumbnail_func,
-            (output_file, media_type, thumbnail_key),
-        ),
-    ]
+            (output_file, media_type, plan.thumbnail_key),
+        )
+    )
+    return effects

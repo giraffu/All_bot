@@ -120,3 +120,27 @@ def test_get_media_type_from_history_supports_legacy_video_task_types(
     expected,
 ):
     assert media_paths.get_media_type_from_history(history_type) == expected
+
+
+def test_materialization_plan_reuses_canonical_result_and_only_builds_thumbnail():
+    plan = media_paths.build_r2_media_materialization_plan(
+        task_id="registry-1",
+        output_file="task-results/backend-1/primary.png",
+        media_type="image",
+    )
+
+    assert plan.original_copy_key is None
+    assert plan.thumbnail_key == "task-results/backend-1/primary_thumb.webp"
+    assert plan.uses_history_compatibility is False
+
+
+def test_materialization_plan_keeps_history_compatibility_for_legacy_result():
+    plan = media_paths.build_r2_media_materialization_plan(
+        task_id="registry-1",
+        output_file="123/output_images/legacy.mp4",
+        media_type="video",
+    )
+
+    assert plan.original_copy_key == "history/registry-1/original.mp4"
+    assert plan.thumbnail_key == "history/registry-1/thumb.jpg"
+    assert plan.uses_history_compatibility is True

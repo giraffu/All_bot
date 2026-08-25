@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from shared.r2_retention_contract import normalize_durable_media_key
 from src.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
@@ -29,7 +30,12 @@ def _gallery_media_r2_key_candidates(
         return []
 
     candidates = []
-    if task_id:
+    durable_key = normalize_durable_media_key(output_file)
+    if durable_key and durable_key.startswith("task-results/"):
+        candidates.append(durable_key)
+        if task_id:
+            candidates.append(build_history_r2_media_key(task_id, output_file))
+    elif task_id:
         candidates.append(build_history_r2_media_key(task_id, output_file))
     candidates.append(build_storage_r2_object_key(output_file))
     candidates.append(output_file)
@@ -48,7 +54,12 @@ def _gallery_thumbnail_r2_key_candidates(
 
     thumb_object_name = build_thumbnail_object_name(output_file, media_type)
     candidates = []
-    if task_id:
+    durable_key = normalize_durable_media_key(output_file)
+    if durable_key and durable_key.startswith("task-results/"):
+        candidates.append(build_thumbnail_object_name(durable_key, media_type))
+        if task_id:
+            candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
+    elif task_id:
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     candidates.append(build_storage_r2_object_key(thumb_object_name))
     candidates.append(thumb_object_name)

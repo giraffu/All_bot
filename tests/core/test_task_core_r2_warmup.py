@@ -275,6 +275,45 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
 
 
 @pytest.mark.asyncio
+async def test_schedule_web_history_r2_warmup_does_not_duplicate_canonical_result():
+    scheduled_coroutines = []
+    copy_mock = AsyncMock(return_value=None)
+    thumb_mock = AsyncMock(return_value=None)
+    prune_mock = AsyncMock(return_value=None)
+
+    def _capture_create_task(coro, **_kwargs):
+        scheduled_coroutines.append(coro)
+        return None
+
+    task_core_web_history_warmup.schedule_web_history_r2_warmup(
+        user_id=123,
+        task_id="registry-1",
+        output_file="task-results/backend-1/primary.png",
+        media_type="image",
+        source="web",
+        resolve_storage_object_func=lambda _output_file: (
+            "user-data-prod",
+            "task-results/backend-1/primary.png",
+        ),
+        copy_to_r2_func=copy_mock,
+        generate_and_upload_thumbnail_func=thumb_mock,
+        prune_user_web_history_r2_cache_func=prune_mock,
+        logger=MagicMock(),
+        create_task_func=_capture_create_task,
+    )
+
+    assert len(scheduled_coroutines) == 1
+    await scheduled_coroutines[0]
+    copy_mock.assert_not_awaited()
+    thumb_mock.assert_awaited_once_with(
+        "task-results/backend-1/primary.png",
+        "image",
+        "task-results/backend-1/primary_thumb.webp",
+    )
+    prune_mock.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
 async def test_schedule_web_history_r2_warmup_handles_bot_source_without_prune():
     scheduled_coroutines = []
     copy_mock = AsyncMock(return_value=None)

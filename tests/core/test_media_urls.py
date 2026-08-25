@@ -33,6 +33,18 @@ def test_build_r2_media_key_candidates_include_raw_bucket_prefixed_path():
     ]
 
 
+def test_canonical_result_is_checked_before_history_compatibility_media_key():
+    candidates = build_r2_media_key_candidates(
+        output_file="task-results/backend-1/primary.png",
+        task_id="registry-1",
+    )
+
+    assert candidates[:2] == [
+        "task-results/backend-1/primary.png",
+        "history/registry-1/original.png",
+    ]
+
+
 def test_build_r2_thumbnail_info_includes_mirrored_full_thumbnail_path():
     thumb_file, candidates = build_r2_thumbnail_info(
         output_file="123/output_images/task-1.mp4",
@@ -61,6 +73,20 @@ def test_build_r2_thumbnail_info_includes_raw_bucket_prefixed_path():
         "history/task-1/output_thumb.jpg",
         "bot-data/history/task-1/output_thumb.jpg",
         "output_thumb.jpg",
+    ]
+
+
+def test_canonical_thumbnail_is_checked_before_history_compatibility_thumbnail():
+    thumb_file, candidates = build_r2_thumbnail_info(
+        output_file="task-results/backend-1/primary.mp4",
+        media_type="video",
+        task_id="registry-1",
+    )
+
+    assert thumb_file == "task-results/backend-1/primary_thumb.jpg"
+    assert candidates[:2] == [
+        "task-results/backend-1/primary_thumb.jpg",
+        "history/registry-1/thumb.jpg",
     ]
 
 

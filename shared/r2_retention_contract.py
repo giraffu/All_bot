@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlparse
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SAFE_SUFFIX = re.compile(r"^\.[A-Za-z0-9]{1,10}$")
+_DURABLE_MEDIA_NAMESPACES = ("task-inputs", "task-results")
 
 
 def normalize_r2_object_key(reference: str, *, buckets: tuple[str, ...]) -> str:
@@ -26,6 +27,31 @@ def normalize_r2_object_key(reference: str, *, buckets: tuple[str, ...]) -> str:
         if parsed.netloc and (host == bucket or host.startswith(f"{bucket}.")):
             return raw
     return raw
+
+
+def normalize_durable_media_key(reference: str) -> str | None:
+    """Return a canonical managed-media key without requiring runtime bucket config."""
+    raw = str(reference or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
+        raw = unquote(parsed.path)
+    raw = raw.lstrip("/")
+    parts = PurePosixPath(raw).parts
+    if ".." in parts:
+        return None
+
+    for namespace in _DURABLE_MEDIA_NAMESPACES:
+        try:
+            namespace_index = parts.index(namespace)
+        except ValueError:
+            continue
+        if namespace_index > 1:
+            continue
+        durable_parts = parts[namespace_index:]
+        if len(durable_parts) < 3 or not _SAFE_ID.fullmatch(durable_parts[1]):
+            return None
+        return "/".join(durable_parts)
+    return None
 
 
 def _require_safe_id(value: object, *, label: str) -> str:

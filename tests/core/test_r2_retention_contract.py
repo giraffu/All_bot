@@ -3,6 +3,7 @@ from shared.r2_retention_contract import (
     build_staged_worker_result_key,
     build_task_input_key,
     build_task_result_key,
+    normalize_durable_media_key,
 )
 
 
@@ -43,6 +44,26 @@ def test_user_upload_and_task_input_keys_are_explicitly_separated():
         ordinal=1,
         source_name="staging/user-uploads/42/upload-1.png",
     ) == "task-inputs/registry-1/1.png"
+
+
+def test_durable_media_keys_normalize_plain_bucket_prefixed_and_url_references():
+    assert (
+        normalize_durable_media_key("task-results/backend-1/primary.png")
+        == "task-results/backend-1/primary.png"
+    )
+    assert (
+        normalize_durable_media_key(
+            "user-data-prod/task-inputs/registry-1/0.png"
+        )
+        == "task-inputs/registry-1/0.png"
+    )
+    assert (
+        normalize_durable_media_key(
+            "https://objects.example/user-data-prod/task-results/backend-1/primary.png?sig=x"
+        )
+        == "task-results/backend-1/primary.png"
+    )
+    assert normalize_durable_media_key("123/output_images/legacy.png") is None
 
 
 def test_key_contract_rejects_path_traversal_and_empty_ids():

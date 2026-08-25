@@ -30,6 +30,26 @@ def test_restore_key_planning_uses_source_ref_without_runtime_config():
     }
 
 
+def test_restore_key_planning_only_rehydrates_canonical_durable_targets():
+    originals = plan_archive_asset_restore_keys(
+        task_id="registry-1",
+        source_ref="user-data-prod/task-results/backend-1/primary.png",
+    )
+    thumbnails = plan_archive_thumbnail_restore_keys(
+        task_id="registry-1",
+        source_ref="task-results/backend-1/primary.png",
+        history_type="image",
+    )
+    inputs = plan_archive_asset_restore_keys(
+        task_id="registry-1",
+        source_ref="task-inputs/registry-1/0.png",
+    )
+
+    assert originals == {"task-results/backend-1/primary.png"}
+    assert thumbnails == {"task-results/backend-1/primary_thumb.webp"}
+    assert inputs == {"task-inputs/registry-1/0.png"}
+
+
 def test_extract_history_media_assets_handles_multi_input_and_nested_extra_paths():
     history = SimpleNamespace(
         id=42,

@@ -186,9 +186,11 @@ asset 状态；常驻服务与每日 reconciliation 模板位于 `ops/media_arch
 冷 History 重新变热使用独立 restore outbox。收藏、重新公开、活跃 Gallery 和
 owner `/result` 的 R2 miss 在业务事务中只做幂等 enqueue；每日 reconciliation
 补齐先按原始 History 排名的最新 8 条。LAN Worker 从已验证 receipt 读取 NAS blob，
-复验大小、SHA-256 与元数据后回填原件兼容 key；输出角色另外重建缩略图。每个 R2
-对象 HEAD 验证通过后才能提交 restore receipt。Web/API 不读取 NAS，也不因恢复
-失败改变既有任务终态或同步响应。
+复验大小、SHA-256 与元数据后，对 `task-inputs/`、`task-results/` 引用只回填精确
+canonical 持久 key；输出角色在相邻标准 key 重建缩略图，不再额外写 `history/`、
+basename 等副本。尚未 Switch 的遗留引用继续规划兼容 key。每个 R2 对象 HEAD 验证
+通过后才能提交 restore receipt。Web/API 不读取 NAS，也不因恢复失败改变既有任务
+终态或同步响应。
 
 `media_archive_catalog.py seed` 与 `reconcile_media_archive_outbox.py` 支持最多
 10,000 行的 `--history-id-file`，用于确定性 canary；未提供时继续使用原有 ID

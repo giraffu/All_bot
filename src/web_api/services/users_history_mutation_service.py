@@ -4,8 +4,7 @@ from sqlalchemy import func, select, update
 from src.constants import DEFAULT_FAVORITE_LIMIT, FAVORITE_LIMITS_BY_IDENTITY
 from src.core.gallery_submission_effects import async_copy_to_r2_background
 from src.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
+    build_r2_media_materialization_plan,
     get_media_type_from_history,
     resolve_storage_object,
 )
@@ -92,25 +91,27 @@ async def favorite_user_history(
         await enqueue_restore_func(db, history, priority=0)
         await db.commit()
 
-        bucket_name, object_name = resolve_storage_object(history.output_file)
         media_type = get_media_type_from_history(history.type)
-        r2_object_name = build_history_r2_media_key(
-            history.task_id,
-            history.output_file,
+        materialization_plan = build_r2_media_materialization_plan(
+            task_id=history.task_id,
+            output_file=history.output_file,
+            media_type=media_type,
         )
 
         if schedule_background_task is not None:
-            schedule_background_task(
-                async_copy_to_r2_background,
-                bucket_name,
-                object_name,
-                r2_object_name,
-            )
+            if materialization_plan.original_copy_key:
+                bucket_name, object_name = resolve_storage_object(history.output_file)
+                schedule_background_task(
+                    async_copy_to_r2_background,
+                    bucket_name,
+                    object_name,
+                    materialization_plan.original_copy_key,
+                )
             schedule_background_task(
                 generate_and_upload_thumbnail,
                 history.output_file,
                 media_type,
-                build_history_r2_thumbnail_key(history.task_id, media_type),
+                materialization_plan.thumbnail_key,
             )
 
     return {"status": "success", "message": "收藏成功"}

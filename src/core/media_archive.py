@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterable
 from urllib.parse import unquote, urlparse
 
+from shared.r2_retention_contract import normalize_durable_media_key
 from src.constants import VIDEO_TASK_TYPES
 
 
@@ -109,6 +110,9 @@ def plan_archive_asset_restore_keys(
     """Plan original R2 compatibility keys without loading runtime configuration."""
     if not task_id or not source_ref:
         return set()
+    durable_key = normalize_durable_media_key(source_ref)
+    if durable_key:
+        return {durable_key}
     parsed = urlparse(source_ref)
     raw_key = (
         unquote(parsed.path.lstrip("/"))
@@ -136,6 +140,12 @@ def plan_archive_thumbnail_restore_keys(
     if not task_id or not source_ref:
         return set()
     media_type = get_archive_media_type(history_type)
+    durable_key = normalize_durable_media_key(source_ref)
+    if durable_key and durable_key.startswith("task-results/"):
+        stem = durable_key.rsplit(".", 1)[0]
+        return {
+            f"{stem}{'_thumb.jpg' if media_type == 'video' else '_thumb.webp'}"
+        }
     parsed = urlparse(source_ref)
     raw_key = (
         unquote(parsed.path.lstrip("/"))

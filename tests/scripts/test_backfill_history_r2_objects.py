@@ -58,6 +58,20 @@ def test_build_history_r2_candidate_prefers_history_namespace_keys():
     assert candidate.thumbnail_source_object == "123/output_images/task-1_thumb.jpg"
 
 
+def test_build_history_r2_candidate_reuses_canonical_result_namespace():
+    candidate = build_history_r2_candidate(
+        history_id=3,
+        user_id=33,
+        username="canonical-user",
+        task_id="registry-1",
+        history_type="txt2img",
+        output_file="task-results/backend-1/primary.png",
+    )
+
+    assert candidate.media_r2_key == "task-results/backend-1/primary.png"
+    assert candidate.thumbnail_r2_key == "task-results/backend-1/primary_thumb.webp"
+
+
 def test_build_history_r2_candidate_uses_flat_compatibility_keys_without_task_id():
     candidate = build_history_r2_candidate(
         history_id=2,
