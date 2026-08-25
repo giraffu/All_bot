@@ -133,7 +133,7 @@ const handleLogout = () => {
 <template>
   <Login v-if="!isAuthenticated" />
   
-  <a-layout v-else class="dashboard-shell min-h-screen">
+  <a-layout v-else class="dashboard-shell h-screen overflow-hidden">
     <dashboard-sidebar
       v-model:collapsed="collapsed"
       v-model:active-tab="activeTab"
@@ -151,7 +151,7 @@ const handleLogout = () => {
       @click="collapsed = true"
     />
 
-    <a-layout class="dashboard-main min-w-0">
+    <a-layout class="dashboard-main h-full min-h-0 min-w-0">
       <dashboard-header-bar
         v-model:collapsed="collapsed"
         v-model:search-query="searchQuery"
@@ -215,6 +215,10 @@ const handleLogout = () => {
 </template>
 
 <style>
+.dashboard-shell {
+  height: 100dvh;
+}
+
 /* Sidebar Styling */
 .logo-container {
   height: 64px;
