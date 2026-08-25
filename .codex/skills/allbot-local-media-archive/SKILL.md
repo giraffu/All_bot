@@ -1,6 +1,6 @@
 ---
 name: "allbot-local-media-archive"
-description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/restore outbox、来源丢失核验、冷媒体恢复、迁移 copy/probe/switch 和 R2 冷清理门禁。用户报告归档不新鲜、NAS 原件打不开、媒体丢失/待恢复、容量或清理问题时使用。"
+description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/restore outbox、来源丢失核验、冷媒体恢复、迁移 copy/probe/switch 和 R2 冷清理门禁。归档不新鲜、原件不可用、丢失/恢复、媒体归档容量或清理时使用。"
 ---
 
 # AllBot 本地媒体归档
@@ -10,7 +10,8 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 1. `docs/子模块_本地媒体归档_local_media_archive.md`
 2. 涉及 R2/Gallery 引用时叠加 `allbot-gallery-storage`
 3. 涉及 History 成功持久化时叠加 `allbot-task-engine`
-4. 涉及 NAS/Compose 或生产变更时叠加 `allbot-ops-deployment`
+4. NAS/生产变更加 `allbot-ops-deployment`；`AllBotInfra` 改读
+   `ops/lan_artifact_nas/README.md`
 
 ## 固定边界
 

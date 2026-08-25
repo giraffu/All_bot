@@ -163,4 +163,5 @@ runtime workspace、Docker data-root 或数据库卷一起迁移。稳定部署�
 GPU current runtime 继续消费节点本地 exact image 与 ready model workspace；NAS
 离线只阻断新 pull、warm-cache、rollout 和 profile 切换。迁移必须先 Copy/校验，
 再切代理/NFS，最后才退役本地精确目录；模型源仓库创建只读 Btrfs 快照，Registry
-与模型缓存仍按可重建 cache 管理，不混入 `AllBotArchive`。
+与模型缓存仍按可重建 cache 管理，不混入 `AllBotArchive`。本地旧目录退役
+后快速回切路径即关闭；此后以 NAS/只读快照为恢复事实源，如需重建本地副本必须另起受控迁移。

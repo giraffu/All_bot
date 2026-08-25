@@ -45,9 +45,34 @@ workspaces.
    preflight through the fleet helper. Verify current image/profile identities
    and Central/ComfyUI health remain unchanged.
 8. Create a readonly NAS snapshot. Only after all checks pass may the exact old
-   local store directories be retired. Rollback stops proxy sockets, unmounts
-   NFS, restores the exact local source path and recreates the original two
-   Compose services.
+   local store directories be retired. Before retirement, rollback stops proxy
+   sockets, unmounts NFS, restores the exact local source path and recreates the
+   original two Compose services. Retirement closes that fast rollback path:
+   afterwards recovery is NAS-first, and any local re-materialization is a new
+   controlled copy/probe/switch from the NAS service or readonly snapshot.
+
+## Steady-state observation and recovery
+
+- Read overall capacity from `df`/`btrfs filesystem usage`, then classify
+  `model-registry`, `model-cache-lan` and `docker-registry` separately. Current
+  bytes, object counts and snapshot counts are runtime evidence and never Git
+  facts.
+- Use `btrfs filesystem du -s` to distinguish `Exclusive` from `Set shared`.
+  Do not add an active subvolume and its readonly snapshot as independent
+  physical usage, and do not mistake allocated data-chunk utilization for the
+  whole-volume percentage.
+- `AllBotInfra` artifact capacity is separate from permanent media in
+  `AllBotArchive`. Model source is protected by its readonly snapshot;
+  Registry and model-cache data remain rebuildable stores with independent
+  lifecycle policy.
+- Verify both NAS backends, both established main-server endpoints, the NFSv4
+  source/mount options and an exact Registry manifest/model-cache preflight.
+  Observe GPU current/queue state without draining or restarting healthy
+  runtimes.
+- After local retirement, never promise an instant local rollback. A NAS
+  outage is recovered in place or from the readonly snapshot; rebuilding local
+  stores requires a newly scoped migration with its own capacity check,
+  consistency proof and cutover authorization.
 
 Repository files never contain the private `.env`, NAS sudo password or model
 credentials. Runtime evidence belongs in `logs/` and is not committed.

@@ -98,6 +98,16 @@ def test_model_registry_mount_uses_hard_nfs_over_the_direct_link():
     assert "x-systemd.automount" in fstab
 
 
+def test_runbook_closes_fast_local_rollback_after_store_retirement():
+    readme = (OPS / "README.md").read_text(encoding="utf-8")
+
+    assert "Retirement closes that fast rollback path" in readme
+    assert "recovery is NAS-first" in readme
+    assert "runtime evidence and never Git" in readme
+    assert "distinguish `Exclusive` from `Set shared`" in readme
+    assert "never promise an instant local rollback" in readme
+
+
 def test_migration_source_proxy_is_direct_link_only_and_separate_from_cutover():
     socket = (OPS / "allbot-model-cache-migration-source.socket").read_text(
         encoding="utf-8"

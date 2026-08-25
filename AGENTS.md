@@ -74,10 +74,11 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | 独立媒体增强平台、账本、Worker 契约与 workflow | `allbot-media-enhance-platform` |
 | 3D 角色 Mini App、GLB/VRM、Blender 渲染 | `allbot-avatar-miniapp` |
 | LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
+| LAN Registry、模型 MinIO、模型源 NFS、NAS artifact 容量 | `ops-log-monitor`（只读）/ `allbot-ops-deployment`（变更） |
 | LAN 资源管理平台、可信构建与 runner | `allbot-lan-resource-manager` |
 | 局域网只读备份图库、PiGallery2、媒体白名单 | `allbot-lan-media-gallery` |
 | 本地分析提示词词元治理 | `allbot-local-analytics-prompt-semantics` |
-| History 全量媒体、NAS MinIO、丢失确认与 R2 冷清理 | `allbot-local-media-archive` |
+| History 全量媒体、NAS 媒体归档、丢失确认与 R2 冷清理 | `allbot-local-media-archive` |
 | 知识库、Skill、文档同步 | `allbot-kb-auto-updater` |
 | Bug 复现、诊断反馈环 | `allbot-diagnosing-bugs` |
 | 行为测试、red-green-refactor | `allbot-tdd` |
@@ -101,6 +102,7 @@ Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维�
 | 域名 404/502、TLS、DNS、Tunnel、Access、Pages、CORS | `allbot-cloudflare-ops` | `ops-log-monitor` 或 `allbot-ops-deployment` |
 | SSH 超时/拒绝/断连/公钥或主机指纹失败 | `allbot-cloud-ssh` | 线上事故再加诊断/日志 Skill |
 | GPU/RunPod/LAN 掉线、OOM/Xid、显卡空闲但不接单 | `allbot-ops-deployment` + `allbot-diagnosing-bugs` | LAN 单卡 mutation 加 `allbot-lan-aio-operator` |
+| Registry/模型 MinIO/NFS 的 5000/9010 异常或 NAS artifact 容量 | `ops-log-monitor` | 故障加 `allbot-diagnosing-bugs`；迁移、启停、清理加 `allbot-ops-deployment` |
 | R2 媒体 404、预签/CORS、对象丢失、存储迁移或清理 | `allbot-gallery-storage` | 全量归档加 `allbot-local-media-archive`；mutation 加部署 Skill |
 | 本地分析页面慢/500、shadow 不新鲜、刷新或定时任务失败 | `ops-log-monitor` + `allbot-diagnosing-bugs` | 词元语义任务才加分析语义 Skill |
 

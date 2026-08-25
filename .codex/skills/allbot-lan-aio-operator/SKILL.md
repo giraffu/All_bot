@@ -17,9 +17,8 @@ current/cache/worker 数量。
 2. `ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`；
 3. `${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`；
 4. `python3 scripts/lan_aio_fleet_prod_ops.py <command> --help`；
-5. 需要解释边界时再读
-   `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` 或
-   `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
+5. 边界读 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`；
+   `5000/9010` 或 NFS 异常读 `ops/lan_artifact_nas/README.md`。
 
 事实源分工：
 
