@@ -269,9 +269,13 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3252213:file/3135252",
                 "civitai:modelVersion/3252313:file/3135351",
             ],
-            "revision": "10eros-v3=47be0638; comfy=014cd40f; lightx2v=62487ee6",
+            "revision": (
+                "10eros-v3=47be0638; comfy-int8=4cc1d817; "
+                "comfy-support=014cd40f; lightx2v=62487ee6"
+            ),
             "variant": (
                 "10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA, "
+                "official pruned INT8 ConvRot FL2VA and Ref2VA bases, "
                 "plus LightX2V FL2VA 8-step v1.0 acceleration for the selectable "
                 "official FL2VA base and seventeen optional one-file LoRAs: NaughtyTimes "
                 "v2, HMNSFW AIO v2, H3 Motion Booster v2, native Ref2VA Motion v0.2, "
