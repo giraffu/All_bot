@@ -149,6 +149,7 @@ async def create_rmb_order_payload(
         pay_result = await create_payment_url_func(
             provider=payment_provider,
             out_trade_no=legacy_order_id,
+            public_order_id=get_order_public_id(new_order),
             plan_name=plan.name,
             amount=plan.price_rmb,
             pay_type=pay_type,

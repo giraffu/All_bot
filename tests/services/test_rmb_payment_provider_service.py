@@ -42,13 +42,25 @@ def test_selects_huanyuy_when_direct_route_is_not_fully_enabled(
 
 
 @pytest.mark.asyncio
-async def test_provider_dispatches_page_and_wap_without_fallback(monkeypatch):
-    direct = SimpleNamespace(create_payment_url=AsyncMock(return_value={"code": 1}))
+async def test_direct_provider_wraps_desktop_and_mobile_in_the_same_checkout(monkeypatch):
+    direct = SimpleNamespace(config=SimpleNamespace())
+    checkout = AsyncMock(
+        side_effect=[
+            {"code": 1, "data": {"payurl": "https://web.example/pay/alipay/one"}},
+            {"code": 1, "data": {"payurl": "https://web.example/pay/alipay/two"}},
+        ]
+    )
     monkeypatch.setattr(provider_service, "get_alipay_direct_service", lambda: direct)
+    monkeypatch.setattr(
+        provider_service,
+        "create_alipay_checkout_payment",
+        checkout,
+    )
 
     await provider_service.create_rmb_payment_url(
         provider=provider_service.ALIPAY_DIRECT,
         out_trade_no="ORDER-1",
+        public_order_id="bo_1",
         plan_name="Plan",
         amount="0.01",
         pay_type="alipay",
@@ -58,6 +70,7 @@ async def test_provider_dispatches_page_and_wap_without_fallback(monkeypatch):
     await provider_service.create_rmb_payment_url(
         provider=provider_service.ALIPAY_DIRECT,
         out_trade_no="ORDER-2",
+        public_order_id="bo_2",
         plan_name="Plan",
         amount="0.01",
         pay_type="alipay",
@@ -65,12 +78,18 @@ async def test_provider_dispatches_page_and_wap_without_fallback(monkeypatch):
         return_url="https://web.example/billing",
     )
 
-    assert direct.create_payment_url.await_args_list[0].kwargs["product"] == "page"
-    assert direct.create_payment_url.await_args_list[1].kwargs["product"] == "wap"
+    assert checkout.await_count == 2
+    assert checkout.await_args_list[0].kwargs == {
+        "alipay_service": direct,
+        "out_trade_no": "ORDER-1",
+        "public_order_id": "bo_1",
+        "subject": "Plan",
+        "amount": "0.01",
+    }
+    assert checkout.await_args_list[1].kwargs["public_order_id"] == "bo_2"
 
 
 def test_mobile_user_agent_detection_is_conservative():
     assert provider_service.detect_rmb_client_type("Mozilla/5.0 (iPhone)") == "mobile"
     assert provider_service.detect_rmb_client_type("Mozilla/5.0 (Linux; Android 14)") == "mobile"
     assert provider_service.detect_rmb_client_type("Mozilla/5.0 (X11; Linux x86_64)") == "desktop"
-

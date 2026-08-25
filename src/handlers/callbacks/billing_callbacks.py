@@ -366,6 +366,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         pay_resp = await create_rmb_payment_url(
             provider=payment_provider,
             out_trade_no=out_trade_no,
+            public_order_id=public_order_id,
             plan_name=display_name,
             amount=plan.price_rmb,
             pay_type=pay_type,

@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
   },
   {
+    path: '/pay/alipay/:token',
+    name: 'AlipayCheckout',
+    component: () => import('@/views/AlipayCheckout.vue'),
+    meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
+  },
+  {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
     meta: { requiresAuth: true },

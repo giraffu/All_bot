@@ -25,6 +25,26 @@
     "queue_unavailable": "⚠️ 无法获取实时排队数据，请稍后再试。",
     "callback_expired": "该按钮已过期或系统升级中，请重新发送指令。"
   },
+  "alipay_checkout": {
+    "go_back": "返回",
+    "pay_now": "立即支付",
+    "scan_title": "支付宝扫码支付",
+    "loading": "正在加载支付订单…",
+    "expired": "支付链接已过期",
+    "failed": "暂时无法打开支付订单",
+    "retry_hint": "请返回机器人重新创建支付订单。",
+    "success": "支付成功",
+    "success_hint": "灵石或身份到账以机器人通知为准，可以返回 Telegram 查看。",
+    "order_number": "订单号",
+    "order_amount": "订单金额",
+    "qr_alt": "支付宝支付二维码",
+    "scan_hint": "请使用手机支付宝扫描二维码完成支付",
+    "product": "购买物品",
+    "merchant_order": "商户订单号",
+    "created_at": "创建时间",
+    "scan_with_alipay": "请使用支付宝扫一扫",
+    "scan_to_finish": "扫描二维码完成支付"
+  },
   "notification": {
     "referral_reward": "🎉 **宗门进阶奖励！**\n\n道友 {invitee_name} 已成功拜入宗门。\n获得额外奖励：`{reward}` 灵石。"
   },

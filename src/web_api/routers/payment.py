@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import User
@@ -9,6 +10,10 @@ from src.web_api.services.payment_api_service import (
     create_usdt_ton_order_payload,
     get_payment_order_status_payload,
     get_payment_plans_payload,
+)
+from src.web_api.services.alipay_checkout_api_service import (
+    get_alipay_checkout_launch_url,
+    get_alipay_checkout_payload,
 )
 from src.services.rmb_payment_provider_service import detect_rmb_client_type
 
@@ -34,6 +39,27 @@ class CreateTonOrderRequest(BaseModel):
 
 class CreateUsdtTonOrderRequest(BaseModel):
     plan_id: int
+
+
+@router.get("/alipay-checkout/{token}")
+async def get_alipay_checkout(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_alipay_checkout_payload(db=db, token=token)
+
+
+@router.get("/alipay-checkout/{token}/launch", response_class=RedirectResponse)
+async def launch_alipay_checkout(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    pay_url = await get_alipay_checkout_launch_url(db=db, token=token)
+    return RedirectResponse(
+        pay_url,
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/orders")

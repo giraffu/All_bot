@@ -185,7 +185,7 @@ async def test_create_order_supports_nested_gateway_payurl_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_allowlisted_user_uses_direct_page_and_failed_creation_never_falls_back(
+async def test_allowlisted_user_uses_direct_checkout_and_failed_creation_never_falls_back(
     monkeypatch,
 ):
     db = _FakeSession([_build_plan()])
@@ -220,6 +220,7 @@ async def test_allowlisted_user_uses_direct_page_and_failed_creation_never_falls
     create_url.assert_awaited_once_with(
         provider="ALIPAY_DIRECT",
         out_trade_no=created_order.order_id,
+        public_order_id=created_order.business_order_id,
         plan_name="RMB Plan",
         amount=Decimal("19.90"),
         pay_type="alipay",

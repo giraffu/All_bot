@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 
+from src.services.alipay_checkout_service import create_alipay_checkout_payment
 from src.services.alipay_direct_service import (
     get_alipay_direct_service,
     is_alipay_direct_enabled,
@@ -40,6 +41,7 @@ async def create_rmb_payment_url(
     *,
     provider: str,
     out_trade_no: str,
+    public_order_id: str,
     plan_name: str,
     amount,
     pay_type: str,
@@ -56,12 +58,12 @@ async def create_rmb_payment_url(
         )
     if provider != ALIPAY_DIRECT:
         raise ValueError("Unknown RMB payment provider")
-    result = get_alipay_direct_service().create_payment_url(
+    result = create_alipay_checkout_payment(
+        alipay_service=get_alipay_direct_service(),
         out_trade_no=out_trade_no,
+        public_order_id=public_order_id,
         subject=plan_name,
         amount=amount,
-        product="wap" if client_type == "mobile" else "page",
-        return_url=return_url,
     )
     return await result if inspect.isawaitable(result) else result
 
