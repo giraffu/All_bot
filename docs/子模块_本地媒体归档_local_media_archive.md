@@ -523,7 +523,13 @@ Switch plan SHA 及其预期资产坐标数；冻结器流式重算完整坐标�
 Switch、属于同一 migration run，并派生完整 Copy plan 集合。全局 manifest 同时绑定每个
 Switch rowset、每 10,000 坐标分块聚合的资产 SHA、去重旧源 rowset、内部 batches SHA、artifact/runtime
 identity 和 R2 持久目标耐久性；任一计数、来源事实、父链或身份漂移都生成不同计划或
-fail closed。Bulk v2 把全部旧源冻结为三个不相混合的 disposition：`eligible` 先形成
+fail closed。Bulk v3 允许终止态 rolling Switch predecessor 以 `completed+superseded` 纳入统一
+范围，但仅当它的 completed 资产数等于本次声明范围、completed 与 superseded 之和
+等于原始 Switch root，且同时提供的唯一最终 completed successor 按顺序精确重现全部
+superseded batch identity。manifest 绑定两类 batch proof、root 计数和 successor SHA，执行前必须
+重算并逐字比较；`pending`/`running`、计数不守恒、非唯一 successor 或 batch proof 不同一律
+fail closed。无 batch ledger 的旧 Switch 只能在 plan root 计数与声明范围完全一致时以
+legacy rowset 模式纳入。Bulk v2/v3 把全部旧源冻结为三个不相混合的 disposition：`eligible` 先形成
 100 个旧源 canary 和后续最多 1,000 对象批次；仍被其它 Copy/Switch 使用的来源进入
 `deferred` 独立批次，每批执行前重检 blocker，未解除时安全暂停并可用同一计划续跑；
 旧源 key 同时也是任一标准持久目标的对象进入 `retained_target` 审计批次，在冻结时以
