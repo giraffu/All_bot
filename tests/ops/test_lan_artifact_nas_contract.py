@@ -25,7 +25,7 @@ def test_nfs_export_is_limited_to_the_dedicated_server_address():
 
     assert exports.count("10.250.150.1") == 1
     assert "/volume1/AllBotInfra/model-registry" in exports
-    assert "rw,sync,no_subtree_check,root_squash" in exports
+    assert "rw,sync,no_subtree_check,root_squash,fsid=0" in exports
     assert "192.168." not in exports
     assert "*" not in exports
 
@@ -91,7 +91,7 @@ def test_model_registry_mount_uses_hard_nfs_over_the_direct_link():
     fstab = (OPS / "model-registry.fstab").read_text(encoding="utf-8")
 
     assert fstab.startswith(
-        "10.250.150.2:/volume1/AllBotInfra/model-registry "
+        "10.250.150.2:/ "
         "/srv/allbot/model-registry nfs4 "
     )
     assert "rw,hard,_netdev,noatime" in fstab
