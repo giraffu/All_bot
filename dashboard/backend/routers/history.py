@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.backend.schemas import HistoryListResponse, UserHistoryListResponse
 from dashboard.backend.services.history_service import (
+    HistoryCountCache,
     get_all_history_payload,
     get_user_history_payload,
 )
@@ -13,6 +14,7 @@ from src.database.core import get_db
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 logger = logging.getLogger("dashboard.history")
+history_count_cache = HistoryCountCache(ttl_seconds=300)
 
 
 @router.get("/all", response_model=HistoryListResponse)
@@ -36,6 +38,7 @@ async def get_all_history(
         is_public=is_public,
         worker_id=worker_id,
         source=source,
+        count_cache=history_count_cache,
         logger_override=logger,
     )
 
