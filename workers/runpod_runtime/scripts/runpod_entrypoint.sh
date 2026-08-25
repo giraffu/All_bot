@@ -99,9 +99,11 @@ ensure_wan22_rife_cache() {
     fi
 }
 
+COMFY_RUNTIME_DIR="${COMFY_ARTIFACT_ROOT_DIR:-}"
 ensure_wan22_rife_cache
 
 if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
+    COMFY_RUNTIME_DIR="${COMFY_RUNTIME_DIR:-$COMFYUI_DIR}"
     (
         cd "$COMFYUI_DIR"
         python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
@@ -111,18 +113,21 @@ elif [ -n "${COMFY_START_CMD:-}" ]; then
     bash -lc "$COMFY_START_CMD" &
     COMFY_PID="$!"
 elif baked_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+    COMFY_RUNTIME_DIR="${COMFY_RUNTIME_DIR:-$baked_comfyui_dir}"
     (
         cd "$baked_comfyui_dir"
         python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
     ) &
     COMFY_PID="$!"
 elif [ -f /workspace/ComfyUI/main.py ]; then
+    COMFY_RUNTIME_DIR="${COMFY_RUNTIME_DIR:-/workspace/ComfyUI}"
     (
         cd /workspace/ComfyUI
         python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
     ) &
     COMFY_PID="$!"
 elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
+    COMFY_RUNTIME_DIR="${COMFY_RUNTIME_DIR:-/default-comfyui-bundle/ComfyUI}"
     (
         cd /default-comfyui-bundle/ComfyUI
         python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
@@ -131,6 +136,12 @@ elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
 else
     echo "COMFY_START_CMD is not set and no known ComfyUI main.py path was found; assuming template starts ComfyUI."
     COMFY_PID=""
+fi
+
+if [ -n "$COMFY_RUNTIME_DIR" ]; then
+    export COMFY_ARTIFACT_INPUT_DIR="${COMFY_ARTIFACT_INPUT_DIR:-${COMFY_RUNTIME_DIR%/}/input}"
+    export COMFY_ARTIFACT_OUTPUT_DIR="${COMFY_ARTIFACT_OUTPUT_DIR:-${COMFY_RUNTIME_DIR%/}/output}"
+    export COMFY_ARTIFACT_TEMP_DIR="${COMFY_ARTIFACT_TEMP_DIR:-${COMFY_RUNTIME_DIR%/}/temp}"
 fi
 
 deadline=$(( $(date +%s) + COMFY_READY_TIMEOUT_SECONDS ))

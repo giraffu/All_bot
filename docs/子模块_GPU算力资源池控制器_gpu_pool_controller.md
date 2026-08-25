@@ -122,6 +122,11 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   读取用户名、端口和连接方式，再按 `allbot-cloud-ssh` 分段诊断。旧 Skill
   reference 已归档，不能用其中的 profile/track/attestation 快照决定当前操作。
   临时连接信息不得写入 Git。
+- RunPod 启动入口必须把实际 ComfyUI `input/output/temp` 目录投影为
+  `COMFY_ARTIFACT_*_DIR`。Worker 成功完成后精确清理任务媒体，并周期清理超期孤儿；
+  `COMFY_ARTIFACT_MIN_FREE_GB` 默认保留 10 GiB，低于水位的实例以
+  `artifact_disk_low` 停止接单。不得用清空 `/workspace`、模型目录或无年龄/任务
+  边界的递归删除代替该机制。
 - 真实 create/start/stop/restart/delete/scale 同时要求运行开关、`--execute`
   和用户明确的生产确认。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、

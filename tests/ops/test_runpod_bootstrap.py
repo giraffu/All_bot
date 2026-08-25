@@ -122,13 +122,15 @@ def test_baked_bootstrap_skips_network_install_when_dependencies_are_present():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
 
     assert "verify_worker_dependencies" in bootstrap
-    assert 'if verify_worker_dependencies; then' in bootstrap
-    assert 'log "baked Worker dependencies are ready; skipping pip install"' in bootstrap
-    assert 'RUNPOD_WORKER_DEPENDENCY_MODE:-auto' in bootstrap
-    assert 'RUNPOD_WORKER_DEPENDENCY_MODE:-baked' in BAKED_ENTRYPOINT_SCRIPT.read_text(
+    assert "if verify_worker_dependencies; then" in bootstrap
+    assert (
+        'log "baked Worker dependencies are ready; skipping pip install"' in bootstrap
+    )
+    assert "RUNPOD_WORKER_DEPENDENCY_MODE:-auto" in bootstrap
+    assert "RUNPOD_WORKER_DEPENDENCY_MODE:-baked" in BAKED_ENTRYPOINT_SCRIPT.read_text(
         encoding="utf-8"
     )
-    assert bootstrap.index('if verify_worker_dependencies; then') < bootstrap.index(
+    assert bootstrap.index("if verify_worker_dependencies; then") < bootstrap.index(
         "python3 -m pip install -r requirements.txt"
     )
 
@@ -202,9 +204,7 @@ def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
 
 def test_runpod_runtime_bakes_agent_id_into_pop_requests():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-    coordinator = Path(
-        "workers/comfy_agent/agent_pipeline_coordinator.py"
-    ).read_text(
+    coordinator = Path("workers/comfy_agent/agent_pipeline_coordinator.py").read_text(
         encoding="utf-8"
     )
 
@@ -214,9 +214,9 @@ def test_runpod_runtime_bakes_agent_id_into_pop_requests():
 
 def test_runpod_runtime_bakes_wan22_node_inputs():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-    patchers = Path(
-        "workers/comfy_agent/workflow_task_patchers.py"
-    ).read_text(encoding="utf-8")
+    patchers = Path("workers/comfy_agent/workflow_task_patchers.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095" in patchers
     assert 'input_name="resolution_preset"' in patchers
@@ -252,6 +252,14 @@ def test_runpod_bootstrap_checks_wan22_rife_cache_before_starting_comfyui():
     assert '\nensure_wan22_rife_cache\n\nif [ -n "${COMFYUI_DIR:-}" ]' in entrypoint
 
 
+def test_runpod_entrypoints_expose_the_actual_comfy_artifact_directories():
+    for path in (BOOTSTRAP_SCRIPT, ENTRYPOINT_SCRIPT):
+        script = path.read_text(encoding="utf-8")
+        assert "export COMFY_ARTIFACT_INPUT_DIR=" in script
+        assert "export COMFY_ARTIFACT_OUTPUT_DIR=" in script
+        assert "export COMFY_ARTIFACT_TEMP_DIR=" in script
+
+
 def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
     entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
@@ -278,7 +286,9 @@ def test_baked_entrypoint_links_external_model_target_into_baked_comfyui():
     )
 
 
-def _run_baked_entrypoint(tmp_path: Path, weight: str) -> subprocess.CompletedProcess[str]:
+def _run_baked_entrypoint(
+    tmp_path: Path, weight: str
+) -> subprocess.CompletedProcess[str]:
     comfyui_dir = tmp_path / "ComfyUI"
     models_dir = comfyui_dir / "models"
     weight_path = models_dir / weight
@@ -344,14 +354,10 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
     assert "COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
-    assert (
-        "BASE_IMAGE=192.168.1.115:5000/allbot/comfyui-boot@sha256:"
-        in dockerfile
-    )
+    assert "BASE_IMAGE=192.168.1.115:5000/allbot/comfyui-boot@sha256:" in dockerfile
     assert (
         "NODE_SOURCE_IMAGE=192.168.1.115:5000/allbot/"
-        "comfy-runpod-wan22-aio-video@sha256:"
-        in dockerfile
+        "comfy-runpod-wan22-aio-video@sha256:" in dockerfile
     )
     assert "ghcr.io/" not in dockerfile
     assert "yanwk/" not in dockerfile
@@ -365,10 +371,7 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert "all)" in build_script
     assert "allbot/comfy-lan-all:local" in build_script
-    assert (
-        "cp -a workers/runpod_profiles/ltx_unified"
-        in build_script
-    )
+    assert "cp -a workers/runpod_profiles/ltx_unified" in build_script
 
 
 def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
@@ -389,16 +392,17 @@ def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
         in build_script
     )
     assert (
-        'profile_label_args+=(--label '
-        '"allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")'
-        in build_script
+        "profile_label_args+=(--label "
+        '"allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")' in build_script
     )
     assert (
-        'profile_label_args+=(--label '
-        '"allbot.lan.scail-source-image=${SCAIL_SOURCE_IMAGE}")'
+        "profile_label_args+=(--label "
+        '"allbot.lan.scail-source-image=${SCAIL_SOURCE_IMAGE}")' in build_script
+    )
+    assert (
+        'docker_build_args+=(--build-arg "SCAIL_SOURCE_IMAGE=${SCAIL_SOURCE_IMAGE}")'
         in build_script
     )
-    assert 'docker_build_args+=(--build-arg "SCAIL_SOURCE_IMAGE=${SCAIL_SOURCE_IMAGE}")' in build_script
     assert (
         'profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")'
         in build_script
@@ -411,15 +415,13 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
 
     assert (
         "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
-        "allbot-gpu-lan-all@sha256:"
-        in dockerfile
+        "allbot-gpu-lan-all@sha256:" in dockerfile
     )
     assert "ghcr.io/" not in dockerfile
     assert "docker.io/" not in dockerfile
     assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
     assert (
-        "d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13"
-        in dockerfile
+        "d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13" in dockerfile
     )
     assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert 'allbot.lan.profile="all"' in dockerfile
@@ -722,13 +724,11 @@ def test_character_runtime_contract_is_part_of_canonical_worker():
     assert "install_character_runtime_overlay" not in dockerfile
     materializer = Path(
         "workers/comfy_agent/agent_result_materialization.py"
-    ).read_text(
-        encoding="utf-8"
-    )
+    ).read_text(encoding="utf-8")
     assert "PORNMASTER_FLUX2_BF16_UNET_NAME" in patchers
     assert "if selected_index and index != selected_index" in patchers
     assert "async def _materialize_character_reference_view" in materializer
-    assert "(execution.params or {}).get(\"character_view_index\")" in materializer
+    assert '(execution.params or {}).get("character_view_index")' in materializer
 
 
 def test_profile_build_script_rejects_unknown_profile_before_docker(tmp_path):

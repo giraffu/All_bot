@@ -158,3 +158,43 @@ async def test_process_single_input_asset_cleans_partial_download_on_failure(tmp
         )
 
     assert not list(tmp_path.glob("*.part.minio"))
+
+
+@pytest.mark.asyncio
+async def test_process_single_input_asset_records_the_exact_comfy_input_artifact(
+    tmp_path,
+):
+    uploaded_input_artifacts = []
+
+    def download(_object_name, local_path):
+        with open(local_path, "wb") as handle:
+            handle.write(b"image")
+
+    async def upload(**_kwargs):
+        assert _kwargs["upload_name"] == "task-1_uploads_demo.png"
+        return {
+            "name": "task-1_uploads_demo.png",
+            "subfolder": "",
+            "type": "input",
+        }
+
+    await process_single_input_asset(
+        params={},
+        downloaded_input_paths=[],
+        uploaded_input_artifacts=uploaded_input_artifacts,
+        comfy_filename_prefix="task-1",
+        img_filename="uploads/demo.png",
+        param_key="image",
+        comfy_input_dir=str(tmp_path),
+        download_input_func=download,
+        should_normalize_image_input_func=_never_normalize,
+        normalize_input_image_func=_identity_normalize,
+        upload_prepared_input_func=upload,
+        logger=logging.getLogger("test"),
+    )
+
+    assert len(uploaded_input_artifacts) == 1
+    artifact = uploaded_input_artifacts[0]
+    assert artifact.kind == "input"
+    assert artifact.filename == "task-1_uploads_demo.png"
+    assert artifact.subfolder == ""

@@ -134,6 +134,7 @@ class AgentFinalizer:
                 execution=execution,
                 task_type=task_type,
                 logger=self.logger,
+                artifact_roots=getattr(self.agent, "_comfy_artifact_roots", None),
             )
             issue = await assess_materialized_output_quality_func(
                 task_type=task_type,
@@ -314,6 +315,7 @@ class AgentFinalizer:
         finally:
             self.agent._clear_task_execution(execution)
             self.agent._cleanup_input_paths(execution.downloaded_input_paths)
+            self.agent._cleanup_comfy_artifacts(execution.comfy_input_artifacts)
         if exit_after_timeout:
             self.logger.error(
                 "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
@@ -380,12 +382,14 @@ class AgentFinalizer:
                     task_id=task_id,
                     logger=self.logger,
                 )
-                uploaded_outputs_payload = await upload_spooled_outputs_via_sidecar_func(
-                    sidecar_url=upload_sidecar_url,
-                    result_bucket=result_bucket,
-                    task_id=task_id,
-                    spooled_outputs=spooled_outputs,
-                    logger=self.logger,
+                uploaded_outputs_payload = (
+                    await upload_spooled_outputs_via_sidecar_func(
+                        sidecar_url=upload_sidecar_url,
+                        result_bucket=result_bucket,
+                        task_id=task_id,
+                        spooled_outputs=spooled_outputs,
+                        logger=self.logger,
+                    )
                 )
             else:
                 uploaded_outputs_payload = await upload_materialized_outputs_func(
@@ -410,5 +414,8 @@ class AgentFinalizer:
             task_id=task_id,
             uploaded_outputs_payload=uploaded_outputs_payload,
             result_path=execution.task_result,
+        )
+        self.agent._cleanup_comfy_artifacts(
+            list(getattr(materialized_outputs, "source_artifacts", []) or [])
         )
         return True

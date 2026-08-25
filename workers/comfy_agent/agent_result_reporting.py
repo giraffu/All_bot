@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import io
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -121,6 +122,22 @@ def _spool_file_name(*, task_id: str, output_name: str, suffix: str) -> str:
     return f"{task_id}_{suffix}_{safe_name or 'output'}"
 
 
+def _write_or_link_spool_file(
+    *,
+    target: Path,
+    payload: bytes,
+    source_path: str,
+) -> None:
+    target.unlink(missing_ok=True)
+    if source_path:
+        try:
+            os.link(source_path, target)
+            return
+        except OSError:
+            pass
+    target.write_bytes(payload)
+
+
 async def spool_materialized_outputs(
     *,
     outputs,
@@ -136,7 +153,13 @@ async def spool_materialized_outputs(
         output_name=outputs.primary.object_name,
         suffix="primary",
     )
-    await asyncio.to_thread(primary_path.write_bytes, outputs.primary.file_data)
+    primary_source_path = str(getattr(outputs.primary, "source_path", "") or "")
+    await asyncio.to_thread(
+        _write_or_link_spool_file,
+        target=primary_path,
+        payload=outputs.primary.file_data,
+        source_path=primary_source_path,
+    )
     logger.info("Spooled primary result for task %s to %s", task_id, primary_path)
 
     extra_outputs: dict[str, SpooledOutputAsset] = {}
@@ -146,7 +169,13 @@ async def spool_materialized_outputs(
             output_name=extra_output.object_name,
             suffix=name,
         )
-        await asyncio.to_thread(extra_path.write_bytes, extra_output.file_data)
+        extra_source_path = str(getattr(extra_output, "source_path", "") or "")
+        await asyncio.to_thread(
+            _write_or_link_spool_file,
+            target=extra_path,
+            payload=extra_output.file_data,
+            source_path=extra_source_path,
+        )
         extra_outputs[name] = SpooledOutputAsset(
             file_path=str(extra_path),
             object_name=extra_output.object_name,
@@ -156,7 +185,9 @@ async def spool_materialized_outputs(
             height=getattr(extra_output, "height", None),
             duration=getattr(extra_output, "duration", None),
         )
-        logger.info("Spooled extra result %s for task %s to %s", name, task_id, extra_path)
+        logger.info(
+            "Spooled extra result %s for task %s to %s", name, task_id, extra_path
+        )
 
     primary_key = build_staged_worker_result_key(
         task_id=task_id,

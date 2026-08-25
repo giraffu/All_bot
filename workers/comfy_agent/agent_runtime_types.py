@@ -14,4 +14,5 @@ class TaskExecutionContext:
     phase: str = "preparing"
     params: dict[str, Any] = field(default_factory=dict)
     downloaded_input_paths: list[str] = field(default_factory=list)
+    comfy_input_artifacts: list[Any] = field(default_factory=list)
     completed_event: asyncio.Event = field(default_factory=asyncio.Event)

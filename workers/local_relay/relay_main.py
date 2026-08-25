@@ -28,12 +28,13 @@ STATUS_FLUSH_INTERVAL_SECONDS = float(
     os.getenv("RELAY_STATUS_FLUSH_INTERVAL_SECONDS", "0.5")
 )
 UPLOAD_RETRY_ATTEMPTS = int(os.getenv("UPLOAD_SIDECAR_RETRY_ATTEMPTS", "3"))
-UPLOAD_RETRY_BASE_SECONDS = float(
-    os.getenv("UPLOAD_SIDECAR_RETRY_BASE_SECONDS", "0.5")
-)
+UPLOAD_RETRY_BASE_SECONDS = float(os.getenv("UPLOAD_SIDECAR_RETRY_BASE_SECONDS", "0.5"))
 RESULT_SPOOL_DIR = os.getenv("RESULT_SPOOL_DIR", "/app/spool")
 SPOOL_ORPHAN_MAX_AGE_SECONDS = float(
     os.getenv("SPOOL_ORPHAN_MAX_AGE_SECONDS", str(6 * 60 * 60))
+)
+SPOOL_CLEANUP_INTERVAL_SECONDS = float(
+    os.getenv("SPOOL_CLEANUP_INTERVAL_SECONDS", str(15 * 60))
 )
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "play.min.io:9000")
@@ -60,6 +61,7 @@ class RelayState:
         self.pending_statuses: dict[str, dict[str, Any]] = {}
         self.status_lock = asyncio.Lock()
         self.flush_task: asyncio.Task | None = None
+        self.spool_cleanup_task: asyncio.Task | None = None
         self.running = False
 
 
@@ -117,7 +119,9 @@ async def _forward_request(
     retry: bool = True,
 ) -> JSONResponse:
     if state.client is None:
-        raise HTTPException(status_code=503, detail="Relay upstream client is not ready")
+        raise HTTPException(
+            status_code=503, detail="Relay upstream client is not ready"
+        )
 
     attempts = max(1, REQUEST_RETRY_ATTEMPTS if retry else 1)
     last_error: Exception | None = None
@@ -206,6 +210,21 @@ def _cleanup_orphan_spool_files() -> None:
                 logger.info("removed_orphan_spool_file path=%s", path)
         except Exception as exc:
             logger.warning("orphan_spool_cleanup_failed path=%s error=%s", path, exc)
+    for path in sorted(
+        (candidate for candidate in spool_dir.rglob("*") if candidate.is_dir()),
+        key=lambda candidate: len(candidate.parts),
+        reverse=True,
+    ):
+        try:
+            path.rmdir()
+        except OSError:
+            continue
+
+
+async def _spool_cleanup_loop() -> None:
+    while state.running:
+        await asyncio.sleep(max(1.0, SPOOL_CLEANUP_INTERVAL_SECONDS))
+        await asyncio.to_thread(_cleanup_orphan_spool_files)
 
 
 async def startup() -> None:
@@ -223,7 +242,12 @@ async def startup() -> None:
     await asyncio.to_thread(_cleanup_orphan_spool_files)
     state.running = True
     state.flush_task = asyncio.create_task(_status_flush_loop())
-    logger.info("local_relay_started upstream=%s spool_dir=%s", CENTRAL_API_URL, RESULT_SPOOL_DIR)
+    state.spool_cleanup_task = asyncio.create_task(_spool_cleanup_loop())
+    logger.info(
+        "local_relay_started upstream=%s spool_dir=%s",
+        CENTRAL_API_URL,
+        RESULT_SPOOL_DIR,
+    )
 
 
 async def shutdown() -> None:
@@ -232,6 +256,12 @@ async def shutdown() -> None:
         state.flush_task.cancel()
         try:
             await state.flush_task
+        except asyncio.CancelledError:
+            pass
+    if state.spool_cleanup_task:
+        state.spool_cleanup_task.cancel()
+        try:
+            await state.spool_cleanup_task
         except asyncio.CancelledError:
             pass
     await _flush_status_once()
@@ -441,7 +471,25 @@ def _cleanup_uploaded_files(assets: list[UploadAsset]) -> None:
         try:
             Path(asset.file_path).unlink(missing_ok=True)
         except Exception as exc:
-            logger.warning("uploaded_spool_cleanup_failed path=%s error=%s", asset.file_path, exc)
+            logger.warning(
+                "uploaded_spool_cleanup_failed path=%s error=%s", asset.file_path, exc
+            )
+    spool_root = Path(RESULT_SPOOL_DIR).resolve(strict=False)
+    for parent in sorted(
+        {Path(asset.file_path).resolve(strict=False).parent for asset in assets},
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            parent.relative_to(spool_root)
+        except ValueError:
+            continue
+        while parent != spool_root:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
 
 
 @app.post("/api/local/upload-result")

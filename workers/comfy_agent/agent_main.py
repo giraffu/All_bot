@@ -11,6 +11,7 @@ import httpx
 import urllib3
 import websockets  # type: ignore
 from asgi_correlation_id import correlation_id
+
 try:
     import boto3  # type: ignore
     from boto3.s3.transfer import TransferConfig  # type: ignore
@@ -22,6 +23,12 @@ except Exception:  # pragma: no cover - optional dependency fallback
 from agent_input_preparation import (
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
+)
+from agent_artifact_lifecycle import (
+    ComfyArtifactRoots,
+    artifact_disk_capacity,
+    cleanup_artifacts,
+    cleanup_stale_artifacts,
 )
 from agent_finalizer import AgentFinalizer
 from agent_health import AgentHealthManager
@@ -113,10 +120,14 @@ AGENT_ID = os.getenv("AGENT_ID", "worker_local_01")
 SUPPORTED_TASK_TYPES = os.getenv("SUPPORTED_TASK_TYPES", "img2img,face_swap")
 PREFERRED_TASK_TYPES = os.getenv("PREFERRED_TASK_TYPES", "")
 _supported_task_type_set = {
-    task_type.strip() for task_type in SUPPORTED_TASK_TYPES.split(",") if task_type.strip()
+    task_type.strip()
+    for task_type in SUPPORTED_TASK_TYPES.split(",")
+    if task_type.strip()
 }
 _preferred_task_type_set = {
-    task_type.strip() for task_type in PREFERRED_TASK_TYPES.split(",") if task_type.strip()
+    task_type.strip()
+    for task_type in PREFERRED_TASK_TYPES.split(",")
+    if task_type.strip()
 }
 if not _preferred_task_type_set.issubset(_supported_task_type_set):
     raise ValueError("PREFERRED_TASK_TYPES must be a subset of SUPPORTED_TASK_TYPES")
@@ -138,6 +149,26 @@ COMFY_API_URL = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
 COMFY_WS_URL = os.getenv("COMFY_WS_URL", "ws://127.0.0.1:8188/ws")
 COMFY_INPUT_DIR = os.getenv("COMFY_INPUT_DIR", "/tmp/input")
 COMFY_OUTPUT_DIR = os.getenv("COMFY_OUTPUT_DIR", "/tmp/output")
+COMFY_ARTIFACT_ROOTS = ComfyArtifactRoots(
+    input_dir=os.getenv("COMFY_ARTIFACT_INPUT_DIR", ""),
+    output_dir=os.getenv("COMFY_ARTIFACT_OUTPUT_DIR", ""),
+    temp_dir=os.getenv("COMFY_ARTIFACT_TEMP_DIR", ""),
+)
+COMFY_ARTIFACT_CLEANUP_INTERVAL_SECONDS = float(
+    os.getenv("COMFY_ARTIFACT_CLEANUP_INTERVAL_SECONDS", "900")
+)
+COMFY_ARTIFACT_INPUT_MAX_AGE_SECONDS = float(
+    os.getenv("COMFY_ARTIFACT_INPUT_MAX_AGE_SECONDS", str(24 * 60 * 60))
+)
+COMFY_ARTIFACT_OUTPUT_MAX_AGE_SECONDS = float(
+    os.getenv("COMFY_ARTIFACT_OUTPUT_MAX_AGE_SECONDS", str(6 * 60 * 60))
+)
+COMFY_ARTIFACT_TEMP_MAX_AGE_SECONDS = float(
+    os.getenv("COMFY_ARTIFACT_TEMP_MAX_AGE_SECONDS", str(6 * 60 * 60))
+)
+COMFY_ARTIFACT_MIN_FREE_BYTES = int(
+    float(os.getenv("COMFY_ARTIFACT_MIN_FREE_GB", "10")) * 1024 * 1024 * 1024
+)
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "play.min.io:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "your_key")
@@ -154,8 +185,7 @@ MINIO_REGION = os.getenv("MINIO_REGION") or (
     "auto" if "r2.cloudflarestorage.com" in MINIO_ENDPOINT else "us-east-1"
 )
 MINIO_BOTO3_DOWNLOAD_ENABLED = (
-    os.getenv("MINIO_BOTO3_DOWNLOAD_ENABLED", "true").strip().lower()
-    in TRUE_ENV_VALUES
+    os.getenv("MINIO_BOTO3_DOWNLOAD_ENABLED", "true").strip().lower() in TRUE_ENV_VALUES
 )
 MINIO_DOWNLOAD_TIMEOUT_SECONDS = float(
     os.getenv("MINIO_DOWNLOAD_TIMEOUT_SECONDS", "300")
@@ -169,9 +199,7 @@ COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
 )
 COMFY_UPLOAD_RETRY_ATTEMPTS = int(os.getenv("COMFY_UPLOAD_RETRY_ATTEMPTS", "3"))
-COMFY_UPLOAD_TIMEOUT_SECONDS = float(
-    os.getenv("COMFY_UPLOAD_TIMEOUT_SECONDS", "300")
-)
+COMFY_UPLOAD_TIMEOUT_SECONDS = float(os.getenv("COMFY_UPLOAD_TIMEOUT_SECONDS", "300"))
 COMFY_HEALTH_FAILURE_THRESHOLD = int(os.getenv("COMFY_HEALTH_FAILURE_THRESHOLD", "3"))
 COMFY_HEALTH_RECOVERY_THRESHOLD = int(os.getenv("COMFY_HEALTH_RECOVERY_THRESHOLD", "2"))
 COMFY_ERROR_POLL_SECONDS = float(os.getenv("COMFY_ERROR_POLL_SECONDS", "15"))
@@ -266,9 +294,7 @@ WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS = float(
 RESULT_HISTORY_TIMEOUT_SECONDS = float(
     os.getenv("RESULT_HISTORY_TIMEOUT_SECONDS", "10")
 )
-RESULT_HISTORY_POLL_SECONDS = float(
-    os.getenv("RESULT_HISTORY_POLL_SECONDS", "0.25")
-)
+RESULT_HISTORY_POLL_SECONDS = float(os.getenv("RESULT_HISTORY_POLL_SECONDS", "0.25"))
 RUNPOD_RUNTIME = (
     os.getenv("RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
     or os.getenv("ALLBOT_RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
@@ -396,7 +422,11 @@ class ComfyAgent:
 
         self.s3_download_client = None
         self.s3_transfer_config = None
-        if MINIO_BOTO3_DOWNLOAD_ENABLED and boto3 is not None and BotoConfig is not None:
+        if (
+            MINIO_BOTO3_DOWNLOAD_ENABLED
+            and boto3 is not None
+            and BotoConfig is not None
+        ):
             try:
                 endpoint_url = (
                     f"{'https' if MINIO_SECURE else 'http'}://{MINIO_ENDPOINT}"
@@ -481,6 +511,7 @@ class ComfyAgent:
             logger=logger,
         )
         self._finalizer = AgentFinalizer(agent=self, logger=logger)
+        self._comfy_artifact_roots = COMFY_ARTIFACT_ROOTS
         self._reporting_client = AgentReportingClient(
             master_client=self.master_client,
             logger=logger,
@@ -538,6 +569,7 @@ class ComfyAgent:
         cached = self._prefetch_cache.pop(task_id, None)
         if cached:
             self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
+            self._cleanup_comfy_artifacts(cached.get("comfy_input_artifacts", []))
 
     def _register_prompt_execution(self, execution: TaskExecutionContext) -> None:
         if execution.prompt_id:
@@ -793,9 +825,7 @@ class ComfyAgent:
                     normalized = normalized.convert(
                         "RGBA" if "A" in normalized.getbands() else "RGB"
                     )
-                normalized_path = (
-                    f"{os.path.splitext(local_path)[0]}_normalized.png"
-                )
+                normalized_path = f"{os.path.splitext(local_path)[0]}_normalized.png"
                 normalized.save(normalized_path, format="PNG")
         except (UnidentifiedImageError, OSError, ValueError) as exc:
             raise RuntimeError(
@@ -809,16 +839,18 @@ class ComfyAgent:
         upload_path: str,
         upload_name: str,
         source_name: str,
-    ) -> None:
+    ) -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt in range(1, COMFY_UPLOAD_RETRY_ATTEMPTS + 1):
             await self._wait_for_comfy_ready(operation=f"uploading {upload_name}")
             try:
                 with open(upload_path, "rb") as file_obj:
                     file_content = file_obj.read()
-                await self.comfy_client.upload_image(file_content, upload_name)
+                response = await self.comfy_client.upload_image(
+                    file_content, upload_name
+                )
                 logger.info(f"Uploaded {upload_name} to ComfyUI via API")
-                return
+                return response
             except Exception as upload_err:
                 last_error = upload_err
                 if attempt >= COMFY_UPLOAD_RETRY_ATTEMPTS:
@@ -844,6 +876,8 @@ class ComfyAgent:
         *,
         params: dict[str, Any],
         downloaded_input_paths: list[str],
+        uploaded_input_artifacts: list[Any] | None = None,
+        comfy_filename_prefix: str = "",
         img_filename: str,
         param_key: str,
         comfy_input_dir: str = COMFY_INPUT_DIR,
@@ -851,6 +885,8 @@ class ComfyAgent:
         await process_agent_single_input_asset(
             params=params,
             downloaded_input_paths=downloaded_input_paths,
+            uploaded_input_artifacts=uploaded_input_artifacts,
+            comfy_filename_prefix=comfy_filename_prefix,
             img_filename=img_filename,
             param_key=param_key,
             comfy_input_dir=comfy_input_dir,
@@ -869,12 +905,16 @@ class ComfyAgent:
         *,
         params: dict[str, Any],
         downloaded_input_paths: list[str],
+        uploaded_input_artifacts: list[Any] | None = None,
+        comfy_filename_prefix: str = "",
         comfy_input_dir: str = COMFY_INPUT_DIR,
     ) -> None:
         async def process_with_input_dir(**kwargs):
             await self._process_single_input_asset(
                 **kwargs,
                 comfy_input_dir=comfy_input_dir,
+                uploaded_input_artifacts=uploaded_input_artifacts,
+                comfy_filename_prefix=comfy_filename_prefix,
             )
 
         await prepare_agent_task_inputs(
@@ -904,6 +944,71 @@ class ComfyAgent:
 
     def _cleanup_input_paths(self, paths: list[str]) -> None:
         self._prefetch_manager.cleanup_input_paths(paths)
+
+    def _cleanup_comfy_artifacts(self, artifacts: list[Any]) -> None:
+        if not artifacts:
+            return
+        try:
+            removed = cleanup_artifacts(
+                roots=COMFY_ARTIFACT_ROOTS,
+                artifacts=artifacts,
+            )
+            for path in removed:
+                logger.info("Cleaned up ComfyUI artifact: %s", path)
+        except Exception as exc:
+            logger.warning("Failed to clean up ComfyUI artifacts: %s", exc)
+
+    def _protected_comfy_artifacts(self) -> list[Any]:
+        protected: list[Any] = []
+        for execution in self._executions.values():
+            protected.extend(execution.comfy_input_artifacts)
+        for cached in self._prefetch_cache.values():
+            protected.extend(cached.get("comfy_input_artifacts", []))
+        return protected
+
+    async def _artifact_cleanup_loop(self) -> None:
+        while self.running:
+            try:
+                removed = await asyncio.to_thread(
+                    cleanup_stale_artifacts,
+                    roots=COMFY_ARTIFACT_ROOTS,
+                    max_age_seconds_by_kind={
+                        "input": COMFY_ARTIFACT_INPUT_MAX_AGE_SECONDS,
+                        "output": COMFY_ARTIFACT_OUTPUT_MAX_AGE_SECONDS,
+                        "temp": COMFY_ARTIFACT_TEMP_MAX_AGE_SECONDS,
+                    },
+                    protected_artifacts=self._protected_comfy_artifacts(),
+                )
+                if removed:
+                    logger.info("Cleaned up %s stale ComfyUI artifacts", len(removed))
+            except Exception as exc:
+                logger.warning("Stale ComfyUI artifact cleanup failed: %s", exc)
+            await asyncio.sleep(max(1.0, COMFY_ARTIFACT_CLEANUP_INTERVAL_SECONDS))
+
+    def _artifact_disk_has_capacity(self) -> bool:
+        has_capacity, free_bytes, path = artifact_disk_capacity(
+            roots=COMFY_ARTIFACT_ROOTS,
+            minimum_free_bytes=COMFY_ARTIFACT_MIN_FREE_BYTES,
+        )
+        if has_capacity:
+            if self.health_reason == "artifact_disk_low":
+                logger.info("ComfyUI artifact disk capacity recovered")
+                self.health_reason = ""
+                self.last_error = ""
+                self.last_error_at = None
+                self.is_error_state = False
+            return True
+        error = (
+            f"ComfyUI artifact disk free space is below reserve at {path}: "
+            f"{int(free_bytes or 0)} bytes available"
+        )
+        if self.health_reason != "artifact_disk_low":
+            logger.error(error)
+        self.health_reason = "artifact_disk_low"
+        self.last_error = error
+        self.last_error_at = self._now()
+        self.is_error_state = True
+        return False
 
     def _discard_prefetch_cache(self, *, except_task_id: str | None = None) -> None:
         self._prefetch_manager.discard_prefetch_cache(except_task_id=except_task_id)
@@ -1418,6 +1523,7 @@ class ComfyAgent:
             if execution:
                 self._clear_task_execution(execution)
                 self._cleanup_input_paths(execution.downloaded_input_paths)
+                self._cleanup_comfy_artifacts(execution.comfy_input_artifacts)
 
     async def poll_loop(self):
         logger.info(
@@ -1431,6 +1537,11 @@ class ComfyAgent:
                     continue
 
                 self._clear_expired_quarantine()
+
+                if not self._artifact_disk_has_capacity():
+                    self._comfy_poll_paused = True
+                    await asyncio.sleep(COMFY_ERROR_POLL_SECONDS)
+                    continue
 
                 if not await self._probe_comfy_ready():
                     self._comfy_poll_paused = True
@@ -1503,6 +1614,14 @@ class ComfyAgent:
             asyncio.create_task(self.poll_loop()),
             asyncio.create_task(self.heartbeat_loop()),
         ]
+        if any(
+            (
+                COMFY_ARTIFACT_ROOTS.input_dir,
+                COMFY_ARTIFACT_ROOTS.output_dir,
+                COMFY_ARTIFACT_ROOTS.temp_dir,
+            )
+        ):
+            self.tasks.append(asyncio.create_task(self._artifact_cleanup_loop()))
         await asyncio.gather(*self.tasks)
 
     async def shutdown(self, *, report_interrupted_tasks: bool = True):
