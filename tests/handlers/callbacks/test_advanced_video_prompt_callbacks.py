@@ -27,7 +27,7 @@ def build_draft(**changes):
         reference_descriptions=(),
         object_keys=(),
         image_suffixes=(),
-        generation_cost=10,
+        generation_cost=9,
         status="ready",
         created_at=100.0,
         updated_at=110.0,
@@ -72,7 +72,7 @@ async def test_result_action_requires_explicit_second_confirmation(monkeypatch):
 
     text = update.callback_query.message.reply_text.await_args.args[0]
     keyboard = update.callback_query.message.reply_text.await_args.kwargs["reply_markup"]
-    assert "预计消耗：10 灵石" in text
+    assert "预计消耗：9 灵石" in text
     assert keyboard.inline_keyboard[0][0].callback_data == "avpopt_confirm:draft-token"
 
 

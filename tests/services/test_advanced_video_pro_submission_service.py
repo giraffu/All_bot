@@ -13,9 +13,9 @@ from src.services.advanced_video_pro_submission_service import (
 @pytest.mark.parametrize(
     ("mode", "images", "descriptions", "task_type", "cost"),
     [
-        ("t2v", [], [], "minimax_h3_t2v", 10),
-        ("i2v", ["start.png"], [], "minimax_h3_i2v", 10),
-        ("flf2v", ["start.png", "end.png"], [], "minimax_h3_flf2v", 10),
+        ("t2v", [], [], "minimax_h3_t2v", 9),
+        ("i2v", ["start.png"], [], "minimax_h3_i2v", 9),
+        ("flf2v", ["start.png", "end.png"], [], "minimax_h3_flf2v", 9),
     ],
 )
 def test_builds_all_pro_video_modes(mode, images, descriptions, task_type, cost):
@@ -41,7 +41,7 @@ def test_ref2v_accepts_one_to_four_ordered_images(image_count):
 
     assert plan.task_type == "minimax_h3_ref2v"
     assert plan.images == tuple(images)
-    assert plan.cost == 15
+    assert plan.cost == 10
 
 
 @pytest.mark.parametrize("image_count", [0, 5])
@@ -65,7 +65,7 @@ def test_small_resolution_uses_new_price():
     plan = build_advanced_video_pro_submission_plan(
         mode="t2v", prompt="move", resolution_preset="small"
     )
-    assert plan.cost == 15
+    assert plan.cost == 10
 
 
 def test_build_plan_preserves_selected_addons_and_defaults_to_none():

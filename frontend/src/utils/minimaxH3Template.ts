@@ -1,13 +1,20 @@
+import { MINIMAX_H3_PRICE_CONTRACT } from '@/generated/taskTypeContract'
+
 export interface ImageDimensions {
   width: number
   height: number
 }
 
-const COST_BY_PRESET: Record<string, number> = {
-  preview: 10,
-  small: 15,
-  standard: 20,
-  hd: 30,
+export type MiniMaxH3PriceMode = keyof typeof MINIMAX_H3_PRICE_CONTRACT
+
+export const getMinimaxH3Cost = (
+  mode: MiniMaxH3PriceMode,
+  preset: string | null,
+  duration: number | null,
+): number => {
+  const matrix = MINIMAX_H3_PRICE_CONTRACT[mode] as Record<string, Record<string, number>>
+  const durationCosts = matrix[String(duration)] ?? matrix['5']
+  return durationCosts?.[preset || ''] ?? durationCosts?.preview ?? 0
 }
 
 export const areFrameAspectRatiosCompatible = (
@@ -24,9 +31,7 @@ export const areFrameAspectRatiosCompatible = (
 }
 
 export const getMinimaxH3TemplateCost = (preset: string | null, duration: number | null): number => {
-  const baseCost = COST_BY_PRESET[preset || ''] ?? COST_BY_PRESET.preview
-  const multiplier = duration === 10 ? 2 : duration === 15 ? 3 : 1
-  return baseCost * multiplier
+  return getMinimaxH3Cost('normal', preset, duration)
 }
 
 export const readImageDimensions = (file: File): Promise<ImageDimensions> => (

@@ -29,17 +29,15 @@ MINIMAX_H3_PIXEL_PRESETS = {
     "standard": 520_000,
     "hd": 650_000,
 }
-MINIMAX_H3_NORMAL_PRICE_BY_PRESET = {
-    "preview": 10,
-    "small": 15,
-    "standard": 20,
-    "hd": 30,
+MINIMAX_H3_NORMAL_PRICE_BY_DURATION = {
+    5: {"preview": 9, "small": 10, "standard": 13, "hd": 15},
+    10: {"preview": 12, "small": 15, "standard": 24, "hd": 30},
+    15: {"preview": 17, "small": 24, "standard": 38, "hd": 53},
 }
-MINIMAX_H3_REF2V_PRICE_BY_PRESET = {
-    "preview": 15,
-    "small": 23,
-    "standard": 30,
-    "hd": 45,
+MINIMAX_H3_REF2V_PRICE_BY_DURATION = {
+    5: {"preview": 10, "small": 11, "standard": 15, "hd": 20},
+    10: {"preview": 15, "small": 21, "standard": 33, "hd": 45},
+    15: {"preview": 23, "small": 34, "standard": 58, "hd": 82},
 }
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
@@ -339,6 +337,28 @@ def normalize_minimax_h3_duration_seconds(value: Any) -> int:
     return duration
 
 
+def get_minimax_h3_cost(
+    task_type: str,
+    *,
+    duration: Any = 5,
+    resolution_preset: Any = "preview",
+) -> int:
+    if task_type not in MINIMAX_H3_PUBLIC_TASK_TYPES:
+        raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
+    normalized_duration = normalize_minimax_h3_duration_seconds(duration)
+    preset = str(resolution_preset or "preview").strip().lower()
+    if preset not in MINIMAX_H3_PIXEL_PRESETS:
+        raise MiniMaxH3ValidationError(
+            "分辨率档位必须为 preview、small、standard 或 hd。"
+        )
+    matrix = (
+        MINIMAX_H3_REF2V_PRICE_BY_DURATION
+        if task_type == MINIMAX_H3_REF2V
+        else MINIMAX_H3_NORMAL_PRICE_BY_DURATION
+    )
+    return matrix[normalized_duration][preset]
+
+
 def _dimensions(preset: str, aspect_ratio: str) -> tuple[int, int]:
     target = min(MINIMAX_H3_PIXEL_PRESETS[preset], MINIMAX_H3_MAX_PIXELS)
     ratio = MINIMAX_H3_ASPECT_RATIOS[aspect_ratio]
@@ -435,12 +455,6 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         if aspect not in MINIMAX_H3_ASPECT_RATIOS:
             raise MiniMaxH3ValidationError("不支持该画面比例。")
         width, height = _dimensions(preset, aspect)
-    multiplier = duration // 5
-    base_cost = (
-        MINIMAX_H3_REF2V_PRICE_BY_PRESET[preset]
-        if task_type == MINIMAX_H3_REF2V
-        else MINIMAX_H3_NORMAL_PRICE_BY_PRESET[preset]
-    )
     return MiniMaxH3Spec(
         task_type=task_type,
         mode=mode,
@@ -451,7 +465,11 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         height=height,
         frame_count=MINIMAX_H3_FRAME_COUNTS[duration],
         fps=MINIMAX_H3_FPS,
-        cost=base_cost * multiplier,
+        cost=get_minimax_h3_cost(
+            task_type,
+            duration=duration,
+            resolution_preset=preset,
+        ),
         images=images,
         reference_descriptions=descriptions,
         main_model=main_model,

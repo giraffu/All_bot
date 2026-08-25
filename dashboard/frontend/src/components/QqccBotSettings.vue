@@ -50,6 +50,10 @@ type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'minimax_h3'
 type AiVideoMainModel = '10eros' | 'official'
 type AiVideoMode = 'i2v' | 'ref2v'
+type AiVideoCreditCosts = Partial<Record<
+  AiVideoMode,
+  Partial<Record<AiVideoDurationKey, Partial<Record<AiVideoResolutionKey, number>>>>
+>>
 type AiVideoAspectRatio = '16:9' | '9:16' | '1:1'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
@@ -229,6 +233,7 @@ interface QqccBotConfigOptions {
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
+  ai_video_credit_costs: AiVideoCreditCosts
 }
 
 interface QqccBotConfigResponse {
@@ -307,6 +312,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   default_video_resolution: '720p',
   default_ai_video_resolution: 'preview',
   default_scene_credit_costs: {},
+  ai_video_credit_costs: { i2v: {}, ref2v: {} },
 })
 
 const filterSceneMaxCount = 20
@@ -1042,6 +1048,25 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
       }
     })
   }
+  const rawAiVideoCreditCosts = raw.ai_video_credit_costs
+  if (rawAiVideoCreditCosts && typeof rawAiVideoCreditCosts === 'object') {
+    ;(['i2v', 'ref2v'] as AiVideoMode[]).forEach((mode) => {
+      const rawDurations = rawAiVideoCreditCosts[mode]
+      if (!rawDurations || typeof rawDurations !== 'object') return
+      ;([5, 10, 15] as AiVideoDurationKey[]).forEach((duration) => {
+        const rawPresets = rawDurations[duration]
+        if (!rawPresets || typeof rawPresets !== 'object') return
+        aiVideoResolutionOptions.forEach((preset) => {
+          const value = rawPresets[preset]
+          if (typeof value === 'number' && Number.isInteger(value) && value >= 1) {
+            const modeCosts = merged.ai_video_credit_costs[mode] ??= {}
+            const durationCosts = modeCosts[duration] ??= {}
+            durationCosts[preset] = value
+          }
+        })
+      })
+    })
+  }
   if (Array.isArray(raw.video_engines) && raw.video_engines.length > 0) {
     merged.video_engines = raw.video_engines
       .filter((item) => typeof item?.value === 'string')
@@ -1479,6 +1504,21 @@ const createVideoSceneId = () => {
 
 const defaultSceneCreditCost = (kind: SceneConfigKind) =>
   normalizeSceneCreditCost(modelOptions.default_scene_credit_costs[kind])
+
+const sceneConfigDefaultCreditCost = computed(() => {
+  if (sceneConfig.kind !== 'ai_video') return defaultSceneCreditCost(sceneConfig.kind)
+  return normalizeSceneCreditCost(
+    modelOptions.ai_video_credit_costs[sceneConfig.mode]?.[
+      sceneConfig.duration as AiVideoDurationKey
+    ]?.[sceneConfig.resolution as AiVideoResolutionKey],
+  )
+})
+
+const sceneConfigCreditCostPlaceholder = computed(() => (
+  sceneConfigDefaultCreditCost.value === null
+    ? '未配置/沿用模型价格'
+    : `未配置/默认 ${sceneConfigDefaultCreditCost.value} 灵石`
+))
 
 const addVideoScene = (kind: 'video' | 'video_v1' = 'video') => {
   const scenes = kind === 'video_v1' ? config.video_scenes_v1 : config.video_scenes
@@ -2784,7 +2824,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
           <h3>基础配置</h3>
           <div class="scene-config-grid">
             <a-form-item label="灵石消耗" class="mb-0">
-              <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用模型价格" data-testid="scene-config-credit-cost" class="w-full" />
+              <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" :placeholder="sceneConfigCreditCostPlaceholder" data-testid="scene-config-credit-cost" class="w-full" />
             </a-form-item>
             <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="场景模式" class="mb-0">
               <a-select v-model:value="sceneConfig.mode" data-testid="scene-config-ai-video-mode" :get-popup-container="getSceneSelectPopupContainer">

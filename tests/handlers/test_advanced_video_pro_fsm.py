@@ -357,7 +357,7 @@ async def test_pro_optimizer_detaches_from_fsm_after_persistent_submission(monke
     assert fsm.DATA_KEY not in context.user_data
     assert "in_conversation" not in context.user_data
     assert start_task.await_args.kwargs["internal_user_id"] == 7007
-    assert start_task.await_args.kwargs["generation_cost"] == 10
+    assert start_task.await_args.kwargs["generation_cost"] == 9
     assert "可以继续使用其他功能" in edit.await_args.args[1]
 
 
