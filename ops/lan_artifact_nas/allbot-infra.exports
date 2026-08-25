@@ -1,2 +1,1 @@
-/volume1/AllBotInfra/model-registry 10.250.150.1(rw,sync,no_subtree_check,root_squash)
-
+/volume1/AllBotInfra/model-registry 10.250.150.1(rw,sync,no_subtree_check,root_squash,fsid=0)

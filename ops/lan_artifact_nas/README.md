@@ -38,7 +38,8 @@ workspaces.
    central store containers, start the compatibility proxy sockets, and verify
    the established endpoints. Do not drain or restart GPU runtimes.
 6. Move the local model source directory to an exact rollback path, install the
-   managed `model-registry.fstab` entry, mount NFS at the original path, and
+   managed `model-registry.fstab` entry, mount the dedicated NFSv4 `fsid=0`
+   export at the original path, and
    verify the complete source tree and model import dry-run.
 7. Pull a pinned Registry manifest and run one existing-slot model-cache
    preflight through the fleet helper. Verify current image/profile identities
@@ -50,4 +51,3 @@ workspaces.
 
 Repository files never contain the private `.env`, NAS sudo password or model
 credentials. Runtime evidence belongs in `logs/` and is not committed.
-
