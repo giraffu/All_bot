@@ -13,6 +13,7 @@ from src.domain_config.scail2_video import (
 )
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
     normalize_minimax_h3_addon_items,
@@ -1477,7 +1478,37 @@ def patch_minimax_h3_workflow(
             raise ValueError(f"invalid MiniMax H3 main model: {message}") from exc
         raise ValueError(f"invalid MiniMax H3 addon configuration: {message}") from exc
     workflow["1"]["inputs"]["unet_name"] = spec.model_name
-    model_input = ["1", 0] if task_type == "minimax_h3_ref2v" else ["8", 0]
+    use_official_fl2va = (
+        spec.main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
+        and task_type != "minimax_h3_ref2v"
+    )
+    if use_official_fl2va:
+        model_input = ["8", 0]
+        workflow["33"] = {
+            "inputs": {"sampler_name": "euler"},
+            "class_type": "KSamplerSelect",
+        }
+        workflow["34"] = {
+            "inputs": {
+                "model": ["7", 0],
+                "scheduler": "simple",
+                "steps": 8,
+                "denoise": 1.0,
+            },
+            "class_type": "BasicScheduler",
+        }
+    else:
+        model_input = ["1", 0]
+        workflow["33"] = {
+            "inputs": {"sampler_name": "er_sde"},
+            "class_type": "KSamplerSelect",
+        }
+        workflow["34"] = {
+            "inputs": {
+                "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
+            },
+            "class_type": "ManualSigmas",
+        }
     prompt_parts: list[str] = []
     for offset, selection in enumerate(addon_items):
         addon = MINIMAX_H3_ADDON_MODELS[selection.name]

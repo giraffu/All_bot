@@ -197,6 +197,17 @@ MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM = MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM.replace(
 MINIMAX_H3_OPTIONAL_ADDONS_USER = MINIMAX_H3_DIALOGUE_LANGUAGE_USER
 
 
+# Version 5 preserves the official prompt structure while matching the v3
+# runtime: 10Eros now provides the native TURBO hybrid base and its preferred
+# seven-step er_sde schedule; server-selected content LoRAs remain optional.
+MINIMAX_H3_V3_OPTIONAL_ADDONS_SYSTEM = MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM.replace(
+    "the MiniMax H3 10Eros-Max Beta2 base with fixed LightX2V 8-step acceleration and optional server-selected add-ons",
+    "the MiniMax H3 10Eros-Max TURBO hybrid Beta3 base with its native 7-step er_sde schedule and optional server-selected add-ons",
+    1,
+)
+MINIMAX_H3_V3_OPTIONAL_ADDONS_USER = MINIMAX_H3_OPTIONAL_ADDONS_USER
+
+
 MINIMAX_H3_REF2V_SYSTEM = r'''You compile ONE English positive_prompt for MiniMax H3 reference-to-video. The attached images are ordered identity, appearance, prop, or style references and are never video frames. Refer to every used image only with its exact <Picture N> label. Return only the structured positive_prompt field; never output model names, LoRAs, strengths, sampler settings, or hidden implementation details.
 
 Write one coherent six-part prompt in this order: (1) subject and reference binding, (2) scene and environment, (3) ordered actions and motion, (4) camera and composition, (5) lighting, texture, and visual style, (6) native audio and dialogue timing. Preserve identity and distinguish each referenced subject or style. Do not invent a reference image, renumber images, or imply any reference is the first/last video frame. Preserve the user's dialogue language exactly.'''

@@ -271,17 +271,27 @@ def test_minimax_h3_accepts_empty_legacy_addon_placeholders(inputs):
     assert build_minimax_h3_spec(MINIMAX_H3_T2V, inputs).mode == "t2v"
 
 
-def test_minimax_h3_uses_fixed_10eros_beta2_model_for_public_modes():
+def test_minimax_h3_uses_fixed_10eros_v3_hybrid_model_for_all_public_modes():
     for task_type, images in (
         (MINIMAX_H3_T2V, []),
         (MINIMAX_H3_I2V, ["first.png"]),
         (MINIMAX_H3_FLF2V, ["first.png", "last.png"]),
+        (MINIMAX_H3_REF2V, ["reference.png"]),
     ):
         spec = build_minimax_h3_spec(
             task_type,
-            {"images": images, "aspect_ratio": "source" if images else "16:9"},
+            {
+                "images": images,
+                "aspect_ratio": (
+                    "source"
+                    if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}
+                    else "16:9"
+                ),
+            },
         )
-        assert spec.model_name == "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
+        assert spec.model_name == (
+            "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+        )
 
 
 @pytest.mark.parametrize(
@@ -341,9 +351,7 @@ def test_minimax_h3_ref2v_accepts_ordered_reference_images(count):
 
     assert spec.mode == "ref2v"
     assert spec.images == tuple(images)
-    assert spec.model_name == (
-        "MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
-    )
+    assert spec.model_name == "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
     assert (spec.width, spec.height) != (0, 0)
 
 

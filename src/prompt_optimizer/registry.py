@@ -24,6 +24,8 @@ from src.prompt_optimizer.minimax_h3_prompt import (
     MINIMAX_H3_OFFICIAL_BASE_USER,
     MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM,
     MINIMAX_H3_OPTIONAL_ADDONS_USER,
+    MINIMAX_H3_V3_OPTIONAL_ADDONS_SYSTEM,
+    MINIMAX_H3_V3_OPTIONAL_ADDONS_USER,
     MINIMAX_H3_REF2V_SYSTEM,
     MINIMAX_H3_REF2V_USER,
 )
@@ -554,6 +556,23 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "dialogue_language_instructions",
             ),
             compatible_profile_refs=_MINIMAX_H3_V5_PROFILE_REFS,
+            active=False,
+        ),
+        "minimax_h3_10eros_naughtytimes@5": PromptOptimizationTemplate(
+            id="minimax_h3_10eros_naughtytimes",
+            version=5,
+            label="高级图生视频pro",
+            description="10Eros H3 v3 官方结构、对白语言保留与可选 LoRA",
+            system_template=MINIMAX_H3_V3_OPTIONAL_ADDONS_SYSTEM,
+            user_template=MINIMAX_H3_V3_OPTIONAL_ADDONS_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "original_prompt",
+                "dialogue_language_instructions",
+            ),
+            compatible_profile_refs=_MINIMAX_H3_V5_PROFILE_REFS,
         ),
         "minimax_h3_ref2v@1": PromptOptimizationTemplate(
             id="minimax_h3_ref2v",
@@ -850,8 +869,8 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             output_fields=("positive_prompt",),
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
-            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@4"}),
-            default_template_ref="minimax_h3_10eros_naughtytimes@4",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@5",
             max_output_characters=7000,
         ),
         "minimax_h3_i2v_prompt@5": PromptOptimizationProfile(
@@ -864,8 +883,8 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             output_fields=("positive_prompt",),
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
-            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@4"}),
-            default_template_ref="minimax_h3_10eros_naughtytimes@4",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@5",
             max_output_characters=7000,
         ),
         "minimax_h3_flf2v_prompt@5": PromptOptimizationProfile(
@@ -878,8 +897,8 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             output_fields=("positive_prompt",),
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
-            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@4"}),
-            default_template_ref="minimax_h3_10eros_naughtytimes@4",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@5",
             max_output_characters=7000,
         ),
         **{
@@ -1178,7 +1197,7 @@ def build_prompt_variables(
         ),
         "media_frame_instructions": media_frame_instructions,
         "dialogue_language_instructions": build_dialogue_language_contract(prompt),
-        "addon_summary": "10Eros-Max Beta2 with fixed LightX2V 8-step acceleration; optional add-ons are selected by the server and must not be named in the generated prompt.",
+        "addon_summary": "10Eros-Max TURBO hybrid Beta3 with its native 7-step er_sde schedule; optional add-ons are selected by the server and must not be named in the generated prompt.",
         "addon_rules": "Do not output model names, LoRA names, strengths, or trigger tokens.",
         "breasts_vocabulary_rule": (
             "nipples and areoles require textual or visual evidence; areolas is forbidden."

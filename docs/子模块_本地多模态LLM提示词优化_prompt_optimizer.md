@@ -96,7 +96,7 @@ tokens 起步。并发数、实际显存占用和模型是否已加载属于运�
 
 ### 4.1 MiniMax H3 官方 Base 输出
 
-当前 H3 模板 `minimax_h3_10eros_naughtytimes@4` 采用官方
+当前 H3 模板 `minimax_h3_10eros_naughtytimes@5` 采用官方
 [`h3-prompt-writing/base-en.txt`](https://github.com/MiniMax-AI/MiniMax-H3/blob/main/skills/h3-prompt-writing/references/base-en.txt)
 格式。三个核心字段顺序固定为：
 

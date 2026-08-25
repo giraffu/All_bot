@@ -8,22 +8,15 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
-        "diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
+        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
     ][1:4] == (
-        "57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20",
-        40_222_933_592,
-        "https://huggingface.co/TenStrip/10Eros-Max/resolve/47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
-    )
-    assert files[
-        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors"
-    ][1:4] == (
-        "6eb3b291a448cbfeed00328ea075c8f43551b1835af606a0ccae421765a122d4",
-        40_228_444_088,
-        "https://huggingface.co/TenStrip/10Eros-Max/resolve/7766d5d6b99b6fc5ba7a37b74fe9a2f2068360f3/10Eros_Max_h3_TURBO_ref2va_beta2.safetensors",
+        "ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2",
+        40_228_492_688,
+        "https://huggingface.co/TenStrip/10Eros-Max/resolve/47be06381f1a558f5fbd96e94d808d61fb164006/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
     )
     assert files[
         "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_fp8_scaled.safetensors"
@@ -129,9 +122,9 @@ def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
         155_110_304,
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
-    assert len(files) == 25
-    assert sum(entry[2] for entry in module.FILES) == 152_683_621_927
-    assert module.MIN_FREE_BYTES == 145 * 1024**3
+    assert len(files) == 24
+    assert sum(entry[2] for entry in module.FILES) == 112_460_736_935
+    assert module.MIN_FREE_BYTES == 110 * 1024**3
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):

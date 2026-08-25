@@ -22,7 +22,7 @@ AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280
 
 `ai_video_scenes[].main_model` 只允许 `10eros|official`，缺失或旧配置默认
 `10eros`。场景配置弹窗的“主模型”选择由 GET options 下发
-`10Eros Max H3` 和 `MiniMax H3 官方模型`；两种选择都透传到 I2V、
+`10Eros Max H3 v3` 和 `MiniMax H3 官方模型`；两种选择都透传到 I2V、
 有尾帧的 FLF2V 和 REF2V，未知值不得变成任意 checkpoint 路径。
 
 ## 1. 范围与定位

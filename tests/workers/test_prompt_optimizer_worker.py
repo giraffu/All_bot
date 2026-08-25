@@ -270,7 +270,7 @@ async def test_minimax_h3_executor_retries_invalid_model_json_response():
 
 @pytest.mark.asyncio
 async def test_minimax_h3_executor_restores_omitted_empty_warnings_field():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     expected = _official_h3_prompt("i2v")
     generated = expected.split("\n\n", 1)[1]
     generated = generated.removeprefix("integrated_multimodal_description: ")
@@ -310,7 +310,7 @@ async def test_minimax_h3_executor_restores_omitted_empty_warnings_field():
 
 @pytest.mark.asyncio
 async def test_minimax_h3_executor_still_rejects_unknown_output_fields():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
 
     class ExtraFieldProvider(FakeProvider):
         async def optimize(self, **kwargs):
@@ -445,7 +445,7 @@ def _official_h3_prompt(
 async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_output(
     mode, profile_ref, media
 ):
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     expected = _official_h3_prompt(mode, second_shot=mode == "flf2v")
     result = await execute_prompt_optimization(
         {
@@ -467,7 +467,7 @@ async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_out
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variations():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     generated = _official_h3_prompt("i2v")
     generated = generated.split("\n\n", 1)[1]
     generated = generated.replace(
@@ -498,7 +498,7 @@ async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variatio
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_restores_omitted_integrated_field_header():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     generated = _official_h3_prompt("i2v").split("\n\n", 1)[1]
     generated = generated.removeprefix("integrated_multimodal_description: ")
 
@@ -522,7 +522,7 @@ async def test_minimax_h3_i2v_server_restores_omitted_integrated_field_header():
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     alignment, core = _official_h3_prompt("i2v").split("\n\n", 1)
     generated = (
         alignment
@@ -557,7 +557,7 @@ async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor()
 
 @pytest.mark.asyncio
 async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     alignment, core = _official_h3_prompt("flf2v", second_shot=True).split("\n\n", 1)
     generated = (
         alignment
@@ -605,7 +605,7 @@ async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors()
     ],
 )
 async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(invalid):
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     media = (
         [{"role": "start_image", "object_key": "start.webp"}]
         if "For the target video" in invalid
@@ -642,7 +642,7 @@ async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(i
 
 @pytest.mark.asyncio
 async def test_minimax_h3_retries_when_model_translates_detected_dialogue():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@5")
     translated = _official_h3_prompt(
         "t2v", dialogue="(S1) says: <d>[Chinese] 不要离开我。</d>"
     )

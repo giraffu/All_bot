@@ -258,7 +258,7 @@ def test_minimax_h3_profiles_share_official_base_prompt_template(
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=4,
+        template_version=5,
         media=_media(*roles),
         context={"duration_seconds": 15},
     )
@@ -267,9 +267,9 @@ def test_minimax_h3_profiles_share_official_base_prompt_template(
     assert capability["templates"] == [
         {
             "id": "minimax_h3_10eros_naughtytimes",
-            "version": 4,
+            "version": 5,
             "label": "高级图生视频pro",
-            "description": "MiniMax H3 官方结构、对白语言保留与可选 LoRA",
+            "description": "10Eros H3 v3 官方结构、对白语言保留与可选 LoRA",
             "is_default": True,
         }
     ]
@@ -303,7 +303,7 @@ def test_minimax_h3_prompt_renders_official_three_fields_and_mode_alignment(
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=4,
+        template_version=5,
         media=_media(*roles),
         context={"duration_seconds": 10},
     )
@@ -346,7 +346,7 @@ def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
         resolve_prompt_optimization(
             target_task_type=target,
             template_id="minimax_h3_10eros_naughtytimes",
-            template_version=4,
+            template_version=5,
             media=_media(*roles),
             context={"duration_seconds": duration},
         )
@@ -361,13 +361,14 @@ def test_minimax_h3_v1_prompt_assets_remain_readable_but_inactive():
     assert get_profile_by_ref("minimax_h3_i2v_prompt@3").active is False
     assert get_template_by_ref("minimax_h3_10eros_naughtytimes@3").active is False
     assert get_profile_by_ref("minimax_h3_i2v_prompt@4").active is False
+    assert get_template_by_ref("minimax_h3_10eros_naughtytimes@4").active is False
 
 
 def test_minimax_h3_current_template_injects_detected_dialogue_language_contract():
     resolved = resolve_prompt_optimization(
         target_task_type="minimax_h3_t2v",
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=4,
+        template_version=5,
         media=[],
         context={"duration_seconds": 10},
     )
