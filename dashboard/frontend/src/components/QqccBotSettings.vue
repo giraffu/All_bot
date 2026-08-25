@@ -453,16 +453,6 @@ const aiVideoResolutionOptions: readonly AiVideoResolutionKey[] = [
 ]
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
 const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15]
-const ref2vBaseCredits: Record<AiVideoResolutionKey, number> = {
-  preview: 15,
-  small: 23,
-  standard: 30,
-  hd: 45,
-}
-const calculateRef2vCreditCost = (
-  resolution: AiVideoResolutionKey,
-  duration: AiVideoDurationKey,
-) => ref2vBaseCredits[resolution] * (duration / 5)
 const demoSlots: DemoMediaSlot[] = ['input', 'output']
 
 const videoEngineLabels: Record<VideoSceneEngine, string> = {
@@ -2224,9 +2214,7 @@ const confirmSceneConfig = () => {
     scene.aspect_ratio = normalizeAiVideoAspectRatio(sceneConfig.aspect_ratio)
     scene.duration = sceneConfig.duration as AiVideoDurationKey
     scene.resolution = sceneConfig.resolution as AiVideoResolutionKey
-    scene.credit_cost = scene.mode === 'ref2v'
-      ? calculateRef2vCreditCost(scene.resolution, scene.duration)
-      : normalizeSceneCreditCost(sceneConfig.credit_cost)
+    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
     scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items, scene.mode)
     scene.end_frame_draw_scene_id = scene.mode === 'ref2v' ? '' : normalizeEndFrameDrawSceneId(
@@ -2767,7 +2755,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
           <h3>基础配置</h3>
           <div class="scene-config-grid">
             <a-form-item label="灵石消耗" class="mb-0">
-              <a-input-number v-model:value="sceneConfig.credit_cost" :disabled="sceneConfig.kind === 'ai_video' && sceneConfig.mode === 'ref2v'" :min="1" :step="1" :precision="0" :placeholder="sceneConfig.kind === 'ai_video' && sceneConfig.mode === 'ref2v' ? '由服务端价格矩阵派生' : '未配置/沿用旧规则'" data-testid="scene-config-credit-cost" class="w-full" />
+              <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用模型价格" data-testid="scene-config-credit-cost" class="w-full" />
             </a-form-item>
             <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="场景模式" class="mb-0">
               <a-select v-model:value="sceneConfig.mode" data-testid="scene-config-ai-video-mode" :get-popup-container="getSceneSelectPopupContainer">

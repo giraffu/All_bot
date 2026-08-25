@@ -551,7 +551,7 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
 
 
 @pytest.mark.asyncio
-async def test_qqcc_ref2v_preserves_full_template_set_with_per_slot_replacements():
+async def test_qqcc_ref2v_preserves_templates_replacements_and_custom_price():
     references = [
         "qqcc/config/ref2v/ai_video/ref-scene/reference-a/input",
         "qqcc/config/ref2v/ai_video/ref-scene/reference-b/input",
@@ -582,7 +582,7 @@ async def test_qqcc_ref2v_preserves_full_template_set_with_per_slot_replacements
                         "aspect_ratio": "9:16",
                         "duration": 10,
                         "resolution": "small",
-                        "credit_cost": 999,
+                        "credit_cost": 73,
                     }
                 ],
             }
@@ -606,8 +606,8 @@ async def test_qqcc_ref2v_preserves_full_template_set_with_per_slot_replacements
     )
 
     assert plan.kind == QuickVideoSubmissionKind.H3_REF2V
-    assert plan.total_cost == 46
-    assert plan.fixed_credit_cost == 46
+    assert plan.total_cost == 73
+    assert plan.fixed_credit_cost == 73
     assert plan.reference_images == references
     assert plan.reference_image_paths == [
         "/tmp/user-ref-a.png",

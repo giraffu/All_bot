@@ -50,7 +50,7 @@ from src.services.qqcc_config_service import (
 
 
 @pytest.mark.parametrize("reference_count", [1, 4])
-def test_qqcc_ref2v_scene_derives_read_only_price_and_preserves_reference_order(reference_count):
+def test_qqcc_ref2v_scene_preserves_custom_price_and_reference_order(reference_count):
     references = [
         f"qqcc/config/ref2v/ai_video/scene/reference-{index}/input"
         for index in range(reference_count)
@@ -75,9 +75,32 @@ def test_qqcc_ref2v_scene_derives_read_only_price_and_preserves_reference_order(
     scene = normalize_qqcc_config(raw)["ai_video_scenes"][0]
 
     assert scene["reference_images"] == references
-    assert scene["credit_cost"] == 135
+    assert scene["credit_cost"] == 1
     assert scene["aspect_ratio"] == "9:16"
     assert scene["next_scene_id"] is None
+
+
+def test_qqcc_ref2v_scene_uses_price_matrix_when_custom_price_is_empty():
+    scene = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {
+                    "id": "scene",
+                    "name": "REF",
+                    "prompt": "<Picture 1> and <Picture 2>",
+                    "mode": "ref2v",
+                    "reference_images": [
+                        "qqcc/config/ref2v/ai_video/scene/reference-0/input"
+                    ],
+                    "duration": 15,
+                    "resolution": "hd",
+                    "credit_cost": None,
+                }
+            ]
+        }
+    )["ai_video_scenes"][0]
+
+    assert scene["credit_cost"] == 135
 
 
 def test_qqcc_ref2v_templates_preserve_display_names_and_telegram_file_ids():
@@ -302,12 +325,15 @@ def test_qqcc_scene_credit_cost_contract_preserves_valid_values_and_legacy_nulls
     assert config["filter_scenes"][0]["credit_cost"] is None
 
 
+@pytest.mark.parametrize("section", ["draw_scenes", "ai_video_scenes"])
 @pytest.mark.parametrize("invalid_cost", [0, -1, 1.5, True, False, "2"])
-def test_validate_qqcc_scene_credit_costs_rejects_invalid_explicit_values(invalid_cost):
+def test_validate_qqcc_scene_credit_costs_rejects_invalid_explicit_values(
+    section, invalid_cost
+):
     with pytest.raises(QqccSceneCreditCostError):
         validate_qqcc_scene_credit_costs(
             {
-                "draw_scenes": [
+                section: [
                     {
                         "id": "draw",
                         "name": "Draw",

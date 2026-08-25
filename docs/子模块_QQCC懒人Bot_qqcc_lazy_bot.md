@@ -7,7 +7,8 @@ H3 FLF2V。REF2V 场景由管理员维护 1–4 张可命名模板图；用户�
 进入模板替换步骤：下一张图片只替换对应模板，Bot 重新发送场景提示后才接收女性人物
 主体图。上传的主体图作为 `<Picture 1>`，管理员配置的全部模板依次占用
 `<Picture 2>...<Picture N>`；用户替换只覆盖对应槽位，其余槽位继续使用管理员模板。
-固定画幅与价格由服务端派生。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
+固定画幅由场景配置；`credit_cost` 可由管理员设置为大于等于 1 的固定价格，留空时
+才按服务端分辨率/时长价格矩阵派生。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
 清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 17 个可选附加模型及模式范围，配置
 后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
@@ -146,10 +147,10 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`credit_cost` 接受大于等于 1 的管理员固定价，留空则使用该分辨率/时长的 H3 REF2V 模型价格。17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
-- 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数；缺失字段按 `null` 归一，无需迁移。固定价只读取用户直接点击的根场景，代表完整链总价；清空恢复旧动态/分段计费。新增场景从 options 读取默认值：AI动图 `6`、AI视频 `10`、AI绘图/AI滤镜 `2`。修改模型、时长、尾帧或后处理不会自动改价。
+- 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数。普通场景缺失字段按 `null` 归一；REF2V 缺失或为 `null` 时按模型价格矩阵归一，无需迁移。固定价只读取用户直接点击的根场景，代表完整链总价；普通场景清空恢复旧动态/分段计费，REF2V 清空恢复模型价格。新增场景从 options 读取默认值：AI动图 `6`、AI视频 `10`、AI绘图/AI滤镜 `2`。修改模型、时长、尾帧或后处理不会自动改已设置的固定价。
 - 四类 scene 均可附带 `demo_input_media` / `demo_output_media`：`{ object_key, media_type, mime_type, file_name, content_sha256, telegram_file_ids }`。AI绘图/滤镜的两个字段都是 image；AI动图/AI视频 input 是 image、output 是 video。`preview_url` 只属于 GET/上传响应，不持久化。
 - `video_buttons` 与 `video_settings` 仅保留旧配置兼容；管理后台不再编辑 AI 动图画质或全局时长
 - `prompts`: `undress`, `i2i_draw_quick_undress`, `masturbation`, `face_swap`, `perfect_video_insert`, `doggy_style`, `blowjob`, `undress_tongue`, `closeup_blowjob`
