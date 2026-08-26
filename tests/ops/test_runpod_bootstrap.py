@@ -430,6 +430,40 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert '"workers/runpod_profiles/all/Dockerfile.runtime-refresh"' in catalog
 
 
+def test_runpod_profiles_do_not_reinstall_an_existing_ffmpeg_package():
+    """Mutable upstream bases may already carry a conflicting ffmpeg package."""
+
+    for profile in ("i2i_pro", "face_swap", "scail2"):
+        dockerfile = (
+            Path("workers") / "runpod_profiles" / profile / "Dockerfile"
+        ).read_text(encoding="utf-8")
+
+        assert "if ! command -v ffmpeg >/dev/null 2>&1; then" in dockerfile
+        assert 'packages="${packages} ffmpeg"' in dockerfile
+
+
+def test_runpod_profiles_pin_the_shared_upstream_base_by_digest():
+    profiles = (
+        "i2i_pro",
+        "face_swap",
+        "scail2",
+        "wan22_aio_video",
+        "img2img_lora",
+        "ltx_video",
+        "ltx_t2v",
+    )
+    expected = (
+        "ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim@sha256:"
+        "4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9"
+    )
+
+    for profile in profiles:
+        dockerfile = (
+            Path("workers") / "runpod_profiles" / profile / "Dockerfile"
+        ).read_text(encoding="utf-8")
+        assert expected in dockerfile
+
+
 def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
     dockerfile = LTX_T2V_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
 
