@@ -87,7 +87,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - agent、patcher、workflow 只维护 `workers/comfy_agent/`；profile 构建直接
   复制 canonical package 和根 `src/`，`runpod_runtime` 只留 entrypoint、relay、
   requirements 与运维脚本。镜像 ENV/label 嵌入 Git SHA、package hash 与 mapping
-  hash，agent 启动时验证并在 heartbeat 的 `runtime_manifest` 报告；Central 不携带 workflow。
+  hash。复制前必须清空基础镜像继承的完整 `runpod_worker`，复制后在构建阶段调用
+  `load_runtime_manifest()`，agent 启动时再次验证并在 heartbeat 的
+  `runtime_manifest` 报告；Central 不携带 workflow。
 - 每个 RunPod profile 必须同时包含 `shared/`，并在构建阶段 smoke import
   `shared.character_reference_sheet`；否则 `comfy_agent` 会在 ComfyUI 和 relay
   就绪后才因结果物化依赖缺失而退出，且无 heartbeat。

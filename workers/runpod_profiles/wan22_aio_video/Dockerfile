@@ -267,12 +267,14 @@ RUN set -euo pipefail; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
+RUN rm -rf /opt/allbot/runtime/runpod_worker
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
 COPY src /opt/allbot/runtime/runpod_worker/src
 RUN test -n "$ALLBOT_GIT_SHA" && \
     test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
-    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256" && \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.runtime_manifest import load_runtime_manifest; load_runtime_manifest()'
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 RUN python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh

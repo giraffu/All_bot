@@ -62,12 +62,14 @@ RUN set -euo pipefail; \
       awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir
 
+RUN rm -rf /opt/allbot/runtime/runpod_worker
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
 COPY src /opt/allbot/runtime/runpod_worker/src
 RUN test -n "$ALLBOT_GIT_SHA" && \
     test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
-    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256" && \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.runtime_manifest import load_runtime_manifest; load_runtime_manifest()'
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh

@@ -53,12 +53,27 @@ def test_every_gpu_profile_consumes_the_canonical_worker_package():
     assert runtime_dockerfiles
     for dockerfile in runtime_dockerfiles:
         content = dockerfile.read_text(encoding="utf-8")
+        purge_index = content.find(
+            "rm -rf /opt/allbot/runtime/runpod_worker"
+        )
+        runtime_copy_index = content.find(
+            "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker"
+        )
+        agent_copy_index = content.find(
+            "COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent"
+        )
         assert "COPY workers/comfy_agent " in content, dockerfile
         assert "COPY src " in content, dockerfile
         assert "COPY workers/runpod_runtime/comfy_agent" not in content, dockerfile
+        assert purge_index >= 0, dockerfile
+        assert purge_index < runtime_copy_index < agent_copy_index, dockerfile
         assert 'test -n "$ALLBOT_GIT_SHA"' in content, dockerfile
         assert 'test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256"' in content, dockerfile
         assert 'test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"' in content, dockerfile
+        assert (
+            "from comfy_agent.runtime_manifest import load_runtime_manifest; "
+            "load_runtime_manifest()"
+        ) in content, dockerfile
 
 
 def test_profile_build_stages_canonical_sources_and_hash_build_args():
