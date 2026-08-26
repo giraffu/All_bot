@@ -139,6 +139,12 @@ const buildEntryVisibilityResponse = () => ({
         default_strength: 0.7,
       },
       {
+        value: 'naughty_times',
+        label: '成人动作测试一',
+        supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
+        default_strength: 1,
+      },
+      {
         value: 'motion_booster_ref2va',
         label: '参考人物动作强化',
         supported_modes: ['ref2v'],
@@ -269,7 +275,8 @@ describe('MainBotMenuSettings', () => {
 
     await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
     await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('official')
-    await wrapper.get('[data-testid="avp-addon-models-i2v"]').setValue(['motion_booster'])
+    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-motion_booster"]').setValue(true)
+    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-naughty_times"]').setValue(true)
     await wrapper.get('[data-testid="avp-addon-strength-i2v-motion_booster"]').setValue('1.25')
     await wrapper.get('[data-testid="save-advanced-video-pro-config"]').trigger('click')
     await flushPromises()
@@ -277,9 +284,28 @@ describe('MainBotMenuSettings', () => {
     const payload = apiMocks.updateFeatureEntryVisibilityConfig.mock.calls[0][0]
     expect(payload.advanced_video_pro.i2v).toEqual({
       main_model: 'official',
-      addon_items: [{ name: 'motion_booster', strength: 1.25 }],
+      addon_items: [
+        { name: 'motion_booster', strength: 1.25 },
+        { name: 'naughty_times', strength: 1 },
+      ],
     })
     expect(messageMocks.success).toHaveBeenCalledWith('Pro 模型预设已保存')
+  })
+
+  it('allows every mode to save no addon model by leaving all checkboxes clear', async () => {
+    const wrapper = mount(MainBotMenuSettings)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
+    const checkbox = wrapper.get('[data-testid="avp-addon-checkbox-t2v-motion_booster"]')
+    await checkbox.setValue(true)
+    await checkbox.setValue(false)
+    await wrapper.get('[data-testid="save-advanced-video-pro-config"]').trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateFeatureEntryVisibilityConfig.mock.calls[0][0]
+    expect(payload.advanced_video_pro.t2v.addon_items).toEqual([])
+    expect(wrapper.text()).toContain('不勾选即不使用附加模型')
   })
 
   it('changes row size, visibility, and main-menu order before saving', async () => {
