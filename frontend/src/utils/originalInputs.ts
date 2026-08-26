@@ -60,6 +60,9 @@ const resolveInputLabelKey = (
   total: number,
   file: string | null,
 ): string => {
+  if (taskType === 'minimax_h3_ref2v') {
+    return index === 0 ? 'primary_image' : 'reference_image_n'
+  }
   if (WAN22_TASK_TYPES.has(taskType) || MINIMAX_H3_IMAGE_TASK_TYPES.has(taskType)) {
     if (total > 1) {
       return index === 0 ? 'start_frame' : 'end_frame'
@@ -145,8 +148,10 @@ export const resolveOriginalInputPreviews = (
     const file = files[index] || null
     const url = resolvePreviewUrl(file, urls[index] || null, source, index)
     const labelKey = resolveInputLabelKey(taskType, index, total, file || urls[index] || null)
-    const label = labelKey === 'input_n'
-      ? t('original_inputs.input_n', { count: index + 1 })
+    const label = ['input_n', 'reference_image_n'].includes(labelKey)
+      ? t(`original_inputs.${labelKey}`, {
+          count: labelKey === 'reference_image_n' ? index : index + 1,
+        })
       : t(`original_inputs.${labelKey}`)
 
     const mediaType: OriginalInputPreview['mediaType'] = isVideoFile(url || file || '')

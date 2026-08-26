@@ -62,6 +62,24 @@ describe('resolveOriginalInputPreviews', () => {
     ])
   })
 
+  it('labels MiniMax H3 REF2V primary and reusable references in input order', () => {
+    const previews = resolveOriginalInputPreviews({
+      task_type: 'minimax_h3_ref2v',
+      input_files: ['uploads/person.png', 'uploads/pose.png', 'uploads/style.png'],
+      input_file_urls: [
+        'https://cdn.test/person.png',
+        'https://cdn.test/pose.png',
+        'https://cdn.test/style.png',
+      ],
+    }, t)
+
+    expect(previews.map(preview => preview.label)).toEqual([
+      'original_inputs.primary_image',
+      'original_inputs.reference_image_n:1',
+      'original_inputs.reference_image_n:2',
+    ])
+  })
+
   it('labels SCAIL-2 reference image and motion video', () => {
     const previews = resolveOriginalInputPreviews({
       task_type: 'scail2_action_transfer_long',

@@ -606,6 +606,8 @@
       "aspect": "比例",
       "required_images": "请重新上传 {count} 张图片。",
       "required_end_frame": "终止帧（必传）",
+      "template_reference": "模板参考图 {count}",
+      "replace_reference": "替换参考图",
       "aspect_mismatch": "首尾帧比例差不能超过 1%，请重新上传。"
     },
     "image_prompt": {
@@ -1139,6 +1141,8 @@
     "title": "原始输入",
     "input_n": "输入 {count}",
     "reference_image": "参考图",
+    "primary_image": "主图（套用时由用户自选）",
+    "reference_image_n": "模板参考图 {count}",
     "base_image": "底图",
     "start_frame": "起始帧",
     "end_frame": "终止帧",

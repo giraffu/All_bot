@@ -14,11 +14,8 @@ from telegram.ext import (
     filters,
 )
 
-from src.domain_config.minimax_h3 import (
-    MINIMAX_H3_FLF2V,
-    MINIMAX_H3_I2V,
-    get_minimax_h3_cost,
-)
+from src.domain_config.minimax_h3 import get_minimax_h3_cost
+from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
 from src.handlers.fsm.fsm_shared import (
@@ -498,7 +495,7 @@ async def _submit_generation(
             user_id=user.id,
             username=user.username,
             cleanup=True,
-            allow_contribute=plan.task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V},
+            allow_contribute=is_gallery_supported_task_type(plan.task_type),
         ),
     )
     _clear(context, preserve_paths=True)

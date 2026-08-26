@@ -397,7 +397,9 @@ async def build_history_apply_context_response(
             2 if len(split_history_input_files(history.input_file)) >= 2 else 1
         )
     if minimax_h3_context:
-        required_image_count = 1 if history.type == "minimax_h3_i2v" else 2
+        required_image_count = (
+            2 if history.type == "minimax_h3_flf2v" else 1
+        )
 
     return build_apply_context_response(
         post_id=post_id,

@@ -20,9 +20,14 @@ describe('template task feature availability', () => {
   })
 
   it('keeps H3 Pro apply available in the test feature set', () => {
-    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
+    window.__ALLBOT_CONFIG__ = {
+      enable_minimax_h3: true,
+      enable_minimax_h3_ref2v: true,
+    }
 
     expect(getCanonicalTemplateTaskType('minimax_h3_i2v'))
       .toBe('minimax_h3_i2v')
+    expect(getCanonicalTemplateTaskType('minimax_h3_ref2v'))
+      .toBe('minimax_h3_ref2v')
   })
 })

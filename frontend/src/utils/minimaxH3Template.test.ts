@@ -9,5 +9,6 @@ describe('MiniMax H3 template helpers', () => {
 
   it('uses locked resolution and duration for cost', () => {
     expect(getMinimaxH3TemplateCost('standard', 10)).toBe(24)
+    expect(getMinimaxH3TemplateCost('standard', 10, 'ref2v')).toBe(33)
   })
 })

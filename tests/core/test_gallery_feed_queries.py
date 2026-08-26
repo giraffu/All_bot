@@ -9,10 +9,11 @@ from src.services.gallery_feed_queries import (
 )
 
 
-def test_advanced_video_pro_filter_groups_i2v_and_flf2v_only():
+def test_advanced_video_pro_filter_groups_all_gallery_image_modes():
     assert resolve_gallery_task_type_filter_values("minimax_h3") == (
         "minimax_h3_i2v",
         "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
     )
 
 

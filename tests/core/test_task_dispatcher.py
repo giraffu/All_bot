@@ -158,10 +158,10 @@ def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
         (MODE_MINIMAX_H3_T2V, [], False),
         (MODE_MINIMAX_H3_I2V, ["start.png"], True),
         (MODE_MINIMAX_H3_FLF2V, ["start.png", "end.png"], True),
-        (MODE_MINIMAX_H3_REF2V, ["ref.png"], False),
+        (MODE_MINIMAX_H3_REF2V, ["ref.png"], True),
     ],
 )
-def test_minimax_h3_metadata_only_enables_gallery_for_image_modes(
+def test_minimax_h3_metadata_enables_gallery_for_contributable_image_modes(
     task_type, images, gallery_supported
 ):
     strategy = MiniMaxH3Strategy(task_type, seed_provider=lambda: 123)

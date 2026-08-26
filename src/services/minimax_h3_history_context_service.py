@@ -4,8 +4,10 @@ from typing import Any
 
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ALLOWED_DURATIONS,
+    MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
     MINIMAX_H3_PIXEL_PRESETS,
     MiniMaxH3ValidationError,
     normalize_minimax_h3_addon_items,
@@ -14,10 +16,13 @@ from src.domain_config.minimax_h3 import (
 
 MINIMAX_H3_HISTORY_CONTEXT_KEY = "_minimax_h3_context"
 MINIMAX_H3_HISTORY_CONTEXT_VERSION = 1
-MINIMAX_H3_GALLERY_TASK_TYPES = frozenset({MINIMAX_H3_I2V, MINIMAX_H3_FLF2V})
+MINIMAX_H3_GALLERY_TASK_TYPES = frozenset(
+    {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V, MINIMAX_H3_REF2V}
+)
 _MODE_BY_TASK_TYPE = {
     MINIMAX_H3_I2V: "i2v",
     MINIMAX_H3_FLF2V: "flf2v",
+    MINIMAX_H3_REF2V: "ref2v",
 }
 
 
@@ -48,7 +53,11 @@ def build_minimax_h3_history_context(
         mode != expected_mode
         or requested_duration not in MINIMAX_H3_ALLOWED_DURATIONS
         or resolution_preset not in MINIMAX_H3_PIXEL_PRESETS
-        or aspect_ratio != "source"
+        or (
+            aspect_ratio != "source"
+            if expected_mode in {"i2v", "flf2v"}
+            else aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS
+        )
     ):
         return {}
     try:

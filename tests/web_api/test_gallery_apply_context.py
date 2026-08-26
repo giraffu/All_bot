@@ -269,12 +269,52 @@ async def test_minimax_h3_apply_context_returns_locked_parameters_without_inputs
 
 
 @pytest.mark.asyncio
+async def test_minimax_h3_ref2v_apply_context_replaces_first_image_and_reuses_later_references():
+    history = History(
+        id=12,
+        user_id=123,
+        task_id="task-ref2v",
+        type="minimax_h3_ref2v",
+        prompt="locked character motion",
+        input_file="uploads/person.png|uploads/pose.png|uploads/style.png",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 1,
+                "mode": "ref2v",
+                "requested_duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "16:9",
+                "lora_items": [],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=29,
+        task_id="task-ref2v",
+        media_type="video",
+        width=896,
+        height=512,
+        duration=5,
+    )
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    response = await get_gallery_apply_context_payload(post_id=29, db=session)
+
+    assert response.required_image_count == 1
+    assert response.requested_duration == 5
+    assert response.resolution_preset == "preview"
+    assert response.aspect_ratio == "16:9"
+    assert response.input_files == ["uploads/pose.png", "uploads/style.png"]
+    assert len(response.input_file_urls) == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("task_type", "extra_outputs", "reason"),
     [
         ("minimax_h3_i2v", {}, "minimax_h3_context_missing"),
         ("minimax_h3_t2v", {}, "minimax_h3_mode_not_supported"),
-        ("minimax_h3_ref2v", {}, "minimax_h3_mode_not_supported"),
+        ("minimax_h3_ref2v", {}, "minimax_h3_context_missing"),
     ],
 )
 async def test_minimax_h3_apply_context_fails_closed(task_type, extra_outputs, reason):

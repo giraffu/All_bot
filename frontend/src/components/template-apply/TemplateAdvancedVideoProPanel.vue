@@ -24,6 +24,12 @@ interface UploadedFrame {
   dimensions: ImageDimensions
 }
 
+interface TemplateReference {
+  objectKey: string
+  preview: string
+  isReplacement: boolean
+}
+
 const props = defineProps<{
   sessionId: string
   context: TemplateApplyContext
@@ -37,14 +43,27 @@ const sessionIdRef = computed(() => props.sessionId)
 const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTemplateApplyUpload(sessionIdRef)
 
 const isFirstLastFrame = computed(() => props.context.rawTaskType === 'minimax_h3_flf2v')
+const isReferenceVideo = computed(() => props.context.rawTaskType === 'minimax_h3_ref2v')
 const requiredImageCount = computed(() => isFirstLastFrame.value ? 2 : 1)
 const firstFrame = ref<UploadedFrame | null>(null)
 const lastFrame = ref<UploadedFrame | null>(null)
+const templateReferences = ref<TemplateReference[]>(
+  (props.context.inputFiles || []).flatMap((objectKey, index) => {
+    const preview = props.context.inputFileUrls?.[index]
+    return objectKey && preview
+      ? [{ objectKey, preview, isReplacement: false }]
+      : []
+  }),
+)
 const lockedPrompt = computed(() => props.context.prompt || '')
 const lockedDuration = computed(() => props.context.requestedDuration || 5)
 const lockedResolution = computed(() => props.context.resolutionPreset || 'preview')
 const lockedAspectRatio = computed(() => props.context.aspectRatio || 'source')
-const taskCost = computed(() => getMinimaxH3TemplateCost(lockedResolution.value, lockedDuration.value))
+const taskCost = computed(() => getMinimaxH3TemplateCost(
+  lockedResolution.value,
+  lockedDuration.value,
+  isReferenceVideo.value ? 'ref2v' : 'normal',
+))
 
 watch(
   () => hasPendingUploads.value,
@@ -52,9 +71,13 @@ watch(
   { immediate: true },
 )
 watch(
-  [firstFrame, lastFrame],
-  () => templateApplyStore.setDirtyState(Boolean(firstFrame.value || lastFrame.value)),
-  { immediate: true },
+  [firstFrame, lastFrame, templateReferences],
+  () => templateApplyStore.setDirtyState(Boolean(
+    firstFrame.value
+    || lastFrame.value
+    || templateReferences.value.some(reference => reference.isReplacement)
+  )),
+  { immediate: true, deep: true },
 )
 
 const revokeFrame = (frame: UploadedFrame | null) => {
@@ -93,6 +116,27 @@ const beforeUploadLast = async (raw: File | { originFileObj?: File }) => {
   return setFrame(file, 'last_frame')
 }
 
+const beforeUploadReference = (index: number) => async (raw: File | { originFileObj?: File }) => {
+  const file = raw instanceof File ? raw : raw.originFileObj
+  if (!(file instanceof File)) return false
+  try {
+    await readImageDimensions(file)
+  } catch {
+    message.error(t('template_apply.image_prompt.upload_read_failed'))
+    return false
+  }
+  const { objectKey } = await uploadFile(file, { slot: `reference_${index + 1}` })
+  if (!objectKey) return false
+  const current = templateReferences.value[index]
+  if (current?.preview.startsWith('blob:')) URL.revokeObjectURL(current.preview)
+  templateReferences.value[index] = {
+    objectKey,
+    preview: URL.createObjectURL(file),
+    isReplacement: true,
+  }
+  return false
+}
+
 const removeFirst = () => {
   revokeFrame(firstFrame.value)
   firstFrame.value = null
@@ -105,6 +149,11 @@ const removeLast = () => {
 const cleanup = async () => {
   removeFirst()
   removeLast()
+  templateReferences.value.forEach((reference) => {
+    if (reference.isReplacement && reference.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(reference.preview)
+    }
+  })
   templateApplyStore.setDirtyState(false)
   templateApplyStore.setPendingUploads(false)
   setSubmittedTaskId(null)
@@ -125,7 +174,12 @@ const handleGenerate = async () => {
   }
   const payload = buildGenerationTaskPayload({
     taskType: props.context.rawTaskType,
-    images: frames.map(frame => frame!.objectKey),
+    images: [
+      ...frames.map(frame => frame!.objectKey),
+      ...(isReferenceVideo.value
+        ? templateReferences.value.map(reference => reference.objectKey)
+        : []),
+    ],
     prompt: lockedPrompt.value,
     promptTarget: 'inputs',
     duration: lockedDuration.value,
@@ -170,20 +224,33 @@ onBeforeUnmount(() => {
           <div class="grid grid-cols-2 gap-2 text-xs text-slate-300">
             <div>{{ t('template_apply.common.duration') }}：{{ lockedDuration }} {{ t('template_apply.common.seconds') }}</div>
             <div>{{ t('template_apply.common.resolution') }}：{{ lockedResolution }}</div>
-            <div>{{ t('template_apply.advanced_video_pro.mode') }}：{{ isFirstLastFrame ? 'FLF2V' : 'I2V' }}</div>
+            <div>{{ t('template_apply.advanced_video_pro.mode') }}：{{ isReferenceVideo ? 'REF2V' : isFirstLastFrame ? 'FLF2V' : 'I2V' }}</div>
             <div>{{ t('template_apply.advanced_video_pro.aspect') }}：{{ lockedAspectRatio }}</div>
           </div>
         </div>
 
         <TemplateApplyUploadSection
-          :title="t('template_apply.common.start_frame')"
-          :upload-text="t('template_apply.common.upload_start_frame')"
+          :title="isReferenceVideo ? t('original_inputs.primary_image') : t('template_apply.common.start_frame')"
+          :upload-text="isReferenceVideo ? t('template_apply.common.upload_reference_image') : t('template_apply.common.upload_start_frame')"
           :file-preview="firstFrame?.preview || null"
           :uploading-slots="uploadingSlots"
           :progress-by-slot="progressBySlot"
           :before-upload="beforeUploadFirst"
           @remove="removeFirst"
         />
+        <template v-if="isReferenceVideo">
+          <TemplateApplyUploadSection
+            v-for="(reference, index) in templateReferences"
+            :key="`${reference.objectKey}-${index}`"
+            :title="t('template_apply.advanced_video_pro.template_reference', { count: index + 1 })"
+            :file-preview="reference.preview"
+            :uploading-slots="uploadingSlots"
+            :progress-by-slot="progressBySlot"
+            :before-upload="beforeUploadReference(index)"
+            :replace-text="t('template_apply.advanced_video_pro.replace_reference')"
+            :show-remove="false"
+          />
+        </template>
         <TemplateApplyUploadSection
           v-if="isFirstLastFrame"
           :title="t('template_apply.advanced_video_pro.required_end_frame')"

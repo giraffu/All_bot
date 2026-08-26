@@ -24,13 +24,19 @@ describe('isGallerySubmissionEligible', () => {
   })
 
   it('allows H3 image-mode contribution only when the test feature is enabled', () => {
-    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
+    window.__ALLBOT_CONFIG__ = {
+      enable_minimax_h3: true,
+      enable_minimax_h3_ref2v: true,
+    }
 
     expect(isGallerySubmissionEligible({
       type: 'minimax_h3_i2v', allow_contribute: true,
     })).toBe(true)
     expect(isGallerySubmissionEligible({
       type: 'minimax_h3_flf2v', allow_contribute: true,
+    })).toBe(true)
+    expect(isGallerySubmissionEligible({
+      type: 'minimax_h3_ref2v', allow_contribute: true,
     })).toBe(true)
     expect(isGallerySubmissionEligible({
       type: 'minimax_h3_t2v', allow_contribute: true,

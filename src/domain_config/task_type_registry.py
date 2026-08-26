@@ -561,6 +561,8 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile=None,
         is_generation=True,
         is_video=True,
+        gallery_supported=True,
+        apply_input_reuse_supported=True,
         cost=MINIMAX_H3_REF2V_PRICE_BY_DURATION[5]["preview"],
     ),
     MODE_CHARACTER_REFERENCE_BUILD: _entry(
@@ -664,6 +666,7 @@ _GALLERY_SUBMIT_TASK_TYPE_ORDER = (
     MODE_LTX_VIDEO_FLF2V,
     MODE_MINIMAX_H3_I2V,
     MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_REF2V,
     MODE_WAN22_VIDEO_V2,
     MODE_SCAIL2_ACTION_TRANSFER,
     MODE_SCAIL2_ACTION_TRANSFER_LONG,

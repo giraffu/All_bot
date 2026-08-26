@@ -11,12 +11,16 @@ const props = withDefaults(
     title?: string
     uploadText?: string
     uploadHint?: string
+    replaceText?: string
+    showRemove?: boolean
     showProgress?: boolean
   }>(),
   {
     title: '',
     uploadText: '',
     uploadHint: '',
+    replaceText: '',
+    showRemove: true,
     showProgress: true,
   },
 )
@@ -34,11 +38,26 @@ const emit = defineEmits<{
     <div v-if="filePreview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
       <img :src="filePreview" class="h-56 w-full object-contain bg-slate-950/80" />
       <button
+        v-if="showRemove"
+        aria-label="remove"
         class="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white"
         @click="emit('remove')"
       >
         <CloseCircleOutlined />
       </button>
+      <a-upload
+        v-if="replaceText"
+        :before-upload="beforeUpload"
+        :show-upload-list="false"
+        accept="image/*"
+      >
+        <button
+          type="button"
+          class="absolute bottom-2 right-2 rounded-lg bg-cyan-500/90 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-lg hover:bg-cyan-300"
+        >
+          {{ replaceText }}
+        </button>
+      </a-upload>
     </div>
     <a-upload-dragger
       v-else

@@ -32,7 +32,7 @@ export const TASK_TYPE_CONTRACT = {
   "masturbation": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: 2 },
   "minimax_h3_flf2v": { publicType: "minimax_h3_flf2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 9 },
   "minimax_h3_i2v": { publicType: "minimax_h3_i2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 9 },
-  "minimax_h3_ref2v": { publicType: "minimax_h3_ref2v", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 10 },
+  "minimax_h3_ref2v": { publicType: "minimax_h3_ref2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: true, cost: 10 },
   "minimax_h3_t2v": { publicType: "minimax_h3_t2v", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 9 },
   "penetration_step1": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: 2 },
   "penetration_step2": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: null },
