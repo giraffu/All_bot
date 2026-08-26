@@ -41,6 +41,7 @@ class AdvancedVideoPromptDraft:
     completed_at: float | None = None
     delivered_message_ids: tuple[int, ...] = ()
     error_code: str | None = None
+    main_model: str = "10eros"
     schema_version: str = PROMPT_DRAFT_SCHEMA_VERSION
 
     def with_updates(self, **changes: Any) -> "AdvancedVideoPromptDraft":

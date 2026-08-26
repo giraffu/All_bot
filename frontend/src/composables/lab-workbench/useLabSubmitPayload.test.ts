@@ -234,7 +234,7 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.ltx_t2v_title')
   })
 
-  it('submits MiniMax H3 with optional per-model strengths', async () => {
+  it('submits MiniMax H3 without user-controlled model choices', async () => {
     const harness = createHarness('minimax_h3')
     harness.prompt.value = 'cinematic character motion with dialogue'
     harness.duration.value = '15'
@@ -266,14 +266,7 @@ describe('useLabSubmitPayload', () => {
       { name: 'pussy', strength: 0.3 },
     ]
     await harness.handleSubmit()
-    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
-      inputs: expect.objectContaining({
-        lora_items: [
-          { name: 'naughty_times', strength: 0.7 },
-          { name: 'pussy', strength: 0.3 },
-        ],
-      }),
-    }), 'lab.cards.minimax_h3_title')
+    expect(harness.submitTask.mock.calls.at(-1)?.[0].inputs).not.toHaveProperty('lora_items')
   })
 
   it('submits ordered mixed typed references for H3 REF2V', async () => {

@@ -202,8 +202,10 @@ sequenceDiagram
   缺少完整上下文的旧投稿继续支持社区互动，但禁用一键应用并返回
   `minimax_h3_context_missing`。T2V/REF2V 返回 `minimax_h3_mode_not_supported`。
 - Web 的 H3 Pro 能力还必须受 `enable_minimax_h3` 约束；Dashboard“入口控制”的
-  修仙市集横向子页以 Gallery `minimax_h3` 入口开关独立控制市集页签，不再复用 Web
-  练功房的 Pro 入口开关。
+  修仙市集横向子页为当前十二个市集类型族分别保存开关：文生图、幻想换脸、自由P图、
+  自由P图 v2.5、自由P图 v3、图生视频、高级图生视频、高级图生视频 Pro、图生视频 v2、
+  动作迁移、视频换人和视频换脸。别名和历史执行类型先映射到类型族，再应用开关；
+  H3 的 Gallery `minimax_h3` 开关仍独立于 Web 练功房 Pro 入口。
   任一能力 gate 关闭时都隐藏 H3 Gallery 页签；既有帖子仍可在“全部”中展示和互动，
   详情、模板深链和后端历史兼容不受影响。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。

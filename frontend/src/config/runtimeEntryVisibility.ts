@@ -18,7 +18,18 @@ const ENTRY_VISIBILITY_KEYS = [
   'enable_scail2_video_replacement_entry',
   'enable_scail2_face_swap_v2_entry',
   'enable_character_assets_entry',
+  'enable_gallery_txt2img_entry',
+  'enable_gallery_i2i_pro_entry',
+  'enable_gallery_edit_entry',
+  'enable_gallery_free_edit_v2_5_entry',
+  'enable_gallery_free_edit_v3_entry',
+  'enable_gallery_custom_video_entry',
+  'enable_gallery_ltx_video_entry',
   'enable_gallery_minimax_h3_entry',
+  'enable_gallery_wan22_video_v2_entry',
+  'enable_gallery_scail2_action_transfer_entry',
+  'enable_gallery_scail2_video_replacement_entry',
+  'enable_gallery_scail2_face_swap_v2_entry',
 ] as const
 
 type EntryVisibilityKey = typeof ENTRY_VISIBILITY_KEYS[number]

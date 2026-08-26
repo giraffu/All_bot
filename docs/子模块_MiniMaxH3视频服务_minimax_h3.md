@@ -5,9 +5,10 @@
 `minimax_h3` 是独立 GPU profile，不是 LTX alias。执行面支持四个任务：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v` 和
 `minimax_h3_ref2v`。测试 Web 与主 Bot 在同一“高级图生视频pro”工作台切换四种模式。
-两端均可从
-十七个本地 LoRA 中最多选择十三个；其中十六项支持全部模式，原生 REF2VA Motion v0.2
-只在 REF2V 模式显示和可用。默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
+终端用户只选择模式、时长、清晰度和适用模式的比例，不再选择主模型、附加模型或
+强度。Dashboard“入口控制”按四种模式维护主模型与最多十三个附加模型；Web 和主 Bot
+的新提交都由服务端读取并覆盖客户端模型字段，附加模型使用领域目录默认强度。其中
+十六项支持全部模式，原生 REF2VA Motion v0.2 只允许 REF2V。
 QQCC 配置 Web 同样从这一领域目录下发 17 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
@@ -23,7 +24,9 @@ Web 能力由发布配置 `enable_minimax_h3` 控制；普通导航由 Dashboard
 `minimax_h3` 入口开关控制，修仙市集类型筛选另由 Gallery `minimax_h3` 入口开关
 独立控制。Web 启动时从公开只读接口 `/api/app/entry-visibility` 加载这些安全布尔值，
 Dashboard 通过认证接口 `/api/entry-visibility` 写入
-`feature_entry_visibility_config:v1`，无需重新发布代码；读取失败时沿用 Pages 发布配置。
+`feature_entry_visibility_config:v1`，同一配置还保存四种 Pro 模式的系统模型预设，无需
+重新发布代码；公开接口只返回安全布尔开关，不下发内部模型配置。入口读取失败时沿用
+Pages 发布配置，模型预设读取失败则服务端拒绝新 Pro 会话或提交，不能回退客户端选择。
 REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 `MINIMAX_H3_BACKEND_ENABLED` 和
 `MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不删除已有投稿，也不阻止作品详情、
@@ -70,11 +73,11 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   生成会再次解析，优化后被停用或失效的人物在扣费前拒绝。
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
-- `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
-  目录的事实源。新请求使用最多 13 个有序 `lora_items[{name,strength}]`，强度限定
+- `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和内部附加模型
+  目录的事实源。服务端预设生成最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
-  `main_model` 枚举之外的主模型、采样器、steps、timeline、本地路径或参考音视频。
+  管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径或参考音视频。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
@@ -96,7 +99,8 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   列表行仍按四个真实 `History.type` 显示具体子模式，筛选不得改写持久类型。
 - 一键应用不返回或复用原始 `input_file/input_files`。I2V 要求重新上传 1 张首帧，
   FLF2V 要求重新上传有序的 2 张首尾帧并在提交前校验比例差不超过 1%。原提示词、
-  时长、档位、`source` 比例和有序附加模型全部锁定；成功提交携带
+  时长、档位和 `source` 比例继续锁定；历史上下文中的附加模型只用于记录与展示兼容，
+  新模板任务同样使用当前 Dashboard 系统模型预设。成功提交携带
   `is_template=true` 与 `source_post_id` 后立即关闭模板会话。
 
 ## 提示词优化契约

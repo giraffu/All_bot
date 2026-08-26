@@ -20,6 +20,33 @@ const WEB_LAB_MODE_ENTRY_FLAGS: Record<string, string> = {
   character_reference: 'enable_character_assets_entry',
 }
 
+const GALLERY_TASK_TYPE_ENTRY_FLAGS: Record<string, string> = {
+  txt2img: 'enable_gallery_txt2img_entry',
+  i2i_pro: 'enable_gallery_i2i_pro_entry',
+  edit: 'enable_gallery_edit_entry',
+  img2img_lora: 'enable_gallery_edit_entry',
+  edit_group: 'enable_gallery_edit_entry',
+  free_edit_v2_5: 'enable_gallery_free_edit_v2_5_entry',
+  free_edit_v2_5_group: 'enable_gallery_free_edit_v2_5_entry',
+  pornmaster_flux2_edit_bf16: 'enable_gallery_free_edit_v3_entry',
+  pornmaster_flux2_single_edit: 'enable_gallery_free_edit_v3_entry',
+  pornmaster_flux2_multi_edit: 'enable_gallery_free_edit_v3_entry',
+  free_edit_v3_group: 'enable_gallery_free_edit_v3_entry',
+  custom_video: 'enable_gallery_custom_video_entry',
+  video_lora: 'enable_gallery_custom_video_entry',
+  img2video_group: 'enable_gallery_custom_video_entry',
+  ltx_video: 'enable_gallery_ltx_video_entry',
+  ltx_video_flf2v: 'enable_gallery_ltx_video_entry',
+  minimax_h3: 'enable_gallery_minimax_h3_entry',
+  minimax_h3_i2v: 'enable_gallery_minimax_h3_entry',
+  minimax_h3_flf2v: 'enable_gallery_minimax_h3_entry',
+  wan22_video_v2: 'enable_gallery_wan22_video_v2_entry',
+  scail2_action_transfer: 'enable_gallery_scail2_action_transfer_entry',
+  scail2_action_transfer_long: 'enable_gallery_scail2_action_transfer_entry',
+  scail2_video_replacement: 'enable_gallery_scail2_video_replacement_entry',
+  scail2_face_swap_v2: 'enable_gallery_scail2_face_swap_v2_entry',
+}
+
 export const isWebLabModeEntryEnabled = (modeId: string): boolean => {
   const flagName = WEB_LAB_MODE_ENTRY_FLAGS[modeId]
   return flagName ? getRuntimeFlag(flagName, true) : true
@@ -41,6 +68,14 @@ export const isMinimaxH3GalleryEntryEnabled = (): boolean =>
     'enable_gallery_minimax_h3_entry',
     isMinimaxH3EntryEnabled(),
   )
+
+export const isGalleryTaskTypeEntryEnabled = (taskType: string): boolean => {
+  if (taskType === 'minimax_h3' || taskType.startsWith('minimax_h3_')) {
+    return isMinimaxH3GalleryEntryEnabled()
+  }
+  const flagName = GALLERY_TASK_TYPE_ENTRY_FLAGS[taskType]
+  return getRuntimeFlag(flagName, true) && isGenerationTaskTypeEnabled(taskType)
+}
 
 export const isGenerationTaskTypeEnabled = (taskType: string): boolean => {
   if (taskType === 'ltx_video' || taskType === 'ltx_video_flf2v') {

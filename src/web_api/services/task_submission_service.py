@@ -54,6 +54,7 @@ async def submit_generation_task(
     allow_contribute_override: bool | None = None,
     promote_staged_inputs_func=None,
     task_application: TaskApplication | None = None,
+    advanced_video_profile_loader=None,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -67,6 +68,7 @@ async def submit_generation_task(
                 name,
                 operator_canary=operator_canary_authorized,
             ),
+            advanced_video_profile_loader=advanced_video_profile_loader,
         )
         inputs = prepared.inputs
         images = prepared.images

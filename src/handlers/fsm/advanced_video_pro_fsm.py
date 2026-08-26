@@ -18,10 +18,8 @@ from telegram.ext import (
 
 from src.core.user_core import get_or_create_user_by_telegram
 from src.domain_config.minimax_h3 import (
-    MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
-    MINIMAX_H3_MAX_ADDON_ITEMS,
 )
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -42,6 +40,9 @@ from src.services.advanced_video_prompt_task_service import (
     start_advanced_video_prompt_task,
 )
 from src.services.advanced_video_entry_policy import minimax_h3_ref2v_enabled
+from src.services.feature_entry_visibility_service import (
+    load_advanced_video_pro_profiles,
+)
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_user_data,
     download_telegram_file_to_fsm_temp,
@@ -62,30 +63,6 @@ PRESET_LABELS = {
     "standard": ("标准（约 720p）", "Standard (approx. 720p)"),
     "hd": ("高清（约 810p）", "HD (approx. 810p)"),
 }
-ADDON_EFFECT_LABELS = {
-    "naughty_times": ("成人动作测试一", "Adult action test 1"),
-    "sex_pose": ("成人动作测试二", "Adult action test 2"),
-    "motion_booster": ("成人动作强化", "Adult motion boost"),
-    "motion_booster_ref2va": (
-        "参考人物动作强化实验",
-        "Reference-character motion experiment",
-    ),
-    "mystic_xxx": ("人体结构增强", "Anatomy enhancement"),
-    "breast_play": ("乳房动态", "Breast motion"),
-    "innie": ("阴道形态", "Vaginal shape"),
-    "deepthroat": ("深喉动作", "Deep-throat motion"),
-    "pov_missionary": ("POV 传教士动作", "POV missionary motion"),
-    "footjob": ("足交动作", "Footjob motion"),
-    "breasts": ("乳房细节", "Breast detail"),
-    "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
-    "pussy": ("阴道细节", "Vaginal detail"),
-    "penis": ("阴茎细节", "Penile detail"),
-    "cumshot": ("射精动作", "Ejaculation motion"),
-    "pussy_stills_v1": ("私密部位静帧实验", "Intimate anatomy still-frame experiment"),
-    "titjob": ("乳房夹持动作实验", "Breast-intercourse motion experiment"),
-}
-
-
 def _lang(context) -> str:
     return "en" if getattr(context, "lang", "zh") == "en" else "zh"
 
@@ -114,23 +91,14 @@ def _mode_keyboard(context) -> InlineKeyboardMarkup:
     )
 
 
-def _available_addon_ids(data: dict) -> tuple[str, ...]:
-    mode = str(data.get("mode") or "t2v")
-    return tuple(
-        model_id
-        for model_id, model in MINIMAX_H3_ADDON_MODELS.items()
-        if mode in model.supported_modes
-    )
-
-
-def _normalize_selected_addons(data: dict) -> None:
-    raw_selected = data.get("addon_models")
-    if not isinstance(raw_selected, list):
-        raw_selected = []
-    available = set(_available_addon_ids(data))
-    data["addon_models"] = [
-        model_id for model_id in raw_selected if model_id in available
-    ][:MINIMAX_H3_MAX_ADDON_ITEMS]
+def _apply_runtime_profile(data: dict) -> None:
+    profile = data.get("runtime_profiles", {}).get(data.get("mode"), {})
+    data["main_model"] = str(profile.get("main_model") or "10eros")
+    data["addon_items"] = [
+        dict(item)
+        for item in profile.get("addon_items", [])
+        if isinstance(item, dict)
+    ]
 
 
 def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
@@ -154,36 +122,6 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     rows = [buttons("duration", DURATIONS), preset_buttons[:2], preset_buttons[2:]]
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
-    addon_buttons = [
-        InlineKeyboardButton(
-            ("✅ " if model_id in data.get("addon_models", []) else "")
-            + _text(context, *ADDON_EFFECT_LABELS[model_id]),
-            callback_data=f"avp_addon_{model_id}",
-        )
-        for model_id in _available_addon_ids(data)
-    ]
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _text(context, "选满效果", "Select max effects"),
-                callback_data="avp_addon_all",
-            ),
-            InlineKeyboardButton(
-                _text(context, "清空效果", "Clear effects"),
-                callback_data="avp_addon_none",
-            ),
-        ]
-    )
-    for index in range(0, len(addon_buttons), 2):
-        rows.append(addon_buttons[index : index + 2])
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _text(context, "确认设置", "Confirm settings"),
-                callback_data="avp_settings_done",
-            )
-        ]
-    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -193,16 +131,20 @@ def _settings_text(context, data: dict) -> str:
         if data.get("mode") in {"i2v", "flf2v"}
         else data["aspect"]
     )
-    selected_count = sum(
-        name in MINIMAX_H3_ADDON_MODELS
-        for name in data.get("addon_models", [])
+    direct_action_zh = (
+        "直接发送提示词即可继续。"
+        if data.get("mode") == "t2v"
+        else "无需确认设置，直接发送图片即可继续。"
     )
-    effect_zh = f"已启用 {selected_count} 项" if selected_count else "未启用"
-    effect_en = f"{selected_count} enabled" if selected_count else "Off"
+    direct_action_en = (
+        "Send the prompt directly to continue."
+        if data.get("mode") == "t2v"
+        else "No settings confirmation is needed. Send the image directly to continue."
+    )
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n效果增强：{effect_zh}\n\n效果增强默认关闭；启用后使用推荐参数。",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nEnhancements: {effect_en}\n\nEnhancements default to off and use recommended settings when enabled.",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n\n{direct_action_zh}",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\n\n{direct_action_en}",
     )
 
 
@@ -301,6 +243,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             ),
         )
         return ConversationHandler.END
+    try:
+        runtime_profiles = await load_advanced_video_pro_profiles()
+    except Exception:
+        logger.exception("Failed to load Advanced Video Pro runtime profiles")
+        await robust_reply_text(
+            update.effective_message,
+            _text(
+                context,
+                "高级图生视频 Pro 配置暂时不可用，请稍后重试。",
+                "Advanced Image-to-Video Pro settings are temporarily unavailable. Try again later.",
+            ),
+        )
+        return ConversationHandler.END
     context.user_data["in_conversation"] = TAG
     context.user_data[DATA_KEY] = {
         "mode": None,
@@ -309,7 +264,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
-        "addon_models": [],
+        "runtime_profiles": runtime_profiles,
     }
     await robust_reply_text(
         update.effective_message,
@@ -338,13 +293,12 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             show_alert=True,
         )
         return ConversationHandler.END
-    _normalize_selected_addons(data)
     value = str(query.data or "")
     if value.startswith("avp_mode_"):
         mode = value.removeprefix("avp_mode_")
         if mode in MODES and (mode != "ref2v" or minimax_h3_ref2v_enabled()):
             data["mode"] = mode
-            _normalize_selected_addons(data)
+            _apply_runtime_profile(data)
     elif value.startswith("avp_duration_"):
         duration = int(value.removeprefix("avp_duration_"))
         if duration in DURATIONS:
@@ -357,20 +311,6 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         aspect = value.removeprefix("avp_aspect_")
         if aspect in ASPECTS:
             data["aspect"] = aspect
-    elif value.startswith("avp_addon_"):
-        addon = value.removeprefix("avp_addon_")
-        selected = data.setdefault("addon_models", [])
-        if addon == "none":
-            selected.clear()
-        elif addon == "all":
-            data["addon_models"] = list(_available_addon_ids(data))[
-                :MINIMAX_H3_MAX_ADDON_ITEMS
-            ]
-        elif addon in _available_addon_ids(data):
-            if addon in selected:
-                selected.remove(addon)
-            elif len(selected) < MINIMAX_H3_MAX_ADDON_ITEMS:
-                selected.append(addon)
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
         if mode == "t2v":
@@ -396,6 +336,16 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     data = context.user_data.get(DATA_KEY)
     if not data:
         return ConversationHandler.END
+    if data.get("mode") not in {"i2v", "flf2v", "ref2v"}:
+        await robust_reply_text(
+            update.message,
+            _text(
+                context,
+                "请先选择图生视频模式。",
+                "Choose an image-to-video mode first.",
+            ),
+        )
+        return AdvancedVideoProState.WAIT_SETTINGS
     file_id, suffix = _extract_image(update)
     if not file_id:
         await robust_reply_text(
@@ -533,11 +483,8 @@ async def _submit_generation(
             aspect_ratio=(
                 "source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]
             ),
-            addon_items=[
-                {"name": name}
-                for name in data.get("addon_models", [])
-                if name in _available_addon_ids(data)
-            ],
+            main_model=data.get("main_model", "10eros"),
+            addon_items=list(data.get("addon_items", [])),
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(message, str(exc))
@@ -606,6 +553,19 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup=_prompt_action_keyboard(context),
     )
     return AdvancedVideoProState.WAIT_CONFIRMATION
+
+
+async def receive_settings_prompt(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    data = context.user_data.get(DATA_KEY)
+    if not data or data.get("mode") != "t2v":
+        await robust_reply_text(
+            update.effective_message,
+            _text(context, "请直接发送图片。", "Send the image directly."),
+        )
+        return AdvancedVideoProState.WAIT_SETTINGS
+    return await receive_prompt(update, context)
 
 
 async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -695,11 +655,8 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     if data["mode"] in {"i2v", "flf2v"}
                     else data["aspect"]
                 ),
-                addon_items=[
-                    {"name": name}
-                    for name in data.get("addon_models", [])
-                    if name in _available_addon_ids(data)
-                ],
+                main_model=data.get("main_model", "10eros"),
+                addon_items=list(data.get("addon_items", [])),
             )
             draft = await start_advanced_video_prompt_task(
                 token=request_token,
@@ -715,7 +672,12 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 duration=int(data["duration"]),
                 resolution_preset=data["preset"],
                 aspect_ratio=plan.aspect_ratio,
-                addon_models=list(data.get("addon_models", [])),
+                main_model=data.get("main_model", "10eros"),
+                addon_models=[
+                    str(item.get("name"))
+                    for item in data.get("addon_items", [])
+                    if isinstance(item, dict) and item.get("name")
+                ],
                 reference_descriptions=list(data.get("reference_descriptions", [])),
                 generation_cost=plan.cost,
             )
@@ -818,7 +780,15 @@ def get_advanced_video_pro_fsm_handler(
         entry_points=entry_points,
         states={
             AdvancedVideoProState.WAIT_SETTINGS: [
-                CallbackQueryHandler(settings_callback, pattern=r"^avp_")
+                CallbackQueryHandler(settings_callback, pattern=r"^avp_"),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE,
+                    receive_image,
+                ),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    receive_settings_prompt,
+                ),
             ],
             AdvancedVideoProState.WAIT_MEDIA: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image)

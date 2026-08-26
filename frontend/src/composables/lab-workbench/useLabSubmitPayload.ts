@@ -193,14 +193,6 @@ export function useLabSubmitPayload({
                 })),
               }
             : {}),
-          ...((minimaxH3AddonItems?.value.length ?? 0) > 0
-            ? {
-                lora_items: minimaxH3AddonItems!.value.map(item => ({
-                  name: item.name,
-                  strength: item.strength,
-                })),
-              }
-            : {}),
         },
         isTemplate: false,
       }))

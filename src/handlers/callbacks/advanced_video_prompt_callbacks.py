@@ -54,19 +54,17 @@ async def _owned_draft(update, context):
 
 
 def _confirmation_text(draft) -> str:
-    addons = "、".join(draft.addon_models) if draft.addon_models else "无"
     if draft.language == "en":
-        addons = ", ".join(draft.addon_models) if draft.addon_models else "None"
         return (
             "Confirm generation with the frozen settings:\n"
             f"Mode: {draft.mode}\nDuration: {draft.duration}s\n"
-            f"Quality: {draft.resolution_preset}\nEnhancements: {addons}\n"
+            f"Quality: {draft.resolution_preset}\nModel preset: managed by the system\n"
             f"Cost: {draft.generation_cost} credits"
         )
     return (
         "请确认使用优化提示词生成：\n"
         f"模式：{draft.mode}\n时长：{draft.duration} 秒\n"
-        f"画质：{draft.resolution_preset}\n效果增强：{addons}\n"
+        f"画质：{draft.resolution_preset}\n模型预设：由系统统一管理\n"
         f"预计消耗：{draft.generation_cost} 灵石"
     )
 
@@ -139,6 +137,7 @@ async def _submit_confirmed_generation(draft, *, context) -> None:
             duration=draft.duration,
             resolution_preset=draft.resolution_preset,
             aspect_ratio=draft.aspect_ratio,
+            main_model=draft.main_model,
             addon_items=[
                 {"name": name}
                 for name in draft.addon_models

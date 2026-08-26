@@ -313,17 +313,52 @@ class WebEntryVisibilityConfig(BaseModel):
 
 
 class GalleryEntryVisibilityConfig(BaseModel):
+    txt2img: bool = True
+    i2i_pro: bool = True
+    edit: bool = True
+    free_edit_v2_5: bool = True
+    free_edit_v3: bool = True
+    custom_video: bool = True
+    ltx_video: bool = True
     minimax_h3: bool = False
+    wan22_video_v2: bool = True
+    scail2_action_transfer: bool = True
+    scail2_video_replacement: bool = True
+    scail2_face_swap_v2: bool = True
+
+
+class AdvancedVideoProModeConfig(BaseModel):
+    main_model: str = "10eros"
+    addon_models: List[str] = Field(default_factory=list, max_length=13)
+
+
+class AdvancedVideoProConfig(BaseModel):
+    t2v: AdvancedVideoProModeConfig = Field(
+        default_factory=AdvancedVideoProModeConfig
+    )
+    i2v: AdvancedVideoProModeConfig = Field(
+        default_factory=AdvancedVideoProModeConfig
+    )
+    flf2v: AdvancedVideoProModeConfig = Field(
+        default_factory=AdvancedVideoProModeConfig
+    )
+    ref2v: AdvancedVideoProModeConfig = Field(
+        default_factory=AdvancedVideoProModeConfig
+    )
 
 
 class FeatureEntryVisibilityConfigRequest(BaseModel):
     web: WebEntryVisibilityConfig
     gallery: GalleryEntryVisibilityConfig
+    advanced_video_pro: AdvancedVideoProConfig = Field(
+        default_factory=AdvancedVideoProConfig
+    )
 
 
 class FeatureEntryVisibilityConfigResponse(BaseModel):
     key: str
     config: Dict[str, Any]
+    options: Dict[str, Any] = Field(default_factory=dict)
     updated_at: Optional[datetime] = None
 
 
