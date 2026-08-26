@@ -549,6 +549,8 @@ def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
         "b956eb3ff3ee1518c92314a40d44b10d0734d91de5ed09cea05214df30511897" in dockerfile
     )
     assert "LTX 2.3 Sulphur Ingredients T2V.json" in dockerfile
+    assert 't2v["26:39"]["inputs"]["width"] == 640' in dockerfile
+    assert 'ic["26:39"]["inputs"]["width"] == ["5100",0]' in dockerfile
     assert 'ic["26:91"]["inputs"]["latent"] == ["26:153",0]' in dockerfile
     assert "LTX model files must stay out of the runtime refresh image" in dockerfile
 
