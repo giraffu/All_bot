@@ -29,6 +29,7 @@ from agent_artifact_lifecycle import (
     artifact_disk_capacity,
     cleanup_artifacts,
     cleanup_stale_artifacts,
+    cleanup_stale_files_in_root,
     cleanup_task_artifacts,
 )
 from agent_finalizer import AgentFinalizer
@@ -240,6 +241,9 @@ PREFETCH_TASK_TYPES = os.getenv(
     "img2img,img2img_lora,face_swap,face_swap_v2,i2i_draw,i2i_pro",
 )
 PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
+PREFETCH_CACHE_MAX_AGE_SECONDS = float(
+    os.getenv("PREFETCH_CACHE_MAX_AGE_SECONDS", str(24 * 60 * 60))
+)
 PREFETCH_CONSUME_WAIT_SECONDS = float(
     os.getenv("PREFETCH_CONSUME_WAIT_SECONDS", "0.25")
 )
@@ -982,6 +986,14 @@ class ComfyAgent:
             protected.extend(cached.get("comfy_input_artifacts", []))
         return protected
 
+    def _protected_prefetch_paths(self) -> list[str]:
+        protected: list[str] = []
+        for execution in self._executions.values():
+            protected.extend(execution.downloaded_input_paths)
+        for cached in self._prefetch_cache.values():
+            protected.extend(cached.get("downloaded_input_paths", []))
+        return protected
+
     async def _artifact_cleanup_loop(self) -> None:
         while self.running:
             try:
@@ -999,6 +1011,20 @@ class ComfyAgent:
                     logger.info("Cleaned up %s stale ComfyUI artifacts", len(removed))
             except Exception as exc:
                 logger.warning("Stale ComfyUI artifact cleanup failed: %s", exc)
+            try:
+                prefetch_removed = await asyncio.to_thread(
+                    cleanup_stale_files_in_root,
+                    root_dir=PREFETCH_CACHE_DIR,
+                    max_age_seconds=PREFETCH_CACHE_MAX_AGE_SECONDS,
+                    protected_paths=self._protected_prefetch_paths(),
+                )
+                if prefetch_removed:
+                    logger.info(
+                        "Cleaned up %s stale prefetch cache files",
+                        len(prefetch_removed),
+                    )
+            except Exception as exc:
+                logger.warning("Stale prefetch cache cleanup failed: %s", exc)
             await asyncio.sleep(max(1.0, COMFY_ARTIFACT_CLEANUP_INTERVAL_SECONDS))
 
     def _artifact_disk_has_capacity(self) -> bool:
@@ -1636,7 +1662,7 @@ class ComfyAgent:
                 COMFY_ARTIFACT_ROOTS.output_dir,
                 COMFY_ARTIFACT_ROOTS.temp_dir,
             )
-        ):
+        ) or (PREFETCH_CACHE_DIR and PREFETCH_CACHE_MAX_AGE_SECONDS > 0):
             self.tasks.append(asyncio.create_task(self._artifact_cleanup_loop()))
         await asyncio.gather(*self.tasks)
 

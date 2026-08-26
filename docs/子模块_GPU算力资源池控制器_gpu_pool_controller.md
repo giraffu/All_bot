@@ -132,6 +132,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   LAN AIO renderer 必须把这三个变量分别绑定到与 ComfyUI
   `--input-directory/--output-directory/--temp-directory` 相同的 slot state root，
   不能回退到镜像内 `COMFYUI_DIR` 的默认子目录；
+  `PREFETCH_CACHE_DIR` 还必须是每 Agent 独立根，Worker 周期清理默认超过 24 小时的
+  重启/异常孤儿，同时保护当前 execution 和内存预取索引仍引用的路径；该扫描不得
+  扩大到同级其它 Agent、slot state root 或模型目录；
   `COMFY_ARTIFACT_MIN_FREE_GB` 默认保留 10 GiB，低于水位的实例以
   `artifact_disk_low` 停止接单。不得用清空 `/workspace`、模型目录或无年龄/任务
   边界的递归删除代替该机制。

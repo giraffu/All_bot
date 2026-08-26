@@ -201,6 +201,57 @@ def cleanup_stale_artifacts(
     return removed
 
 
+def cleanup_stale_files_in_root(
+    *,
+    root_dir: str,
+    max_age_seconds: float,
+    protected_paths: Iterable[str] = (),
+    now: float | None = None,
+) -> list[str]:
+    """Remove age-qualified files below one configured runtime cache root."""
+
+    if not root_dir or max_age_seconds <= 0:
+        return []
+    root = Path(root_dir).resolve(strict=False)
+    if not root.is_dir():
+        return []
+    protected: set[Path] = set()
+    for value in protected_paths:
+        candidate = Path(value).absolute()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        if candidate != root:
+            protected.add(candidate)
+
+    cutoff = (time.time() if now is None else now) - max_age_seconds
+    removed: list[str] = []
+    for path in sorted(root.rglob("*"), key=str):
+        try:
+            candidate = path.absolute()
+            if (
+                candidate in protected
+                or (not path.is_file() and not path.is_symlink())
+                or path.lstat().st_mtime >= cutoff
+            ):
+                continue
+            path.unlink()
+            removed.append(str(candidate))
+        except FileNotFoundError:
+            continue
+    for directory in sorted(
+        (candidate for candidate in root.rglob("*") if candidate.is_dir()),
+        key=lambda candidate: len(candidate.parts),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+    return removed
+
+
 def artifact_disk_capacity(
     *,
     roots: ComfyArtifactRoots,

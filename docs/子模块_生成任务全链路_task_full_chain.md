@@ -478,6 +478,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - `PREFETCH_DEPTH`
 - `PREFETCH_TASK_TYPES`
 - `PREFETCH_CACHE_DIR`
+- `PREFETCH_CACHE_MAX_AGE_SECONDS`
 - `PREFETCH_CONSUME_WAIT_SECONDS`
 - `PREFETCH_RESERVE_TASK`
 - `PIPELINE_ENABLED`
@@ -510,8 +511,9 @@ Worker 拉到任务后会先处理输入：
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
 - 输入下载优先使用 boto3 S3 client 读取当前 R2/MinIO 兼容对象存储，`MINIO_BOTO3_DOWNLOAD_ENABLED=false` 时可回退旧 MinIO SDK 路径；`MINIO_REGION` 未显式配置时，R2 endpoint 默认 `auto`，其它 MinIO endpoint 默认 `us-east-1`。
 - 输入下载的 S3/MinIO 连接、读取、重试与连接池分别由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL`、`MINIO_HTTP_POOL_MAXSIZE` 控制；整次下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS` 和对应 retry/delay 控制。失败会清理目标与 `.part.minio` 临时文件并进入补偿路径。
-- 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间提前下载、规范化和上传下一单输入。候选类型取该 Worker 的 `SUPPORTED_TASK_TYPES`、`PREFETCH_TASK_TYPES` 与流水线允许类型的交集，不再黏附当前任务类型；Central 在整个交集中按既有队列 score 选择，因此同一执行池内不同类型仍遵守用户优先级。默认仍通过 relay/Central `/api/agent/task/peek` 只读观察候选，真实 `/pop` 后只有 `task_id` 命中缓存才复用。
-- `PREFETCH_RESERVE_TASK=true` 是单 Worker 一槽本地预接模式：预取协程改用现有原子 `/api/agent/task/pop?cancel_lock=true` 先接走一单并保存在 Worker 内存中，当前单结束后优先执行该预接单，不再访问 Central 抢第二次。多个 Worker 因此不会预拉同一任务；代价是预接单会提前进入 Central running，且短暂不可取消。该模式不要求修改 Central 服务。
+- `PREFETCH_ENABLED` 在当前 ComfyUI 执行期间准备下一单；候选是 supported、prefetch 与 pipeline 类型交集，由 Central 按既有 score 选择。默认 `/peek` 只读观察，`/pop` 后仅 `task_id` 命中才复用缓存。
+- `PREFETCH_CACHE_DIR` 独立于内存索引收口：启动后立即并周期删除超过 `PREFETCH_CACHE_MAX_AGE_SECONDS`（默认 86400）的重启孤儿，保护当前 execution 和 `_prefetch_cache` 引用；扫描不得越出本 Agent 缓存根。
+- `PREFETCH_RESERVE_TASK=true` 用原子 `/pop?cancel_lock=true` 本地预接一单，当前单结束后直接执行，避免多 Worker 重复预拉；预接单会提前 running 且短暂不可取消，不要求修改 Central。
 - flex Worker 启用 preferred 后，预取集合必须只包含 preferred 类型。gpu-002
   的 `scail2_flex` supported 为四类 SCAIL-2 加
   `img2img,img2img_lora`，但 `PREFETCH_TASK_TYPES` 只能放四类 SCAIL-2，
