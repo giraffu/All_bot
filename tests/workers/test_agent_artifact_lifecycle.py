@@ -10,6 +10,7 @@ from workers.comfy_agent.agent_artifact_lifecycle import (
     artifact_disk_capacity,
     cleanup_artifacts,
     cleanup_stale_artifacts,
+    cleanup_stale_files_in_root,
     cleanup_task_artifacts,
     resolve_artifact_path,
 )
@@ -121,6 +122,34 @@ def test_stale_cleanup_preserves_recent_and_explicitly_protected_files(tmp_path)
     assert removed == [str(old_output)]
     assert protected_output.exists()
     assert recent_output.exists()
+
+
+def test_stale_root_cleanup_removes_restart_orphans_but_preserves_active_files(
+    tmp_path,
+):
+    cache_root = tmp_path / "prefetch-cache" / "agent-1"
+    cache_root.mkdir(parents=True)
+    orphan = cache_root / "orphan.png"
+    active = cache_root / "active.png"
+    recent = cache_root / "recent.png"
+    outside = tmp_path / "outside.png"
+    for path in (orphan, active, recent, outside):
+        path.write_bytes(path.name.encode())
+    old_timestamp = time.time() - 7200
+    for path in (orphan, active, outside):
+        os.utime(path, (old_timestamp, old_timestamp))
+
+    removed = cleanup_stale_files_in_root(
+        root_dir=str(cache_root),
+        max_age_seconds=3600,
+        protected_paths=[str(active), str(outside)],
+    )
+
+    assert removed == [str(orphan)]
+    assert not orphan.exists()
+    assert active.exists()
+    assert recent.exists()
+    assert outside.exists()
 
 
 def test_disk_capacity_gate_fails_closed_below_the_reserved_free_space(

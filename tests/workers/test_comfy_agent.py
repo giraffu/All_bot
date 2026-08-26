@@ -119,6 +119,75 @@ def test_artifact_disk_gate_marks_worker_error_and_recovers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_periodic_artifact_cleanup_sweeps_prefetch_restart_orphans_and_protects_active_paths(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(task_id="active", task_type="i2i_pro")
+    execution.downloaded_input_paths = ["/cache/active-execution.png"]
+    agent._executions = {execution.task_id: execution}
+    agent._prefetch_cache = {
+        "prefetched": {
+            "downloaded_input_paths": ["/cache/active-prefetch.png"],
+        }
+    }
+    agent.running = True
+    cleanup_calls = []
+
+    monkeypatch.setattr(module, "PREFETCH_CACHE_DIR", "/cache")
+    monkeypatch.setattr(module, "PREFETCH_CACHE_MAX_AGE_SECONDS", 86400, raising=False)
+    monkeypatch.setattr(module, "cleanup_stale_artifacts", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        module,
+        "cleanup_stale_files_in_root",
+        lambda **kwargs: cleanup_calls.append(kwargs) or ["/cache/orphan.png"],
+        raising=False,
+    )
+
+    async def stop_after_first_cleanup(_seconds):
+        agent.running = False
+
+    monkeypatch.setattr(module.asyncio, "sleep", stop_after_first_cleanup)
+
+    await agent._artifact_cleanup_loop()
+
+    assert cleanup_calls == [
+        {
+            "root_dir": "/cache",
+            "max_age_seconds": 86400,
+            "protected_paths": [
+                "/cache/active-execution.png",
+                "/cache/active-prefetch.png",
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_orphan_cleanup_still_runs_when_comfy_cleanup_fails(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent.running = True
+    prefetch_cleanup = mock.Mock(return_value=[])
+
+    def fail_comfy_cleanup(**_kwargs):
+        raise OSError("broken Comfy artifact entry")
+
+    monkeypatch.setattr(module, "cleanup_stale_artifacts", fail_comfy_cleanup)
+    monkeypatch.setattr(module, "cleanup_stale_files_in_root", prefetch_cleanup)
+
+    async def stop_after_first_cleanup(_seconds):
+        agent.running = False
+
+    monkeypatch.setattr(module.asyncio, "sleep", stop_after_first_cleanup)
+
+    await agent._artifact_cleanup_loop()
+
+    prefetch_cleanup.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_quality_retry_waits_for_a_free_comfy_slot(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
