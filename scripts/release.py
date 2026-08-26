@@ -1336,6 +1336,24 @@ class SystemAdapters:
         profile = str(module.get("profile", ""))
         external_image = str(module.get("kind")) == "external-image"
         runtime_root = f"/var/lib/allbot/module-releases/{environment}"
+        profile_bootstrap = ""
+        if profile:
+            for peer in self.catalog.values():
+                peer_env = str(peer.get("image_env", ""))
+                peer_ref = str(peer.get("ref", ""))
+                if (
+                    peer_env == image_env
+                    or str(peer.get("profile", "")) != profile
+                    or str(peer.get("adapter", "")) != "compose-image"
+                    or str(peer.get("kind", "")) != "external-image"
+                    or not DIGEST_REF_RE.fullmatch(peer_ref)
+                ):
+                    continue
+                profile_bootstrap += (
+                    f"grep -q '^{peer_env}=' \"$candidate\" || "
+                    f"printf '%s=%s\\n' {shlex.quote(peer_env)} "
+                    f"{shlex.quote(peer_ref)} >> \"$candidate\"\n"
+                )
         revision_check = (
             ""
             if external_image
@@ -1367,7 +1385,7 @@ if [ ! -f "$runtime" ]; then
   chmod 600 "$runtime"
 fi
 candidate="$runtime.new"
-{candidate_update}printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
+{candidate_update}{profile_bootstrap}printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
 compose=(sudo -n docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}

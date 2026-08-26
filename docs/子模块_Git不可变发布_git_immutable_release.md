@@ -192,6 +192,10 @@ Compose image adapter 使用
 其健康检查完成。即使镜像 digest 未变化，配置 revision 切换也必须创建新容器；
 不得在 `up -d` 返回后立即读取健康状态，以免把正常启动窗口误判为失败并触发
 无效回滚。
+同一 Compose profile 首次部署多个 digest-pinned 外部镜像时，发布器会从 module
+catalog 只补齐缺失的同 profile `external-image` 精确引用，使 Compose 能完成配置
+解析；已有 runtime 引用保持不变，`up` 仍只重建本次明确选择的目标 service。
+非精确引用、普通业务镜像和不同 profile 不参与自动补齐。
 每次替换前必须从已 pull 镜像的
 `org.opencontainers.image.revision` label 读取并校验完整 40 位 SHA，原子重写
 runtime candidate 的 `ALLBOT_RELEASE_SHA`；禁止继承旧总包 SHA 或使用
