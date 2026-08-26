@@ -10,6 +10,7 @@ import pytest
 from scripts.r2_temp_cleanup import (
     Candidate,
     _eligible_candidates,
+    _delete_and_verify_candidates,
     _verify_candidates,
     _matching_refs,
     select_duplicate_candidates,
@@ -140,6 +141,64 @@ def test_sha_verification_uses_bounded_parallel_reads(monkeypatch):
     assert len(verified) == 8
     assert failures == []
     assert 1 < maximum <= 3
+
+
+def test_post_delete_verification_is_bounded_and_ordered_per_object(monkeypatch):
+    active = 0
+    maximum = 0
+    events = []
+    lock = threading.Lock()
+
+    class Client:
+        def delete_object(self, *, Bucket, Key):
+            nonlocal active, maximum
+            assert Bucket == "user-data-prod"
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+                events.append((Key, "delete"))
+            time.sleep(0.02)
+            with lock:
+                active -= 1
+
+    def fake_absent(_client, _bucket, key):
+        with lock:
+            events.append((key, "absent"))
+        return True
+
+    def fake_sha(_client, _bucket, key):
+        with lock:
+            events.append((key.removeprefix("durable-"), "durable_sha"))
+        return "same"
+
+    monkeypatch.setattr(
+        "scripts.r2_temp_cleanup._deleted_object_is_absent", fake_absent
+    )
+    monkeypatch.setattr("scripts.r2_temp_cleanup._sha256_object", fake_sha)
+    objects = [
+        {
+            "key": f"source-{index}",
+            "durable_key": f"durable-source-{index}",
+            "sha256": "same",
+        }
+        for index in range(8)
+    ]
+
+    verified = asyncio.run(
+        _delete_and_verify_candidates(
+            Client(), "user-data-prod", objects, concurrency=3
+        )
+    )
+
+    assert verified == 8
+    assert 1 < maximum <= 3
+    for item in objects:
+        key = item["key"]
+        assert [event for event_key, event in events if event_key == key] == [
+            "delete",
+            "absent",
+            "durable_sha",
+        ]
 
 
 def test_daily_delete_byte_cap_stops_before_crossing_limit():

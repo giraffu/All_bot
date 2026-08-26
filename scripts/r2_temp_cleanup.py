@@ -354,6 +354,36 @@ async def _verify_candidates(
     return verified, failures
 
 
+async def _delete_and_verify_candidates(
+    client,
+    bucket: str,
+    objects: list[dict],
+    *,
+    concurrency: int,
+) -> int:
+    """Delete independently, preserving strict post-delete gates per object."""
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def delete_and_verify(item: dict) -> None:
+        async with semaphore:
+            await asyncio.to_thread(
+                client.delete_object, Bucket=bucket, Key=item["key"]
+            )
+            absent = await asyncio.to_thread(
+                _deleted_object_is_absent, client, bucket, item["key"]
+            )
+            if not absent:
+                raise SystemExit("deleted temporary object still exists")
+            durable_sha = await asyncio.to_thread(
+                _sha256_object, client, bucket, item["durable_key"]
+            )
+            if durable_sha != item["sha256"]:
+                raise SystemExit("durable twin changed after temporary deletion")
+
+    await asyncio.gather(*(delete_and_verify(item) for item in objects))
+    return len(objects)
+
+
 async def run(args) -> dict:
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")
@@ -507,16 +537,15 @@ async def run(args) -> dict:
     os.chmod(output, 0o600)
     if not args.execute:
         return report
-    for item in delete_objects:
-        client.delete_object(Bucket=args.bucket, Key=item["key"])
-        if not _deleted_object_is_absent(client, args.bucket, item["key"]):
-            raise SystemExit("deleted temporary object still exists")
-        durable_sha = _sha256_object(client, args.bucket, item["durable_key"])
-        if durable_sha != item["sha256"]:
-            raise SystemExit("durable twin changed after temporary deletion")
+    post_delete_verified = await _delete_and_verify_candidates(
+        client,
+        args.bucket,
+        delete_objects,
+        concurrency=args.verification_concurrency,
+    )
     report["approved_plan"] = approved_plan_path
     report["approved_plan_sha256"] = expected_plan_sha
-    report["post_delete_verified_count"] = len(delete_objects)
+    report["post_delete_verified_count"] = post_delete_verified
     report["status"] = "completed"
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     os.chmod(output, 0o600)
