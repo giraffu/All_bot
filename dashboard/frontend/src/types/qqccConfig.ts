@@ -14,7 +14,7 @@ export type AiVideoDurationKey = 5 | 10 | 15
 export type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 export type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 export type AiVideoSceneEngine = 'minimax_h3'
-export type AiVideoMainModel = '10eros' | 'official'
+export type AiVideoMainModel = '10eros' | 'official' | 'official_ref2v_turbo'
 export type AiVideoMode = 'i2v' | 'ref2v'
 export type AiVideoCreditCosts = Partial<Record<
   AiVideoMode,
@@ -148,6 +148,9 @@ export interface LoraModelOption {
   supported_modes?: AiVideoMode[]
 }
 export interface ResolutionOption<T extends string> { value: T; label: string }
+export interface AiVideoMainModelOption extends ResolutionOption<AiVideoMainModel> {
+  supported_modes?: AiVideoMode[]
+}
 export interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
@@ -164,7 +167,7 @@ export interface QqccBotConfigOptions {
   image_lora_models: LoraModelOption[]
   video_resolutions: ResolutionOption<ResolutionKey>[]
   ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
-  ai_video_main_models: ResolutionOption<AiVideoMainModel>[]
+  ai_video_main_models: AiVideoMainModelOption[]
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>

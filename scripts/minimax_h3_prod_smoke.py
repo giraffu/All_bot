@@ -177,6 +177,12 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
             main_model="official",
         ),
         task(
+            "minimax_h3_ref2v_official_turbo_5s_preview",
+            "minimax_h3_ref2v",
+            images=[image_key],
+            main_model="official_ref2v_turbo",
+        ),
+        task(
             "minimax_h3_t2v_10s_standard",
             "minimax_h3_t2v",
             duration=10,

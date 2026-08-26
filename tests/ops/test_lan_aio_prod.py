@@ -269,7 +269,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-26-10eros-v3-official-int8-h3-addon17/manifest.json"
+        "minimax_h3/2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (

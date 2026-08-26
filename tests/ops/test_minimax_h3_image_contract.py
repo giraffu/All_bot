@@ -26,7 +26,10 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "grep -q 'MiniMaxH3SigmaShift' \"${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py\"" in dockerfile
     assert "ReservedVRAMSetter" in dockerfile
     assert "ModelAttentionBackend" in dockerfile
-    assert "MiniMaxH3ReferenceToVideo" not in dockerfile
+    assert (
+        "grep -q 'MiniMaxH3ReferenceToVideo' "
+        '"${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"'
+    ) in dockerfile
     assert "MiniMaxH3MemoryEfficientSageAttentionPatch" not in dockerfile
     assert "https://codeload.github.com/" in dockerfile
     assert "for attempt in 1 2 3" in dockerfile

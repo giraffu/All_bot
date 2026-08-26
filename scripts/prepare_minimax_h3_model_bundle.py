@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-26-10eros-v3-official-int8-h3-addon17"
+VERSION = "2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17"
 MIN_FREE_BYTES = 110 * 1024**3
 FILES = (
     (
@@ -64,6 +64,12 @@ FILES = (
         "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e",
         1_956_193_000,
         "https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/62487ee643501626a71502d679f735a23ee6af45/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+    ),
+    (
+        "loras/MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+        "5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c",
+        1_956_193_000,
+        "https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/ec01fa4c86263832faa0bd1d6d8f36a281eaabb2/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
     ),
     (
         "loras/MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
@@ -271,13 +277,14 @@ def prepare(registry: ModelRegistry) -> Path:
             ],
             "revision": (
                 "10eros-v3=47be0638; comfy-int8=4cc1d817; "
-                "comfy-support=014cd40f; lightx2v=62487ee6"
+                "comfy-support=014cd40f; lightx2v=ec01fa4c"
             ),
             "variant": (
                 "10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA, "
                 "official pruned INT8 ConvRot FL2VA and Ref2VA bases, "
-                "plus LightX2V FL2VA 8-step v1.0 acceleration for the selectable "
-                "official FL2VA base and seventeen optional one-file LoRAs: NaughtyTimes "
+                "plus LightX2V FL2VA 8-step v1.0 and Ref2VA 4-step v0.1 "
+                "acceleration for their selectable official profiles, and seventeen "
+                "optional one-file LoRAs: NaughtyTimes "
                 "v2, HMNSFW AIO v2, H3 Motion Booster v2, native Ref2VA Motion v0.2, "
                 "Mystic XXX v3, HMBreasts, "
                 "VagAssist, HMPussy v6, HMPenis v2.0, HMCumshot v0.5, Breast Play & Jiggle v1, HMInnie "

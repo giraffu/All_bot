@@ -20,10 +20,10 @@ AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280
 图库与选中图直接复用，失效时才回退 R2 并刷新。“生成示例”使用当前 demo input 作为
 `<Picture 1>` 并读取最新参考图，不扣费、不写 History。
 
-`ai_video_scenes[].main_model` 只允许 `10eros|official`，缺失或旧配置默认
-`10eros`。场景配置弹窗的“主模型”选择由 GET options 下发
-`10Eros Max H3 v3` 和 `MiniMax H3 官方模型`；两种选择都透传到 I2V、
-有尾帧的 FLF2V 和 REF2V，未知值不得变成任意 checkpoint 路径。
+`ai_video_scenes[].main_model` 通用值为 `10eros|official`，REF2V 额外允许
+`official_ref2v_turbo`，缺失或旧配置默认 `10eros`。场景配置弹窗的“主模型”选择由
+GET options 下发 `10Eros Max H3 v3`、`MiniMax H3 官方模型`，并仅在 REF2V 下显示
+`官方 REF2V 极速`；切回 I2V 时极速值重置为默认。未知值不得变成任意 checkpoint 路径。
 
 ## 1. 范围与定位
 
@@ -152,7 +152,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, main_model, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`main_model` 只允许 `10eros|official` 且默认 `10eros`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`credit_cost` 接受大于等于 1 的管理员固定价，留空时 I2V/FLF2V/REF2V 都按当前模式、分辨率和时长读取 H3 动态模型价格。17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, main_model, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`main_model` 通用值为 `10eros|official`，REF2V 额外允许 `official_ref2v_turbo`，默认 `10eros`；极速值出现在 I2V 时归一回默认。`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`credit_cost` 接受大于等于 1 的管理员固定价，留空时 I2V/FLF2V/REF2V 都按当前模式、分辨率和时长读取 H3 动态模型价格。17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数，缺失字段统一按

@@ -23,6 +23,9 @@ OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safeten
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+REF2V_TURBO_LORA = (
+    "MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+)
 NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
 REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 
@@ -244,6 +247,51 @@ def test_minimax_h3_patcher_keeps_10eros_ref2v_turbo_profile():
     assert patched["34"] == {
         "inputs": {"sigmas": REF2V_SIGMAS},
         "class_type": "ManualSigmas",
+    }
+
+
+def test_minimax_h3_patcher_uses_dedicated_ref2v_four_step_turbo_lora():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+
+    patched = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {
+            "prompt": "scene",
+            "main_model": "official_ref2v_turbo",
+            "image": "subject.png",
+            "image2": "reference.png",
+            "lora_items": [{"name": "motion_booster_ref2va", "strength": 0.7}],
+        },
+    )
+
+    assert patched["1"]["inputs"]["unet_name"] == OFFICIAL_REF2VA_MODEL
+    assert patched["9"] == {
+        "inputs": {
+            "model": ["1", 0],
+            "lora_name": REF2V_TURBO_LORA,
+            "strength_model": 1.0,
+        },
+        "class_type": "LoraLoaderModelOnly",
+    }
+    assert patched["100"]["inputs"]["model"] == ["9", 0]
+    assert patched["2"]["inputs"]["model"] == ["100", 0]
+    assert patched["3"]["inputs"]["shift_video"] == 12.0
+    assert patched["3"]["inputs"]["shift_audio"] == 3.0
+    assert patched["30"]["inputs"]["ref_image_size"] == "match"
+    assert patched["33"] == {
+        "inputs": {"sampler_name": "euler"},
+        "class_type": "KSamplerSelect",
+    }
+    assert patched["34"] == {
+        "inputs": {
+            "model": ["7", 0],
+            "scheduler": "simple",
+            "steps": 4,
+            "denoise": 1.0,
+        },
+        "class_type": "BasicScheduler",
     }
 
 

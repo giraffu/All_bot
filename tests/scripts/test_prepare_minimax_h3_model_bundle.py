@@ -8,7 +8,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -43,6 +43,13 @@ def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
     assert files["loras/MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"][1:3] == (
         "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e",
         1_956_193_000,
+    )
+    assert files[
+        "loras/MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+    ][1:4] == (
+        "5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c",
+        1_956_193_000,
+        "https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/ec01fa4c86263832faa0bd1d6d8f36a281eaabb2/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
     )
     assert files["loras/MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"][1:4] == (
         "947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a",
@@ -122,8 +129,8 @@ def test_split_author_stack_uses_exact_twenty_four_pinned_assets():
         155_110_304,
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
-    assert len(files) == 24
-    assert sum(entry[2] for entry in module.FILES) == 112_485_084_951
+    assert len(files) == 25
+    assert sum(entry[2] for entry in module.FILES) == 114_441_277_951
     assert module.MIN_FREE_BYTES == 110 * 1024**3
 
 
@@ -245,7 +252,7 @@ def test_prepare_reuses_nine_existing_blobs_and_downloads_only_two(monkeypatch, 
     assert downloads == [9, 10]
     assert manifest["source"]["revision"] == (
         "10eros-v3=47be0638; comfy-int8=4cc1d817; "
-        "comfy-support=014cd40f; lightx2v=62487ee6"
+        "comfy-support=014cd40f; lightx2v=ec01fa4c"
     )
     assert "official pruned INT8 ConvRot" in manifest["source"]["variant"]
     assert [item["relative_path"] for item in manifest["files"]] == sorted(

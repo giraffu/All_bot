@@ -36,18 +36,21 @@ def test_minimax_h3_smoke_covers_both_ref2v_execution_profiles():
         "minimax_h3_flf2v",
         "minimax_h3_ref2v",
         "minimax_h3_ref2v",
+        "minimax_h3_ref2v",
         "minimax_h3_t2v",
     ]
-    assert [case["expected_duration"] for case in cases] == [5, 5, 5, 5, 5, 10]
+    assert [case["expected_duration"] for case in cases] == [5, 5, 5, 5, 5, 5, 10]
     assert cases[2]["payload"]["inputs"]["images"] == [
         "inputs/first.png",
         "inputs/last.png",
     ]
     assert cases[3]["payload"]["inputs"]["main_model"] == "10eros"
     assert cases[4]["payload"]["inputs"]["main_model"] == "official"
+    assert cases[5]["payload"]["inputs"]["main_model"] == "official_ref2v_turbo"
     assert cases[3]["payload"]["inputs"]["images"] == ["inputs/first.png"]
     assert cases[4]["payload"]["inputs"]["images"] == ["inputs/first.png"]
-    assert cases[5]["payload"]["inputs"]["resolution_preset"] == "standard"
+    assert cases[5]["payload"]["inputs"]["images"] == ["inputs/first.png"]
+    assert cases[6]["payload"]["inputs"]["resolution_preset"] == "standard"
     assert cases[0]["payload"]["inputs"]["aspect_ratio"] == "16:9"
     assert cases[1]["payload"]["inputs"]["aspect_ratio"] == "source"
     assert cases[2]["payload"]["inputs"]["aspect_ratio"] == "source"

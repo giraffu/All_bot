@@ -37,9 +37,10 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   `resolution_preset=preview|small|standard|hd` 和可选 `seed`。普通模式按
   `5/10/15` 秒分别使用完整四档价格矩阵：`9/10/13/15`、
   `12/15/24/30`、`17/24/38/53`；不再用 5 秒基础价线性倍乘。
-- `main_model` 只允许 `10eros|official`，缺失时为 `10eros`。该选择同时
-  覆盖 I2V/FLF2V 所用 FL2VA checkpoint 和 REF2V 所用 Ref2VA checkpoint；
-  未知值在领域层和 Worker 层都 fail closed。
+- `main_model` 通用值为 `10eros|official`，REF2V 额外允许
+  `official_ref2v_turbo`（用户文案“官方 REF2V 极速”），缺失时为 `10eros`。
+  `official_ref2v_turbo` 用于其它模式时在领域层和 Worker 层都 fail closed；未知值
+  同样拒绝。
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
 - REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
   REF2V 按 `5/10/15` 秒分别使用完整四档价格矩阵：`10/11/15/20`、
@@ -126,8 +127,9 @@ Optimizer 和最终生成都把它作为一个 `<Picture N>`，描述明确要�
 
 ## 可选主模型、固定基础链与作者资产
 
-`main_model=10eros` 保留现有默认链。`main_model=official` 在 Worker patcher
-中同时切换 checkpoint 和模式专属执行 profile，不能只替换 `UNETLoader`。官方
+`main_model=10eros` 保留现有默认链。`main_model=official` 与
+`main_model=official_ref2v_turbo` 在 Worker patcher 中同时切换 checkpoint 和
+模式专属执行 profile，不能只替换 `UNETLoader`。官方
 checkpoint 使用 Comfy-Org 推荐的裁剪 INT8 ConvRot 版本：
 
 - T2V/I2V/FLF2V：`diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors`，
@@ -139,8 +141,8 @@ checkpoint 使用 Comfy-Org 推荐的裁剪 INT8 ConvRot 版本：
 
 两份文件均固定 Comfy-Org/MiniMax-H3 revision
 `4cc1d817b6184899b41293954329f576cb5ae86b`。官方 FL2VA 使用
-LightX2V + Euler/simple/8-step；官方 REF2VA 使用 `ref_image_size=max`、
-`res_multistep` 与 `BasicScheduler(simple, 20 steps)`。`max` 保留最多 2048px
+LightX2V + Euler/simple/8-step；官方 REF2VA 高保真使用 `ref_image_size=max`、
+sigma shift `12/3`、`res_multistep` 与 `BasicScheduler(simple, 20 steps)`。`max` 保留最多 2048px
 短边的参考图 token 以提高身份保真，但会增加速度与显存成本。用户不能覆盖
 checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
 
@@ -154,6 +156,11 @@ checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
   仍保留给 `official` FL2VA，
   1,956,193,000 bytes，SHA256
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
+- LightX2V Ref2VA 4-step v0.1
+  `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors` 只供
+  `official_ref2v_turbo`，revision `ec01fa4c86263832faa0bd1d6d8f36a281eaabb2`，
+  1,956,193,000 bytes，SHA256
+  `5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
 十七个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
@@ -204,7 +211,7 @@ PyTorch attention、video/audio sigma shift `11/4`、
 `MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("er_sde") →
 ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
 SamplerCustomAdvanced`；禁止 `BasicScheduler`。十七个候选 LoRA 中最多十三个仍按选择顺序注入；
-REF2VA Motion v0.2 只能进入这条 REF2V 链。
+REF2VA Motion v0.2 可进入任一 REF2V profile，并始终追加在所选基础/加速链之后。
 
 `official + REF2V` 是独立执行 profile：同一基础节点在 patch 后切换为官方 INT8
 ConvRot Ref2VA、`ref_image_size="max"`、`KSamplerSelect("res_multistep")` 和
@@ -212,8 +219,16 @@ ConvRot Ref2VA、`ref_image_size="max"`、`KSamplerSelect("res_multistep")` 和
 `simple` 是为了与当前 Comfy-Org 官方模板精确对齐；官方说明参考很多时 `beta` 或
 `normal` 往往优于 `simple`，后续若要调整必须作为新的受控 profile 单独 canary。
 
+`official_ref2v_turbo + REF2V` 是独立极速 profile：官方 INT8 ConvRot Ref2VA →
+专用 Ref2VA Turbo LoRA（1.0）→ 用户选中 LoRA 有序链 → PyTorch attention →
+sigma shift `12/3` → `MiniMaxH3ReferenceToVideo(ref_image_size="match")` →
+`KSamplerSelect("euler")` → `BasicScheduler("simple", 4, 1.0)`。4 steps、shift、
+sampler、缩放策略和专用 LoRA 是同一蒸馏契约，不能替换为 FL2VA 8-step 文件或随意
+改成 8 steps。`official` 20-step 高保真 profile 继续保留。
+
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
-10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA 和上述十七个可选 LoRA，不包含 RedMix。旧 checkpoint、
+10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十七个
+可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；7-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续四模式 GPU canary 才能定论。
@@ -225,8 +240,8 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-26-10eros-v3-official-int8-h3-addon17`、24 个文件的字节数与
-SHA256，总计 112,485,084,951 bytes，准备前要求模型卷至少 110 GiB 可用。
+`2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17`、25 个文件的字节数与
+SHA256，总计 114,441,277,951 bytes，准备前要求模型卷至少 110 GiB 可用。
 Mystic XXX v3 使用 modelVersion `3260276`、
 file `3143593`，文件 `MysticXXX_MMH3-V3.safetensors` 为 298,259,688 bytes，
 SHA256 `99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6`；作者建议
