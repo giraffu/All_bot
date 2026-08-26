@@ -78,6 +78,7 @@ sequenceDiagram
 - Dashboard 的灵石消耗统计以 `user_logs` 账本为准：生成任务负向流水计入消耗，`refund%` 退款流水抵扣消耗；`history` 仅用于成功生成量、类型分布与小时分布，不再用“视频 6 / 图片 2”硬编码反推灵石。
 - Dashboard 历史生成页通过既有数据推导展示来源，不给 `history` 新增列：`web` / `bot` 直接来自 `History.source`，官方懒人 Bot 由 `History.extra_outputs._qqcc_regenerate` 识别，用户私有懒人 Bot 再通过 `PrivateBotTaskSubmission.registry_task_id` 关联并显示精确 `bot:qqcc-private:<id>`。`GET /api/history/all` 的 `source` 支持 `web`、`bot`、`bot:qqcc`、`bot:qqcc-private` 和精确私有 Bot client type；私有账本已按保留策略清理的陈旧记录不能反推出租户 ID，应按剩余历史标记降级展示。
 - Dashboard 历史生成页的分页记录保持实时查询；高成本精确总数使用 5 分钟进程内短缓存与 single-flight，并由 Dashboard 后台每 4 分钟预热默认无筛选总数。筛选组合首次使用时按精确口径计算后短缓存，因此总数最多短暂滞后 5 分钟，但不能缓存或延迟当前页记录。
+- History 的类型筛选计数由 `history(type)` 索引承载；前端切换筛选时取消上一条未完成请求，避免旧响应覆盖当前选择。H3 参考图生视频按 `History.input_file` 的实际顺序逐项展示，并明确标记为“参考图 1/2…”，即使某个派生 URL 缺失也不能吞掉后续参考图。
 - Dashboard 历史集合在完成 SQL 查询后先结束只读事务，再通过 R2 S3 existence cache/singleflight 并发解析输出原件与缩略图；响应使用 `output_file_url` / `output_file_preview_url`，输入同时返回原件 `input_file_url` 与不做公网 HEAD 的文件级缩略图候选 `input_file_preview_url`。列表图片优先加载缩略图，点击后才显示原图；列表不得挂载原视频 `<video>`，无视频缩略图时显示占位符，管理员点击后才在当前页面弹窗加载带 controls 的原视频。缩略图缺失或对象存储异常只降级到原图/占位符，不能阻断历史接口。
 - 用户列表的“历史记录”弹窗使用 `GET /api/history/{user_id}` 的真实总数分页，
   不得用固定条数截断高频用户；Worker/私有 Bot 诊断字段通过每个任务的单值子查询

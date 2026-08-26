@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { formatDate } from '../utils/helpers'
 import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
+import { buildHistoryInputMedia } from '../utils/historyInputMedia'
 import {
   HISTORY_SOURCE_OPTIONS,
   getHistorySourceColor,
@@ -28,6 +29,7 @@ const selectedWorker = ref(null)
 const selectedSource = ref(null)
 const workerOptions = ref([{ label: '全部节点', value: null }])
 const sourceOptions = HISTORY_SOURCE_OPTIONS
+let activeHistoryRequest = null
 
 const typeOptions = TASK_TYPE_OPTIONS
 
@@ -46,6 +48,9 @@ const publicOptions = [
 
 // Data fetching
 const loadData = async (page = 1) => {
+  activeHistoryRequest?.abort()
+  const requestController = new AbortController()
+  activeHistoryRequest = requestController
   loading.value = true
   try {
     const typeParam = selectedTypes.value.length > 0 ? selectedTypes.value.join(',') : null
@@ -57,14 +62,21 @@ const loadData = async (page = 1) => {
       selectedPublic.value,
       selectedWorker.value,
       selectedSource.value,
+      { signal: requestController.signal },
     )
+    if (activeHistoryRequest !== requestController) return
     history.value = data.items
     total.value = data.total
     currentPage.value = page
   } catch (err) {
-    console.error('Failed to load history:', err)
+    if (!requestController.signal.aborted) {
+      console.error('Failed to load history:', err)
+    }
   } finally {
-    loading.value = false
+    if (activeHistoryRequest === requestController) {
+      loading.value = false
+      activeHistoryRequest = null
+    }
   }
 }
 
@@ -155,6 +167,10 @@ const refreshData = () => {
 onMounted(() => {
   loadData()
   loadWorkers()
+})
+
+onBeforeUnmount(() => {
+  activeHistoryRequest?.abort()
 })
 </script>
 
@@ -375,11 +391,12 @@ onMounted(() => {
           <div class="flex flex-wrap gap-2 py-1">
              <template v-if="record.input_file">
                 <MediaItem 
-                  v-for="(url, index) in (record.input_file_url || '').split('|')" 
-                  :key="index"
-                  :file="record.input_file.split('|')[index]"
-                  :url="url"
-                  :preview-url="(record.input_file_preview_url || '').split('|')[index] || ''"
+                  v-for="(media, index) in buildHistoryInputMedia(record)"
+                  :key="`${media.file}-${index}`"
+                  :file="media.file"
+                  :url="media.url"
+                  :preview-url="media.previewUrl"
+                  :label="media.label"
                   size="w-16 h-16"
                 />
              </template>

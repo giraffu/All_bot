@@ -57,6 +57,7 @@ describe('HistoryTable source filters', () => {
       null,
       null,
       'bot:qqcc',
+      { signal: expect.any(AbortSignal) },
     )
   })
 
@@ -108,6 +109,40 @@ describe('HistoryTable source filters', () => {
       null,
       null,
       null,
+      { signal: expect.any(AbortSignal) },
     )
+  })
+
+  it('aborts the previous history request when a filter changes', async () => {
+    const pendingRequests: Array<{
+      resolve: (value: { items: never[]; total: number }) => void
+      signal: AbortSignal
+    }> = []
+    apiMocks.fetchHistoryAll.mockImplementation((...args) => new Promise((resolve) => {
+      pendingRequests.push({
+        resolve,
+        signal: args[7].signal,
+      })
+    }))
+    const SelectStub = defineComponent({
+      name: 'ASelect',
+      inheritAttrs: false,
+      emits: ['update:value', 'change'],
+      template: '<select v-bind="$attrs" />',
+    })
+    const wrapper = shallowMount(HistoryTable, {
+      global: { components: { ASelect: SelectStub } },
+    })
+    await flushPromises()
+
+    const sourceSelect = wrapper.findAllComponents(SelectStub)[4]!
+    sourceSelect.vm.$emit('change')
+    await flushPromises()
+
+    expect(pendingRequests).toHaveLength(2)
+    expect(pendingRequests[0].signal.aborted).toBe(true)
+    expect(pendingRequests[1].signal.aborted).toBe(false)
+    pendingRequests[1].resolve({ items: [], total: 0 })
+    await flushPromises()
   })
 })
