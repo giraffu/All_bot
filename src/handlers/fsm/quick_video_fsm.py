@@ -444,7 +444,11 @@ def _build_ref2v_template_markup(scene: dict[str, object]) -> InlineKeyboardMark
 
 
 def _build_ref2v_scene_prompt(
-    *, scene: dict[str, object], selected_name: str, replacement_confirmed: bool = False
+    *,
+    scene: dict[str, object],
+    selected_name: str,
+    cost_text: str | None = None,
+    replacement_confirmed: bool = False,
 ) -> str:
     scene_name = str(scene.get("name") or "AI视频")
     if replacement_confirmed:
@@ -465,7 +469,7 @@ def _build_ref2v_scene_prompt(
         replacement_tip = (
             "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片。"
         )
-    return (
+    prompt = (
         f"🎞️ {'已更新' if replacement_confirmed else '已切换到'}【{scene_name}】场景。\n\n"
         f"{status}\n\n"
         f"{action}\n\n"
@@ -473,6 +477,25 @@ def _build_ref2v_scene_prompt(
         "模板替换完成后，我会再次提示你发送女性人物图片。\n\n"
         "随时可以发送 /cancel 退出流程。"
     )
+    return f"{prompt}\n\n{cost_text}" if cost_text else prompt
+
+
+def _resolve_qqcc_scene_display_cost(
+    *, fsm_data: dict, qqcc_config: dict
+) -> int | None:
+    plan = build_quick_video_submission_plan(
+        fsm_data=fsm_data,
+        qqcc_config=qqcc_config,
+        allowed_resolutions=None,
+    )
+    if isinstance(plan, QuickVideoSubmissionReject):
+        logger.warning(
+            "Unable to resolve QQCC scene display cost scene=%s reason=%s",
+            fsm_data.get("scene_id"),
+            plan.reason,
+        )
+        return None
+    return plan.total_cost
 
 
 async def _build_quick_video_settings_markup(
@@ -625,20 +648,6 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data["quick_video_data"] = quick_video_data
 
     msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
-    if scene is not None and qqcc_config is not None:
-        msg = (
-            render_qqcc_copywriting(
-                get_qqcc_copywriting_override(
-                    qqcc_config,
-                    "ai_video_scene_start"
-                    if scene_kind == "ai_video"
-                    else "video_scene_start",
-                ),
-                str(scene.get("name") or mode_name),
-                cost=resolve_qqcc_scene_fixed_credit_cost(scene),
-            )
-            or msg
-        )
     if scene is not None:
         private_bot_id = get_private_qqcc_bot_id(context)
         demo_kwargs = {"private_bot_id": private_bot_id} if private_bot_id else {}
@@ -677,6 +686,32 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
         else:
             await gallery_awaitable
+    scene_cost_text = None
+    if scene is not None and qqcc_config is not None:
+        scene_cost = _resolve_qqcc_scene_display_cost(
+            fsm_data=quick_video_data,
+            qqcc_config=qqcc_config,
+        )
+        if scene_cost is not None:
+            scene_cost_text = _t(
+                context, "fsm.common.estimated_cost", cost=scene_cost
+            )
+            msg = f"{msg.rstrip()}\n\n{scene_cost_text}"
+        copywriting_override = get_qqcc_copywriting_override(
+            qqcc_config,
+            "ai_video_scene_start"
+            if scene_kind == "ai_video"
+            else "video_scene_start",
+        )
+        msg = (
+            render_qqcc_copywriting(
+                copywriting_override,
+                str(scene.get("name") or mode_name),
+                cost=scene_cost,
+                cost_text=scene_cost_text,
+            )
+            or msg
+        )
     reply_markup = None
     if is_ref2v_scene and scene is not None:
         selected_name = str(quick_video_data.get("selected_reference_name") or "模板 1")
@@ -684,6 +719,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         msg = _build_ref2v_scene_prompt(
             scene=scene,
             selected_name=selected_name,
+            cost_text=scene_cost_text,
         )
     if scene is not None and qqcc_config is not None:
         draw_config = project_qqcc_config_for_scene_version(
@@ -883,11 +919,21 @@ async def receive_ref2v_template_replacement(
     else:
         await gallery_awaitable
 
+    scene_cost = _resolve_qqcc_scene_display_cost(
+        fsm_data=fsm_data,
+        qqcc_config=qqcc_config,
+    )
+    scene_cost_text = (
+        _t(context, "fsm.common.estimated_cost", cost=scene_cost)
+        if scene_cost is not None
+        else None
+    )
     await robust_reply_text(
         message,
         _build_ref2v_scene_prompt(
             scene=scene,
             selected_name=selected_name,
+            cost_text=scene_cost_text,
             replacement_confirmed=True,
         ),
         reply_markup=_build_ref2v_template_markup(scene),

@@ -1285,6 +1285,7 @@ def test_normalize_qqcc_config_keeps_supported_copywriting_and_renders_scene_but
             "已选择【{butten}】，总计 {cost} 灵石。",
             "柔光写真",
             cost=7,
+            cost_text="预计消耗：7 灵石",
         )
         == "已选择【柔光写真】，总计 7 灵石。"
     )
