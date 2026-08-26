@@ -10,6 +10,7 @@ from workers.comfy_agent.agent_artifact_lifecycle import (
     artifact_disk_capacity,
     cleanup_artifacts,
     cleanup_stale_artifacts,
+    cleanup_task_artifacts,
     resolve_artifact_path,
 )
 
@@ -47,6 +48,37 @@ def test_cleanup_artifacts_deletes_only_exact_files_inside_configured_roots(tmp_
     assert removed == [str(target)]
     assert not target.exists()
     assert unrelated.read_bytes() == b"keep"
+
+
+def test_cleanup_task_artifacts_deletes_only_files_owned_by_exact_task_id(tmp_path):
+    roots = _roots(tmp_path)
+    task_id = "a426afe8-cd79-4597-b972-57ab794ea8b8"
+    owned = [
+        Path(roots.input_dir) / f"{task_id}_input.png",
+        Path(roots.output_dir) / f"minimax_h3_ref2v_{task_id}_00001.mp4",
+        Path(roots.temp_dir) / "nested" / f"{task_id}_preview.png",
+    ]
+    for path in owned:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"owned")
+    unrelated = Path(roots.output_dir) / "another-task.mp4"
+    unrelated.write_bytes(b"keep")
+
+    removed = cleanup_task_artifacts(roots=roots, task_id=task_id)
+
+    assert removed == [str(path.resolve()) for path in owned]
+    assert all(not path.exists() for path in owned)
+    assert unrelated.read_bytes() == b"keep"
+
+
+def test_cleanup_task_artifacts_rejects_unsafe_or_ambiguous_task_ids(tmp_path):
+    roots = _roots(tmp_path)
+    target = Path(roots.output_dir) / "task-result.mp4"
+    target.write_bytes(b"keep")
+
+    assert cleanup_task_artifacts(roots=roots, task_id="task") == []
+    assert cleanup_task_artifacts(roots=roots, task_id="../task-result") == []
+    assert target.read_bytes() == b"keep"
 
 
 def test_resolve_artifact_path_rejects_parent_traversal(tmp_path):

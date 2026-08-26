@@ -418,4 +418,5 @@ class AgentFinalizer:
         self.agent._cleanup_comfy_artifacts(
             list(getattr(materialized_outputs, "source_artifacts", []) or [])
         )
+        self.agent._cleanup_task_comfy_artifacts(task_id)
         return True
