@@ -73,6 +73,9 @@ labels 注入；只声明其中一个或 checkout 缺少对应运行时文件时
 `comfy_agent`、`src` 与 `shared`；否则 Docker 层合并会保留基础镜像中已从新源码
 删除的文件。全部运行包 COPY 完成后，构建阶段必须实际调用
 `load_runtime_manifest()` 比对镜像文件集与注入哈希，不能只校验 build arg 非空。
+只改 canonical Worker 包时使用对应 `*_runtime_refresh` GPU module：它以该 profile
+已验收的同仓库精确 digest 为基础，只覆盖上述运行包，不重新安装 ComfyUI、模型或
+Python 依赖；overlay 仍必须清空旧运行包、验证 manifest，并产出新 SHA 的精确 digest。
 
 本地操作者通过 SSH alias `allbot-do-sgp1-build` 登录专用构建主机。SSH 登录用户是
 `deploy`，但持久 Buildx builder 归 `actions` OS 用户所有；必须在云主机内执行

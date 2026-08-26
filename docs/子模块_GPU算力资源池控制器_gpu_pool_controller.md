@@ -93,6 +93,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - 每个 RunPod profile 必须同时包含 `shared/`，并在构建阶段 smoke import
   `shared.character_reference_sheet`；否则 `comfy_agent` 会在 ComfyUI 和 relay
   就绪后才因结果物化依赖缺失而退出，且无 heartbeat。
+- canonical Worker-only 修订优先构建 profile 对应的 runtime-refresh module；其
+  基础必须是同 profile 已验收的精确 digest，只覆盖运行包并重复 manifest 校验，
+  不得借机改变 ComfyUI、模型或节点依赖。
 - profile 必须在镜像构建时安装 baked worker 的 `requirements.txt`；bootstrap
   可以复核已满足依赖，但生产重启不能把 PyPI 下载放在健康恢复关键路径。
 - 单槽 release 可把精确 digest 从公网仓库切到受信 LAN registry
