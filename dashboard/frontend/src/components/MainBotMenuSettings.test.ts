@@ -99,10 +99,10 @@ const buildEntryVisibilityResponse = () => ({
       scail2_face_swap_v2: true,
     },
     advanced_video_pro: {
-      t2v: { main_model: '10eros', addon_models: [] },
-      i2v: { main_model: '10eros', addon_models: [] },
-      flf2v: { main_model: '10eros', addon_models: [] },
-      ref2v: { main_model: '10eros', addon_models: [] },
+      t2v: { main_model: '10eros', addon_items: [] },
+      i2v: { main_model: '10eros', addon_items: [] },
+      flf2v: { main_model: '10eros', addon_items: [] },
+      ref2v: { main_model: '10eros', addon_items: [] },
     },
   },
   options: {
@@ -145,6 +145,9 @@ const buildEntryVisibilityResponse = () => ({
         default_strength: 0.7,
       },
     ],
+    max_addon_items: 13,
+    strength_min: 0.1,
+    strength_max: 2,
   },
 })
 
@@ -163,19 +166,20 @@ describe('MainBotMenuSettings', () => {
     }))
   })
 
-  it('renders Web, Bot, and market as three same-level horizontal tabs', async () => {
+  it('renders entry controls and Pro model presets as four same-level tabs', async () => {
     const wrapper = mount(MainBotMenuSettings)
     await flushPromises()
 
     expect(wrapper.get('[data-testid="scope-tab-web"]').text()).toContain('Web 端')
     expect(wrapper.get('[data-testid="scope-tab-bot"]').text()).toContain('主 Bot')
     expect(wrapper.get('[data-testid="scope-tab-gallery"]').text()).toContain('修仙市集')
+    expect(wrapper.get('[data-testid="scope-tab-models"]').text()).toContain('Pro 模型预设')
     expect(wrapper.find('[data-testid="web-entry-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="bot-entry-panel"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('自由P图')
     expect(wrapper.text()).toContain('图生视频')
     expect(wrapper.text()).toContain('高级图生视频 Pro')
-    expect(wrapper.text()).toContain('高级图生视频 Pro 用户预设')
+    expect(wrapper.text()).not.toContain('高级图生视频 Pro 模型预设')
 
     await wrapper.get('[data-testid="scope-tab-bot"]').trigger('click')
     expect(wrapper.find('[data-testid="web-entry-panel"]').exists()).toBe(false)
@@ -191,6 +195,13 @@ describe('MainBotMenuSettings', () => {
     await wrapper.get('[data-testid="scope-tab-gallery"]').trigger('click')
     expect(wrapper.find('[data-testid="bot-entry-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="gallery-entry-panel"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
+    expect(wrapper.find('[data-testid="gallery-entry-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="advanced-video-pro-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="scope-tab-models"]').classes()).toContain('is-active')
+    expect(wrapper.get('[data-testid="scope-tab-web"]').classes()).not.toContain('is-active')
+    expect(wrapper.text()).toContain('高级图生视频 Pro 模型预设')
   })
 
   it('saves Web and market visibility separately from the Bot menu', async () => {
@@ -200,8 +211,6 @@ describe('MainBotMenuSettings', () => {
     await wrapper.get('[data-testid="entry-web-edit"]').setValue(false)
     await wrapper.get('[data-testid="entry-web-custom_video"]').setValue(false)
     await wrapper.get('[data-testid="entry-web-minimax_h3"]').setValue(true)
-    await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('official')
-    await wrapper.get('[data-testid="avp-addon-models-i2v"]').setValue(['motion_booster'])
     await wrapper.get('[data-testid="save-web-entry-visibility"]').trigger('click')
     await wrapper.get('[data-testid="scope-tab-gallery"]').trigger('click')
     await wrapper.get('[data-testid="entry-gallery-minimax_h3"]').setValue(true)
@@ -243,15 +252,34 @@ describe('MainBotMenuSettings', () => {
         scail2_face_swap_v2: true,
       },
       advanced_video_pro: {
-        t2v: { main_model: '10eros', addon_models: [] },
-        i2v: { main_model: 'official', addon_models: ['motion_booster'] },
-        flf2v: { main_model: '10eros', addon_models: [] },
-        ref2v: { main_model: '10eros', addon_models: [] },
+        t2v: { main_model: '10eros', addon_items: [] },
+        i2v: { main_model: '10eros', addon_items: [] },
+        flf2v: { main_model: '10eros', addon_items: [] },
+        ref2v: { main_model: '10eros', addon_items: [] },
       },
     })
     expect(apiMocks.updateMainBotMenuConfig).not.toHaveBeenCalled()
     expect(messageMocks.success).toHaveBeenCalledWith('Web 端入口配置已保存')
     expect(messageMocks.success).toHaveBeenCalledWith('修仙市集入口配置已保存')
+  })
+
+  it('saves main models and per-addon strengths from the dedicated preset tab', async () => {
+    const wrapper = mount(MainBotMenuSettings)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
+    await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('official')
+    await wrapper.get('[data-testid="avp-addon-models-i2v"]').setValue(['motion_booster'])
+    await wrapper.get('[data-testid="avp-addon-strength-i2v-motion_booster"]').setValue('1.25')
+    await wrapper.get('[data-testid="save-advanced-video-pro-config"]').trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateFeatureEntryVisibilityConfig.mock.calls[0][0]
+    expect(payload.advanced_video_pro.i2v).toEqual({
+      main_model: 'official',
+      addon_items: [{ name: 'motion_booster', strength: 1.25 }],
+    })
+    expect(messageMocks.success).toHaveBeenCalledWith('Pro 模型预设已保存')
   })
 
   it('changes row size, visibility, and main-menu order before saving', async () => {

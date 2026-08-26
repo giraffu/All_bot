@@ -153,3 +153,27 @@ async def test_optimized_h3_generation_preserves_gallery_eligibility(
     )
 
     assert submit.await_args.kwargs["allow_contribute"] is allow_contribute
+
+
+@pytest.mark.asyncio
+async def test_optimized_h3_generation_preserves_admin_addon_strengths(monkeypatch):
+    draft = build_draft(
+        addon_models=("motion_booster",),
+        addon_items=({"name": "motion_booster", "strength": 1.25},),
+    )
+    submit = AsyncMock()
+    monkeypatch.setattr(callbacks, "_materialize_draft_images", AsyncMock(return_value=[]))
+    monkeypatch.setattr(callbacks, "submit_advanced_video_pro_plan", submit)
+    monkeypatch.setattr(callbacks.advanced_video_prompt_task_store, "save", AsyncMock())
+    monkeypatch.setattr(callbacks, "cleanup_prompt_draft_objects", AsyncMock())
+    monkeypatch.setattr(callbacks, "cleanup_fsm_temp_files", Mock())
+
+    await callbacks._submit_confirmed_generation(
+        draft,
+        context=SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+    )
+
+    plan = submit.await_args.args[0]
+    assert plan.addon_items == (
+        {"name": "motion_booster", "strength": 1.25},
+    )

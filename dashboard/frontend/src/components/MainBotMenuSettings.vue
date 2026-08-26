@@ -71,7 +71,12 @@ type AdvancedVideoProMode = 't2v' | 'i2v' | 'flf2v' | 'ref2v'
 
 interface AdvancedVideoProModeConfig {
   main_model: string
-  addon_models: string[]
+  addon_items: AdvancedVideoProAddonItem[]
+}
+
+interface AdvancedVideoProAddonItem {
+  name: string
+  strength: number
 }
 
 interface SelectOption {
@@ -86,6 +91,9 @@ interface AdvancedVideoProOptions {
     supported_modes: AdvancedVideoProMode[]
     default_strength: number
   }>
+  max_addon_items: number
+  strength_min: number
+  strength_max: number
 }
 
 interface FeatureEntryVisibilityConfigResponse {
@@ -164,10 +172,10 @@ const emptyEntryConfig = (): FeatureEntryVisibilityConfig => ({
     scail2_face_swap_v2: true,
   },
   advanced_video_pro: {
-    t2v: { main_model: '10eros', addon_models: [] },
-    i2v: { main_model: '10eros', addon_models: [] },
-    flf2v: { main_model: '10eros', addon_models: [] },
-    ref2v: { main_model: '10eros', addon_models: [] },
+    t2v: { main_model: '10eros', addon_items: [] },
+    i2v: { main_model: '10eros', addon_items: [] },
+    flf2v: { main_model: '10eros', addon_items: [] },
+    ref2v: { main_model: '10eros', addon_items: [] },
   },
 })
 
@@ -185,6 +193,9 @@ const emptyAdvancedVideoProOptions = (): AdvancedVideoProOptions => ({
     ref2v: [{ value: '10eros', label: '10Eros TURBO' }],
   },
   addon_models: [],
+  max_addon_items: 13,
+  strength_min: 0.1,
+  strength_max: 2,
 })
 
 const WEB_ENTRY_OPTIONS = [
@@ -229,12 +240,13 @@ const GALLERY_ENTRY_OPTIONS = [
   label: string
 }>
 
-type EntryScope = 'web' | 'bot' | 'gallery'
+type EntryScope = 'web' | 'bot' | 'gallery' | 'models'
 
 const ENTRY_SCOPE_TABS: ReadonlyArray<{ key: EntryScope; label: string }> = [
   { key: 'web', label: 'Web 端' },
   { key: 'bot', label: '主 Bot' },
   { key: 'gallery', label: '修仙市集' },
+  { key: 'models', label: 'Pro 模型预设' },
 ]
 
 const loading = ref(false)
@@ -277,7 +289,7 @@ const cloneEntryConfig = (
       mode,
       {
         main_model: profile.main_model,
-        addon_models: [...profile.addon_models],
+        addon_items: profile.addon_items.map(item => ({ ...item })),
       },
     ]),
   ) as FeatureEntryVisibilityConfig['advanced_video_pro'],
@@ -307,6 +319,43 @@ const addonOptionsForMode = (mode: AdvancedVideoProMode) => (
     option.supported_modes.includes(mode)
   ))
 )
+
+const selectedAddonNamesForMode = (mode: AdvancedVideoProMode) => (
+  entryConfig.value.advanced_video_pro[mode].addon_items.map(item => item.name)
+)
+
+const addonLabel = (name: string) => (
+  advancedVideoProOptions.value.addon_models.find(option => option.value === name)?.label
+  ?? name
+)
+
+const updateAddonSelection = (mode: AdvancedVideoProMode, event: Event) => {
+  const target = event.target as HTMLSelectElement
+  const selectedNames = Array.from(target.selectedOptions)
+    .map(option => option.value)
+    .slice(0, advancedVideoProOptions.value.max_addon_items)
+  const profile = entryConfig.value.advanced_video_pro[mode]
+  const existing = new Map(profile.addon_items.map(item => [item.name, item]))
+  const optionByName = new Map(
+    addonOptionsForMode(mode).map(option => [option.value, option]),
+  )
+  profile.addon_items = selectedNames.map(name => ({
+    name,
+    strength: existing.get(name)?.strength
+      ?? optionByName.get(name)?.default_strength
+      ?? 1,
+  }))
+}
+
+const hasInvalidAddonStrength = computed(() => (
+  Object.values(entryConfig.value.advanced_video_pro).some(profile => (
+    profile.addon_items.some(item => (
+      !Number.isFinite(item.strength)
+      || item.strength < advancedVideoProOptions.value.strength_min
+      || item.strength > advancedVideoProOptions.value.strength_max
+    ))
+  ))
+))
 
 const loadConfig = async () => {
   loading.value = true
@@ -358,16 +407,32 @@ const saveConfig = async () => {
   }
 }
 
-const saveEntryConfig = async (scope: 'web' | 'gallery') => {
+const saveEntryConfig = async (scope: 'web' | 'gallery' | 'models') => {
+  if (scope === 'models' && hasInvalidAddonStrength.value) {
+    message.error(
+      `附加模型强度必须在 ${advancedVideoProOptions.value.strength_min}–${advancedVideoProOptions.value.strength_max} 之间`,
+    )
+    return
+  }
   entrySaving.value = true
   try {
     const saved = await updateFeatureEntryVisibilityConfig(
       cloneEntryConfig(entryConfig.value),
     )
     applyEntryResponse(saved)
-    message.success(scope === 'web' ? 'Web 端入口配置已保存' : '修仙市集入口配置已保存')
+    const successMessages = {
+      web: 'Web 端入口配置已保存',
+      gallery: '修仙市集入口配置已保存',
+      models: 'Pro 模型预设已保存',
+    }
+    message.success(successMessages[scope])
   } catch {
-    message.error(scope === 'web' ? '保存 Web 端入口配置失败' : '保存修仙市集入口配置失败')
+    const errorMessages = {
+      web: '保存 Web 端入口配置失败',
+      gallery: '保存修仙市集入口配置失败',
+      models: '保存 Pro 模型预设失败',
+    }
+    message.error(errorMessages[scope])
   } finally {
     entrySaving.value = false
   }
@@ -385,7 +450,7 @@ onMounted(() => {
         <div>
           <h2 class="text-lg font-semibold text-slate-950">入口与菜单控制</h2>
           <p class="mt-1 text-sm text-slate-500">
-            分别管理 Web、修仙市集和主 Bot 的展示入口；不会停用任务、旧按钮、深链或文字命令。
+            分别管理 Web、主 Bot、修仙市集入口与 Pro 模型预设；不会停用任务、旧按钮、深链或文字命令。
           </p>
         </div>
         <div class="toolbar">
@@ -440,56 +505,6 @@ onMounted(() => {
         开关只控制练功房功能入口；能力未发布时即使设为可见也不会开放，历史记录和模板深链不受影响。
       </p>
 
-      <div class="advanced-video-pro-config mt-4">
-        <div>
-          <h4 class="text-sm font-semibold text-slate-900">高级图生视频 Pro 用户预设</h4>
-          <p class="mt-1 text-xs text-slate-500">
-            主 Bot 与 Web 的新任务统一使用这里的主模型和附加模型；用户只选择时长、清晰度与比例。
-          </p>
-        </div>
-        <div class="advanced-video-pro-grid mt-3">
-          <article
-            v-for="modeOption in advancedVideoProOptions.modes"
-            :key="modeOption.value"
-            class="advanced-video-pro-card"
-          >
-            <h5 class="text-sm font-semibold text-slate-800">{{ modeOption.label }}</h5>
-            <label class="config-field mt-3">
-              <span>主模型</span>
-              <select
-                v-model="entryConfig.advanced_video_pro[modeOption.value].main_model"
-                :data-testid="`avp-main-model-${modeOption.value}`"
-              >
-                <option
-                  v-for="option in advancedVideoProOptions.main_models[modeOption.value]"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-            <label class="config-field mt-3">
-              <span>附加模型（可多选，最多 13 项）</span>
-              <select
-                v-model="entryConfig.advanced_video_pro[modeOption.value].addon_models"
-                multiple
-                size="6"
-                :data-testid="`avp-addon-models-${modeOption.value}`"
-              >
-                <option
-                  v-for="option in addonOptionsForMode(modeOption.value)"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}（默认强度 {{ option.default_strength }}）
-                </option>
-              </select>
-            </label>
-          </article>
-        </div>
-      </div>
-
       <div class="web-entry-grid">
         <div v-for="item in WEB_ENTRY_OPTIONS" :key="item.key" class="submenu-item">
           <div>
@@ -510,6 +525,101 @@ onMounted(() => {
             </label>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section
+      v-if="activeScope === 'models'"
+      data-testid="advanced-video-pro-panel"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div class="section-heading">
+        <div>
+          <h3 class="text-base font-semibold text-slate-900">高级图生视频 Pro 模型预设</h3>
+          <p class="mt-1 text-sm text-slate-500">
+            主 Bot 与 Web 的新任务统一使用这里的主模型、附加模型与强度；用户只选择时长、清晰度和比例。
+          </p>
+          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(entryUpdatedAt) }}</p>
+        </div>
+        <button
+          type="button"
+          class="primary-button"
+          data-testid="save-advanced-video-pro-config"
+          :disabled="entrySaving || entryLoading"
+          @click="saveEntryConfig('models')"
+        >
+          {{ entrySaving ? '保存中…' : '保存模型预设' }}
+        </button>
+      </div>
+
+      <p class="mt-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        每种模式最多选择 {{ advancedVideoProOptions.max_addon_items }} 个附加模型；强度范围为
+        {{ advancedVideoProOptions.strength_min }}–{{ advancedVideoProOptions.strength_max }}。
+      </p>
+
+      <div class="advanced-video-pro-grid mt-4">
+        <article
+          v-for="modeOption in advancedVideoProOptions.modes"
+          :key="modeOption.value"
+          class="advanced-video-pro-card"
+        >
+          <h4 class="text-sm font-semibold text-slate-800">{{ modeOption.label }}</h4>
+          <label class="config-field mt-3">
+            <span>主模型</span>
+            <select
+              v-model="entryConfig.advanced_video_pro[modeOption.value].main_model"
+              :data-testid="`avp-main-model-${modeOption.value}`"
+            >
+              <option
+                v-for="option in advancedVideoProOptions.main_models[modeOption.value]"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="config-field mt-3">
+            <span>附加模型（可多选）</span>
+            <select
+              multiple
+              size="7"
+              :value="selectedAddonNamesForMode(modeOption.value)"
+              :data-testid="`avp-addon-models-${modeOption.value}`"
+              @change="updateAddonSelection(modeOption.value, $event)"
+            >
+              <option
+                v-for="option in addonOptionsForMode(modeOption.value)"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}（默认 {{ option.default_strength }}）
+              </option>
+            </select>
+          </label>
+          <div
+            v-if="entryConfig.advanced_video_pro[modeOption.value].addon_items.length"
+            class="selected-addon-list mt-3"
+          >
+            <div class="text-xs font-semibold text-slate-600">已选模型强度</div>
+            <label
+              v-for="item in entryConfig.advanced_video_pro[modeOption.value].addon_items"
+              :key="item.name"
+              class="addon-strength-row"
+            >
+              <span>{{ addonLabel(item.name) }}</span>
+              <input
+                v-model.number="item.strength"
+                type="number"
+                :min="advancedVideoProOptions.strength_min"
+                :max="advancedVideoProOptions.strength_max"
+                step="0.05"
+                :data-testid="`avp-addon-strength-${modeOption.value}-${item.name}`"
+              />
+            </label>
+          </div>
+          <p v-else class="mt-3 text-xs text-slate-400">未选择附加模型</p>
+        </article>
       </div>
     </section>
 
@@ -729,6 +839,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .config-field { display: flex; flex-direction: column; gap: .35rem; color: #475569; font-size: .75rem; }
 .config-field select { min-width: 0; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; padding: .45rem .55rem; color: #334155; }
 .config-field select[multiple] { min-height: 9rem; }
+.selected-addon-list { display: grid; gap: .45rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; }
+.addon-strength-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem; align-items: center; gap: .75rem; color: #475569; font-size: .75rem; }
+.addon-strength-row span { overflow-wrap: anywhere; }
+.addon-strength-row input { width: 100%; border: 1px solid #cbd5e1; border-radius: .45rem; padding: .4rem .5rem; color: #334155; }
 @media (max-width: 760px) {
   .main-bot-menu-settings > section { padding: .75rem; }
   .header-row, .section-heading, .menu-item, .submenu-item { align-items: stretch; flex-direction: column; }

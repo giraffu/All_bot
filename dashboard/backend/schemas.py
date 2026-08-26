@@ -327,9 +327,21 @@ class GalleryEntryVisibilityConfig(BaseModel):
     scail2_face_swap_v2: bool = True
 
 
+class AdvancedVideoProAddonItem(BaseModel):
+    name: str
+    strength: Optional[float] = Field(default=None, ge=0.1, le=2.0)
+
+
 class AdvancedVideoProModeConfig(BaseModel):
     main_model: str = "10eros"
-    addon_models: List[str] = Field(default_factory=list, max_length=13)
+    addon_items: Optional[List[AdvancedVideoProAddonItem]] = Field(
+        default=None,
+        max_length=13,
+    )
+    addon_models: Optional[List[str]] = Field(
+        default=None,
+        max_length=13,
+    )
 
 
 class AdvancedVideoProConfig(BaseModel):

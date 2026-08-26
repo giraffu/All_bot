@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import math
 from typing import Any
 
 from sqlalchemy import select
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_ADDON_MAX_STRENGTH,
+    MINIMAX_H3_ADDON_MIN_STRENGTH,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
     MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
     MINIMAX_H3_MAIN_MODELS,
@@ -23,7 +26,7 @@ ADVANCED_VIDEO_PRO_MODES = MINIMAX_H3_MODES
 DEFAULT_ADVANCED_VIDEO_PRO_CONFIG: dict[str, dict[str, Any]] = {
     mode: {
         "main_model": MINIMAX_H3_DEFAULT_MAIN_MODEL,
-        "addon_models": [],
+        "addon_items": [],
     }
     for mode in ADVANCED_VIDEO_PRO_MODES
 }
@@ -124,24 +127,54 @@ def _normalize_advanced_video_pro_config(raw: Any) -> dict[str, dict[str, Any]]:
         ):
             main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
 
-        raw_addons = profile.get("addon_models")
-        raw_addons = raw_addons if isinstance(raw_addons, (list, tuple)) else []
-        addon_models: list[str] = []
-        for value in raw_addons:
-            model_id = str(value or "").strip()
+        raw_items = profile.get("addon_items")
+        if isinstance(raw_items, (list, tuple)):
+            candidates = list(raw_items)
+        else:
+            legacy_addons = profile.get("addon_models")
+            legacy_addons = (
+                legacy_addons
+                if isinstance(legacy_addons, (list, tuple))
+                else []
+            )
+            candidates = [{"name": value} for value in legacy_addons]
+
+        addon_items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_item in candidates:
+            if not isinstance(raw_item, dict):
+                continue
+            model_id = str(raw_item.get("name") or "").strip()
             model = MINIMAX_H3_ADDON_MODELS.get(model_id)
             if (
                 model is None
                 or mode not in model.supported_modes
-                or model_id in addon_models
+                or model_id in seen
             ):
                 continue
-            addon_models.append(model_id)
-            if len(addon_models) >= MINIMAX_H3_MAX_ADDON_ITEMS:
+            try:
+                raw_strength = raw_item.get("strength")
+                strength = (
+                    model.default_strength
+                    if raw_strength in (None, "")
+                    else float(raw_strength)
+                )
+            except (TypeError, ValueError):
+                continue
+            if not (
+                math.isfinite(strength)
+                and MINIMAX_H3_ADDON_MIN_STRENGTH
+                <= strength
+                <= MINIMAX_H3_ADDON_MAX_STRENGTH
+            ):
+                continue
+            seen.add(model_id)
+            addon_items.append({"name": model_id, "strength": strength})
+            if len(addon_items) >= MINIMAX_H3_MAX_ADDON_ITEMS:
                 break
         normalized[mode] = {
             "main_model": main_model,
-            "addon_models": addon_models,
+            "addon_items": addon_items,
         }
     return normalized
 
@@ -173,13 +206,7 @@ def get_advanced_video_pro_profile(raw: Any, mode: str) -> dict[str, Any]:
     ][normalized_mode]
     return {
         "main_model": profile["main_model"],
-        "addon_items": [
-            {
-                "name": model_id,
-                "strength": MINIMAX_H3_ADDON_MODELS[model_id].default_strength,
-            }
-            for model_id in profile["addon_models"]
-        ],
+        "addon_items": [dict(item) for item in profile["addon_items"]],
     }
 
 
@@ -219,6 +246,9 @@ def build_advanced_video_pro_admin_options() -> dict[str, Any]:
             }
             for model in MINIMAX_H3_ADDON_MODELS.values()
         ],
+        "max_addon_items": MINIMAX_H3_MAX_ADDON_ITEMS,
+        "strength_min": MINIMAX_H3_ADDON_MIN_STRENGTH,
+        "strength_max": MINIMAX_H3_ADDON_MAX_STRENGTH,
     }
 
 

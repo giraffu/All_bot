@@ -678,6 +678,7 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     for item in data.get("addon_items", [])
                     if isinstance(item, dict) and item.get("name")
                 ],
+                addon_items=list(data.get("addon_items", [])),
                 reference_descriptions=list(data.get("reference_descriptions", [])),
                 generation_cost=plan.cost,
             )

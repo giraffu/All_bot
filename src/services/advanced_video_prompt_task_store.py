@@ -42,6 +42,7 @@ class AdvancedVideoPromptDraft:
     delivered_message_ids: tuple[int, ...] = ()
     error_code: str | None = None
     main_model: str = "10eros"
+    addon_items: tuple[dict[str, Any], ...] = ()
     schema_version: str = PROMPT_DRAFT_SCHEMA_VERSION
 
     def with_updates(self, **changes: Any) -> "AdvancedVideoPromptDraft":
@@ -58,6 +59,7 @@ class AdvancedVideoPromptDraft:
             raise ValueError("unsupported prompt draft schema")
         for key in (
             "addon_models",
+            "addon_items",
             "reference_descriptions",
             "object_keys",
             "image_suffixes",
