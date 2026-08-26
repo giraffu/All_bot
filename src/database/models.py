@@ -461,6 +461,7 @@ class History(Base):
     __tablename__ = "history"
     __table_args__ = (
         Index("idx_history_user_favorite", "user_id", "is_favorited"),
+        Index("ix_history_type", "type"),
         Index("ix_history_created_at", "created_at"),
         Index("ix_history_created_at_type", "created_at", "type"),
         Index("ix_history_created_at_user_id", "created_at", "user_id"),
