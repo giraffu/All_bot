@@ -38,7 +38,7 @@ RUN set -euo pipefail; \
     done; \
     python3 -c 'import fastapi, minio, uvicorn, websockets'; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; assert {"ltx_t2v","ltx_t2v_ic"} <= set(p)'; \
-    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); expected={"LTX 2.3 Sulphur T2V.json","LTX 2.3 Sulphur Ingredients T2V.json"}; graphs={name:json.loads((root/name).read_text()) for name in expected}; assert all(graph["26:39"]["inputs"]["width"] in {384,640} for graph in graphs.values()); ic=graphs["LTX 2.3 Sulphur Ingredients T2V.json"]; assert ic["26:91"]["inputs"]["latent"] == ["26:153",0] and ic["26:149"]["inputs"]["latents"] == ["26:95",0]'; \
+    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); t2v=json.loads((root/"LTX 2.3 Sulphur T2V.json").read_text()); ic=json.loads((root/"LTX 2.3 Sulphur Ingredients T2V.json").read_text()); assert t2v["26:39"]["inputs"]["width"] == 640; assert ic["26:39"]["inputs"]["width"] == ["5100",0]; assert ic["26:91"]["inputs"]["latent"] == ["26:153",0] and ic["26:149"]["inputs"]["latents"] == ["26:95",0]'; \
     if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then \
       echo "LTX model files must stay out of the runtime refresh image" >&2; \
       exit 1; \
