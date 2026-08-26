@@ -132,6 +132,8 @@ QQCC 功能开关与 QQCC 专用提示词覆盖由独立 QQCC Config Web 维护�
 
 独立配置页还提供“交互文案”覆盖。`quick_faceswap_start`、`ai_draw_menu`、`ai_filter_menu`、`video_menu` 分别覆盖快速换脸与 AI绘图/AI滤镜/AI动图主菜单点击后的提示；`ai_draw_scene_start`、`ai_filter_scene_start`、`video_scene_start` 覆盖三类二级场景点击后的上传提示。输入框的 placeholder 直接展示当前中文系统默认文案，便于对照，但不会写入配置；所有字段留空时仍使用现有 i18n 默认文案。二级场景模板中的 `{butten}` 会在 Bot 发送前替换成实际点击的场景按钮名称（同时兼容 `{button}`），配置值最长 4000 字符。该配置只影响 QQCC 官方和私有 Bot，主 Bot 不受影响。
 
+用户点击 AI绘图、AI滤镜、AI动图或 AI视频的二级场景后，上传提示必须同时展示预计灵石消耗。金额复用实际提交计划：根场景配置固定价时展示完整链固定价，否则展示当前模型参数、原图换脸和后处理/多段链累加后的动态总价。自定义二级场景文案可以使用 `{cost}` 控制金额位置；模板未包含 `{cost}` 时，Bot 自动追加本地化的“预计消耗”行。REF2V 首次选择场景及替换参考模板后的提示保持相同金额口径。
+
 QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token：
 
 - `QQCC_CONFIG_ADMIN_USERNAME`
@@ -165,7 +167,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - 四类 scene 均可附带 `demo_input_media` / `demo_output_media`：`{ object_key, media_type, mime_type, file_name, content_sha256, telegram_file_ids }`。AI绘图/滤镜的两个字段都是 image；AI动图/AI视频 input 是 image、output 是 video。`preview_url` 只属于 GET/上传响应，不持久化。
 - `video_buttons` 与 `video_settings` 仅保留旧配置兼容；管理后台不再编辑 AI 动图画质或全局时长
 - `prompts`: `undress`, `i2i_draw_quick_undress`, `masturbation`, `face_swap`, `perfect_video_insert`, `doggy_style`, `blowjob`, `undress_tongue`, `closeup_blowjob`
-- `copywriting`: `quick_faceswap_start`, `ai_draw_menu`, `ai_filter_menu`, `video_menu`, `ai_draw_scene_start`, `ai_filter_scene_start`, `video_scene_start`；只保留上述已知字符串 key，保存时 trim，留空回退默认文案；二级场景模板支持 `{butten}` 按钮名称占位符
+- `copywriting`: `quick_faceswap_start`, `ai_draw_menu`, `ai_filter_menu`, `video_menu`, `ai_draw_scene_start`, `ai_filter_scene_start`, `video_scene_start`；只保留上述已知字符串 key，保存时 trim，留空回退默认文案；二级场景模板支持 `{butten}` 按钮名称占位符和 `{cost}` 实际预计灵石占位符，未写 `{cost}` 时 Bot 自动追加本地化价格行
 
 `video_scenes`、`ai_video_scenes`、`draw_scenes`、`filter_scenes` 的数组顺序分别决定 AI动图、AI视频、AI绘图、AI滤镜二级场景菜单的展示顺序。独立 QQCC Config Web 使用四个 Tab，每类场景独立按每页 5 条分页；分页只优化当前渲染行，保存仍提交完整场景数组。每个场景行提供上移/下移按钮，首行不能上移、末行不能下移；移动后仍通过现有整份配置 PUT 保存，仅交换数组位置并保持场景 `id` 和引用不变。新增场景自动打开其所在末页，删除和跨页移动后自动校正到包含目标行的有效页。
 

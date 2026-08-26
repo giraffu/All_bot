@@ -1309,6 +1309,7 @@
       "expired_restart": "⚠️ 状态已过期，请重新点击菜单开始任务。",
       "expired_cleaned": "⚠️ 状态已失效或清理，请发送 /cancel 退出并重新发起任务。",
       "already_submitted": "⚠️ 任务已提交或已过期，请勿重复操作。",
+      "estimated_cost": "预计消耗：{cost} 灵石",
       "missing_image_resend": "⚠️ 任务状态已过期，请重新发送图片和提示词。",
       "missing_reference_resend": "⚠️ 任务已提交或状态已失效，请重新发送图片。",
       "cancelled": "🚫 流程已取消。已清空历史上传内容。",

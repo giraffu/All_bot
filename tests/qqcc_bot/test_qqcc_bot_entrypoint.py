@@ -472,7 +472,11 @@ async def test_ref2v_scene_defaults_first_template_and_accepts_person_image_imme
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={},
         lang="zh",
-        t=lambda key, **_kwargs: key,
+        t=lambda key, **kwargs: (
+            f"预计消耗：{kwargs['cost']} 灵石"
+            if key == "fsm.common.estimated_cost"
+            else key
+        ),
     )
 
     result = await quick_video_fsm.start_quick_video(update, context)
@@ -496,6 +500,7 @@ async def test_ref2v_scene_defaults_first_template_and_accepts_person_image_imme
     assert "点击下方“替换：模板名称”按钮" in prompt
     assert "可以直接发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
+    assert "预计消耗：10 灵石" in prompt
 
 
 @pytest.mark.asyncio
@@ -642,7 +647,11 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
             },
         },
         lang="zh",
-        t=lambda key, **_kwargs: key,
+        t=lambda key, **kwargs: (
+            f"预计消耗：{kwargs['cost']} 灵石"
+            if key == "fsm.common.estimated_cost"
+            else key
+        ),
     )
 
     result = await quick_video_fsm.receive_ref2v_template_replacement(update, context)
@@ -678,6 +687,7 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
     assert "其他模板仍然保留" in prompt
     assert "现在请发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
+    assert "预计消耗：10 灵石" in prompt
     buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
     assert [button.text for row in buttons for button in row] == [
         "替换：黑色模板",
@@ -1461,6 +1471,7 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
                     "id": "portrait",
                     "name": "人像",
                     "prompt": "portrait prompt",
+                    "credit_cost": 7,
                     "demo_input_media": {
                         "object_key": "qqcc/demo/draw/portrait/input",
                         "media_type": "image",
@@ -1506,7 +1517,11 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={},
         lang="zh",
-        t=lambda key, **_kwargs: key,
+        t=lambda key, **kwargs: (
+            f"预计消耗：{kwargs['cost']} 灵石"
+            if key == "fsm.common.estimated_cost"
+            else key
+        ),
     )
 
     result = await quick_image_fsm.start_quick_image(update, context)
@@ -1521,7 +1536,9 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
         scene_kind="draw",
         scene=config["draw_scenes"][0],
     )
-    assert reply_text.await_args.args[1] == "已选择【人像】，请发送原图。"
+    assert reply_text.await_args.args[1] == (
+        "已选择【人像】，请发送原图。\n\n预计消耗：7 灵石"
+    )
 
 
 @pytest.mark.asyncio
@@ -2808,6 +2825,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
                     "name": "亲吻",
                     "prompt": "kissing prompt",
                     "duration": "8s",
+                    "credit_cost": 9,
                     "jump_draw_scene_id": "make_input",
                     "demo_input_media": {
                         "object_key": "qqcc/demo/video/kiss/input",
@@ -2859,7 +2877,11 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={},
         lang="zh",
-        t=lambda key, **kwargs: f"{key}:{kwargs}" if kwargs else key,
+        t=lambda key, **kwargs: (
+            f"预计消耗：{kwargs['cost']} 灵石"
+            if key == "fsm.common.estimated_cost"
+            else (f"{key}:{kwargs}" if kwargs else key)
+        ),
     )
 
     result = await quick_video_fsm.start_quick_video(update, context)
@@ -2870,6 +2892,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
             "scene_id": "kiss",
         "mode_name": "亲吻",
         "prompt_override": "kissing prompt",
+        "credit_cost": 9,
         "default_prompt_key": MODE_CUSTOM_VIDEO,
         "default_prompt_text": "kissing prompt",
             "engine": "wan22_video_v2",
@@ -2891,7 +2914,9 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         scene=config["video_scenes"][0],
     )
     reply_mock.assert_awaited_once()
-    assert reply_mock.await_args.args[1] == "已选择【亲吻】，请发送原图。"
+    assert reply_mock.await_args.args[1] == (
+        "已选择【亲吻】，请发送原图。\n\n预计消耗：9 灵石"
+    )
     jump_button = reply_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
     assert jump_button.text == "先去 AI绘图V2生成「生成输入图」"
     assert jump_button.callback_data == "qdraw_scene:make_input"

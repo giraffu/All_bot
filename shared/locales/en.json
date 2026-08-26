@@ -1307,6 +1307,7 @@
       "expired_restart": "⚠️ The state expired. Please tap the menu again to restart the task.",
       "expired_cleaned": "⚠️ The state has expired or was cleaned up. Please send /cancel and start again.",
       "already_submitted": "⚠️ This task was already submitted or expired. Please do not repeat the action.",
+      "estimated_cost": "Estimated cost: {cost} credits",
       "missing_image_resend": "⚠️ The task state expired. Please send the image and prompt again.",
       "missing_reference_resend": "⚠️ The task was already submitted or the state expired. Please send the image again.",
       "cancelled": "🚫 The flow has been cancelled. Uploaded files were cleared.",

@@ -1809,6 +1809,7 @@ def render_qqcc_copywriting(
     button_name: str,
     *,
     cost: int | None = None,
+    cost_text: str | None = None,
 ) -> str | None:
     """Render documented scene placeholders in a configured message."""
 
@@ -1816,7 +1817,11 @@ def render_qqcc_copywriting(
         return None
     name = str(button_name or "")
     rendered = template.replace("{butten}", name).replace("{button}", name)
-    return rendered.replace("{cost}", str(cost)) if cost is not None else rendered
+    if cost is not None:
+        rendered = rendered.replace("{cost}", str(cost))
+    if cost_text and "{cost}" not in template:
+        rendered = f"{rendered.rstrip()}\n\n{cost_text}"
+    return rendered
 
 
 def resolve_qqcc_prompt(

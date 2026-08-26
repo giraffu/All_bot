@@ -318,11 +318,15 @@ async def _start_qqcc_image_scene(
         if scene_kind == QQCC_SCENE_KIND_FILTER
         else "ai_draw_scene_start"
     )
+    copywriting_override = get_qqcc_copywriting_override(
+        qqcc_config, copywriting_key
+    )
     msg = (
         render_qqcc_copywriting(
-            get_qqcc_copywriting_override(qqcc_config, copywriting_key),
+            copywriting_override,
             scene["name"],
             cost=cost,
+            cost_text=_t(context, "fsm.common.estimated_cost", cost=cost),
         )
         or msg
     )
