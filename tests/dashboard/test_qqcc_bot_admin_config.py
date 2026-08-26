@@ -620,6 +620,35 @@ def test_normalize_qqcc_config_round_trips_same_kind_video_scene_links():
     assert config["video_scenes"][1]["next_scene_id"] is None
 
 
+def test_normalize_qqcc_config_scopes_official_ref2v_turbo_to_ref_mode():
+    config = normalize_qqcc_config(
+        {
+            "ai_video_scenes": [
+                {
+                    "id": "ref-fast",
+                    "name": "REF fast",
+                    "prompt": "scene",
+                    "mode": "ref2v",
+                    "main_model": "official_ref2v_turbo",
+                    "reference_images": [
+                        "qqcc/config/ref2v/ai_video/ref-fast/reference/input"
+                    ],
+                },
+                {
+                    "id": "i2v-invalid",
+                    "name": "I2V invalid",
+                    "prompt": "scene",
+                    "mode": "i2v",
+                    "main_model": "official_ref2v_turbo",
+                },
+            ]
+        }
+    )
+
+    assert config["ai_video_scenes"][0]["main_model"] == "official_ref2v_turbo"
+    assert config["ai_video_scenes"][1]["main_model"] == "10eros"
+
+
 def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     config = normalize_qqcc_config(
         {
@@ -645,6 +674,11 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["ai_video_main_models"] == [
         {"value": "10eros", "label": "10Eros Max H3 v3"},
         {"value": "official", "label": "MiniMax H3 官方模型"},
+        {
+            "value": "official_ref2v_turbo",
+            "label": "官方 REF2V 极速",
+            "supported_modes": ["ref2v"],
+        },
     ]
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}

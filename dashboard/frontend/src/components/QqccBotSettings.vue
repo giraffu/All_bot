@@ -48,7 +48,7 @@ type AiVideoDurationKey = 5 | 10 | 15
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'minimax_h3'
-type AiVideoMainModel = '10eros' | 'official'
+type AiVideoMainModel = '10eros' | 'official' | 'official_ref2v_turbo'
 type AiVideoMode = 'i2v' | 'ref2v'
 type AiVideoCreditCosts = Partial<Record<
   AiVideoMode,
@@ -213,6 +213,10 @@ interface ResolutionOption<T extends string> {
   label: string
 }
 
+interface AiVideoMainModelOption extends ResolutionOption<AiVideoMainModel> {
+  supported_modes?: AiVideoMode[]
+}
+
 interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
@@ -229,7 +233,7 @@ interface QqccBotConfigOptions {
   image_lora_models: LoraModelOption[]
   video_resolutions: ResolutionOption<ResolutionKey>[]
   ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
-  ai_video_main_models: ResolutionOption<AiVideoMainModel>[]
+  ai_video_main_models: AiVideoMainModelOption[]
   default_video_resolution: ResolutionKey
   default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
@@ -308,6 +312,10 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   ai_video_main_models: [
     { value: '10eros', label: '10Eros Max H3 v3' },
     { value: 'official', label: 'MiniMax H3 官方模型' },
+    {
+      value: 'official_ref2v_turbo', label: '官方 REF2V 极速',
+      supported_modes: ['ref2v'],
+    },
   ],
   default_video_resolution: '720p',
   default_ai_video_resolution: 'preview',
@@ -714,7 +722,7 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'minimax_h3'
 const normalizeAiVideoMainModel = (value: unknown): AiVideoMainModel =>
-  value === 'official' ? 'official' : '10eros'
+  value === 'official' || value === 'official_ref2v_turbo' ? value : '10eros'
 const normalizeAiVideoMode = (value: unknown): AiVideoMode => value === 'ref2v' ? 'ref2v' : 'i2v'
 const normalizeAiVideoAspectRatio = (value: unknown): AiVideoAspectRatio =>
   value === '9:16' || value === '1:1' ? value : '16:9'
@@ -1033,8 +1041,10 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   }
   if (Array.isArray(raw.ai_video_main_models)) {
     const mainModels = raw.ai_video_main_models.filter(
-      (item): item is ResolutionOption<AiVideoMainModel> =>
-        (item?.value === '10eros' || item?.value === 'official')
+      (item): item is AiVideoMainModelOption =>
+        (item?.value === '10eros'
+          || item?.value === 'official'
+          || item?.value === 'official_ref2v_turbo')
         && typeof item?.label === 'string',
     )
     if (mainModels.length > 0) merged.ai_video_main_models = mainModels
@@ -1166,6 +1176,11 @@ const activeLoraOptions = computed(() =>
           option => !option.supported_modes || option.supported_modes.includes(sceneConfig.mode),
         )
       : modelOptions.image_lora_models
+)
+const activeAiVideoMainModelOptions = computed(() =>
+  modelOptions.ai_video_main_models.filter(
+    option => !option.supported_modes || option.supported_modes.includes(sceneConfig.mode),
+  )
 )
 const activeEngineSupportsLora = computed(() =>
   engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
@@ -2252,6 +2267,14 @@ const onSceneEngineChange = () => {
   }
 }
 
+const onAiVideoModeChange = () => {
+  if (!activeAiVideoMainModelOptions.value.some(
+    option => option.value === sceneConfig.main_model,
+  )) {
+    sceneConfig.main_model = modelOptions.default_ai_video_main_model
+  }
+}
+
 const confirmSceneConfig = () => {
   if (sceneConfig.index < 0) return
   if (sceneConfig.kind === 'video' || sceneConfig.kind === 'video_v1') {
@@ -2827,7 +2850,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
               <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" :placeholder="sceneConfigCreditCostPlaceholder" data-testid="scene-config-credit-cost" class="w-full" />
             </a-form-item>
             <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="场景模式" class="mb-0">
-              <a-select v-model:value="sceneConfig.mode" data-testid="scene-config-ai-video-mode" :get-popup-container="getSceneSelectPopupContainer">
+              <a-select v-model:value="sceneConfig.mode" data-testid="scene-config-ai-video-mode" :get-popup-container="getSceneSelectPopupContainer" @change="onAiVideoModeChange">
                 <a-select-option value="i2v">图生视频</a-select-option>
                 <a-select-option v-if="props.ref2vEnabled" value="ref2v">参考生视频 REF2V</a-select-option>
               </a-select>
@@ -2894,7 +2917,7 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
             :get-popup-container="getSceneSelectPopupContainer"
           >
             <a-select-option
-              v-for="item in modelOptions.ai_video_main_models"
+              v-for="item in activeAiVideoMainModelOptions"
               :key="item.value"
               :value="item.value"
             >

@@ -14,6 +14,7 @@ from src.domain_config.scail2_video import (
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_MAIN_MODEL_OFFICIAL,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
     normalize_minimax_h3_addon_items,
@@ -1419,12 +1420,24 @@ _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
     "model_input": ["1", 0],
     "sampler_name": "er_sde",
     "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00",
+    "shift_video": 12.0,
+    "shift_audio": 3.0,
 }
+_MINIMAX_H3_FL2VA_TURBO_LORA = (
+    "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+)
+_MINIMAX_H3_REF2VA_TURBO_LORA = (
+    "MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+)
 _MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE = {
     "model_input": ["8", 0],
+    "base_lora_node_id": "8",
+    "base_lora_name": _MINIMAX_H3_FL2VA_TURBO_LORA,
     "sampler_name": "euler",
     "scheduler": "simple",
     "steps": 8,
+    "shift_video": 12.0,
+    "shift_audio": 3.0,
 }
 _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE = {
     "model_input": ["1", 0],
@@ -1432,6 +1445,19 @@ _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE = {
     "scheduler": "simple",
     "steps": 20,
     "ref_image_size": "max",
+    "shift_video": 12.0,
+    "shift_audio": 3.0,
+}
+_MINIMAX_H3_OFFICIAL_REF2VA_TURBO_EXECUTION_PROFILE = {
+    "model_input": ["9", 0],
+    "base_lora_node_id": "9",
+    "base_lora_name": _MINIMAX_H3_REF2VA_TURBO_LORA,
+    "sampler_name": "euler",
+    "scheduler": "simple",
+    "steps": 4,
+    "ref_image_size": "match",
+    "shift_video": 12.0,
+    "shift_audio": 3.0,
 }
 
 
@@ -1458,12 +1484,36 @@ def _apply_minimax_h3_execution_profile(
     main_model: str,
     task_type: str,
 ) -> list[Any]:
-    if main_model != MINIMAX_H3_MAIN_MODEL_OFFICIAL:
-        profile = _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
+    workflow.pop("9", None)
+    if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO:
+        profile = _MINIMAX_H3_OFFICIAL_REF2VA_TURBO_EXECUTION_PROFILE
+    elif main_model != MINIMAX_H3_MAIN_MODEL_OFFICIAL:
+        profile = {
+            **_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE,
+            **(
+                {"shift_video": 11.0, "shift_audio": 4.0}
+                if task_type == "minimax_h3_ref2v"
+                else {}
+            ),
+        }
     elif task_type == "minimax_h3_ref2v":
         profile = _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE
     else:
         profile = _MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE
+
+    base_lora_node_id = profile.get("base_lora_node_id")
+    if base_lora_node_id is not None:
+        workflow[base_lora_node_id] = {
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": profile["base_lora_name"],
+                "strength_model": 1.0,
+            },
+            "class_type": "LoraLoaderModelOnly",
+        }
+    if "shift_video" in profile:
+        workflow["3"]["inputs"]["shift_video"] = profile["shift_video"]
+        workflow["3"]["inputs"]["shift_audio"] = profile["shift_audio"]
 
     workflow["33"] = {
         "inputs": {"sampler_name": profile["sampler_name"]},

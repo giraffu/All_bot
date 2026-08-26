@@ -53,10 +53,12 @@ MINIMAX_H3_MODEL_FL = (
 MINIMAX_H3_MODEL_REF = MINIMAX_H3_MODEL_FL
 MINIMAX_H3_MAIN_MODEL_10EROS = "10eros"
 MINIMAX_H3_MAIN_MODEL_OFFICIAL = "official"
+MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO = "official_ref2v_turbo"
 MINIMAX_H3_DEFAULT_MAIN_MODEL = MINIMAX_H3_MAIN_MODEL_10EROS
 MINIMAX_H3_MAIN_MODELS = (
     MINIMAX_H3_MAIN_MODEL_10EROS,
     MINIMAX_H3_MAIN_MODEL_OFFICIAL,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
 )
 MINIMAX_H3_OFFICIAL_MODEL_FL = (
     "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
@@ -405,6 +407,11 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     ).strip().lower()
     if main_model not in MINIMAX_H3_MAIN_MODELS:
         raise MiniMaxH3ValidationError("不支持该 MiniMax H3 主模型。")
+    if (
+        main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
+        and task_type != MINIMAX_H3_REF2V
+    ):
+        raise MiniMaxH3ValidationError("官方 REF2V 极速主模型仅支持参考图生视频。")
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -475,7 +482,11 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         main_model=main_model,
         model_name=(
             MINIMAX_H3_OFFICIAL_MODEL_REF
-            if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
+            if main_model
+            in {
+                MINIMAX_H3_MAIN_MODEL_OFFICIAL,
+                MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
+            }
             and task_type == MINIMAX_H3_REF2V
             else MINIMAX_H3_OFFICIAL_MODEL_FL
             if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL

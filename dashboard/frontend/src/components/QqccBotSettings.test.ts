@@ -1624,6 +1624,15 @@ describe('QqccBotSettings', () => {
       },
       options: {
         default_ai_video_engine: 'minimax_h3',
+        default_ai_video_main_model: '10eros',
+        ai_video_main_models: [
+          { value: '10eros', label: '10Eros Max H3 v3' },
+          { value: 'official', label: 'MiniMax H3 官方模型' },
+          {
+            value: 'official_ref2v_turbo', label: '官方 REF2V 极速',
+            supported_modes: ['ref2v'],
+          },
+        ],
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
         ai_video_addon_models_version: 5,
         ai_video_addon_models: [
@@ -1641,6 +1650,8 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const mainModelSelector = () => wrapper.get('[data-testid="scene-ai-video-main-model-select"]')
+    expect(mainModelSelector().text()).not.toContain('官方 REF2V 极速')
     const addonSelector = () => wrapper.findAllComponents(SelectStub)
       .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
     expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
@@ -1650,8 +1661,14 @@ describe('QqccBotSettings', () => {
 
     await wrapper.get('[data-testid="scene-config-ai-video-mode"]').setValue('ref2v')
     await flushPromises()
+    expect(mainModelSelector().text()).toContain('官方 REF2V 极速')
     expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
       .toEqual(['motion_booster', 'motion_booster_ref2va'])
+    await mainModelSelector().setValue('official_ref2v_turbo')
+    await wrapper.get('[data-testid="scene-config-ai-video-mode"]').setValue('i2v')
+    await flushPromises()
+    expect((mainModelSelector().element as HTMLSelectElement).value).toBe('10eros')
+    expect(mainModelSelector().text()).not.toContain('官方 REF2V 极速')
   })
 
   it('configures a video scene end-frame draw source in the save payload', async () => {

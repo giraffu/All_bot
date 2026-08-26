@@ -17,6 +17,7 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_REF2V,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
     MINIMAX_H3_MAIN_MODELS,
     MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
     MINIMAX_H3_REF2V_PRICE_BY_DURATION,
@@ -905,6 +906,11 @@ def _normalize_ai_video_scene(
         raw_scene.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
     ).strip().lower()
     if main_model not in MINIMAX_H3_MAIN_MODELS:
+        main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
+    if (
+        main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
+        and mode != "ref2v"
+    ):
         main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
     lora_items: list[dict[str, Any]] = []
     seen_loras: set[str] = set()
@@ -1897,6 +1903,11 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "ai_video_main_models": [
             {"value": "10eros", "label": "10Eros Max H3 v3"},
             {"value": "official", "label": "MiniMax H3 官方模型"},
+            {
+                "value": "official_ref2v_turbo",
+                "label": "官方 REF2V 极速",
+                "supported_modes": ["ref2v"],
+            },
         ],
         "video_lora_models": [
             {

@@ -294,6 +294,44 @@ def test_minimax_h3_uses_fixed_10eros_v3_hybrid_model_for_all_public_modes():
         )
 
 
+def test_minimax_h3_ref2v_accepts_dedicated_official_turbo_profile():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": ["reference.png"],
+            "aspect_ratio": "16:9",
+            "main_model": "official_ref2v_turbo",
+        },
+    )
+
+    assert spec.main_model == "official_ref2v_turbo"
+    assert spec.model_name == (
+        "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    )
+
+
+@pytest.mark.parametrize(
+    ("task_type", "images", "aspect_ratio"),
+    [
+        (MINIMAX_H3_T2V, [], "16:9"),
+        (MINIMAX_H3_I2V, ["first.png"], "source"),
+        (MINIMAX_H3_FLF2V, ["first.png", "last.png"], "source"),
+    ],
+)
+def test_minimax_h3_rejects_ref2v_turbo_profile_outside_ref2v(
+    task_type, images, aspect_ratio
+):
+    with pytest.raises(MiniMaxH3ValidationError, match="仅支持参考图生视频"):
+        build_minimax_h3_spec(
+            task_type,
+            {
+                "images": images,
+                "aspect_ratio": aspect_ratio,
+                "main_model": "official_ref2v_turbo",
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "preset,duration,cost,frames",
     [
