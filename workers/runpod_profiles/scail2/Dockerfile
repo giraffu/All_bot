@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
+ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim@sha256:4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/Comfy-Org/ComfyUI.git
@@ -46,24 +46,19 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN set -euo pipefail; \
     if command -v apt-get >/dev/null 2>&1; then \
+      packages="ca-certificates curl git openssh-client openssh-server python3-pip"; \
+      if ! command -v ffmpeg >/dev/null 2>&1; then \
+        packages="${packages} ffmpeg"; \
+      fi; \
       apt-get update; \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        ffmpeg \
-        git \
-        openssh-client \
-        openssh-server \
-        python3-pip; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${packages}; \
       rm -rf /var/lib/apt/lists/*; \
     elif command -v zypper >/dev/null 2>&1; then \
-      zypper --non-interactive --gpg-auto-import-keys install --no-recommends \
-        ca-certificates \
-        curl \
-        ffmpeg \
-        git \
-        openssh \
-        python3-pip; \
+      packages="ca-certificates curl git openssh python3-pip"; \
+      if ! command -v ffmpeg >/dev/null 2>&1; then \
+        packages="${packages} ffmpeg"; \
+      fi; \
+      zypper --non-interactive --gpg-auto-import-keys install --no-recommends ${packages}; \
       zypper clean --all; \
     fi
 

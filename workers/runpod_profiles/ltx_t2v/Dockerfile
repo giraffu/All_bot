@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
+ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim@sha256:4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9
 ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
 
 FROM ${NODE_SOURCE_IMAGE} AS node_source
