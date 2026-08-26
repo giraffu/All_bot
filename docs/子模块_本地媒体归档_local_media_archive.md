@@ -216,7 +216,9 @@ R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输�
 Gallery、收藏和公开记录由其关联的 History 全角色阻断。HEAD/SHA/数据库失败均
 fail closed。双份 SHA 读取默认最多 8 路并发，可用
 `--verification-concurrency` 在 1–16 之间收紧；并发只影响读取吞吐，不跳过
-对象级摘要或执行前的重新校验。执行只认
+对象级摘要或执行前的重新校验。执行阶段沿用同一并发上限处理彼此独立的对象，
+但每个对象内部始终保持“删除源 → HEAD 确认 404 → 重新计算持久副本 SHA”的固定顺序；
+任一对象失败仍使整批停在未完成状态，不会签发 completed 回执。执行只认
 `R2_TEMP_CLEANUP_ENABLED` 和精确生产桶确认，不复用
 `R2_ARCHIVE_DELETE_ENABLED` 或恢复门禁。
 完成 100/1000/10000 对象 canary 后可安装 `ops/r2_temp_cleanup/` 的每日任务；
