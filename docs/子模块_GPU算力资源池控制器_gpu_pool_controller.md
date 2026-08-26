@@ -124,6 +124,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   临时连接信息不得写入 Git。
 - RunPod 启动入口必须把实际 ComfyUI `input/output/temp` 目录投影为
   `COMFY_ARTIFACT_*_DIR`。Worker 成功完成后精确清理任务媒体，并周期清理超期孤儿；
+  LAN AIO renderer 必须把这三个变量分别绑定到与 ComfyUI
+  `--input-directory/--output-directory/--temp-directory` 相同的 slot state root，
+  不能回退到镜像内 `COMFYUI_DIR` 的默认子目录；
   `COMFY_ARTIFACT_MIN_FREE_GB` 默认保留 10 GiB，低于水位的实例以
   `artifact_disk_low` 停止接单。不得用清空 `/workspace`、模型目录或无年龄/任务
   边界的递归删除代替该机制。

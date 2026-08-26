@@ -182,6 +182,9 @@ def test_runpod_all_in_one_profiles_use_declared_exact_or_lan_images():
     assert f"POOL_IMAGE_REF: {i2i_pro}" in rendered
     assert "RUNPOD_MODEL_MANIFEST_KEY: i2i_pro/2026-06-14-test/manifest.json" in rendered
     assert "RUNPOD_WORKER_ROOT: /opt/allbot/runpod_worker" in rendered
+    assert "COMFY_ARTIFACT_INPUT_DIR: /workspace/allbot-state/comfy-input" in rendered
+    assert "COMFY_ARTIFACT_OUTPUT_DIR: /workspace/allbot-state/comfy-output" in rendered
+    assert "COMFY_ARTIFACT_TEMP_DIR: /workspace/allbot-state/comfy-temp" in rendered
     assert "runpod_sync_models_from_r2.py" in rendered
     assert "ln -s" in rendered
     assert "scripts/runpod_entrypoint.sh" in rendered

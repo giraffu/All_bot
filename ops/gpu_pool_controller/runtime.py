@@ -645,6 +645,9 @@ class RuntimePlanner:
                         "COMFY_WS_URL": "ws://127.0.0.1:8188/ws",
                         "COMFY_INPUT_DIR": f"{state_root}/comfy-input",
                         "COMFY_OUTPUT_DIR": f"{state_root}/comfy-output",
+                        "COMFY_ARTIFACT_INPUT_DIR": f"{state_root}/comfy-input",
+                        "COMFY_ARTIFACT_OUTPUT_DIR": f"{state_root}/comfy-output",
+                        "COMFY_ARTIFACT_TEMP_DIR": f"{state_root}/comfy-temp",
                         "COMFY_EXTRA_ARGS": self._runpod_aio_comfy_extra_args(
                             profile=profile,
                             state_root=state_root,
