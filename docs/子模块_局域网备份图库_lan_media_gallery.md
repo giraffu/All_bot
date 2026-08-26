@@ -56,3 +56,28 @@ docker inspect allbot-lan-media-gallery \
 到 `Upload.enabled=false`，所有备份源挂载的 `RW` 均为 `false`。普通更新只重建
 目标服务并保留 XDG 运行态目录；失败时停止新容器并用上一精确 digest 恢复，不删除
 索引或缩略图。
+
+## 5. iCloud 原片单向 NAS 入口
+
+`ops/icloud_photos_nas/` 使用固定 OCI digest 的 `icloudpd`，把个人 iCloud Photos
+单向下载到 NAS `/volume1/ApplePhotos/originals`。它与现有 Windows/聊天媒体备份、
+AllBot History 归档、R2 和社区 Gallery 都是独立事实源，不复用账号、目录、数据库或
+生命周期。
+
+下载范围包括原照片、原视频、Live Photo 视频部分和 XMP sidecar；文件名加入 iCloud
+asset ID 防止跨设备同名覆盖。实现不携带 `delete-after-download`、iCloud recent
+保留删除或本地 auto-delete 能力，iCloud 误删不会传播为 NAS 删除。原片是独立 Btrfs
+子卷，每日只读快照默认保留 30 份；Apple keyring/session/cookie 与部署运行态位于
+`/volume1/ApplePhotosRuntime`，禁止进入原片快照或图库只读挂载。
+
+容器无入站端口，以 NAS `1000:100` 运行并使用只读 rootfs、空 capability 和
+`no-new-privileges`。卷使用率达到 80% 后新下载周期 fail closed。首次安装只准备目录、
+精确镜像和 snapshot timer，不启动下载；操作者必须在 NAS 私密终端输入 Apple ID、
+密码与双重认证码，完成最近 10 项 canary 并回读照片、视频、Live Photo 后才能启动
+全量循环。Advanced Data Protection 账号不支持该 Web API 登录路径；账号还必须允许
+网页访问 iCloud 数据。
+
+首轮全量验收前，iCloud 原片不接入 PiGallery2。后续浏览接线只能把
+`/volume1/ApplePhotos/originals` 作为新的精确只读白名单源；不得把
+`/volume1/ApplePhotos`、运行态、快照根或 Apple 凭据目录整体暴露给图库容器。部署、
+认证续期、启动、停止、快照恢复和目录接线详见 `ops/icloud_photos_nas/README.md`。

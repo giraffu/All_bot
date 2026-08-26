@@ -1,0 +1,58 @@
+name: allbot-icloud-photos-nas
+
+services:
+  icloud-photo-backup:
+    image: docker.io/icloudpd/icloudpd@sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801
+    container_name: allbot-icloud-photo-backup
+    user: "1000:100"
+    restart: unless-stopped
+    entrypoint: ["/opt/allbot/run.sh"]
+    command: ["watch"]
+    environment:
+      HOME: /state/home
+      XDG_DATA_HOME: /state/xdg
+      TZ: Asia/Shanghai
+      ICLOUD_DOMAIN: ${ICLOUD_DOMAIN:-cn}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-21600}
+      MAX_USED_PERCENT: ${MAX_USED_PERCENT:-80}
+      CANARY_RECENT: ${CANARY_RECENT:-10}
+    volumes:
+      - type: bind
+        source: /volume1/ApplePhotos/originals
+        target: /photos
+      - type: bind
+        source: /volume1/ApplePhotosRuntime/state
+        target: /state
+      - type: bind
+        source: /volume1/ApplePhotosRuntime/secrets/apple-id
+        target: /run/secrets/apple_id
+        read_only: true
+      - type: bind
+        source: /volume1/ApplePhotosRuntime/deploy/run.sh
+        target: /opt/allbot/run.sh
+        read_only: true
+      - type: bind
+        source: /volume1/ApplePhotosRuntime/deploy/auth.sh
+        target: /opt/allbot/auth.sh
+        read_only: true
+      - type: bind
+        source: /volume1/ApplePhotosRuntime/deploy/notify-reauth.sh
+        target: /opt/allbot/notify-reauth.sh
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=1000,gid=100
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "test ! -e /state/reauth-required"]
+      interval: 5m
+      timeout: 5s
+      retries: 1
+      start_period: 1m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+

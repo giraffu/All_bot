@@ -1,6 +1,6 @@
 ---
 name: "allbot-lan-media-gallery"
-description: "部署和维护 AllBot 局域网只读备份图库，覆盖媒体白名单、PiGallery2 容器、账户初始化、索引缓存与 LAN 暴露。"
+description: "维护局域网只读图库、iCloud 原片单向 NAS 备份与 LAN 浏览。"
 ---
 
 # AllBot 局域网备份图库
@@ -9,25 +9,26 @@ description: "部署和维护 AllBot 局域网只读备份图库，覆盖媒体�
 
 1. `lan_media_gallery/README.md`
 2. `docs/子模块_局域网备份图库_lan_media_gallery.md`
-3. 涉及容器部署时叠加 `allbot-ops-deployment`
+3. iCloud 原片备份读取 `ops/icloud_photos_nas/README.md`
+4. 涉及容器部署时叠加 `allbot-ops-deployment`
 
 ## 固定边界
 
-- 图库是独立 LAN 服务，不复用 AllBot 社区 Gallery、R2 或业务数据库。
-- 备份源只能按 `compose.yml` 白名单逐目录只读挂载；禁止挂载备份根目录、
-  `SHA256SUMS`、QQ/微信数据库或 AppWebCache。
-- 配置、账户、SQLite 索引、缩略图和转码结果只写独立 XDG 运行态目录。
-- 容器使用宿主非 root UID/GID、只读 rootfs、drop all capabilities 和
-  `no-new-privileges`；上传保持关闭。
-- 镜像必须固定精确 OCI digest。LAN 地址、账户密码和 live 状态不写入 Skill；
-  密码只保存到操作者私有凭据文件。
+- 服务独立于社区 Gallery、R2 和业务库；图库只读挂载 `compose.yml` 白名单，禁止
+  备份根、校验清单、聊天数据库及 AppWebCache。
+- 账户、索引、缩略图和转码只写 XDG 运行态；容器非 root、只读 rootfs、无
+  capabilities、`no-new-privileges`，上传关闭。
+- iCloud 只单向下载原片、视频、Live Photo 和 XMP，禁止云端/本地删除；原片与
+  keyring/session 分离，快照不得含凭据。
+- 镜像固定精确 digest；LAN 地址、密码和 live 状态不写 Skill，凭据只进私有文件。
 - 启停、升级、修改可读目录或账户均属于 LAN mutation，需要用户明确要求。
 - 普通停止不得删除运行态目录；清空账户/索引必须另行确认。
 
 ## 最小验证
 
 ```bash
-.venv/bin/python -m pytest -q lan_media_gallery/tests
+.venv/bin/python -m pytest -q lan_media_gallery/tests \
+  tests/ops/test_icloud_photos_nas_contract.py
 docker compose -f lan_media_gallery/compose.yml config
 python3 scripts/doc_quality_checker.py
 ```

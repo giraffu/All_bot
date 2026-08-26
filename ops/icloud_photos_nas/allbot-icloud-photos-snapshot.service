@@ -1,0 +1,9 @@
+[Unit]
+Description=Create a read-only snapshot of NAS iCloud photo originals
+RequiresMountsFor=/volume1/ApplePhotos/originals
+
+[Service]
+Type=oneshot
+Environment=APPLE_PHOTOS_SNAPSHOT_RETAIN=30
+ExecStart=/volume1/ApplePhotosRuntime/deploy/snapshot.sh
+
