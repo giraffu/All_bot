@@ -130,7 +130,8 @@ updates；从旧 Local API 移动到新实例前，应在旧实例调用 `logOut
    `TELEGRAM_API_ID/HASH` 已进入受控 test env。
 2. 部署并激活 `compose-contract`、`config-contract`，但先不切换 polling Bot。
 3. 部署 `telegram-local-api` 与 `telegram-local-files`，核对 health、无宿主机
-   端口、资源上限和共享目录权限。
+   端口、资源上限和共享目录权限。首次逐模块部署时，发布器会从 catalog 补齐
+   同 profile 另一外部模块的精确镜像引用，但每次仍只创建或替换明确目标服务。
 4. 停止目标测试 Bot 的 polling；在旧 Local API 对该 token 调用 `logOut`，响应
    和命令都必须脱敏。没有旧节点文件级访问时，接受这一小段切换窗口，不声称
    update 零丢失。

@@ -646,6 +646,32 @@ def test_compose_deploy_accepts_exact_external_image_without_source_label(monkey
     assert "grep -v '^ALLBOT_RELEASE_SHA='" not in script
 
 
+def test_external_profile_bootstraps_missing_exact_peer_images(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_remote_shell(_host, script):
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+
+    module.SystemAdapters(catalog)._deploy_compose(
+        "prod",
+        catalog["telegram-local-files"],
+        catalog["telegram-local-files"]["ref"],
+        {"remote_host": "prod-control"},
+    )
+
+    script = captured["script"]
+    peer_env = "ALLBOT_TELEGRAM_LOCAL_API_IMAGE"
+    peer_ref = catalog["telegram-local-api"]["ref"]
+    assert f"grep -q '^{peer_env}=' \"$candidate\"" in script
+    assert f"{peer_env} {peer_ref}" in script
+    assert "up -d --no-deps --force-recreate --wait --wait-timeout 120 telegram-local-files" in script
+
+
 def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
