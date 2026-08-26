@@ -31,6 +31,56 @@ SCAIL2_FLEX_DOCKERFILE = Path("workers/runpod_profiles/scail2_flex/Dockerfile")
 MODULE_CATALOG = Path("deploy/module-catalog.json")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
+RUNTIME_REFRESH_MODULES = {
+    "i2i_pro_runtime_refresh": (
+        "allbot-gpu-i2i-pro",
+        "i2i_pro",
+        "d5366bd4f9ac8c046b9f9348b80c9e693e3cd021d558b79fb4b9c3959e891df8",
+        True,
+    ),
+    "wan22_video_v2_runtime_refresh": (
+        "allbot-gpu-wan22-aio-video",
+        "wan22_aio_video",
+        "ef8b23ed217bece3461bff46ebd14715a98342e24eeea44a6b4d451228abede6",
+        True,
+    ),
+    "img2img_runtime_refresh": (
+        "allbot-gpu-img2img-lora",
+        "img2img_lora",
+        "1045a42a0baaccecb956a566f836e732d14de8fcf317142584a29b7e6bf5e4f3",
+        True,
+    ),
+    "ltx_video_runtime_refresh": (
+        "allbot-gpu-ltx-video-v2",
+        "ltx_video",
+        "abc5f9f1261563ad0a946ee065504b70792e7e701b165e6c1b62cd49ef5d4a86",
+        True,
+    ),
+    "ltx_t2v_runtime_refresh": (
+        "allbot-gpu-ltx-t2v",
+        "ltx_t2v",
+        "b956eb3ff3ee1518c92314a40d44b10d0734d91de5ed09cea05214df30511897",
+        True,
+    ),
+    "pornmaster_flux2_edit_bf16_runtime_refresh": (
+        "allbot-gpu-pornmaster-flux2-edit-bf16",
+        "pornmaster_flux2_edit",
+        "505b455a1b028d2642a1e4cc659eb1b1153f0e6751d763941a8ff81e8e7ea587",
+        True,
+    ),
+    "scail2_runtime_refresh": (
+        "allbot-gpu-scail2",
+        "scail2",
+        "6bd4017e3a515ce13f58e5db969e56902861c024fac38c620176b29a1cbc0916",
+        True,
+    ),
+    "lan_scail2_flex_runtime_refresh": (
+        "allbot-gpu-lan-scail2-flex",
+        "scail2_flex",
+        "04222c3921dcceadf7a0fa0e5f6c7c7becd8bb038cce7bfc097a5b69ff168dfa",
+        False,
+    ),
+}
 
 
 def test_i2i_pro_profile_uses_the_regional_pypi_mirror_for_comfyui_dependencies():
@@ -430,6 +480,33 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert '"workers/runpod_profiles/all/Dockerfile.runtime-refresh"' in catalog
 
 
+def test_gpu_runtime_refresh_modules_overlay_only_the_canonical_worker_package():
+    catalog = json.loads(MODULE_CATALOG.read_text(encoding="utf-8"))["modules"]
+
+    for module_name, (image, profile_dir, base_digest, single_manifest) in (
+        RUNTIME_REFRESH_MODULES.items()
+    ):
+        dockerfile_path = (
+            Path("workers") / "runpod_profiles" / profile_dir / "Dockerfile.runtime-refresh"
+        )
+        dockerfile = dockerfile_path.read_text(encoding="utf-8")
+        module = catalog[module_name]
+
+        assert module["image"] == image
+        assert module["dockerfile"] == str(dockerfile_path)
+        assert module.get("runpod_single_manifest", False) is single_manifest
+        assert f"@sha256:{base_digest}" in dockerfile
+        assert "rm -rf /opt/allbot/runtime/runpod_worker" in dockerfile
+        assert "COPY workers/comfy_agent " in dockerfile
+        assert "COPY src " in dockerfile
+        assert "COPY shared " in dockerfile
+        assert "load_runtime_manifest();" in dockerfile
+        assert "apt-get" not in dockerfile
+        assert "zypper" not in dockerfile
+        assert "git clone" not in dockerfile
+        assert "pip install" not in dockerfile
+
+
 def test_runpod_profiles_do_not_reinstall_an_existing_ffmpeg_package():
     """Mutable upstream bases may already carry a conflicting ffmpeg package."""
 
@@ -468,8 +545,8 @@ def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
     dockerfile = LTX_T2V_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
 
     assert (
-        "BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:"
-        "124cd638cab69e87c39946190a7e17169b6223e35c7d946e9df540719ddb385b" in dockerfile
+        "BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:"
+        "b956eb3ff3ee1518c92314a40d44b10d0734d91de5ed09cea05214df30511897" in dockerfile
     )
     assert "LTX 2.3 Sulphur Ingredients T2V.json" in dockerfile
     assert 'ic["26:91"]["inputs"]["latent"] == ["26:153",0]' in dockerfile
