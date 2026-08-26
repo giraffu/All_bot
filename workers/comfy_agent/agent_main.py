@@ -29,6 +29,7 @@ from agent_artifact_lifecycle import (
     artifact_disk_capacity,
     cleanup_artifacts,
     cleanup_stale_artifacts,
+    cleanup_task_artifacts,
 )
 from agent_finalizer import AgentFinalizer
 from agent_health import AgentHealthManager
@@ -957,6 +958,21 @@ class ComfyAgent:
                 logger.info("Cleaned up ComfyUI artifact: %s", path)
         except Exception as exc:
             logger.warning("Failed to clean up ComfyUI artifacts: %s", exc)
+
+    def _cleanup_task_comfy_artifacts(self, task_id: str) -> None:
+        try:
+            removed = cleanup_task_artifacts(
+                roots=COMFY_ARTIFACT_ROOTS,
+                task_id=task_id,
+            )
+            for path in removed:
+                logger.info("Cleaned up task-owned ComfyUI artifact: %s", path)
+        except Exception as exc:
+            logger.warning(
+                "Failed to clean up task-owned ComfyUI artifacts for %s: %s",
+                task_id,
+                exc,
+            )
 
     def _protected_comfy_artifacts(self) -> list[Any]:
         protected: list[Any] = []

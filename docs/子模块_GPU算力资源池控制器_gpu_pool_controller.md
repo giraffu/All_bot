@@ -123,7 +123,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   reference 已归档，不能用其中的 profile/track/attestation 快照决定当前操作。
   临时连接信息不得写入 Git。
 - RunPod 启动入口必须把实际 ComfyUI `input/output/temp` 目录投影为
-  `COMFY_ARTIFACT_*_DIR`。Worker 成功完成后精确清理任务媒体，并周期清理超期孤儿；
+  `COMFY_ARTIFACT_*_DIR`。Worker 只在 Central 确认完成后清理任务媒体：
+  先删除 ComfyUI history 返回的精确产物，再用完整 task ID 扫描三个已配置
+  目录，补齐 workflow 未放入 history 的中间帧/无声视频；同时周期清理
+  超期孤儿。task ID 扫描必须拒绝过短或不安全标识，不得放宽为目录级删除；
   LAN AIO renderer 必须把这三个变量分别绑定到与 ComfyUI
   `--input-directory/--output-directory/--temp-directory` 相同的 slot state root，
   不能回退到镜像内 `COMFYUI_DIR` 的默认子目录；

@@ -106,6 +106,53 @@ def cleanup_artifacts(
     return removed
 
 
+def cleanup_task_artifacts(
+    *,
+    roots: ComfyArtifactRoots,
+    task_id: str,
+) -> list[str]:
+    """Remove task-owned ComfyUI intermediates after delivery is confirmed.
+
+    Some workflows create intermediate files that are not represented in the
+    ComfyUI history response.  Their filenames still include the full task ID,
+    so a post-delivery sweep can remove them without touching another task.
+    """
+    token = str(task_id or "").strip()
+    if (
+        len(token) < 16
+        or len(token) > 128
+        or token != safe_artifact_component(token)
+    ):
+        return []
+
+    removed: list[str] = []
+    first_error: OSError | None = None
+    for kind in ARTIFACT_KINDS:
+        root_value = roots.for_kind(kind)
+        if not root_value:
+            continue
+        root = Path(root_value).resolve(strict=False)
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob(f"*{token}*"), key=str):
+            try:
+                if not path.is_file() and not path.is_symlink():
+                    continue
+                resolved = path.resolve(strict=False)
+                path.unlink()
+                removed.append(str(resolved))
+                _remove_empty_parents(path, root=root)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                first_error = first_error or exc
+    if first_error is not None:
+        raise RuntimeError(
+            "one or more task-owned ComfyUI artifacts could not be removed"
+        ) from first_error
+    return removed
+
+
 def cleanup_stale_artifacts(
     *,
     roots: ComfyArtifactRoots,

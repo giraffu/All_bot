@@ -26,6 +26,7 @@ class _FakeAgent:
     def __init__(self):
         self._delivery_gate = _DeliveryGate()
         self.cleaned_artifact_batches = []
+        self.cleaned_task_ids = []
         self.cleaned_local_inputs = []
         self.statuses = []
         self.errors = []
@@ -58,6 +59,9 @@ class _FakeAgent:
 
     def _cleanup_comfy_artifacts(self, artifacts):
         self.cleaned_artifact_batches.append(list(artifacts))
+
+    def _cleanup_task_comfy_artifacts(self, task_id):
+        self.cleaned_task_ids.append(task_id)
 
 
 def _execution():
@@ -141,6 +145,7 @@ async def test_finalizer_cleans_comfy_output_only_after_central_complete_confirm
         [output_ref],
         execution.comfy_input_artifacts,
     ], agent.errors
+    assert agent.cleaned_task_ids == [execution.task_id]
     assert agent.cleaned_local_inputs == [["/tmp/local-input.png"]]
 
 
@@ -155,4 +160,5 @@ async def test_finalizer_preserves_comfy_output_when_complete_confirmation_fails
     await _run_finalizer(agent, execution, report_outputs=report_outputs)
 
     assert agent.cleaned_artifact_batches == [execution.comfy_input_artifacts]
+    assert agent.cleaned_task_ids == []
     assert agent.statuses[-1][1] == "failed"
