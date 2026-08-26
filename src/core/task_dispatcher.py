@@ -60,6 +60,7 @@ from src.domain_config.minimax_h3 import (
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
 )
+from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
@@ -1075,7 +1076,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
                 for item in spec.addon_items
             ],
             "extract_last_frame": True,
-            "gallery_supported": self.task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V},
+            "gallery_supported": is_gallery_supported_task_type(self.task_type),
         }
 
     async def submit_task(

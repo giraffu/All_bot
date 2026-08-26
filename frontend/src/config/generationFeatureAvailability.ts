@@ -40,6 +40,7 @@ const GALLERY_TASK_TYPE_ENTRY_FLAGS: Record<string, string> = {
   minimax_h3: 'enable_gallery_minimax_h3_entry',
   minimax_h3_i2v: 'enable_gallery_minimax_h3_entry',
   minimax_h3_flf2v: 'enable_gallery_minimax_h3_entry',
+  minimax_h3_ref2v: 'enable_gallery_minimax_h3_entry',
   wan22_video_v2: 'enable_gallery_wan22_video_v2_entry',
   scail2_action_transfer: 'enable_gallery_scail2_action_transfer_entry',
   scail2_action_transfer_long: 'enable_gallery_scail2_action_transfer_entry',
@@ -80,6 +81,10 @@ export const isGalleryTaskTypeEntryEnabled = (taskType: string): boolean => {
 export const isGenerationTaskTypeEnabled = (taskType: string): boolean => {
   if (taskType === 'ltx_video' || taskType === 'ltx_video_flf2v') {
     return isLtxVideoFeatureEnabled()
+  }
+  if (taskType === 'minimax_h3_ref2v') {
+    return isMinimaxH3FeatureEnabled()
+      && getRuntimeFlag('enable_minimax_h3_ref2v', false)
   }
   if (taskType === 'minimax_h3' || taskType.startsWith('minimax_h3_')) {
     return isMinimaxH3FeatureEnabled()

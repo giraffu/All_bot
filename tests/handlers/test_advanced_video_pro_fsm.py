@@ -16,9 +16,10 @@ from src.handlers.fsm import advanced_video_pro_fsm as fsm
         ("t2v", [], False),
         ("i2v", ["start.png"], True),
         ("flf2v", ["start.png", "end.png"], True),
+        ("ref2v", ["person.png", "reference.png"], True),
     ],
 )
-async def test_pro_main_bot_only_allows_image_modes_to_contribute(
+async def test_pro_main_bot_allows_gallery_image_modes_to_contribute(
     monkeypatch, mode, images, allow_contribute
 ):
     submit = Mock(return_value=object())

@@ -135,11 +135,11 @@ def test_allowed_web_submit_types_include_scail2_video_modes():
     assert "scail2_face_swap_v2" in ALLOWED_WEB_SUBMIT_TYPES
 
 
-def test_allowed_web_submit_types_only_include_minimax_h3_image_modes():
+def test_allowed_web_submit_types_include_minimax_h3_reference_video():
     assert "minimax_h3_i2v" in ALLOWED_WEB_SUBMIT_TYPES
     assert "minimax_h3_flf2v" in ALLOWED_WEB_SUBMIT_TYPES
+    assert "minimax_h3_ref2v" in ALLOWED_WEB_SUBMIT_TYPES
     assert "minimax_h3_t2v" not in ALLOWED_WEB_SUBMIT_TYPES
-    assert "minimax_h3_ref2v" not in ALLOWED_WEB_SUBMIT_TYPES
 
 
 def test_minimax_h3_template_derived_history_cannot_be_submitted_again():

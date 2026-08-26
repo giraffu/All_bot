@@ -34,7 +34,29 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
     }
 
 
-def test_minimax_h3_context_is_only_valid_for_i2v_and_flf2v():
+def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
+    context = build_minimax_h3_history_context(
+        task_type="minimax_h3_ref2v",
+        metadata={
+            "minimax_h3_mode": "ref2v",
+            "requested_duration": 5,
+            "minimax_h3_resolution_preset": "preview",
+            "minimax_h3_aspect_ratio": "16:9",
+            "lora_items": [],
+        },
+    )
+
+    assert context == {
+        "version": 1,
+        "mode": "ref2v",
+        "requested_duration": 5,
+        "resolution_preset": "preview",
+        "aspect_ratio": "16:9",
+        "lora_items": [],
+    }
+
+
+def test_minimax_h3_context_rejects_non_gallery_t2v():
     metadata = {
         "minimax_h3_mode": "t2v",
         "requested_duration": 5,

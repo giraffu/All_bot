@@ -605,6 +605,8 @@
       "aspect": "Aspect ratio",
       "required_images": "Please upload {count} new image(s).",
       "required_end_frame": "End Frame (Required)",
+      "template_reference": "Template Reference {count}",
+      "replace_reference": "Replace Reference",
       "aspect_mismatch": "The first and last frame aspect ratios must differ by no more than 1%."
     },
     "image_prompt": {
@@ -1138,6 +1140,8 @@
     "title": "Original Inputs",
     "input_n": "Input {count}",
     "reference_image": "Reference Image",
+    "primary_image": "Primary Image (Chosen on Apply)",
+    "reference_image_n": "Template Reference {count}",
     "base_image": "Base Image",
     "start_frame": "Start Frame",
     "end_frame": "End Frame",

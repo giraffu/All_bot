@@ -115,6 +115,7 @@ async def test_confirm_claims_draft_before_background_submission(monkeypatch):
         ("t2v", [], False),
         ("i2v", ["start.png"], True),
         ("flf2v", ["start.png", "end.png"], True),
+        ("ref2v", ["person.png", "reference.png"], True),
     ],
 )
 async def test_optimized_h3_generation_preserves_gallery_eligibility(

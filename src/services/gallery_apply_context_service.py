@@ -7,7 +7,7 @@ from sqlalchemy import select
 from src.database.models import GalleryPost, History
 from src.domain_config.scail2_video import is_scail2_task_type
 from src.domain_config.task_type_registry import apply_input_reuse_task_types
-from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
+from src.domain_config.minimax_h3 import MINIMAX_H3_REF2V, MINIMAX_H3_TASK_TYPES
 from src.services.minimax_h3_history_context_service import (
     is_minimax_h3_gallery_task_type,
     resolve_valid_minimax_h3_history_context,
@@ -50,6 +50,8 @@ def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
         return []
 
     input_files = split_history_input_files(getattr(history, "input_file", None))
+    if getattr(history, "type", None) == MINIMAX_H3_REF2V:
+        return input_files[1:]
     if is_scail2_task_type(getattr(history, "type", None)):
         return input_files[1:2]
     return input_files

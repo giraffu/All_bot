@@ -85,6 +85,11 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     panelKind: 'advancedVideoPro',
     titleKey: 'lab.cards.minimax_h3_title'
   },
+  minimax_h3_ref2v: {
+    taskType: 'minimax_h3_ref2v',
+    panelKind: 'advancedVideoPro',
+    titleKey: 'lab.cards.minimax_h3_title'
+  },
   scail2_action_transfer: {
     taskType: 'scail2_action_transfer',
     panelKind: 'scail2Video',

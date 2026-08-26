@@ -405,6 +405,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "ltx_video_flf2v",
         "minimax_h3_i2v",
         "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
         "wan22_video_v2",
         "scail2_action_transfer",
         "scail2_action_transfer_long",
@@ -445,9 +446,16 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "face_video",
         "ltx_video",
         "ltx_video_flf2v",
+        "minimax_h3_ref2v",
         "scail2_action_transfer",
         "scail2_action_transfer_long",
         "scail2_video_replacement",
         "scail2_face_swap_v2",
     }
     assert apply_input_reuse_task_types() == APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES
+
+
+def test_ref2v_registry_exposes_gallery_and_template_reuse_capabilities():
+    assert is_gallery_supported_task_type("minimax_h3_ref2v") is True
+    assert is_apply_input_reuse_supported_task_type("minimax_h3_ref2v") is True
+    assert get_task_cost("minimax_h3_ref2v") == 10

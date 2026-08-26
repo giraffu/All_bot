@@ -77,6 +77,7 @@ describe('galleryTaskTypeFilters', () => {
     const tabs = buildGalleryTaskTypeTabs([
       { id: 'minimax_h3_i2v', name: '高级图生视频pro · 图生视频' },
       { id: 'minimax_h3_flf2v', name: '高级图生视频pro · 首尾帧' },
+      { id: 'minimax_h3_ref2v', name: '高级图生视频pro · 参考图生视频' },
     ])
 
     expect(tabs.map(tab => tab.id)).toEqual(['minimax_h3'])

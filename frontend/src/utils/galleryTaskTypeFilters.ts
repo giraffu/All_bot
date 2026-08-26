@@ -26,6 +26,7 @@ const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
   scail2_action_transfer_long: 'scail2_action_transfer',
   minimax_h3_i2v: GALLERY_MINIMAX_H3_GROUP_TASK_TYPE,
   minimax_h3_flf2v: GALLERY_MINIMAX_H3_GROUP_TASK_TYPE,
+  minimax_h3_ref2v: GALLERY_MINIMAX_H3_GROUP_TASK_TYPE,
 }
 
 export function isGalleryGroupedTaskType(taskType: string): boolean {

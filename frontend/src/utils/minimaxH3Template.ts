@@ -30,8 +30,12 @@ export const areFrameAspectRatiosCompatible = (
   return Math.abs(lastRatio - firstRatio) / firstRatio <= tolerance
 }
 
-export const getMinimaxH3TemplateCost = (preset: string | null, duration: number | null): number => {
-  return getMinimaxH3Cost('normal', preset, duration)
+export const getMinimaxH3TemplateCost = (
+  preset: string | null,
+  duration: number | null,
+  mode: MiniMaxH3PriceMode = 'normal',
+): number => {
+  return getMinimaxH3Cost(mode, preset, duration)
 }
 
 export const readImageDimensions = (file: File): Promise<ImageDimensions> => (

@@ -48,7 +48,7 @@ vi.mock('@/utils/minimaxH3Template', async () => {
 
 const UploadStub = defineComponent({
   name: 'TemplateApplyUploadSection',
-  props: ['beforeUpload', 'title', 'filePreview', 'uploadingSlots', 'progressBySlot'],
+  props: ['beforeUpload', 'title', 'filePreview', 'uploadingSlots', 'progressBySlot', 'replaceText'],
   emits: ['remove'],
   template: '<div class="upload-stub">{{ title }}</div>'
 })
@@ -72,8 +72,8 @@ const context = {
   resolutionPreset: 'standard', aspectRatio: 'source',
 } as any
 
-const mountPanel = () => mount(TemplateAdvancedVideoProPanel, {
-  props: { sessionId: 'session-h3', context },
+const mountPanel = (panelContext = context) => mount(TemplateAdvancedVideoProPanel, {
+  props: { sessionId: 'session-h3', context: panelContext },
   global: {
     plugins: [i18n],
     stubs: {
@@ -139,5 +139,65 @@ describe('TemplateAdvancedVideoProPanel', () => {
     await flushPromises()
 
     expect(mocks.submitTask).not.toHaveBeenCalled()
+  })
+
+  it('prefills later REF2V references and lets the user replace them while choosing a new first image', async () => {
+    mocks.uploadFile.mockReset()
+    mocks.uploadFile
+      .mockResolvedValueOnce({ uploadId: '1', objectKey: 'uploads/new-person.png' })
+      .mockResolvedValueOnce({ uploadId: '2', objectKey: 'uploads/new-pose.png' })
+    mocks.readImageDimensions.mockReset()
+    mocks.readImageDimensions
+      .mockResolvedValueOnce({ width: 900, height: 1600 })
+      .mockResolvedValueOnce({ width: 1024, height: 1024 })
+    const ref2vContext = {
+      ...context,
+      raw: { task_type: 'minimax_h3_ref2v', post_id: 45 },
+      rawEntityId: 45,
+      rawTaskType: 'minimax_h3_ref2v',
+      taskType: 'minimax_h3_ref2v',
+      sourcePostId: 45,
+      requiredImageCount: 1,
+      requestedDuration: 5,
+      resolutionPreset: 'preview',
+      aspectRatio: '16:9',
+      inputFile: 'task-inputs/source/1.png',
+      inputFileUrl: 'https://example.com/pose.png',
+      inputFiles: ['task-inputs/source/1.png', 'task-inputs/source/2.png'],
+      inputFileUrls: ['https://example.com/pose.png', 'https://example.com/style.png'],
+    } as any
+
+    const wrapper = mountPanel(ref2vContext)
+    const uploads = wrapper.findAllComponents(UploadStub)
+
+    expect(uploads).toHaveLength(3)
+    expect(uploads[0].props('filePreview')).toBeNull()
+    expect(uploads[1].props('filePreview')).toBe('https://example.com/pose.png')
+    expect(uploads[2].props('filePreview')).toBe('https://example.com/style.png')
+    expect(uploads[1].props('replaceText')).toBeTruthy()
+
+    await uploads[0].props('beforeUpload')(new File(['person'], 'person.png', { type: 'image/png' }))
+    await uploads[1].props('beforeUpload')(new File(['pose'], 'pose.png', { type: 'image/png' }))
+    await wrapper.find('button.generate').trigger('click')
+    await flushPromises()
+
+    expect(mocks.submitTask).toHaveBeenCalledWith({
+      task_type: 'minimax_h3_ref2v',
+      inputs: {
+        images: [
+          'uploads/new-person.png',
+          'uploads/new-pose.png',
+          'task-inputs/source/2.png',
+        ],
+        prompt: 'locked motion',
+        duration: 5,
+        resolution_preset: 'preview',
+        aspect_ratio: '16:9',
+        reference_descriptions: [],
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 45,
+    }, expect.any(String))
   })
 })
