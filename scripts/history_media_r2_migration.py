@@ -3360,6 +3360,7 @@ async def _probe_r2_rows(
             await conn.execute(
                 """update analytics_history_media_r2_migrations set
                      target_checked_at=now(),r2_checked_at=now(),
+                     target_sha256=null,target_etag=null,
                      error_code='R2_CANDIDATES_NOT_FOUND',error_detail=null,
                      updated_at=now() where id=$1""",
                 row["id"],
@@ -3368,6 +3369,23 @@ async def _probe_r2_rows(
 
 
 async def _probe(args: argparse.Namespace) -> None:
+    if args.refresh_r2_checkpoint and not args.r2_only:
+        raise ValueError("--refresh-r2-checkpoint requires --r2-only")
+    checkpoint_not_before = None
+    if args.refresh_r2_checkpoint or args.remaining_sources_only:
+        if not args.r2_checkpoint_not_before:
+            raise ValueError(
+                "checkpoint refresh/remaining-source probe requires "
+                "--r2-checkpoint-not-before"
+            )
+        checkpoint_not_before = datetime.fromisoformat(
+            str(args.r2_checkpoint_not_before).replace("Z", "+00:00")
+        )
+        if checkpoint_not_before.tzinfo is None:
+            raise ValueError("R2 checkpoint boundary must include a timezone")
+        checkpoint_not_before = checkpoint_not_before.astimezone(timezone.utc)
+        if checkpoint_not_before > datetime.now(timezone.utc):
+            raise ValueError("R2 checkpoint boundary cannot be in the future")
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
         raise RuntimeError("target is restricted to user-data-prod")
@@ -3415,11 +3433,15 @@ async def _probe(args: argparse.Namespace) -> None:
         phase = (
             "probe-target"
             if args.target_only
-            else (
-                "probe-r2"
-                if args.r2_only
-                else "probe-receipts" if args.receipt_only else "probe"
-            )
+            else "probe-r2-refresh"
+            if args.r2_only and args.refresh_r2_checkpoint
+            else "probe-r2"
+            if args.r2_only
+            else "probe-receipts"
+            if args.receipt_only
+            else "probe-remaining-sources"
+            if args.remaining_sources_only
+            else "probe"
         )
         await conn.execute(
             "update analytics_history_media_migration_runs set status='running',phase=$2,error=null,updated_at=now() where id=$1",
@@ -3436,14 +3458,25 @@ async def _probe(args: argparse.Namespace) -> None:
                 args.limit,
             )
         elif args.r2_only:
-            rows = await conn.fetch(
-                """select m.* from analytics_history_media_r2_migrations m
-                     where m.run_id=$1 and m.r2_checked_at is null
-                       and m.status in ('pending_probe','source_offline','failed')
-                     order by m.history_id,m.role,m.ordinal limit $2""",
-                run_id,
-                args.limit,
-            )
+            if args.refresh_r2_checkpoint:
+                rows = await conn.fetch(
+                    """select m.* from analytics_history_media_r2_migrations m
+                         where m.run_id=$1 and m.status='pending_probe'
+                           and (m.r2_checked_at is null or m.r2_checked_at < $3)
+                         order by m.history_id,m.role,m.ordinal limit $2""",
+                    run_id,
+                    args.limit,
+                    checkpoint_not_before,
+                )
+            else:
+                rows = await conn.fetch(
+                    """select m.* from analytics_history_media_r2_migrations m
+                         where m.run_id=$1 and m.r2_checked_at is null
+                           and m.status in ('pending_probe','source_offline','failed')
+                         order by m.history_id,m.role,m.ordinal limit $2""",
+                    run_id,
+                    args.limit,
+                )
         elif args.receipt_only:
             rows = await conn.fetch(
                 """select m.* from analytics_history_media_r2_migrations m
@@ -3455,6 +3488,16 @@ async def _probe(args: argparse.Namespace) -> None:
                     order by m.history_id,m.role,m.ordinal limit $2""",
                 run_id,
                 args.limit,
+            )
+        elif args.remaining_sources_only:
+            rows = await conn.fetch(
+                """select m.* from analytics_history_media_r2_migrations m
+                     where m.run_id=$1 and m.status='pending_probe'
+                       and m.r2_checked_at >= $3 and m.target_checked_at >= $3
+                     order by m.history_id,m.role,m.ordinal limit $2""",
+                run_id,
+                args.limit,
+                checkpoint_not_before,
             )
         else:
             rows = await conn.fetch(
@@ -3497,7 +3540,7 @@ async def _probe(args: argparse.Namespace) -> None:
             target_key = str(row["target_key"])
             target_head = None
             target_sha = row["target_sha256"]
-            if not args.receipt_only:
+            if not args.receipt_only and not args.remaining_sources_only:
                 target_head = await asyncio.to_thread(
                     _head_s3, target_client, BUCKET, target_key
                 )
@@ -3532,7 +3575,9 @@ async def _probe(args: argparse.Namespace) -> None:
                 )
                 continue
 
-            attempts: list[str] = []
+            attempts: list[str] = (
+                ["not_found"] if args.remaining_sources_only else []
+            )
             found: tuple[str, str, tuple[int, datetime], str] | None = None
             receipt = await conn.fetchrow(
                 """select b.nas_key,b.byte_size,b.sha256
@@ -3635,7 +3680,18 @@ async def _probe(args: argparse.Namespace) -> None:
                             raise RuntimeError(
                                 "SYSTEMIC_NAS_RECEIPT_QUERY_FAILURE"
                             ) from exc
-            sources_to_probe = [] if args.receipt_only else sources
+            sources_to_probe = (
+                []
+                if args.receipt_only
+                else [
+                    source
+                    for source in sources
+                    if not (
+                        args.remaining_sources_only
+                        and str(source["name"]) == "r2-user-data-prod"
+                    )
+                ]
+            )
             for source in sources_to_probe:
                 if found:
                     break
@@ -3778,14 +3834,25 @@ async def _probe(args: argparse.Namespace) -> None:
             )
             remaining_receipts = None
         elif args.r2_only:
-            remaining = int(
-                await conn.fetchval(
-                    """select count(*) from analytics_history_media_r2_migrations
-                         where run_id=$1 and r2_checked_at is null
-                           and status in ('pending_probe','source_offline','failed')""",
-                    run_id,
+            if args.refresh_r2_checkpoint:
+                remaining = int(
+                    await conn.fetchval(
+                        """select count(*) from analytics_history_media_r2_migrations
+                             where run_id=$1 and status='pending_probe'
+                               and (r2_checked_at is null or r2_checked_at < $2)""",
+                        run_id,
+                        checkpoint_not_before,
+                    )
                 )
-            )
+            else:
+                remaining = int(
+                    await conn.fetchval(
+                        """select count(*) from analytics_history_media_r2_migrations
+                             where run_id=$1 and r2_checked_at is null
+                               and status in ('pending_probe','source_offline','failed')""",
+                        run_id,
+                    )
+                )
             remaining_receipts = None
         elif args.receipt_only:
             remaining_receipts = int(
@@ -3832,6 +3899,8 @@ async def _probe(args: argparse.Namespace) -> None:
                     "target_only": args.target_only,
                     "r2_only": args.r2_only,
                     "receipt_only": args.receipt_only,
+                    "remaining_sources_only": args.remaining_sources_only,
+                    "refresh_r2_checkpoint": args.refresh_r2_checkpoint,
                     "remaining_receipts": remaining_receipts,
                     "sha_bytes_read": bytes_read,
                 }
@@ -6980,8 +7049,11 @@ def _parser() -> argparse.ArgumentParser:
     probe_mode.add_argument("--target-only", action="store_true")
     probe_mode.add_argument("--r2-only", action="store_true")
     probe_mode.add_argument("--receipt-only", action="store_true")
+    probe_mode.add_argument("--remaining-sources-only", action="store_true")
     probe.add_argument("--target-concurrency", type=int, default=32)
     probe.add_argument("--source-concurrency", type=int, default=32)
+    probe.add_argument("--refresh-r2-checkpoint", action="store_true")
+    probe.add_argument("--r2-checkpoint-not-before")
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
     plan_probe = commands.add_parser("plan-probe")

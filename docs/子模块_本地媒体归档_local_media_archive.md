@@ -314,6 +314,14 @@ NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256�
 进入 `target_verified`，否则以 `TARGET_EXISTS_UNVERIFIED` 冲突收口，禁止覆盖。
 未命中只写 `r2_checked_at` checkpoint 并保持 `pending_probe`，不会在未检查其它启用
 来源时累计 missing round；该模式不得调用 ListObjects 或 MinIO。
+已有 R2 checkpoint 过旧、但仍有大量 `pending_probe` 需要继续检查其它启用来源时，
+先冻结一个 UTC 时间边界，并用 `probe --r2-only --refresh-r2-checkpoint
+--r2-checkpoint-not-before <UTC>` 分批刷新该边界之前的行。刷新仍并发 HEAD 标准目标和
+全部 R2 候选，不读取正文；重复调用只消费尚未达到同一时间边界的行。全部刷新完成后，
+才可用 `probe --remaining-sources-only --r2-checkpoint-not-before <同一 UTC>` 检查
+receipt、文件系统或其它仍启用的非 R2 来源。remaining pass 只消费 R2 与目标 checkpoint
+均不早于该边界的 `pending_probe`，并把近期 R2 not-found 与本次其余来源结果组成完整
+missing round；不得把不同时间边界拼接、跳过仍启用来源，或用旧 checkpoint 形成丢失结论。
 标准目标检查完成后，`probe --receipt-only` 可只消费本地目录中已有
 `archived_verified` SHA receipt 的资产：它不重复检查标准目标，也不访问离线的遗留
 来源，而是对 receipt 指向的 NAS 对象执行 HEAD、大小和完整 SHA-256 复核。验证成功

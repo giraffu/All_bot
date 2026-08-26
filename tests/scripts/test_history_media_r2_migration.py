@@ -2417,6 +2417,54 @@ def test_probe_cli_exposes_receipt_only_mode():
     assert "--receipt-only" in result.stdout
 
 
+def test_probe_cli_supports_refresh_then_remaining_source_passes():
+    refresh = _parser().parse_args(
+        [
+            "probe",
+            "--run-id",
+            "run",
+            "--config",
+            "config.json",
+            "--r2-only",
+            "--refresh-r2-checkpoint",
+            "--r2-checkpoint-not-before",
+            "2026-08-27T00:00:00Z",
+        ]
+    )
+    remaining = _parser().parse_args(
+        [
+            "probe",
+            "--run-id",
+            "run",
+            "--config",
+            "config.json",
+            "--remaining-sources-only",
+            "--r2-checkpoint-not-before",
+            "2026-08-27T00:00:00Z",
+        ]
+    )
+
+    assert refresh.r2_only is True
+    assert refresh.refresh_r2_checkpoint is True
+    assert remaining.remaining_sources_only is True
+    assert remaining.r2_checkpoint_not_before == "2026-08-27T00:00:00Z"
+
+
+def test_remaining_source_pass_requires_refreshed_r2_and_skips_duplicate_r2_io():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._probe)
+    r2_source = inspect.getsource(module._probe_r2_rows)
+
+    assert "m.r2_checked_at >= $3 and m.target_checked_at >= $3" in source
+    assert 'str(source["name"]) == "r2-user-data-prod"' in source
+    assert '["not_found"] if args.remaining_sources_only' in source
+    assert "m.r2_checked_at is null or m.r2_checked_at < $3" in source
+    assert "target_sha256=null,target_etag=null" in r2_source
+
+
 def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
     import inspect
 
