@@ -2465,6 +2465,17 @@ def test_remaining_source_pass_requires_refreshed_r2_and_skips_duplicate_r2_io()
     assert "target_sha256=null,target_etag=null" in r2_source
 
 
+def test_r2_probe_sizes_http_pool_for_requested_concurrency():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._probe)
+
+    assert "_resolve_probe_max_pool_connections(args.source_concurrency)" in source
+    assert "max_pool_connections=r2_pool_connections" in source
+
+
 def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
     import inspect
 

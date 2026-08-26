@@ -311,7 +311,8 @@ NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256�
 当迁移明确以 `user-data-prod` 中的旧目录、临时路径和原 History key 为主要恢复源时，
 可用 `probe --r2-only` 同批去重并发检查标准目标、原引用、
 `history/{registry_task_id}/{basename}` 与 basename；并发由 `--source-concurrency`
-控制在 1–128。该模式只执行 HEAD，冻结 size、LastModified 和 ETag；不得 GET 媒体
+控制在 1–128，R2 HTTP 连接池必须至少覆盖请求并发，不能退回 SDK 默认连接数形成
+隐性串行。该模式只执行 HEAD，冻结 size、LastModified 和 ETag；不得 GET 媒体
 正文。旧 key 命中后进入 `copy_required`；标准目标仅在它已经是 History 当前引用时
 进入 `target_verified`，否则以 `TARGET_EXISTS_UNVERIFIED` 冲突收口，禁止覆盖。
 未命中只写 `r2_checked_at` checkpoint 并保持 `pending_probe`，不会在未检查其它启用
