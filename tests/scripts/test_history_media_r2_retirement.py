@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 import pytest
 from botocore.exceptions import ClientError
 
+from scripts.history_media_r2_migration import R2Transport
+
 from scripts.history_media_r2_retirement import (
     BULK_SOURCE_IDENTITY_POLICY,
     DURABILITY_NAS_ARCHIVE,
@@ -675,6 +677,34 @@ def test_retirement_r2_connection_pool_covers_head_concurrency(monkeypatch):
     )
 
     assert captured["config"].max_pool_connections == 128
+
+
+def test_retirement_r2_client_uses_frozen_https_proxy(monkeypatch):
+    captured = {}
+
+    def fake_client(*_args, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_retirement.boto3.client", fake_client
+    )
+    _s3_client(
+        {
+            "endpoint": "https://r2.invalid",
+            "access_key": "test",
+            "secret_key": "test",
+        },
+        max_connections=128,
+        transport=R2Transport(
+            mode="https_proxy",
+            proxy_url="http://127.0.0.1:7890",
+        ),
+    )
+
+    assert captured["config"].proxies == {
+        "https": "http://127.0.0.1:7890"
+    }
 
 
 @pytest.mark.asyncio

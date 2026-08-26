@@ -38,9 +38,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.history_media_r2_migration import (
+    R2Transport,
     _canonical_json,
     _load_secure_config,
+    _r2_transport,
     _runtime_identity,
+    _validate_r2_transport_runtime,
     normalize_asyncpg_dsn,
 )
 from scripts.media_archive_worker import (
@@ -1242,7 +1245,13 @@ async def _prepare_delete_indexes(args: argparse.Namespace) -> None:
         await ledger.close()
 
 
-def _s3_client(config: dict[str, Any], *, max_connections: int) -> Any:
+def _s3_client(
+    config: dict[str, Any],
+    *,
+    max_connections: int,
+    transport: R2Transport | None = None,
+) -> Any:
+    selected_transport = transport or R2Transport(mode="direct")
     return boto3.client(
         "s3",
         endpoint_url=config["endpoint"],
@@ -1254,6 +1263,11 @@ def _s3_client(config: dict[str, Any], *, max_connections: int) -> Any:
             signature_version="s3v4",
             retries={"max_attempts": 5, "mode": "adaptive"},
             max_pool_connections=max_connections,
+            proxies=(
+                {"https": selected_transport.proxy_url}
+                if selected_transport.mode == "https_proxy"
+                else {}
+            ),
         ),
     )
 
@@ -1299,6 +1313,8 @@ async def _open_retirement_execution_context(
         args.durability_basis, args.archive_config
     )
     clear_proxy_environment()
+    r2_transport = _r2_transport(r2_config)
+    _validate_r2_transport_runtime(r2_transport)
     validate_endpoint_route(r2_config["target"])
     if archive_config is not None:
         validate_endpoint_route(archive_config["nas"])
@@ -1318,7 +1334,9 @@ async def _open_retirement_execution_context(
         ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
         production = await _connect("PRODUCTION_DATABASE_URL")
         r2_client = _s3_client(
-            r2_config["target"], max_connections=connection_pool_size
+            r2_config["target"],
+            max_connections=connection_pool_size,
+            transport=r2_transport,
         )
         nas_client = (
             _s3_client(archive_config["nas"], max_connections=connection_pool_size)
@@ -2127,6 +2145,8 @@ async def _plan_delete(args: argparse.Namespace) -> None:
         args.durability_basis, args.archive_config
     )
     clear_proxy_environment()
+    r2_transport = _r2_transport(r2_config)
+    _validate_r2_transport_runtime(r2_transport)
     validate_endpoint_route(r2_config["target"])
     if archive_config is not None:
         validate_endpoint_route(archive_config["nas"])
@@ -2138,7 +2158,11 @@ async def _plan_delete(args: argparse.Namespace) -> None:
     )
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
     production = await _connect("PRODUCTION_DATABASE_URL")
-    r2_client = _s3_client(r2_config["target"], max_connections=16)
+    r2_client = _s3_client(
+        r2_config["target"],
+        max_connections=16,
+        transport=r2_transport,
+    )
     nas_client = (
         _s3_client(archive_config["nas"], max_connections=16)
         if archive_config is not None
@@ -3302,6 +3326,8 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
     )
     r2_config = _load_secure_config(Path(args.config))
     clear_proxy_environment()
+    r2_transport = _r2_transport(r2_config)
+    _validate_r2_transport_runtime(r2_transport)
     validate_endpoint_route(r2_config["target"])
     runtime_identity = _retirement_runtime_identity(
         artifact_digest=args.artifact_digest,
@@ -3420,6 +3446,7 @@ async def _plan_bulk_delete_successor(args: argparse.Namespace) -> None:
             r2_client = _s3_client(
                 r2_config["target"],
                 max_connections=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
+                transport=r2_transport,
             )
             executor = ThreadPoolExecutor(
                 max_workers=DEFAULT_RETIREMENT_HEAD_CONCURRENCY,
@@ -3743,6 +3770,8 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         raise ValueError("every bulk Switch plan requires one exact expected count")
     r2_config = _load_secure_config(Path(args.config))
     clear_proxy_environment()
+    r2_transport = _r2_transport(r2_config)
+    _validate_r2_transport_runtime(r2_transport)
     validate_endpoint_route(r2_config["target"])
     runtime_identity = _retirement_runtime_identity(
         artifact_digest=args.artifact_digest,
@@ -4303,6 +4332,8 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
         )
         r2_config = _load_secure_config(Path(args.config))
         clear_proxy_environment()
+        r2_transport = _r2_transport(r2_config)
+        _validate_r2_transport_runtime(r2_transport)
         validate_endpoint_route(r2_config["target"])
         actual_runtime = _retirement_runtime_identity(
             artifact_digest=args.artifact_digest,
