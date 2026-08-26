@@ -10,28 +10,20 @@ H3 入口选择四个公开模式、时长、画质档位与比例；主模型�
 运行时配置按模式载入，不进入终端设置面板。图生视频模式选择后保持在设置态接收图片，
 用户无需点击“确认设置”；T2V 同态直接接收提示词。再按模式收集 0/1/2 或 1–4 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
-用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
-生成”，第二按钮可在测试环境按独立开关发起“优化后再生成（1 灵石）”。优化提交前
-先把冻结的模式、时长、画质、系统模型预设、原文和
-owner-fenced staging key 写入 24 小时 Redis draft；提交 Central 成功后立即结束 FSM，
-因此全局菜单、其它功能或 Bot 重启都不会使结果丢失。`src/bot_main.py` 的恢复循环按
-draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback 不依赖
-`context.user_data`，先校验 Telegram user/chat owner，再展示冻结设置与费用，只有用户
-二次确认才提交收费生成。重复确认在 draft 的 `generation_submitting/submitted` 状态
-下 fail closed，不重复扣费或提交。失败保留原文并沿用 Task Core 幂等退款。Bot 临时
-图片先复制到当前用户专属 staging key，生成提交或终态失败后清理。优化后台任务必须先通过
-`get_or_create_user_by_telegram` 把 Telegram 平台 ID 映射为内部用户 ID；计费、结果
-归属和 staging key 一律使用内部用户 ID，禁止把平台 ID 直接传入共享优化服务。
-已发出的 H3 优化 callback 与旧 History 继续维持终态/历史兼容；环境入口切换只
-停止新的入口会话，不能中断已扣费任务或把旧 callback 静默改投另一任务类型。
+用户输入原始提示词后立即提交生成；新会话不再进入 `WAIT_CONFIRMATION`，不创建
+Prompt Optimizer draft，也不发送“直接生成/优化后再生成”按钮。已提交的历史 H3
+优化 draft 和已发出的 `avpopt_*` callback 仍按 owner fence、幂等扣费与 24 小时
+续接契约完成，只作存量兼容；旧 `avp_prompt_*` 按钮进入失效提示，不得在缺少
+会话上下文时重复扣费或静默改投其它任务类型。
 该入口画质统一为极速/清晰/标准/高清四档。首帧与首尾帧模式隐藏固定比例按钮并
 展示“跟随首帧”；第二张图片与首帧比例差异超过 1% 时保留首帧和会话状态、删除
 无效尾帧并要求重传。文生视频仍展示固定画面比例。
 高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA、作者模型名或附加模型
-数量；只显示用户可选的时长、画质和比例，并明确提示直接发送图片或提示词。服务端把
+数量；只显示用户可选的时长、画质、比例和当前预计灵石消耗。时长与画质按钮也按
+当前其它维度展示完整价格矩阵，费用必须来自 `get_minimax_h3_cost`，不得在 FSM 重复
+编码。面板明确提示直接发送图片或提示词。服务端把
 Dashboard 独立“Pro 模型预设”子页已校验的主模型与附加模型精确强度交给
-`advanced_video_pro_submission_service.py`；提示词优化 draft 同步冻结这些强度，优化结果
-续提不能回落到目录默认值。历史 `avp_settings_done` callback 只作已发消息
+`advanced_video_pro_submission_service.py`。历史 `avp_settings_done` callback 只作已发消息
 兼容，新键盘不得再次发送该按钮或 `avp_addon_*` 按钮。
 
 ## 1. 目标与范围
@@ -40,7 +32,7 @@ Dashboard 独立“Pro 模型预设”子页已校验的主模型与附加模型
 
 当前职责边界：
 
-- FSM 负责分步收集图片、视频设置、提示词与确认信息。
+- FSM 负责分步收集图片、视频设置与提示词；Pro 链路在提示词到达后直接提交。
 - 全局菜单打断依赖统一黑盒路由，而不是散落的硬编码菜单判断。
 - callback 路由负责把充值、广场、杂项等回调拆分到独立模块。
 - 充值菜单同时提供 USDT-TON 身份套餐、USDT-TON 灵石直充、原生 TON、
@@ -66,12 +58,8 @@ stateDiagram-v2
     WAITING_IMAGE --> CANCEL : 主菜单打断 / /cancel
     WAITING_SETTINGS --> WAITING_PROMPT : 选择分辨率/时长/模型
     WAITING_SETTINGS --> CANCEL : 主菜单打断 / 超时
-    WAITING_PROMPT --> WAITING_CONFIRMATION : 输入提示词 / 优化提示词
+    WAITING_PROMPT --> SUBMIT : Pro 输入提示词后直接提交
     WAITING_PROMPT --> CANCEL : 主菜单打断 / 超时
-    WAITING_CONFIRMATION --> SUBMIT : 确认生成
-    WAITING_CONFIRMATION --> DETACHED_OPTIMIZER : 提交提示词优化
-    DETACHED_OPTIMIZER --> [*] : 持久 draft 接管，退出 FSM
-    WAITING_CONFIRMATION --> CANCEL : 放弃生成
     SUBMIT --> [*] : 释放 FSM，移交 Bot task flow
     CANCEL --> [*] : 清理 user_data 与临时文件
 ```

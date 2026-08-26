@@ -33,7 +33,8 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 `MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不删除已有投稿，也不阻止作品详情、
 模板深链或 `/advanced_video_pro` 命令测试。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard
-可分别维护共享场景配置 `minimax_h3`，但开关关闭时 Web/Bot 不展示优化入口。
+可分别维护共享场景配置 `minimax_h3`。该开关只控制 Web H3 优化能力；主 Bot
+新 Pro 会话不展示优化或生成确认入口，接收提示词后直接生成。
 
 ## 请求契约
 
@@ -41,6 +42,9 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   `resolution_preset=preview|small|standard|hd` 和可选 `seed`。普通模式按
   `5/10/15` 秒分别使用完整四档价格矩阵：`9/10/13/15`、
   `12/15/24/30`、`17/24/38/53`；不再用 5 秒基础价线性倍乘。
+  主 Bot 的当前设置摘要、时长按钮和画质按钮通过
+  `get_minimax_h3_cost` 展示选中组合的预计灵石消耗，但扣费仍由 Task Core 以服务端
+  价格为准。
 - `main_model` 通用值为 `10eros|official`，REF2V 额外允许
   `official_ref2v_turbo`（用户文案“官方 REF2V 极速”），缺失时为 `10eros`。
   `official_ref2v_turbo` 用于其它模式时在领域层和 Worker 层都 fail closed；未知值
@@ -114,7 +118,7 @@ MiniMax 官方 Base 顺序：`integrated_multimodal_description` →
 最终 Shot 编号的对齐句。第一镜头不得带时间，后续镜头必须按顺序编号且时间戳严格
 早于视频时长。
 
-Web 与 Bot 从 capability 选择 template v5；Web 提交时把管理端当前配置、原台词及
+Web 从 capability 选择 template v5；Web 提交时把管理端当前配置、原台词及
 服务端检测的台词语言渲染成不可变 snapshot。检测以台词自身为准，不受中文或英文场景
 叙述影响；Worker 要求输出保留匹配的 `<d>[Language] 原文</d>`，翻译、改写或漏写时
 受控重试。保存过的旧单段 H3 scene config、没有对白语言占位符的旧官方配置，
@@ -122,6 +126,8 @@ Web 与 Bot 从 capability 选择 template v5；Web 提交时把管理端当前�
 但历史任务继续读取自己原有的 snapshot 与旧 profile。Worker 在任何文本增量对用户
 可见前复验结构、对齐和时长。本地 Optimizer 生成的是兼容官方 Base 的提示词，不调用
 未开源的托管 H3-Context-IR，因此不宣称复现官方 Context-IR 的完整推理质量。
+主 Bot 新 Pro 会话不调用这些 profile/template；历史已提交的 Bot draft 仍可用自身冻结
+snapshot 完成续接。
 
 REF2V 使用 `minimax_h3_ref2v_prompt@1..4` 与 `minimax_h3_ref2v@1`。媒体角色严格为
 `reference_image_1..4`，按 `<Picture N>` 和六段式参考描述组织完整提示词；QQCC

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import uuid
 from pathlib import Path
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -16,10 +14,10 @@ from telegram.ext import (
     filters,
 )
 
-from src.core.user_core import get_or_create_user_by_telegram
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    get_minimax_h3_cost,
 )
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -32,12 +30,10 @@ from src.handlers.fsm.fsm_shared import (
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.advanced_video_pro_submission_service import (
     AdvancedVideoProSubmissionError,
+    MODE_TASK_TYPES,
     build_advanced_video_pro_submission_plan,
     submit_advanced_video_pro_plan,
     validate_advanced_video_pro_frame_aspects,
-)
-from src.services.advanced_video_prompt_task_service import (
-    start_advanced_video_prompt_task,
 )
 from src.services.advanced_video_entry_policy import minimax_h3_ref2v_enabled
 from src.services.feature_entry_visibility_service import (
@@ -111,18 +107,44 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
             for value in values
         ]
 
+    duration_buttons = [
+        InlineKeyboardButton(
+            ("✅ " if data.get("duration") == value else "")
+            + _text(
+                context,
+                f"{value}秒 · {_settings_cost(data, duration=value)}灵石",
+                f"{value}s · {_settings_cost(data, duration=value)} credits",
+            ),
+            callback_data=f"avp_duration_{value}",
+        )
+        for value in DURATIONS
+    ]
     preset_buttons = [
         InlineKeyboardButton(
             ("✅ " if data.get("preset") == value else "")
-            + _text(context, *PRESET_LABELS[value]),
+            + _text(
+                context,
+                f"{PRESET_LABELS[value][0]} · {_settings_cost(data, preset=value)}灵石",
+                f"{PRESET_LABELS[value][1]} · {_settings_cost(data, preset=value)} credits",
+            ),
             callback_data=f"avp_preset_{value}",
         )
         for value in PRESETS
     ]
-    rows = [buttons("duration", DURATIONS), preset_buttons[:2], preset_buttons[2:]]
+    rows = [duration_buttons, preset_buttons[:2], preset_buttons[2:]]
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
     return InlineKeyboardMarkup(rows)
+
+
+def _settings_cost(
+    data: dict, *, duration: int | None = None, preset: str | None = None
+) -> int:
+    return get_minimax_h3_cost(
+        MODE_TASK_TYPES[data["mode"]],
+        duration=data["duration"] if duration is None else duration,
+        resolution_preset=data["preset"] if preset is None else preset,
+    )
 
 
 def _settings_text(context, data: dict) -> str:
@@ -132,19 +154,20 @@ def _settings_text(context, data: dict) -> str:
         else data["aspect"]
     )
     direct_action_zh = (
-        "直接发送提示词即可继续。"
+        "直接发送提示词后立即生成，无需再次确认。"
         if data.get("mode") == "t2v"
-        else "无需确认设置，直接发送图片即可继续。"
+        else "无需确认设置；发送图片并填写提示词后立即生成。"
     )
     direct_action_en = (
-        "Send the prompt directly to continue."
+        "Send the prompt to generate immediately; no confirmation is needed."
         if data.get("mode") == "t2v"
-        else "No settings confirmation is needed. Send the image directly to continue."
+        else "No settings confirmation is needed. Send the image and prompt to generate immediately."
     )
+    cost = _settings_cost(data)
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n\n{direct_action_zh}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\n\n{direct_action_en}",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n预计消耗：{cost} 灵石\n\n{direct_action_zh}",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nEstimated cost: {cost} credits\n\n{direct_action_en}",
     )
 
 
@@ -169,57 +192,6 @@ def _extract_image(update: Update) -> tuple[str | None, str]:
             document.file_name or "image.jpg"
         ).suffix or ".jpg"
     return None, ".jpg"
-
-
-def _optimizer_enabled() -> bool:
-    return os.getenv(
-        "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "false"
-    ).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-
-def _prompt_action_keyboard(
-    context, *, can_restore: bool = False
-) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                _text(
-                    context,
-                    "🎬 无需优化，直接生成",
-                    "🎬 Generate directly without optimization",
-                ),
-                callback_data="avp_prompt_generate",
-            )
-        ]
-    ]
-    if _optimizer_enabled():
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _text(
-                        context,
-                        "✨ 优化后再生成（1灵石）",
-                        "✨ Optimize before generating (1 credit)",
-                    ),
-                    callback_data="avp_prompt_optimize",
-                )
-            ]
-        )
-    if can_restore:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _text(context, "↩️ 恢复原提示词", "↩️ Restore original prompt"),
-                    callback_data="avp_prompt_restore",
-                )
-            ]
-        )
-    return InlineKeyboardMarkup(rows)
 
 
 def _clear(context, *, preserve_paths: bool = False) -> None:
@@ -488,7 +460,7 @@ async def _submit_generation(
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(message, str(exc))
-        return AdvancedVideoProState.WAIT_CONFIRMATION
+        return AdvancedVideoProState.WAIT_PROMPT
     user = update.effective_user
     try:
         await permission_service.check_quota(
@@ -540,19 +512,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     prompt = str(update.message.text or "").strip()
     if not data or not prompt:
         return AdvancedVideoProState.WAIT_PROMPT
-    data["original_prompt"] = prompt
     data["prompt"] = prompt
-    data["optimizer_pending"] = False
-    await robust_reply_text(
-        update.effective_message,
-        _text(
-            context,
-            f"已保存提示词：\n\n{prompt}\n\n请选择优化后再生成，或直接生成。",
-            f"Prompt saved:\n\n{prompt}\n\nOptimize it first or generate directly.",
-        ),
-        reply_markup=_prompt_action_keyboard(context),
-    )
-    return AdvancedVideoProState.WAIT_CONFIRMATION
+    return await _submit_generation(update, context, data)
 
 
 async def receive_settings_prompt(
@@ -566,156 +527,6 @@ async def receive_settings_prompt(
         )
         return AdvancedVideoProState.WAIT_SETTINGS
     return await receive_prompt(update, context)
-
-
-async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    data = context.user_data.get(DATA_KEY)
-    if not data:
-        await query.answer(
-            _text(
-                context,
-                "操作已过期，请重新进入。",
-                "This action expired. Please reopen it.",
-            ),
-            show_alert=True,
-        )
-        return ConversationHandler.END
-    if query.data == "avp_prompt_generate":
-        if data.get("optimizer_pending"):
-            await query.answer(
-                _text(
-                    context,
-                    "提示词仍在优化中。",
-                    "Prompt optimization is still running.",
-                ),
-                show_alert=True,
-            )
-            return AdvancedVideoProState.WAIT_CONFIRMATION
-        await query.answer()
-        return await _submit_generation(update, context, data)
-    await query.answer()
-    if query.data == "avp_prompt_optimize":
-        if not _optimizer_enabled():
-            await robust_edit_text(
-                query.message,
-                _text(
-                    context,
-                    "当前环境未开放提示词优化。",
-                    "Prompt optimization is not enabled here.",
-                ),
-                reply_markup=_prompt_action_keyboard(context),
-            )
-            return AdvancedVideoProState.WAIT_CONFIRMATION
-        if data.get("optimizer_pending"):
-            return AdvancedVideoProState.WAIT_CONFIRMATION
-        user = update.effective_user
-        request_token = uuid.uuid4().hex
-        client_request_id = str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                "|".join(
-                    [
-                        "allbot-minimax-h3-prompt",
-                        str(user.id),
-                        str(update.effective_chat.id),
-                        str(data.get("mode")),
-                        str(data.get("duration")),
-                        str(data.get("original_prompt")),
-                        ",".join(str(path) for path in data.get("images", [])),
-                        request_token,
-                    ]
-                ),
-            )
-        )
-        data["optimizer_pending"] = True
-        data["optimizer_request_token"] = request_token
-        await robust_edit_text(
-            query.message,
-            _text(
-                context,
-                "✨ 正在优化提示词，请稍候……",
-                "✨ Optimizing prompt, please wait…",
-            ),
-        )
-        try:
-            internal_user, _ = await get_or_create_user_by_telegram(
-                user.id,
-                username=user.username,
-            )
-            plan = build_advanced_video_pro_submission_plan(
-                mode=data["mode"],
-                prompt=data["original_prompt"],
-                images=data.get("images", []),
-                reference_descriptions=data.get("reference_descriptions", []),
-                duration=data["duration"],
-                resolution_preset=data["preset"],
-                aspect_ratio=(
-                    "source"
-                    if data["mode"] in {"i2v", "flf2v"}
-                    else data["aspect"]
-                ),
-                main_model=data.get("main_model", "10eros"),
-                addon_items=list(data.get("addon_items", [])),
-            )
-            draft = await start_advanced_video_prompt_task(
-                token=request_token,
-                internal_user_id=internal_user.id,
-                telegram_user_id=user.id,
-                username=user.username,
-                chat_id=update.effective_chat.id,
-                language=_lang(context),
-                client_request_id=client_request_id,
-                mode=data["mode"],
-                original_prompt=data["original_prompt"],
-                image_paths=list(data.get("images", [])),
-                duration=int(data["duration"]),
-                resolution_preset=data["preset"],
-                aspect_ratio=plan.aspect_ratio,
-                main_model=data.get("main_model", "10eros"),
-                addon_models=[
-                    str(item.get("name"))
-                    for item in data.get("addon_items", [])
-                    if isinstance(item, dict) and item.get("name")
-                ],
-                addon_items=list(data.get("addon_items", [])),
-                reference_descriptions=list(data.get("reference_descriptions", [])),
-                generation_cost=plan.cost,
-            )
-        except Exception:
-            logger.exception("MiniMax H3 prompt optimization submission failed")
-            data["optimizer_pending"] = False
-            await robust_edit_text(
-                query.message,
-                _text(
-                    context,
-                    "提示词优化提交失败，原提示词已保留。请稍后重试或直接生成。",
-                    "Prompt optimization submission failed. The original prompt was preserved; retry later or generate directly.",
-                ),
-                reply_markup=_prompt_action_keyboard(context),
-            )
-            return AdvancedVideoProState.WAIT_CONFIRMATION
-        await robust_edit_text(
-            query.message,
-            _text(
-                context,
-                f"✨ 提示词优化任务已提交（{draft.optimizer_task_id}）。\n\n"
-                "现在可以继续使用其他功能；完成后 Bot 会自动发送结果，结果保留 24 小时。",
-                f"✨ Prompt optimization task submitted ({draft.optimizer_task_id}).\n\n"
-                "You can continue using other features. The Bot will send the result automatically and keep it for 24 hours.",
-            ),
-        )
-        _clear(context)
-        return ConversationHandler.END
-    if query.data == "avp_prompt_restore":
-        data["prompt"] = data.get("original_prompt", data.get("prompt", ""))
-        await robust_edit_text(
-            query.message,
-            _text(context, "已恢复原提示词。", "Original prompt restored."),
-            reply_markup=_prompt_action_keyboard(context),
-        )
-        return AdvancedVideoProState.WAIT_CONFIRMATION
-    return AdvancedVideoProState.WAIT_CONFIRMATION
 
 
 async def legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -768,6 +579,7 @@ def get_advanced_video_pro_fsm_handler(
     entry_points = [
         CommandHandler("advanced_video_pro", start),
         MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
+        CallbackQueryHandler(legacy_callback, pattern=r"^avp_prompt_"),
     ]
     if include_ltx_compatibility_routes:
         entry_points.extend(
@@ -799,9 +611,6 @@ def get_advanced_video_pro_fsm_handler(
             ],
             AdvancedVideoProState.WAIT_PROMPT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)
-            ],
-            AdvancedVideoProState.WAIT_CONFIRMATION: [
-                CallbackQueryHandler(prompt_callback, pattern=r"^avp_prompt_")
             ],
             ConversationHandler.TIMEOUT: [TypeHandler(Update, timeout)],
         },

@@ -1,7 +1,8 @@
 # 子模块：Prompt Optimizer Worker
 
 本文是通用提示词优化平台的当前架构与扩展 SOP。当前消费者包括
-`ltx_video_v2`、纯 `ltx_t2v`、双角色 `ltx_t2v_ic` 与 MiniMax H3 三种模式，但 Registry、任务类型、
+`ltx_video_v2`、纯 `ltx_t2v`、双角色 `ltx_t2v_ic` 与 Web MiniMax H3 模式；主 Bot 的
+新高级图生视频 Pro 会话已改为原始提示词直接生成。Registry、任务类型、
 结果存储和 Worker 主循环不得出现以 LTX 为条件的队列分支。
 
 ## 1. 组件与事实源
@@ -131,9 +132,8 @@ H3 默认生成基础链固定 10Eros TURBO hybrid Beta3 与原生 7-step er_sde
 snapshot 解析；新请求使用三个 `@5` profile。旧的可变 H3 scene config 若不含
 官方三字段、服务端对白语言占位符或新“可选服务端附件”契约，
 读取时自动前移到新的 built-in 默认值，并通过管理 API 标记不兼容历史 revision；已提交
-任务仍使用其不可变 snapshot。Web/Bot 只
-提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
-Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
+任务仍使用其不可变 snapshot。Web 只提交时长、媒体角色和原始提示词；优化器也不得输出
+模型名、LoRA 名或触发词。历史 Bot H3 优化在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材
 staging。Telegram ID 只可参与 Bot 回调的确定性请求 ID，不能作为账本用户主键。
 同一次 Bot 点击使用 `optimizer_request_token` 固定该次 `client_request_id`；终态失败后
@@ -175,11 +175,11 @@ Web 把 `prompt_optimize` 作为全局任务而非页面内请求：任务 ID、
 禁止覆盖当前输入，只在全局结果卡提供“返回原任务并应用”。恢复用户上传图片预览时
 调用 owner-fenced `/api/storage/preview-url`，不得把另一用户对象签名给浏览器。
 
-主 Bot 的 H3 消费者使用独立 24 小时 Redis draft 保存冻结生成设置和 staging keys，
-提交成功后退出 Telegram FSM。`advanced_video_prompt_task_service.py` 的启动恢复循环
-轮询 owner-fenced 文本结果并主动发新消息；`avpopt_*` 全局 callback 读取 draft，二次
-确认费用后才调用既有生成提交 facade。该 continuation 不改变 Central task type、四
-lane Worker、1 灵石优化扣费或文本结果存储。
+主 Bot 的新 H3 会话不再创建 Prompt Optimizer 任务或 Redis draft，提示词到达后直接
+调用生成提交 facade。`advanced_video_prompt_task_service.py` 的恢复循环和 `avpopt_*`
+全局 callback 仅保留给发布前已创建的 24 小时 owner-fenced draft，直到存量续接结束；
+它们不是新会话入口，不改变 Central task type、四 lane Worker、1 灵石历史优化扣费或
+文本结果存储契约。
 
 ## 4. Worker 与 LM Studio
 

@@ -79,6 +79,11 @@ interface AdvancedVideoProAddonItem {
   strength: number
 }
 
+interface AdvancedVideoProAddonOption extends SelectOption {
+  supported_modes: AdvancedVideoProMode[]
+  default_strength: number
+}
+
 interface SelectOption {
   value: string
   label: string
@@ -87,10 +92,7 @@ interface SelectOption {
 interface AdvancedVideoProOptions {
   modes: Array<SelectOption & { value: AdvancedVideoProMode }>
   main_models: Record<AdvancedVideoProMode, SelectOption[]>
-  addon_models: Array<SelectOption & {
-    supported_modes: AdvancedVideoProMode[]
-    default_strength: number
-  }>
+  addon_models: AdvancedVideoProAddonOption[]
   max_addon_items: number
   strength_min: number
   strength_max: number
@@ -320,31 +322,41 @@ const addonOptionsForMode = (mode: AdvancedVideoProMode) => (
   ))
 )
 
-const selectedAddonNamesForMode = (mode: AdvancedVideoProMode) => (
-  entryConfig.value.advanced_video_pro[mode].addon_items.map(item => item.name)
-)
-
 const addonLabel = (name: string) => (
   advancedVideoProOptions.value.addon_models.find(option => option.value === name)?.label
   ?? name
 )
 
-const updateAddonSelection = (mode: AdvancedVideoProMode, event: Event) => {
-  const target = event.target as HTMLSelectElement
-  const selectedNames = Array.from(target.selectedOptions)
-    .map(option => option.value)
-    .slice(0, advancedVideoProOptions.value.max_addon_items)
+const isAddonSelected = (mode: AdvancedVideoProMode, name: string) => (
+  entryConfig.value.advanced_video_pro[mode].addon_items.some(item => item.name === name)
+)
+
+const isAddonSelectionAtLimit = (mode: AdvancedVideoProMode) => (
+  entryConfig.value.advanced_video_pro[mode].addon_items.length
+  >= advancedVideoProOptions.value.max_addon_items
+)
+
+const updateAddonCheckbox = (
+  mode: AdvancedVideoProMode,
+  option: AdvancedVideoProAddonOption,
+  event: Event,
+) => {
+  const target = event.target as HTMLInputElement
+  const checked = target.checked
   const profile = entryConfig.value.advanced_video_pro[mode]
-  const existing = new Map(profile.addon_items.map(item => [item.name, item]))
-  const optionByName = new Map(
-    addonOptionsForMode(mode).map(option => [option.value, option]),
-  )
-  profile.addon_items = selectedNames.map(name => ({
-    name,
-    strength: existing.get(name)?.strength
-      ?? optionByName.get(name)?.default_strength
-      ?? 1,
-  }))
+  if (!checked) {
+    profile.addon_items = profile.addon_items.filter(item => item.name !== option.value)
+    return
+  }
+  if (isAddonSelected(mode, option.value)) return
+  if (isAddonSelectionAtLimit(mode)) {
+    target.checked = false
+    return
+  }
+  profile.addon_items.push({
+    name: option.value,
+    strength: option.default_strength,
+  })
 }
 
 const hasInvalidAddonStrength = computed(() => (
@@ -579,24 +591,26 @@ onMounted(() => {
               </option>
             </select>
           </label>
-          <label class="config-field mt-3">
+          <div class="config-field mt-3">
             <span>附加模型（可多选）</span>
-            <select
-              multiple
-              size="7"
-              :value="selectedAddonNamesForMode(modeOption.value)"
-              :data-testid="`avp-addon-models-${modeOption.value}`"
-              @change="updateAddonSelection(modeOption.value, $event)"
-            >
-              <option
+            <div class="addon-checkbox-list">
+              <label
                 v-for="option in addonOptionsForMode(modeOption.value)"
                 :key="option.value"
-                :value="option.value"
+                class="addon-checkbox-option"
               >
-                {{ option.label }}（默认 {{ option.default_strength }}）
-              </option>
-            </select>
-          </label>
+                <input
+                  type="checkbox"
+                  :checked="isAddonSelected(modeOption.value, option.value)"
+                  :disabled="!isAddonSelected(modeOption.value, option.value) && isAddonSelectionAtLimit(modeOption.value)"
+                  :data-testid="`avp-addon-checkbox-${modeOption.value}-${option.value}`"
+                  @change="updateAddonCheckbox(modeOption.value, option, $event)"
+                />
+                <span>{{ option.label }}（默认 {{ option.default_strength }}）</span>
+              </label>
+            </div>
+            <span class="text-slate-400">不勾选即不使用附加模型</span>
+          </div>
           <div
             v-if="entryConfig.advanced_video_pro[modeOption.value].addon_items.length"
             class="selected-addon-list mt-3"
@@ -838,7 +852,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .advanced-video-pro-card { border: 1px solid #dbeafe; border-radius: .65rem; background: white; padding: .85rem; }
 .config-field { display: flex; flex-direction: column; gap: .35rem; color: #475569; font-size: .75rem; }
 .config-field select { min-width: 0; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; padding: .45rem .55rem; color: #334155; }
-.config-field select[multiple] { min-height: 9rem; }
+.addon-checkbox-list { max-height: 15rem; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; padding: .35rem; }
+.addon-checkbox-option { display: flex; align-items: flex-start; gap: .5rem; border-radius: .35rem; padding: .35rem .4rem; color: #334155; cursor: pointer; }
+.addon-checkbox-option:hover { background: #eff6ff; }
+.addon-checkbox-option input { flex: 0 0 auto; margin-top: .12rem; accent-color: #2563eb; }
+.addon-checkbox-option input:disabled { cursor: not-allowed; }
+.addon-checkbox-option span { overflow-wrap: anywhere; }
 .selected-addon-list { display: grid; gap: .45rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; }
 .addon-strength-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem; align-items: center; gap: .75rem; color: #475569; font-size: .75rem; }
 .addon-strength-row span { overflow-wrap: anywhere; }
