@@ -189,7 +189,8 @@ onMounted(() => {
               <a-select
                 v-model:value="selectedTypes"
                 mode="multiple"
-                style="min-width: 180px; max-width: 300px"
+                data-testid="history-type-filter"
+                style="min-width: 240px; max-width: 360px"
                 placeholder="全部类型"
                 @change="handleFilterChange"
                 :options="typeOptions"
@@ -198,6 +199,7 @@ onMounted(() => {
                 allow-clear
                 option-filter-prop="label"
                 max-tag-count="responsive"
+                :popup-match-select-width="300"
                 class="custom-select"
               />
             </div>

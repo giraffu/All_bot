@@ -91,6 +91,9 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
   `aspect_ratio` 和有序 `lora_items` 写入版本 1 的 `_minimax_h3_context`。
   不迁移旧记录；缺少完整上下文的历史投稿仍可互动，但
   `template_apply_disabled_reason=minimax_h3_context_missing`。
+- Dashboard 历史生成筛选把 H3 归为两个入口：普通链的 T2V/I2V/FLF2V 合并为
+  “高级图生视频pro · 图生视频”，REF2V 独立为“高级图生视频pro · 参考图生视频”；
+  列表行仍按四个真实 `History.type` 显示具体子模式，筛选不得改写持久类型。
 - 一键应用不返回或复用原始 `input_file/input_files`。I2V 要求重新上传 1 张首帧，
   FLF2V 要求重新上传有序的 2 张首尾帧并在提交前校验比例差不超过 1%。原提示词、
   时长、档位、`source` 比例和有序附加模型全部锁定；成功提交携带

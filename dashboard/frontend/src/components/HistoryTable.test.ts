@@ -37,7 +37,9 @@ describe('HistoryTable source filters', () => {
 
     const workerFilter = wrapper.get('[data-testid="history-worker-filter"]')
     const sourceFilter = wrapper.get('[data-testid="history-source-filter"]')
+    const typeFilter = wrapper.get('[data-testid="history-type-filter"]')
 
+    expect(typeFilter.attributes('style')).toContain('min-width: 240px')
     expect(workerFilter.attributes('style')).toContain('width: 190px')
     expect(sourceFilter.attributes('style')).toContain('width: 180px')
 
