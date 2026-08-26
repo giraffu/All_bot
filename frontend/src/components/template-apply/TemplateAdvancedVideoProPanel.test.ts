@@ -115,7 +115,6 @@ describe('TemplateAdvancedVideoProPanel', () => {
         images: ['uploads/first.png', 'uploads/last.png'],
         prompt: 'locked motion',
         duration: 10,
-        lora_items: [{ name: 'sex_pose', strength: 0.5 }],
         resolution_preset: 'standard',
         aspect_ratio: 'source',
         reference_descriptions: [],

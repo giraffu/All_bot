@@ -6,7 +6,6 @@ import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskSubmission } from '@/composables/useTaskSubmission'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
-import { MINIMAX_H3_ADDON_OPTIONS } from '@/features/generation/labModeConfig'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 import {
@@ -45,12 +44,7 @@ const lockedPrompt = computed(() => props.context.prompt || '')
 const lockedDuration = computed(() => props.context.requestedDuration || 5)
 const lockedResolution = computed(() => props.context.resolutionPreset || 'preview')
 const lockedAspectRatio = computed(() => props.context.aspectRatio || 'source')
-const lockedLoraItems = computed(() => props.context.loraItems)
 const taskCost = computed(() => getMinimaxH3TemplateCost(lockedResolution.value, lockedDuration.value))
-const addonLabels = computed(() => lockedLoraItems.value.map((item) => {
-  const option = MINIMAX_H3_ADDON_OPTIONS.find(candidate => candidate.value === item.name)
-  return `${option ? t(option.labelKey) : item.name} × ${item.strength}`
-}))
 
 watch(
   () => hasPendingUploads.value,
@@ -135,7 +129,6 @@ const handleGenerate = async () => {
     prompt: lockedPrompt.value,
     promptTarget: 'inputs',
     duration: lockedDuration.value,
-    loraItems: lockedLoraItems.value,
     extraInputs: {
       resolution_preset: lockedResolution.value,
       aspect_ratio: lockedAspectRatio.value,
@@ -179,9 +172,6 @@ onBeforeUnmount(() => {
             <div>{{ t('template_apply.common.resolution') }}：{{ lockedResolution }}</div>
             <div>{{ t('template_apply.advanced_video_pro.mode') }}：{{ isFirstLastFrame ? 'FLF2V' : 'I2V' }}</div>
             <div>{{ t('template_apply.advanced_video_pro.aspect') }}：{{ lockedAspectRatio }}</div>
-          </div>
-          <div v-if="addonLabels.length" class="flex flex-wrap gap-2">
-            <span v-for="label in addonLabels" :key="label" class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-200">{{ label }}</span>
           </div>
         </div>
 

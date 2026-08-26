@@ -7,10 +7,43 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_DEFAULT_MAIN_MODEL,
+    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
+    MINIMAX_H3_MAIN_MODELS,
+    MINIMAX_H3_MAX_ADDON_ITEMS,
+    MINIMAX_H3_MODES,
+)
+
 
 FEATURE_ENTRY_VISIBILITY_CONFIG_KEY = "feature_entry_visibility_config:v1"
+ADVANCED_VIDEO_PRO_MODES = MINIMAX_H3_MODES
 
-DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG: dict[str, dict[str, bool]] = {
+DEFAULT_ADVANCED_VIDEO_PRO_CONFIG: dict[str, dict[str, Any]] = {
+    mode: {
+        "main_model": MINIMAX_H3_DEFAULT_MAIN_MODEL,
+        "addon_models": [],
+    }
+    for mode in ADVANCED_VIDEO_PRO_MODES
+}
+
+GALLERY_ENTRY_FLAG_NAMES: dict[str, str] = {
+    "txt2img": "enable_gallery_txt2img_entry",
+    "i2i_pro": "enable_gallery_i2i_pro_entry",
+    "edit": "enable_gallery_edit_entry",
+    "free_edit_v2_5": "enable_gallery_free_edit_v2_5_entry",
+    "free_edit_v3": "enable_gallery_free_edit_v3_entry",
+    "custom_video": "enable_gallery_custom_video_entry",
+    "ltx_video": "enable_gallery_ltx_video_entry",
+    "minimax_h3": "enable_gallery_minimax_h3_entry",
+    "wan22_video_v2": "enable_gallery_wan22_video_v2_entry",
+    "scail2_action_transfer": "enable_gallery_scail2_action_transfer_entry",
+    "scail2_video_replacement": "enable_gallery_scail2_video_replacement_entry",
+    "scail2_face_swap_v2": "enable_gallery_scail2_face_swap_v2_entry",
+}
+
+DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG: dict[str, Any] = {
     "web": {
         "edit": True,
         "edit_v2_5": True,
@@ -31,8 +64,20 @@ DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG: dict[str, dict[str, bool]] = {
         "character_assets": False,
     },
     "gallery": {
+        "txt2img": True,
+        "i2i_pro": True,
+        "edit": True,
+        "free_edit_v2_5": True,
+        "free_edit_v3": True,
+        "custom_video": True,
+        "ltx_video": True,
         "minimax_h3": False,
+        "wan22_video_v2": True,
+        "scail2_action_transfer": True,
+        "scail2_video_replacement": True,
+        "scail2_face_swap_v2": True,
     },
+    "advanced_video_pro": deepcopy(DEFAULT_ADVANCED_VIDEO_PRO_CONFIG),
 }
 
 WEB_ENTRY_FLAG_NAMES: dict[str, str] = {
@@ -64,14 +109,116 @@ def _normalize_scope(raw: Any, defaults: dict[str, bool]) -> dict[str, bool]:
     }
 
 
+def _normalize_advanced_video_pro_config(raw: Any) -> dict[str, dict[str, Any]]:
+    values = raw if isinstance(raw, dict) else {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for mode in ADVANCED_VIDEO_PRO_MODES:
+        profile = values.get(mode)
+        profile = profile if isinstance(profile, dict) else {}
+        main_model = str(
+            profile.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
+        ).strip().lower()
+        if main_model not in MINIMAX_H3_MAIN_MODELS or (
+            main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
+            and mode != "ref2v"
+        ):
+            main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
+
+        raw_addons = profile.get("addon_models")
+        raw_addons = raw_addons if isinstance(raw_addons, (list, tuple)) else []
+        addon_models: list[str] = []
+        for value in raw_addons:
+            model_id = str(value or "").strip()
+            model = MINIMAX_H3_ADDON_MODELS.get(model_id)
+            if (
+                model is None
+                or mode not in model.supported_modes
+                or model_id in addon_models
+            ):
+                continue
+            addon_models.append(model_id)
+            if len(addon_models) >= MINIMAX_H3_MAX_ADDON_ITEMS:
+                break
+        normalized[mode] = {
+            "main_model": main_model,
+            "addon_models": addon_models,
+        }
+    return normalized
+
+
 def normalize_feature_entry_visibility_config(
     raw: Any,
-) -> dict[str, dict[str, bool]]:
+) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return deepcopy(DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG)
     return {
-        scope: _normalize_scope(raw.get(scope), defaults)
-        for scope, defaults in DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG.items()
+        "web": _normalize_scope(
+            raw.get("web"), DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG["web"]
+        ),
+        "gallery": _normalize_scope(
+            raw.get("gallery"), DEFAULT_FEATURE_ENTRY_VISIBILITY_CONFIG["gallery"]
+        ),
+        "advanced_video_pro": _normalize_advanced_video_pro_config(
+            raw.get("advanced_video_pro")
+        ),
+    }
+
+
+def get_advanced_video_pro_profile(raw: Any, mode: str) -> dict[str, Any]:
+    normalized_mode = str(mode or "").strip().lower()
+    if normalized_mode not in ADVANCED_VIDEO_PRO_MODES:
+        raise ValueError("未知高级图生视频 Pro 模式。")
+    profile = normalize_feature_entry_visibility_config(raw)[
+        "advanced_video_pro"
+    ][normalized_mode]
+    return {
+        "main_model": profile["main_model"],
+        "addon_items": [
+            {
+                "name": model_id,
+                "strength": MINIMAX_H3_ADDON_MODELS[model_id].default_strength,
+            }
+            for model_id in profile["addon_models"]
+        ],
+    }
+
+
+def build_advanced_video_pro_admin_options() -> dict[str, Any]:
+    main_model_labels = {
+        "10eros": "10Eros TURBO",
+        "official": "官方高保真",
+        "official_ref2v_turbo": "官方 REF2V 极速",
+    }
+    return {
+        "modes": [
+            {"value": mode, "label": label}
+            for mode, label in (
+                ("t2v", "文生视频"),
+                ("i2v", "首帧图生视频"),
+                ("flf2v", "首尾帧视频"),
+                ("ref2v", "参考图生视频"),
+            )
+        ],
+        "main_models": {
+            mode: [
+                {"value": model_id, "label": main_model_labels[model_id]}
+                for model_id in MINIMAX_H3_MAIN_MODELS
+                if not (
+                    model_id == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
+                    and mode != "ref2v"
+                )
+            ]
+            for mode in ADVANCED_VIDEO_PRO_MODES
+        },
+        "addon_models": [
+            {
+                "value": model.id,
+                "label": model.label_zh,
+                "supported_modes": list(model.supported_modes),
+                "default_strength": model.default_strength,
+            }
+            for model in MINIMAX_H3_ADDON_MODELS.values()
+        ],
     }
 
 
@@ -82,7 +229,10 @@ def build_public_entry_visibility_flags(raw: Any) -> dict[str, bool]:
             flag_name: config["web"][config_key]
             for config_key, flag_name in WEB_ENTRY_FLAG_NAMES.items()
         },
-        "enable_gallery_minimax_h3_entry": config["gallery"]["minimax_h3"],
+        **{
+            flag_name: config["gallery"][config_key]
+            for config_key, flag_name in GALLERY_ENTRY_FLAG_NAMES.items()
+        },
     }
 
 
@@ -94,8 +244,28 @@ def _build_config_response(
     return {
         "key": FEATURE_ENTRY_VISIBILITY_CONFIG_KEY,
         "config": normalize_feature_entry_visibility_config(config),
+        "options": build_advanced_video_pro_admin_options(),
         "updated_at": updated_at,
     }
+
+
+async def load_advanced_video_pro_profiles() -> dict[str, dict[str, Any]]:
+    from src.database.core import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        payload = await load_feature_entry_visibility_config_payload(db)
+    return {
+        mode: get_advanced_video_pro_profile(payload["config"], mode)
+        for mode in ADVANCED_VIDEO_PRO_MODES
+    }
+
+
+async def load_advanced_video_pro_profile(mode: str) -> dict[str, Any]:
+    profiles = await load_advanced_video_pro_profiles()
+    normalized_mode = str(mode or "").strip().lower()
+    if normalized_mode not in profiles:
+        raise ValueError("未知高级图生视频 Pro 模式。")
+    return profiles[normalized_mode]
 
 
 async def load_feature_entry_visibility_config_payload(

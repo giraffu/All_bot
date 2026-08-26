@@ -96,4 +96,47 @@ describe('galleryTaskTypeFilters', () => {
       'i2i_pro', 'edit', 'ltx_video',
     ])
   })
+
+  it('applies independent market switches to every visible type family', () => {
+    window.__ALLBOT_CONFIG__ = {
+      enable_ltx_video: true,
+      enable_minimax_h3: true,
+      enable_gallery_txt2img_entry: false,
+      enable_gallery_i2i_pro_entry: true,
+      enable_gallery_edit_entry: false,
+      enable_gallery_free_edit_v2_5_entry: true,
+      enable_gallery_free_edit_v3_entry: false,
+      enable_gallery_custom_video_entry: false,
+      enable_gallery_ltx_video_entry: true,
+      enable_gallery_minimax_h3_entry: true,
+      enable_gallery_wan22_video_v2_entry: false,
+      enable_gallery_scail2_action_transfer_entry: true,
+      enable_gallery_scail2_video_replacement_entry: false,
+      enable_gallery_scail2_face_swap_v2_entry: true,
+    }
+
+    const visible = filterVisibleGalleryTaskTypes([
+      { id: 'txt2img', name: '文生图' },
+      { id: 'i2i_pro', name: '幻想换脸' },
+      { id: 'edit', name: '自由P图' },
+      { id: 'free_edit_v2_5', name: '自由P图 v2.5' },
+      { id: 'pornmaster_flux2_edit_bf16', name: '自由P图 v3' },
+      { id: 'custom_video', name: '图生视频' },
+      { id: 'ltx_video', name: '高级图生视频' },
+      { id: 'minimax_h3_i2v', name: '高级图生视频 Pro' },
+      { id: 'wan22_video_v2', name: '图生视频 v2' },
+      { id: 'scail2_action_transfer', name: '动作迁移' },
+      { id: 'scail2_video_replacement', name: '视频换人' },
+      { id: 'scail2_face_swap_v2', name: '视频换脸' },
+    ])
+
+    expect(visible.map(item => item.id)).toEqual([
+      'i2i_pro',
+      'free_edit_v2_5',
+      'ltx_video',
+      'minimax_h3_i2v',
+      'scail2_action_transfer',
+      'scail2_face_swap_v2',
+    ])
+  })
 })

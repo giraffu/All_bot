@@ -47,6 +47,14 @@ async def test_pro_main_bot_only_allows_image_modes_to_contribute(
 async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "load_advanced_video_pro_profiles",
+        AsyncMock(return_value={
+            mode: {"main_model": "10eros", "addon_items": []}
+            for mode in fsm.MODES
+        }),
+    )
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     context = SimpleNamespace(user_data={}, lang="zh")
     update = SimpleNamespace(effective_message=object())
@@ -56,7 +64,10 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     assert state == AdvancedVideoProState.WAIT_SETTINGS
     assert context.user_data["in_conversation"] == fsm.TAG
     assert context.user_data[fsm.DATA_KEY]["mode"] is None
-    assert context.user_data[fsm.DATA_KEY]["addon_models"] == []
+    assert context.user_data[fsm.DATA_KEY]["runtime_profiles"]["i2v"] == {
+        "main_model": "10eros",
+        "addon_items": [],
+    }
     assert "高级图生视频pro" in reply.await_args.args[1]
     mode_callbacks = [button.callback_data for row in reply.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert "avp_mode_ref2v" in mode_callbacks
@@ -88,7 +99,18 @@ async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_
         "duration": 5,
         "preset": "preview",
         "aspect": "16:9",
-        "addon_models": [],
+        "runtime_profiles": {
+            "t2v": {
+                "main_model": "official",
+                "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+            },
+            "ref2v": {
+                "main_model": "official_ref2v_turbo",
+                "addon_items": [
+                    {"name": "motion_booster_ref2va", "strength": 0.7},
+                ],
+            },
+        },
     }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
 
@@ -117,40 +139,30 @@ async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_
         "Better Titfuck",
     ):
         assert private_term not in public_copy
-    assert "效果增强：未启用" in settings_text
-    assert "成人动作测试一" in button_text
-    assert "成人动作测试二" in button_text
-    assert "成人动作强化" in button_text
-    assert "人体结构增强" in button_text
-    assert "选满效果" in button_text
-    assert "清空效果" in button_text
+    assert "直接发送提示词" in settings_text
+    assert "成人动作测试一" not in button_text
+    assert "成人动作测试二" not in button_text
+    assert "成人动作强化" not in button_text
+    assert "选满效果" not in button_text
+    assert "清空效果" not in button_text
     callbacks = [button.callback_data for row in keyboard for button in row]
-    assert "avp_addon_naughty_times" in callbacks
-    assert "avp_addon_sex_pose" in callbacks
-    assert "avp_addon_motion_booster" in callbacks
-    assert "avp_addon_motion_booster_ref2va" not in callbacks
-    assert "avp_addon_mystic_xxx" in callbacks
-    assert "avp_addon_breasts" in callbacks
-    assert "avp_addon_vagassist" in callbacks
-    assert "avp_addon_pussy" in callbacks
-    assert "avp_addon_penis" in callbacks
-    assert "avp_addon_pussy_stills_v1" in callbacks
-    assert "avp_addon_titjob" in callbacks
-    assert "avp_addon_all" in callbacks
-    assert "avp_addon_none" in callbacks
+    assert not any(callback.startswith("avp_addon_") for callback in callbacks)
+    assert "avp_settings_done" not in callbacks
+    assert data["main_model"] == "official"
+    assert data["addon_items"] == [
+        {"name": "motion_booster", "strength": 0.7},
+    ]
 
     query.data = "avp_mode_ref2v"
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
-    ref_callbacks = [
-        button.callback_data
-        for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
-        for button in row
+    assert data["main_model"] == "official_ref2v_turbo"
+    assert data["addon_items"] == [
+        {"name": "motion_booster_ref2va", "strength": 0.7},
     ]
-    assert "avp_addon_motion_booster_ref2va" in ref_callbacks
 
 
 @pytest.mark.asyncio
-async def test_pro_switching_out_of_ref2v_drops_ref2va_only_effect(monkeypatch):
+async def test_pro_switching_mode_applies_that_modes_admin_profile(monkeypatch):
     monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
     data = {
         "mode": "ref2v",
@@ -159,7 +171,12 @@ async def test_pro_switching_out_of_ref2v_drops_ref2va_only_effect(monkeypatch):
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
-        "addon_models": ["motion_booster_ref2va", "motion_booster"],
+        "runtime_profiles": {
+            "i2v": {
+                "main_model": "official",
+                "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+            }
+        },
     }
     query = SimpleNamespace(data="avp_mode_i2v", answer=AsyncMock(), message=object())
 
@@ -168,59 +185,10 @@ async def test_pro_switching_out_of_ref2v_drops_ref2va_only_effect(monkeypatch):
         SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh"),
     )
 
-    assert data["addon_models"] == ["motion_booster"]
-
-
-@pytest.mark.asyncio
-async def test_pro_settings_toggle_addon_and_select_all(monkeypatch):
-    monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
-    data = {
-        "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
-        "images": [], "reference_descriptions": [], "addon_models": [],
-    }
-    query = SimpleNamespace(
-        data="avp_addon_naughty_times", answer=AsyncMock(), message=object()
-    )
-    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
-    update = SimpleNamespace(callback_query=query)
-
-    await fsm.settings_callback(update, context)
-    assert data["addon_models"] == ["naughty_times"]
-    query.data = "avp_addon_all"
-    await fsm.settings_callback(update, context)
-    assert data["addon_models"] == list(fsm._available_addon_ids(data))[:13]
-    selected_at_limit = list(data["addon_models"])
-    query.data = "avp_addon_titjob"
-    await fsm.settings_callback(update, context)
-    assert data["addon_models"] == selected_at_limit
-    query.data = "avp_addon_none"
-    await fsm.settings_callback(update, context)
-    assert data["addon_models"] == []
-
-
-@pytest.mark.asyncio
-async def test_pro_settings_caps_legacy_oversized_addon_selection(monkeypatch):
-    monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
-    data = {
-        "mode": "t2v",
-        "duration": 5,
-        "preset": "preview",
-        "aspect": "16:9",
-        "images": [],
-        "reference_descriptions": [],
-        "addon_models": list(fsm.MINIMAX_H3_ADDON_MODELS),
-    }
-    query = SimpleNamespace(
-        data="avp_settings_done", answer=AsyncMock(), message=object()
-    )
-
-    state = await fsm.settings_callback(
-        SimpleNamespace(callback_query=query),
-        SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh"),
-    )
-
-    assert state == AdvancedVideoProState.WAIT_PROMPT
-    assert data["addon_models"] == list(fsm._available_addon_ids(data))[:13]
+    assert data["main_model"] == "official"
+    assert data["addon_items"] == [
+        {"name": "motion_booster", "strength": 0.7},
+    ]
 
 
 @pytest.mark.asyncio

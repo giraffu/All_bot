@@ -318,13 +318,13 @@ describe('CustomFeatures LTX result actions', () => {
 })
 
 describe('CustomFeatures advanced video effects', () => {
-  it('hides model internals while keeping semantic effect controls', () => {
+  it('leaves model choices to the admin preset', () => {
     workbench = createMinimaxWorkbench()
     const wrapper = mountView()
 
-    expect(wrapper.text()).toContain('效果增强（可多选）')
-    expect(wrapper.text()).toContain('成人动作测试一')
-    expect(wrapper.text()).toContain('成人动作测试二')
+    expect(wrapper.text()).not.toContain('效果增强（可多选）')
+    expect(wrapper.text()).not.toContain('成人动作测试一')
+    expect(wrapper.text()).not.toContain('成人动作测试二')
     expect(wrapper.text()).not.toContain('minimax_h3_base_stack')
     for (const privateTerm of [
       '基础链路',
@@ -340,7 +340,7 @@ describe('CustomFeatures advanced video effects', () => {
     ]) {
       expect(wrapper.text()).not.toContain(privateTerm)
     }
-    expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(2)
+    expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(0)
   })
 })
 

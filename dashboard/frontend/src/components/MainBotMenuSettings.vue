@@ -51,13 +51,47 @@ interface FeatureEntryVisibilityConfig {
     character_assets: boolean
   }
   gallery: {
+    txt2img: boolean
+    i2i_pro: boolean
+    edit: boolean
+    free_edit_v2_5: boolean
+    free_edit_v3: boolean
+    custom_video: boolean
+    ltx_video: boolean
     minimax_h3: boolean
+    wan22_video_v2: boolean
+    scail2_action_transfer: boolean
+    scail2_video_replacement: boolean
+    scail2_face_swap_v2: boolean
   }
+  advanced_video_pro: Record<AdvancedVideoProMode, AdvancedVideoProModeConfig>
+}
+
+type AdvancedVideoProMode = 't2v' | 'i2v' | 'flf2v' | 'ref2v'
+
+interface AdvancedVideoProModeConfig {
+  main_model: string
+  addon_models: string[]
+}
+
+interface SelectOption {
+  value: string
+  label: string
+}
+
+interface AdvancedVideoProOptions {
+  modes: Array<SelectOption & { value: AdvancedVideoProMode }>
+  main_models: Record<AdvancedVideoProMode, SelectOption[]>
+  addon_models: Array<SelectOption & {
+    supported_modes: AdvancedVideoProMode[]
+    default_strength: number
+  }>
 }
 
 interface FeatureEntryVisibilityConfigResponse {
   key: string
   config: FeatureEntryVisibilityConfig
+  options?: AdvancedVideoProOptions
   updated_at?: string | null
 }
 
@@ -115,7 +149,42 @@ const emptyEntryConfig = (): FeatureEntryVisibilityConfig => ({
     scail2_face_swap_v2: true,
     character_assets: false,
   },
-  gallery: { minimax_h3: false },
+  gallery: {
+    txt2img: true,
+    i2i_pro: true,
+    edit: true,
+    free_edit_v2_5: true,
+    free_edit_v3: true,
+    custom_video: true,
+    ltx_video: true,
+    minimax_h3: false,
+    wan22_video_v2: true,
+    scail2_action_transfer: true,
+    scail2_video_replacement: true,
+    scail2_face_swap_v2: true,
+  },
+  advanced_video_pro: {
+    t2v: { main_model: '10eros', addon_models: [] },
+    i2v: { main_model: '10eros', addon_models: [] },
+    flf2v: { main_model: '10eros', addon_models: [] },
+    ref2v: { main_model: '10eros', addon_models: [] },
+  },
+})
+
+const emptyAdvancedVideoProOptions = (): AdvancedVideoProOptions => ({
+  modes: [
+    { value: 't2v', label: '文生视频' },
+    { value: 'i2v', label: '首帧图生视频' },
+    { value: 'flf2v', label: '首尾帧视频' },
+    { value: 'ref2v', label: '参考图生视频' },
+  ],
+  main_models: {
+    t2v: [{ value: '10eros', label: '10Eros TURBO' }],
+    i2v: [{ value: '10eros', label: '10Eros TURBO' }],
+    flf2v: [{ value: '10eros', label: '10Eros TURBO' }],
+    ref2v: [{ value: '10eros', label: '10Eros TURBO' }],
+  },
+  addon_models: [],
 })
 
 const WEB_ENTRY_OPTIONS = [
@@ -142,6 +211,24 @@ const WEB_ENTRY_OPTIONS = [
   description: string
 }>
 
+const GALLERY_ENTRY_OPTIONS = [
+  { key: 'txt2img', label: '文生图' },
+  { key: 'i2i_pro', label: '幻想换脸' },
+  { key: 'edit', label: '自由P图 / 图生图附加模型' },
+  { key: 'free_edit_v2_5', label: '自由P图 v2.5' },
+  { key: 'free_edit_v3', label: '自由P图 v3' },
+  { key: 'custom_video', label: '图生视频' },
+  { key: 'ltx_video', label: '高级图生视频' },
+  { key: 'minimax_h3', label: '高级图生视频 Pro' },
+  { key: 'wan22_video_v2', label: '图生视频 v2' },
+  { key: 'scail2_action_transfer', label: '动作迁移' },
+  { key: 'scail2_video_replacement', label: '视频换人' },
+  { key: 'scail2_face_swap_v2', label: '视频换脸' },
+] as const satisfies ReadonlyArray<{
+  key: keyof FeatureEntryVisibilityConfig['gallery']
+  label: string
+}>
+
 type EntryScope = 'web' | 'bot' | 'gallery'
 
 const ENTRY_SCOPE_TABS: ReadonlyArray<{ key: EntryScope; label: string }> = [
@@ -158,6 +245,9 @@ const updatedAt = ref<string | null>(null)
 const entryUpdatedAt = ref<string | null>(null)
 const config = ref<MainBotMenuConfig>(emptyConfig())
 const entryConfig = ref<FeatureEntryVisibilityConfig>(emptyEntryConfig())
+const advancedVideoProOptions = ref<AdvancedVideoProOptions>(
+  emptyAdvancedVideoProOptions(),
+)
 const activeScope = ref<EntryScope>('web')
 
 const visibleMainCount = computed(() =>
@@ -182,6 +272,15 @@ const cloneEntryConfig = (
 ): FeatureEntryVisibilityConfig => ({
   web: { ...value.web },
   gallery: { ...value.gallery },
+  advanced_video_pro: Object.fromEntries(
+    Object.entries(value.advanced_video_pro).map(([mode, profile]) => [
+      mode,
+      {
+        main_model: profile.main_model,
+        addon_models: [...profile.addon_models],
+      },
+    ]),
+  ) as FeatureEntryVisibilityConfig['advanced_video_pro'],
 })
 
 const testIdKey = (key: string) => key.replaceAll('.', '-')
@@ -199,8 +298,15 @@ const applyResponse = (payload: MainBotMenuConfigResponse) => {
 
 const applyEntryResponse = (payload: FeatureEntryVisibilityConfigResponse) => {
   entryConfig.value = cloneEntryConfig(payload.config)
+  if (payload.options) advancedVideoProOptions.value = payload.options
   entryUpdatedAt.value = payload.updated_at ?? null
 }
+
+const addonOptionsForMode = (mode: AdvancedVideoProMode) => (
+  advancedVideoProOptions.value.addon_models.filter(option => (
+    option.supported_modes.includes(mode)
+  ))
+)
 
 const loadConfig = async () => {
   loading.value = true
@@ -333,6 +439,57 @@ onMounted(() => {
       <p class="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
         开关只控制练功房功能入口；能力未发布时即使设为可见也不会开放，历史记录和模板深链不受影响。
       </p>
+
+      <div class="advanced-video-pro-config mt-4">
+        <div>
+          <h4 class="text-sm font-semibold text-slate-900">高级图生视频 Pro 用户预设</h4>
+          <p class="mt-1 text-xs text-slate-500">
+            主 Bot 与 Web 的新任务统一使用这里的主模型和附加模型；用户只选择时长、清晰度与比例。
+          </p>
+        </div>
+        <div class="advanced-video-pro-grid mt-3">
+          <article
+            v-for="modeOption in advancedVideoProOptions.modes"
+            :key="modeOption.value"
+            class="advanced-video-pro-card"
+          >
+            <h5 class="text-sm font-semibold text-slate-800">{{ modeOption.label }}</h5>
+            <label class="config-field mt-3">
+              <span>主模型</span>
+              <select
+                v-model="entryConfig.advanced_video_pro[modeOption.value].main_model"
+                :data-testid="`avp-main-model-${modeOption.value}`"
+              >
+                <option
+                  v-for="option in advancedVideoProOptions.main_models[modeOption.value]"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="config-field mt-3">
+              <span>附加模型（可多选，最多 13 项）</span>
+              <select
+                v-model="entryConfig.advanced_video_pro[modeOption.value].addon_models"
+                multiple
+                size="6"
+                :data-testid="`avp-addon-models-${modeOption.value}`"
+              >
+                <option
+                  v-for="option in addonOptionsForMode(modeOption.value)"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}（默认强度 {{ option.default_strength }}）
+                </option>
+              </select>
+            </label>
+          </article>
+        </div>
+      </div>
+
       <div class="web-entry-grid">
         <div v-for="item in WEB_ENTRY_OPTIONS" :key="item.key" class="submenu-item">
           <div>
@@ -503,21 +660,25 @@ onMounted(() => {
         </button>
       </div>
 
-      <div class="mt-4 max-w-2xl">
-        <div class="submenu-item">
+      <div class="web-entry-grid">
+        <div
+          v-for="item in GALLERY_ENTRY_OPTIONS"
+          :key="item.key"
+          class="submenu-item"
+        >
           <div>
-            <div class="text-sm font-medium text-slate-800">高级图生视频 Pro</div>
+            <div class="text-sm font-medium text-slate-800">{{ item.label }}</div>
             <div class="text-xs text-slate-400">市集类型筛选与分组页签</div>
           </div>
           <div class="menu-actions">
-            <span class="visibility-tag" :class="entryConfig.gallery.minimax_h3 ? 'is-visible' : 'is-hidden'">
-              {{ entryConfig.gallery.minimax_h3 ? '可见' : '隐藏' }}
+            <span class="visibility-tag" :class="entryConfig.gallery[item.key] ? 'is-visible' : 'is-hidden'">
+              {{ entryConfig.gallery[item.key] ? '可见' : '隐藏' }}
             </span>
             <label class="visibility-switch">
               <input
-                v-model="entryConfig.gallery.minimax_h3"
+                v-model="entryConfig.gallery[item.key]"
                 type="checkbox"
-                data-testid="entry-gallery-minimax_h3"
+                :data-testid="`entry-gallery-${item.key}`"
               />
               <span class="switch-track" aria-hidden="true"></span>
             </label>
@@ -562,6 +723,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .submenu-card { border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: 1rem; }
 .web-entry-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
 .fixed-back-item { border: 1px dashed #cbd5e1; border-radius: .6rem; padding: .65rem .8rem; color: #64748b; font-size: .8rem; text-align: center; }
+.advanced-video-pro-config { border: 1px solid #bfdbfe; border-radius: .75rem; background: #f8fbff; padding: 1rem; }
+.advanced-video-pro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.advanced-video-pro-card { border: 1px solid #dbeafe; border-radius: .65rem; background: white; padding: .85rem; }
+.config-field { display: flex; flex-direction: column; gap: .35rem; color: #475569; font-size: .75rem; }
+.config-field select { min-width: 0; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; padding: .45rem .55rem; color: #334155; }
+.config-field select[multiple] { min-height: 9rem; }
 @media (max-width: 760px) {
   .main-bot-menu-settings > section { padding: .75rem; }
   .header-row, .section-heading, .menu-item, .submenu-item { align-items: stretch; flex-direction: column; }
@@ -572,6 +739,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .menu-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .submenu-grid { grid-template-columns: 1fr; }
   .web-entry-grid { grid-template-columns: 1fr; }
+  .advanced-video-pro-grid { grid-template-columns: 1fr; }
   .scope-tab { flex: 1 0 auto; padding-inline: .8rem; text-align: center; }
 }
 </style>

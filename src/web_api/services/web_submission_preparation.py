@@ -164,6 +164,7 @@ async def prepare_web_submission_request(
     internal_user_id: int,
     operator_canary_authorized: bool,
     env_enabled: Callable[[str], bool],
+    advanced_video_profile_loader=None,
 ) -> PreparedWebSubmission:
     _assert_task_access(
         req.task_type,
@@ -171,6 +172,25 @@ async def prepare_web_submission_request(
         env_enabled=env_enabled,
     )
     inputs = dict(req.inputs)
+    if req.task_type.startswith("minimax_h3_"):
+        if advanced_video_profile_loader is None:
+            from src.services.feature_entry_visibility_service import (
+                load_advanced_video_pro_profile,
+            )
+
+            advanced_video_profile_loader = load_advanced_video_pro_profile
+        profile = await advanced_video_profile_loader(
+            req.task_type.removeprefix("minimax_h3_")
+        )
+        for key in (
+            "addon_models",
+            "lora_name",
+            "lora_strength",
+            "lora_items",
+        ):
+            inputs.pop(key, None)
+        inputs["main_model"] = profile["main_model"]
+        inputs["lora_items"] = list(profile["addon_items"])
     h3_character_binding = ""
     if req.negative_prompt:
         inputs["negative_prompt"] = req.negative_prompt

@@ -83,9 +83,6 @@ const {
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
-  minimaxH3AddonOptions,
-  minimaxH3AddonNames,
-  minimaxH3AddonItems,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -230,38 +227,6 @@ const promptLockedHint = computed(() => (
               :max-items="4"
               @select="addReference"
             />
-            <div class="space-y-2">
-              <div class="text-xs font-medium text-slate-600 dark:text-slate-300">
-                {{ t('lab.workbench.minimax_h3_addons') }}
-              </div>
-              <a-select
-                v-model:value="minimaxH3AddonNames"
-                mode="multiple"
-                allow-clear
-                class="w-full"
-                :options="minimaxH3AddonOptions.map(option => ({
-                  value: option.value,
-                  label: t(option.labelKey),
-                }))"
-              />
-              <div
-                v-for="item in minimaxH3AddonItems"
-                :key="item.name"
-                class="minimax-h3-addon-strength grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 rounded-lg border border-white/10 px-3 py-2"
-              >
-                <div class="truncate text-xs text-slate-600 dark:text-slate-300">
-                  {{ t(minimaxH3AddonOptions.find(option => option.value === item.name)?.labelKey ?? item.name) }}
-                </div>
-                <a-input-number
-                  v-model:value="item.strength"
-                  :min="0.1"
-                  :max="2"
-                  :step="0.05"
-                  :precision="2"
-                  :addon-before="t('lab.workbench.minimax_h3_addon_strength')"
-                />
-              </div>
-            </div>
           </div>
         </template>
         <template #advanced-panel="{ close }">

@@ -78,6 +78,17 @@ async def test_public_entry_visibility_returns_only_safe_flags_without_cache():
             "enable_scail2_video_replacement_entry": True,
             "enable_scail2_face_swap_v2_entry": True,
             "enable_character_assets_entry": False,
+            "enable_gallery_txt2img_entry": True,
+            "enable_gallery_i2i_pro_entry": True,
+            "enable_gallery_edit_entry": True,
+            "enable_gallery_free_edit_v2_5_entry": True,
+            "enable_gallery_free_edit_v3_entry": True,
+            "enable_gallery_custom_video_entry": True,
+            "enable_gallery_ltx_video_entry": True,
             "enable_gallery_minimax_h3_entry": True,
+            "enable_gallery_wan22_video_v2_entry": True,
+            "enable_gallery_scail2_action_transfer_entry": True,
+            "enable_gallery_scail2_video_replacement_entry": True,
+            "enable_gallery_scail2_face_swap_v2_entry": True,
         }
     }

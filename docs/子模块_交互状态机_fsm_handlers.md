@@ -6,12 +6,13 @@
 后端能力开启时另行注册只声明 `/advanced_video_pro` 和 Pro 文案的
 `advanced_video_pro_fsm.py`，不抢占 `/ltx_video`、`fsm_start_ltx_video` 与旧 LTX
 callback。隐藏入口不会改变 Web/API、任务执行面或 `/advanced_video_pro` 兼容命令。
-H3 入口选择四个公开模式、时长、画质档位与比例，
-再按模式收集 0/1/2 张图片；提交计划由
+H3 入口选择四个公开模式、时长、画质档位与比例；主模型和附加模型从 Dashboard
+运行时配置按模式载入，不进入终端设置面板。图生视频模式选择后保持在设置态接收图片，
+用户无需点击“确认设置”；T2V 同态直接接收提示词。再按模式收集 0/1/2 或 1–4 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
 生成”，第二按钮可在测试环境按独立开关发起“优化后再生成（1 灵石）”。优化提交前
-先把冻结的模式、时长、画质、效果增强、原文和
+先把冻结的模式、时长、画质、系统模型预设、原文和
 owner-fenced staging key 写入 24 小时 Redis draft；提交 Central 成功后立即结束 FSM，
 因此全局菜单、其它功能或 Bot 重启都不会使结果丢失。`src/bot_main.py` 的恢复循环按
 draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback 不依赖
@@ -26,14 +27,11 @@ draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback
 该入口画质统一为极速/清晰/标准/高清四档。首帧与首尾帧模式隐藏固定比例按钮并
 展示“跟随首帧”；第二张图片与首帧比例差异超过 1% 时保留首帧和会话状态、删除
 无效尾帧并要求重传。文生视频仍展示固定画面比例。
-高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA 或作者模型名；
-可选附件仅以“效果增强”和用途标签呈现，并提供选满效果（最多十三项）和清空效果。效果增强默认
-全部关闭，摘要只显示启用数量；Bot 不让用户输入自由强度，而是把选中项转换为目录
-建议强度后交给 `advanced_video_pro_submission_service.py`。内部 callback ID、目录 ID
-和提交协议不因展示脱敏而改变。`naughty_times` 与 `sex_pose` 的用户展示名分别为
-“成人动作测试一”和“成人动作测试二”；Web 端使用相同语义标签。
-新增静帧专用候选和乳房夹持动作候选分别展示为“私密部位静帧实验”和
-“乳房夹持动作实验”，不在终端文案暴露作者资产名。
+高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA、作者模型名或附加模型
+数量；只显示用户可选的时长、画质和比例，并明确提示直接发送图片或提示词。服务端把
+Dashboard 已校验的模式预设转换为目录默认强度后交给
+`advanced_video_pro_submission_service.py`；历史 `avp_settings_done` callback 只作已发消息
+兼容，新键盘不得再次发送该按钮或 `avp_addon_*` 按钮。
 
 ## 1. 目标与范围
 

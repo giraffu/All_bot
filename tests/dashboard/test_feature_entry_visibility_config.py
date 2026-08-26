@@ -95,7 +95,29 @@ async def test_feature_entry_visibility_routes_are_authenticated_and_persist_sco
             "scail2_face_swap_v2": True,
             "character_assets": False,
         },
-        "gallery": {"minimax_h3": False},
+        "gallery": {
+            "txt2img": True,
+            "i2i_pro": True,
+            "edit": True,
+            "free_edit_v2_5": True,
+            "free_edit_v3": True,
+            "custom_video": True,
+            "ltx_video": True,
+            "minimax_h3": False,
+            "wan22_video_v2": True,
+            "scail2_action_transfer": True,
+            "scail2_video_replacement": True,
+            "scail2_face_swap_v2": True,
+        },
+        "advanced_video_pro": {
+            "t2v": {"main_model": "official", "addon_models": ["motion_booster"]},
+            "i2v": {"main_model": "10eros", "addon_models": []},
+            "flf2v": {"main_model": "10eros", "addon_models": []},
+            "ref2v": {
+                "main_model": "official_ref2v_turbo",
+                "addon_models": ["motion_booster_ref2va"],
+            },
+        },
     }
     try:
         async with AsyncClient(

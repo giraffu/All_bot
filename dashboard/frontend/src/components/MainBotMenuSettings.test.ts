@@ -84,7 +84,67 @@ const buildEntryVisibilityResponse = () => ({
       scail2_face_swap_v2: true,
       character_assets: false,
     },
-    gallery: { minimax_h3: false },
+    gallery: {
+      txt2img: true,
+      i2i_pro: true,
+      edit: true,
+      free_edit_v2_5: true,
+      free_edit_v3: true,
+      custom_video: true,
+      ltx_video: true,
+      minimax_h3: false,
+      wan22_video_v2: true,
+      scail2_action_transfer: true,
+      scail2_video_replacement: true,
+      scail2_face_swap_v2: true,
+    },
+    advanced_video_pro: {
+      t2v: { main_model: '10eros', addon_models: [] },
+      i2v: { main_model: '10eros', addon_models: [] },
+      flf2v: { main_model: '10eros', addon_models: [] },
+      ref2v: { main_model: '10eros', addon_models: [] },
+    },
+  },
+  options: {
+    modes: [
+      { value: 't2v', label: '文生视频' },
+      { value: 'i2v', label: '首帧图生视频' },
+      { value: 'flf2v', label: '首尾帧视频' },
+      { value: 'ref2v', label: '参考图生视频' },
+    ],
+    main_models: {
+      t2v: [
+        { value: '10eros', label: '10Eros TURBO' },
+        { value: 'official', label: '官方高保真' },
+      ],
+      i2v: [
+        { value: '10eros', label: '10Eros TURBO' },
+        { value: 'official', label: '官方高保真' },
+      ],
+      flf2v: [
+        { value: '10eros', label: '10Eros TURBO' },
+        { value: 'official', label: '官方高保真' },
+      ],
+      ref2v: [
+        { value: '10eros', label: '10Eros TURBO' },
+        { value: 'official', label: '官方高保真' },
+        { value: 'official_ref2v_turbo', label: '官方 REF2V 极速' },
+      ],
+    },
+    addon_models: [
+      {
+        value: 'motion_booster',
+        label: '动作强化',
+        supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
+        default_strength: 0.7,
+      },
+      {
+        value: 'motion_booster_ref2va',
+        label: '参考人物动作强化',
+        supported_modes: ['ref2v'],
+        default_strength: 0.7,
+      },
+    ],
   },
 })
 
@@ -115,6 +175,7 @@ describe('MainBotMenuSettings', () => {
     expect(wrapper.text()).toContain('自由P图')
     expect(wrapper.text()).toContain('图生视频')
     expect(wrapper.text()).toContain('高级图生视频 Pro')
+    expect(wrapper.text()).toContain('高级图生视频 Pro 用户预设')
 
     await wrapper.get('[data-testid="scope-tab-bot"]').trigger('click')
     expect(wrapper.find('[data-testid="web-entry-panel"]').exists()).toBe(false)
@@ -139,6 +200,8 @@ describe('MainBotMenuSettings', () => {
     await wrapper.get('[data-testid="entry-web-edit"]').setValue(false)
     await wrapper.get('[data-testid="entry-web-custom_video"]').setValue(false)
     await wrapper.get('[data-testid="entry-web-minimax_h3"]').setValue(true)
+    await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('official')
+    await wrapper.get('[data-testid="avp-addon-models-i2v"]').setValue(['motion_booster'])
     await wrapper.get('[data-testid="save-web-entry-visibility"]').trigger('click')
     await wrapper.get('[data-testid="scope-tab-gallery"]').trigger('click')
     await wrapper.get('[data-testid="entry-gallery-minimax_h3"]').setValue(true)
@@ -165,7 +228,26 @@ describe('MainBotMenuSettings', () => {
         scail2_face_swap_v2: true,
         character_assets: false,
       },
-      gallery: { minimax_h3: true },
+      gallery: {
+        txt2img: true,
+        i2i_pro: true,
+        edit: true,
+        free_edit_v2_5: true,
+        free_edit_v3: true,
+        custom_video: true,
+        ltx_video: true,
+        minimax_h3: true,
+        wan22_video_v2: true,
+        scail2_action_transfer: true,
+        scail2_video_replacement: true,
+        scail2_face_swap_v2: true,
+      },
+      advanced_video_pro: {
+        t2v: { main_model: '10eros', addon_models: [] },
+        i2v: { main_model: 'official', addon_models: ['motion_booster'] },
+        flf2v: { main_model: '10eros', addon_models: [] },
+        ref2v: { main_model: '10eros', addon_models: [] },
+      },
     })
     expect(apiMocks.updateMainBotMenuConfig).not.toHaveBeenCalled()
     expect(messageMocks.success).toHaveBeenCalledWith('Web 端入口配置已保存')
