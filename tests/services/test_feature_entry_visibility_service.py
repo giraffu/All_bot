@@ -49,7 +49,7 @@ def test_feature_entry_visibility_defaults_keep_pro_and_character_entries_hidden
             "scail2_face_swap_v2": True,
         },
         "advanced_video_pro": {
-            mode: {"main_model": "10eros", "addon_models": []}
+            mode: {"main_model": "10eros", "addon_items": []}
             for mode in ADVANCED_VIDEO_PRO_MODES
         },
     }
@@ -79,7 +79,9 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
                 },
                 "ref2v": {
                     "main_model": "official_ref2v_turbo",
-                    "addon_models": ["motion_booster_ref2va"],
+                    "addon_items": [
+                        {"name": "motion_booster_ref2va", "strength": 1.25}
+                    ],
                 },
             },
         }
@@ -120,15 +122,19 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
             "scail2_face_swap_v2": True,
         },
         "advanced_video_pro": {
-            "t2v": {"main_model": "10eros", "addon_models": []},
+            "t2v": {"main_model": "10eros", "addon_items": []},
             "i2v": {
                 "main_model": "official",
-                "addon_models": ["motion_booster"],
+                "addon_items": [
+                    {"name": "motion_booster", "strength": 0.7}
+                ],
             },
-            "flf2v": {"main_model": "10eros", "addon_models": []},
+            "flf2v": {"main_model": "10eros", "addon_items": []},
             "ref2v": {
                 "main_model": "official_ref2v_turbo",
-                "addon_models": ["motion_booster_ref2va"],
+                "addon_items": [
+                    {"name": "motion_booster_ref2va", "strength": 1.25}
+                ],
             },
         },
     }
@@ -137,6 +143,12 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
     assert profile == {
         "main_model": "official",
         "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+    }
+    assert get_advanced_video_pro_profile(config, "ref2v") == {
+        "main_model": "official_ref2v_turbo",
+        "addon_items": [
+            {"name": "motion_booster_ref2va", "strength": 1.25}
+        ],
     }
 
 

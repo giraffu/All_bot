@@ -32,9 +32,11 @@
 - 唯一公开目录是 `src/domain_config/minimax_h3.py:MINIMAX_H3_ADDON_MODELS`。每个选项必须
   使用稳定公共 ID、一个已校验的物理文件、建议强度和可选 prompt prefix；不得为
   同一文件注册多个别名。
-- 领域目录可以下发 17 个候选，Bot/Web 单次只提交最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`；`motion_booster_ref2va` 仅 REF2V 可用。Web 逐项可编辑；
-  Bot 只多选并使用目录默认值。空列表是正常默认态，未知、重复、超限、非有限数或
-  混用新旧参数均 fail closed。
+- 领域目录可以下发 17 个候选，Bot/Web 单次只提交最多 13 个有序 `{name,strength}`，
+  强度 `0.1..2.0`；`motion_booster_ref2va` 仅 REF2V 可用。终端 Bot/Web 不选择模型，
+  Dashboard“入口控制”的独立“Pro 模型预设”子页按模式选择附加模型并逐项编辑强度；
+  首次选择使用目录初始值，保存后 Bot/Web 精确使用后台值。空列表是正常默认态，未知、
+  重复、超限、非有限数或混用新旧参数均 fail closed。
 - Bot/Web 的用户展示统一使用“效果增强”和用途标签，不显示基础链、checkpoint、
   LoRA 术语、作者资产名或物理文件名。Web 不渲染基础链说明；Bot 摘要只显示启用
   数量。稳定 ID、默认强度、文件路径与 prompt prefix 只属于内部目录和提交/执行面。

@@ -110,12 +110,17 @@ async def test_feature_entry_visibility_routes_are_authenticated_and_persist_sco
             "scail2_face_swap_v2": True,
         },
         "advanced_video_pro": {
-            "t2v": {"main_model": "official", "addon_models": ["motion_booster"]},
-            "i2v": {"main_model": "10eros", "addon_models": []},
-            "flf2v": {"main_model": "10eros", "addon_models": []},
+            "t2v": {
+                "main_model": "official",
+                "addon_items": [{"name": "motion_booster", "strength": 1.15}],
+            },
+            "i2v": {"main_model": "10eros", "addon_items": []},
+            "flf2v": {"main_model": "10eros", "addon_items": []},
             "ref2v": {
                 "main_model": "official_ref2v_turbo",
-                "addon_models": ["motion_booster_ref2va"],
+                "addon_items": [
+                    {"name": "motion_booster_ref2va", "strength": 0.85}
+                ],
             },
         },
     }

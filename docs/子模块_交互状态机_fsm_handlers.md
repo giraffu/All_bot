@@ -29,8 +29,9 @@ draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback
 无效尾帧并要求重传。文生视频仍展示固定画面比例。
 高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA、作者模型名或附加模型
 数量；只显示用户可选的时长、画质和比例，并明确提示直接发送图片或提示词。服务端把
-Dashboard 已校验的模式预设转换为目录默认强度后交给
-`advanced_video_pro_submission_service.py`；历史 `avp_settings_done` callback 只作已发消息
+Dashboard 独立“Pro 模型预设”子页已校验的主模型与附加模型精确强度交给
+`advanced_video_pro_submission_service.py`；提示词优化 draft 同步冻结这些强度，优化结果
+续提不能回落到目录默认值。历史 `avp_settings_done` callback 只作已发消息
 兼容，新键盘不得再次发送该按钮或 `avp_addon_*` 按钮。
 
 ## 1. 目标与范围

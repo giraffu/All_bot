@@ -6,9 +6,10 @@
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v` 和
 `minimax_h3_ref2v`。测试 Web 与主 Bot 在同一“高级图生视频pro”工作台切换四种模式。
 终端用户只选择模式、时长、清晰度和适用模式的比例，不再选择主模型、附加模型或
-强度。Dashboard“入口控制”按四种模式维护主模型与最多十三个附加模型；Web 和主 Bot
-的新提交都由服务端读取并覆盖客户端模型字段，附加模型使用领域目录默认强度。其中
-十六项支持全部模式，原生 REF2VA Motion v0.2 只允许 REF2V。
+强度。Dashboard“入口控制”的独立“Pro 模型预设”子页按四种模式维护主模型与最多
+十三个附加模型，并逐项保存 `0.1..2.0` 强度；Web 与主 Bot 子页只维护入口/菜单开关。
+Web 和主 Bot 的新提交都由服务端读取并覆盖客户端模型字段，精确使用后台保存的附加
+模型强度。其中十六项支持全部模式，原生 REF2VA Motion v0.2 只允许 REF2V。
 QQCC 配置 Web 同样从这一领域目录下发 17 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
@@ -178,7 +179,8 @@ checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
 Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
 （0.35）、HMPenis v2.0（1.0，触发词 `HMPenis`）、HMCumshot v0.5（0.9，触发词
 `hmcumshot3`）、HMPussy V1 Stills（0.35，触发词 `pussy`）与 Better Titfuck v0.5
-（0.75，触发词 `titjob`）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。
+（0.75，触发词 `titjob`）。括号为后台首次选择时的目录初始强度；Dashboard 可在
+`0.1..2.0` 内逐项覆盖，保存后 Web 与主 Bot 统一使用该值。
 Motion Booster 链接的 V0.2（modelVersion `3228867`）与既有正式资产 SHA256 完全一致，
 因此保留稳定 ID 和原文件，不重复注册；HMPenis 稳定 ID 原位升级到 modelVersion
 `3247473`，旧场景无需迁移。

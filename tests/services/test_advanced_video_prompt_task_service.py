@@ -45,6 +45,7 @@ async def test_start_prompt_task_checkpoints_before_submission_and_freezes_gener
         addon_models=["breasts"],
         reference_descriptions=[],
         generation_cost=60,
+        addon_items=[{"name": "breasts", "strength": 1.35}],
         save_draft=save,
         upload_object=upload,
         submit_optimizer=submit,
@@ -57,6 +58,7 @@ async def test_start_prompt_task_checkpoints_before_submission_and_freezes_gener
     assert draft.optimizer_task_id == "optimizer-1"
     assert draft.resolution_preset == "hd"
     assert draft.addon_models == ("breasts",)
+    assert draft.addon_items == ({"name": "breasts", "strength": 1.35},)
     assert draft.object_keys[0].startswith("staging/user-uploads/77/")
 
 
