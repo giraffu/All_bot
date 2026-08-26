@@ -324,7 +324,16 @@ NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256�
 才可用 `probe --remaining-sources-only --r2-checkpoint-not-before <同一 UTC>` 检查
 receipt、文件系统或其它仍启用的非 R2 来源。remaining pass 只消费 R2 与目标 checkpoint
 均不早于该边界的 `pending_probe`，并把近期 R2 not-found 与本次其余来源结果组成完整
-missing round；不得把不同时间边界拼接、跳过仍启用来源，或用旧 checkpoint 形成丢失结论。
+missing round；不得跳过仍启用来源，也不得把不同时间边界拼接成最终丢失结论。
+既有完整 R2 checkpoint 可以与随后完成的 remaining pass 组成第一轮
+`provisional_missing`，因为该状态不删除源、不修改生产 History；它不能单独形成
+`confirmed_lost`。第二轮仍须至少间隔 24 小时重新检查 R2 和全部其它启用来源，恢复或
+新增的对象必须重新进入 Copy/验证链。
+当一个 remaining 批次没有任何 NAS receipt，且除 R2 外的全部启用来源都是受限文件系统
+时，执行器可并发检查候选路径并把“全批均未命中”的 source attempts、catalog missing
+round 和迁移状态放在同一本地数据库事务中批量提交。任一对象实际存在、存在 receipt、
+出现非文件系统来源或路径查询异常时不得使用该 fast path，必须回退完整逐对象 HEAD/SHA
+流程或 fail closed；批量落账不改变 provisional/confirmed 的 24 小时间隔规则。
 标准目标检查完成后，`probe --receipt-only` 可只消费本地目录中已有
 `archived_verified` SHA receipt 的资产：它不重复检查标准目标，也不访问离线的遗留
 来源，而是对 receipt 指向的 NAS 对象执行 HEAD、大小和完整 SHA-256 复核。验证成功

@@ -3368,6 +3368,102 @@ async def _probe_r2_rows(
     return 0
 
 
+async def _probe_all_missing_filesystem_rows(
+    conn: asyncpg.Connection,
+    rows: list[asyncpg.Record],
+    *,
+    sources: list[dict[str, Any]],
+    concurrency: int,
+) -> bool:
+    """Batch-persist a remaining-source pass when every filesystem key is absent.
+
+    The fast path is intentionally narrow. Any receipt, non-filesystem source,
+    or discovered object falls back to the full per-row probe and SHA path.
+    """
+    if not 1 <= concurrency <= 128:
+        raise ValueError("source concurrency must be between 1 and 128")
+    if any(row["receipt_nas_key"] is not None for row in rows):
+        return False
+    if any(source.get("type", "s3") != "filesystem" for source in sources):
+        return False
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def inspect(row: asyncpg.Record) -> tuple[bool, list[tuple[Any, ...]]]:
+        attempts: list[tuple[Any, ...]] = []
+        for source in sources:
+            source_name = str(source["name"])
+            for key in build_candidate_keys(
+                str(row["original_ref"]), row["registry_task_id"]
+            ):
+                async with semaphore:
+                    head = await asyncio.to_thread(_head_source, source, None, key)
+                attempts.append(
+                    (
+                        row["run_id"],
+                        row["catalog_asset_id"],
+                        source_name,
+                        key,
+                        "found" if head is not None else "not_found",
+                    )
+                )
+                if head is not None:
+                    return True, attempts
+        return False, attempts
+
+    inspected = await asyncio.gather(*(inspect(row) for row in rows))
+    if any(found for found, _attempts in inspected):
+        return False
+
+    attempt_rows = [attempt for _found, attempts in inspected for attempt in attempts]
+    now = datetime.now(timezone.utc)
+    catalog_updates: list[tuple[Any, ...]] = []
+    migration_updates: list[tuple[Any, ...]] = []
+    not_found_statuses = ["not_found"] * (1 + len(sources))
+    for row in rows:
+        catalog_status, rounds, first = evaluate_missing_round(
+            statuses=not_found_statuses,
+            previous_rounds=int(row["catalog_missing_rounds"]),
+            first_missing_at=row["catalog_first_missing_at"],
+            now=now,
+        )
+        migration_status = (
+            "source_missing"
+            if catalog_status in {"provisional_missing", "confirmed_lost"}
+            else catalog_status
+        )
+        catalog_updates.append(
+            (row["catalog_asset_id"], catalog_status, rounds, first)
+        )
+        migration_updates.append(
+            (
+                row["id"],
+                migration_status,
+                catalog_status.upper(),
+            )
+        )
+    async with conn.transaction():
+        if attempt_rows:
+            await conn.executemany(
+                """insert into analytics_media_source_attempts
+                     (run_id,asset_id,source,candidate_key,status)
+                   values($1,$2,$3,$4,$5)""",
+                attempt_rows,
+            )
+        await conn.executemany(
+            """update analytics_media_asset_catalog set status=$2,
+                 missing_rounds=$3,first_missing_at=$4,last_checked_at=now()
+               where id=$1""",
+            catalog_updates,
+        )
+        await conn.executemany(
+            """update analytics_history_media_r2_migrations set status=$2,
+                 error_code=$3,target_checked_at=now(),updated_at=now()
+               where id=$1""",
+            migration_updates,
+        )
+    return True
+
+
 async def _probe(args: argparse.Namespace) -> None:
     if args.refresh_r2_checkpoint and not args.r2_only:
         raise ValueError("--refresh-r2-checkpoint requires --r2-only")
@@ -3504,7 +3600,12 @@ async def _probe(args: argparse.Namespace) -> None:
             )
         elif args.remaining_sources_only:
             rows = await conn.fetch(
-                """select m.* from analytics_history_media_r2_migrations m
+                """select m.*,a.missing_rounds as catalog_missing_rounds,
+                          a.first_missing_at as catalog_first_missing_at,
+                          b.nas_key as receipt_nas_key
+                     from analytics_history_media_r2_migrations m
+                     join analytics_media_asset_catalog a on a.id=m.catalog_asset_id
+                     left join analytics_media_blobs b on b.sha256=a.sha256
                      where m.run_id=$1 and m.status='pending_probe'
                        and m.r2_checked_at >= $3 and m.target_checked_at >= $3
                      order by m.history_id,m.role,m.ordinal limit $2""",
@@ -3552,6 +3653,19 @@ async def _probe(args: argparse.Namespace) -> None:
                 concurrency=args.source_concurrency,
             )
             rows = []
+        elif args.remaining_sources_only:
+            remaining_sources = [
+                source
+                for source in sources
+                if str(source["name"]) != "r2-user-data-prod"
+            ]
+            if await _probe_all_missing_filesystem_rows(
+                conn,
+                rows,
+                sources=remaining_sources,
+                concurrency=args.source_concurrency,
+            ):
+                rows = []
         for row in rows:
             target_key = str(row["target_key"])
             target_head = None
