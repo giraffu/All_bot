@@ -32,6 +32,10 @@ export const TASK_TYPE_LABELS = {
   img2img_lora: '图生图(附加模型)',
   video_lora: '图生视频(附加模型)',
   ltx_video: '高级图生视频',
+  minimax_h3_t2v: '高级图生视频pro · 文生视频',
+  minimax_h3_i2v: '高级图生视频pro · 图生视频',
+  minimax_h3_flf2v: '高级图生视频pro · 首尾帧视频',
+  minimax_h3_ref2v: '高级图生视频pro · 参考图生视频',
   wan22_video_v2: '图生视频 V2',
   unknown: '未知类型',
 }
@@ -39,6 +43,14 @@ export const TASK_TYPE_LABELS = {
 export const TASK_TYPE_OPTIONS = [
   { label: '自定义视频', value: 'custom_video' },
   { label: '高级图生视频', value: 'ltx_video' },
+  {
+    label: '高级图生视频pro · 图生视频',
+    value: 'minimax_h3_t2v,minimax_h3_i2v,minimax_h3_flf2v',
+  },
+  {
+    label: '高级图生视频pro · 参考图生视频',
+    value: 'minimax_h3_ref2v',
+  },
   { label: '视频换脸', value: 'face_video_step1' },
   { label: '自由P图', value: 'image,edit' },
   { label: '快速换脸', value: 'face_swap' },
@@ -96,6 +108,10 @@ export const TASK_TYPE_COLORS = {
   text_to_image: '#52c41a',
   i2i_pro: '#ff85c0',
   ltx_video: '#722ed1',
+  minimax_h3_t2v: '#531dab',
+  minimax_h3_i2v: '#531dab',
+  minimax_h3_flf2v: '#391085',
+  minimax_h3_ref2v: '#9254de',
   wan22_video_v2: '#13c2c2',
   unknown: '#bfbfbf',
 }
