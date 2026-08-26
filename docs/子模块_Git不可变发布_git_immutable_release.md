@@ -68,7 +68,11 @@ LAN-only GPU module 不受此标记影响。
 `ALLBOT_WORKFLOW_MAPPING_SHA256` 时，发布器从指定 SHA 的干净 checkout 自动计算
 canonical worker package 与 `workflows/mappings.json` 哈希，作为 build args 和 OCI
 labels 注入；只声明其中一个或 checkout 缺少对应运行时文件时 fail closed。不得手工填
-占位哈希或删除 Dockerfile 自检。
+占位哈希或删除 Dockerfile 自检。GPU profile 还必须在 COPY 前清空继承的完整
+`/opt/allbot/runtime/runpod_worker`，再复制 `runpod_runtime`、canonical
+`comfy_agent`、`src` 与 `shared`；否则 Docker 层合并会保留基础镜像中已从新源码
+删除的文件。全部运行包 COPY 完成后，构建阶段必须实际调用
+`load_runtime_manifest()` 比对镜像文件集与注入哈希，不能只校验 build arg 非空。
 
 本地操作者通过 SSH alias `allbot-do-sgp1-build` 登录专用构建主机。SSH 登录用户是
 `deploy`，但持久 Buildx builder 归 `actions` OS 用户所有；必须在云主机内执行

@@ -51,9 +51,10 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
 - 构建前检查大小写 proxy 变量和 builder daemon env；loopback 代理必须先证明容器
   可达，再按专题文档临时映射 Docker gateway。不得输出凭据、改坏共享 builder，
   或把代理写入 Git、镜像与发布状态。
-- `release.py build` 会先检查目标 tag：同一内容身份的 build-only base 直接复用；
-  业务模块仍按完整 Git SHA 产出新 digest。只构建本次部署需要的明确模块，不为
-  deploy、rollback 或重复部署重新 build。
+- `release.py build` 只构建目标模块；build-only base 按输入身份复用，业务镜像按
+  完整 SHA 产出。
+- GPU Dockerfile 必须先清空继承的 `runpod_worker` 再 COPY，随后调用
+  `load_runtime_manifest()`。
 - registry cache 只优化性能。只有 manifest 已推送且 digest 可独立解析时，才可停止
   卡住的 cache export；否则构建不算成功。
 - 共享 test/prod 禁止源码 bind mount、容器内改代码和热重载。代码变化必须生成新
