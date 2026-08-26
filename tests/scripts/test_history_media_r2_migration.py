@@ -37,6 +37,7 @@ from scripts.history_media_r2_migration import (
     _persist_copy_success,
     _persist_probe_batch,
     _probe_r2_rows,
+    _probe_all_missing_filesystem_rows,
     _probe_target_rows,
     _process_r2_custom_arguments,
     _r2_transport,
@@ -2474,6 +2475,98 @@ def test_r2_probe_sizes_http_pool_for_requested_concurrency():
 
     assert "_resolve_probe_max_pool_connections(args.source_concurrency)" in source
     assert "max_pool_connections=r2_pool_connections" in source
+
+
+@pytest.mark.asyncio
+async def test_remaining_filesystem_probe_batches_all_missing_results(tmp_path):
+    class Conn:
+        def __init__(self):
+            self.calls = []
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            self.calls.append(("transaction", []))
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def executemany(self, query, params):
+            self.calls.append((query, list(params)))
+
+    rows = [
+        {
+            "id": index,
+            "run_id": "run",
+            "catalog_asset_id": 100 + index,
+            "original_ref": f"missing-{index}.png",
+            "registry_task_id": f"task-{index}",
+            "catalog_missing_rounds": 0,
+            "catalog_first_missing_at": None,
+            "receipt_nas_key": None,
+        }
+        for index in (1, 2)
+    ]
+    conn = Conn()
+
+    handled = await _probe_all_missing_filesystem_rows(
+        conn,  # type: ignore[arg-type]
+        rows,  # type: ignore[arg-type]
+        sources=[
+            {
+                "name": "known-backups-and-filesystems",
+                "type": "filesystem",
+                "root": str(tmp_path),
+            }
+        ],
+        concurrency=8,
+    )
+
+    assert handled is True
+    assert len(conn.calls) == 4
+    assert conn.calls[0][0] == "transaction"
+    attempt_rows = conn.calls[1][1]
+    assert attempt_rows
+    assert {row[4] for row in attempt_rows} == {"not_found"}
+    migration_rows = conn.calls[3][1]
+    assert {row[1] for row in migration_rows} == {"source_missing"}
+    assert {row[2] for row in migration_rows} == {"PROVISIONAL_MISSING"}
+
+
+@pytest.mark.asyncio
+async def test_remaining_filesystem_probe_falls_back_when_a_source_exists(tmp_path):
+    class Conn:
+        async def executemany(self, _query, _params):
+            raise AssertionError("fast path must not persist a partial classification")
+
+    (tmp_path / "restored.png").write_bytes(b"restored")
+    handled = await _probe_all_missing_filesystem_rows(
+        Conn(),  # type: ignore[arg-type]
+        [
+            {
+                "id": 1,
+                "run_id": "run",
+                "catalog_asset_id": 101,
+                "original_ref": "restored.png",
+                "registry_task_id": "task-1",
+                "catalog_missing_rounds": 0,
+                "catalog_first_missing_at": None,
+                "receipt_nas_key": None,
+            }
+        ],  # type: ignore[arg-type]
+        sources=[
+            {
+                "name": "known-backups-and-filesystems",
+                "type": "filesystem",
+                "root": str(tmp_path),
+            }
+        ],
+        concurrency=8,
+    )
+
+    assert handled is False
 
 
 def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
