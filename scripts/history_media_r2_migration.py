@@ -3389,8 +3389,16 @@ async def _probe(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
         raise RuntimeError("target is restricted to user-data-prod")
+    r2_pool_connections = (
+        _resolve_probe_max_pool_connections(args.source_concurrency)
+        if args.source_concurrency in {8, 16, 32, 64, 128}
+        else max(10, args.source_concurrency)
+    )
     target_config = config["target"]
-    target_client = _s3_client(target_config)
+    target_client = _s3_client(
+        target_config,
+        max_pool_connections=max(10, args.target_concurrency),
+    )
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
     cache = SourceFactCache()
@@ -3420,7 +3428,12 @@ async def _probe(args: argparse.Namespace) -> None:
         nas_config = config.get("nas_archive")
         clients = {
             str(item["name"]): (
-                None if item.get("type", "s3") == "filesystem" else _s3_client(item)
+                None
+                if item.get("type", "s3") == "filesystem"
+                else _s3_client(
+                    item,
+                    max_pool_connections=r2_pool_connections,
+                )
             )
             for item in sources
         }
@@ -3532,7 +3545,10 @@ async def _probe(args: argparse.Namespace) -> None:
             bytes_read = await _probe_r2_rows(
                 conn,
                 rows,
-                r2_client=_s3_client(r2_source),
+                r2_client=_s3_client(
+                    r2_source,
+                    max_pool_connections=r2_pool_connections,
+                ),
                 concurrency=args.source_concurrency,
             )
             rows = []
