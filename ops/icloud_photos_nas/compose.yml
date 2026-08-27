@@ -2,7 +2,7 @@ name: allbot-icloud-photos-nas
 
 services:
   icloud-photo-backup:
-    image: docker.io/icloudpd/icloudpd@sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801
+    image: ${ICLOUDPD_IMAGE:-docker.io/icloudpd/icloudpd@sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801}
     container_name: allbot-icloud-photo-backup
     user: "1000:100"
     restart: unless-stopped
@@ -55,4 +55,3 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-

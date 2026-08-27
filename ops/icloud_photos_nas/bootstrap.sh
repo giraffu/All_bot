@@ -2,8 +2,16 @@
 set -eu
 
 confirm_expected=CREATE_ICLOUD_PHOTOS_ARCHIVE
+online_image=docker.io/icloudpd/icloudpd@sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801
+offline_image=sha256:6fe2cb61721e21f16a1a6506e623b0ae584495ff81d2e1faad72b55043443122
+icloudpd_image=${ICLOUDPD_IMAGE:-$online_image}
 execute=false
 confirm=
+
+case "$icloudpd_image" in
+  "$online_image"|"$offline_image") ;;
+  *) echo "ICLOUDPD_IMAGE must be the approved registry digest or offline image ID" >&2; exit 2 ;;
+esac
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -32,7 +40,7 @@ if [ "$execute" != true ]; then
   echo "originals: $originals (Btrfs subvolume, uid 1000 gid 100)"
   echo "private runtime: $runtime_root"
   echo "read-only snapshots: $snapshot_root"
-  echo "container: exact icloudpd digest; not started before interactive authentication"
+  echo "container: $icloudpd_image; not started before interactive authentication"
   exit 0
 fi
 
@@ -88,9 +96,15 @@ install_runtime_file() {
 }
 
 install_runtime_file "$source_root/compose.yml" "$deploy_root/compose.yml" 0644
-for script in run.sh auth.sh notify-reauth.sh set-apple-id.sh snapshot.sh bootstrap.sh; do
+for script in run.sh auth.sh notify-reauth.sh set-apple-id.sh snapshot.sh bootstrap.sh load-offline-image.sh; do
   install_runtime_file "$source_root/$script" "$deploy_root/$script" 0755
 done
+
+env_candidate=$deploy_root/.env.candidate
+printf 'ICLOUDPD_IMAGE=%s\n' "$icloudpd_image" > "$env_candidate"
+chown root:root "$env_candidate"
+chmod 0600 "$env_candidate"
+mv -f "$env_candidate" "$deploy_root/.env"
 
 install -o root -g root -m 0644 \
   "$source_root/allbot-icloud-photos-snapshot.service" \
@@ -100,7 +114,15 @@ install -o root -g root -m 0644 \
   /etc/systemd/system/allbot-icloud-photos-snapshot.timer
 
 docker compose -f "$deploy_root/compose.yml" config >/dev/null
-docker compose -f "$deploy_root/compose.yml" pull icloud-photo-backup
+if [ "$icloudpd_image" = "$offline_image" ]; then
+  loaded_id=$(docker image inspect --format '{{.Id}}' "$icloudpd_image" 2>/dev/null || true)
+  if [ "$loaded_id" != "$offline_image" ]; then
+    echo "approved offline image is not loaded: $offline_image" >&2
+    exit 2
+  fi
+else
+  docker compose -f "$deploy_root/compose.yml" pull icloud-photo-backup
+fi
 systemctl daemon-reload
 systemctl enable --now allbot-icloud-photos-snapshot.timer
 

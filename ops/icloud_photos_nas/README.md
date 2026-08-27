@@ -10,7 +10,8 @@ iCloud 删除或本地镜像删除参数。NAS 原片位于独立 Btrfs 子卷�
 
 ## 固定安全边界
 
-- 镜像固定为 `icloudpd` 1.32.3 的精确多架构 OCI digest。
+- 镜像固定为 `icloudpd` 1.32.3 的精确多架构 OCI digest；NAS 无法访问 registry
+  时，只接受从可信机离线导入后核验一致的精确 `sha256:<image-id>`。
 - 容器以 NAS `1000:100` 运行，无监听端口、只读 rootfs、无 Linux capability。
 - 原片写入 `/volume1/ApplePhotos/originals`；凭据与 session 写入
   `/volume1/ApplePhotosRuntime`，两者不共享快照。
@@ -37,6 +38,28 @@ sudo ./bootstrap.sh --execute --confirm CREATE_ICLOUD_PHOTOS_ARCHIVE
 
 安装会创建原片子卷与私有运行目录、拉取精确镜像并启用每日快照 timer，但不会启动
 iCloud 下载器。重复执行是幂等更新，不会删除原片或凭据。
+
+若 NAS 到 Docker Hub 超时，由可信主机对上述精确 digest 执行 `docker save`，使用
+`gzip -n` 生成冻结归档并把归档 SHA-256 与文件一起传到 NAS。先 dry-run，再显式导入：
+
+```bash
+sudo ./load-offline-image.sh \
+  --archive /受限路径/icloudpd-image.tar.gz \
+  --archive-sha256 <64位归档摘要>
+
+sudo ./load-offline-image.sh \
+  --archive /受限路径/icloudpd-image.tar.gz \
+  --archive-sha256 <同一摘要> \
+  --execute --confirm LOAD_ICLOUDPD_OFFLINE_IMAGE
+
+sudo env \
+  ICLOUDPD_IMAGE=sha256:6fe2cb61721e21f16a1a6506e623b0ae584495ff81d2e1faad72b55043443122 \
+  ./bootstrap.sh --execute --confirm CREATE_ICLOUD_PHOTOS_ARCHIVE
+```
+
+导入器先验证冻结归档摘要，再验证实际 image ID；bootstrap 只允许官方 registry digest
+或这一精确离线 image ID，并把选择写入 root-only `.env`。普通 tag、不同 image ID 或
+摘要漂移全部 fail closed。
 
 ## 2. 私密认证
 
@@ -88,4 +111,3 @@ sudo docker compose stop icloud-photo-backup
 删除原片、快照、keyring/session 或整个部署均不属于普通停用，必须另行取得精确确认。
 NAS Btrfs 快照仍与原盘共故障域；如果未来停止使用 iCloud，应再增加一份离线硬盘或
 异地备份。
-
