@@ -16,6 +16,7 @@ from scripts.r2_temp_cleanup import (
     select_duplicate_candidates,
     validate_delete_gate,
     _history_references,
+    _active_task_references,
     _apply_delete_byte_cap,
     load_approved_plan,
     seal_plan,
@@ -67,6 +68,26 @@ def test_active_task_reference_matching_walks_nested_registry_payloads():
         {"task": {"saved_input_images": [f"user-data-prod/{key}"]}},
         {key, "unrelated.png"},
     ) == {key}
+
+
+@pytest.mark.asyncio
+async def test_active_task_reference_gate_uses_strict_atomic_query(monkeypatch):
+    from src.services.task_registry import TaskRegistry
+
+    key = "12345678-1234-1234-1234-123456789abc__raw.png"
+
+    async def snapshot(cls, keys, *, socket_timeout):
+        assert keys == [key, "unrelated.png"]
+        assert socket_timeout == 60
+        return {key}
+
+    monkeypatch.setattr(
+        TaskRegistry,
+        "find_active_task_references_strict",
+        classmethod(snapshot),
+    )
+
+    assert await _active_task_references([key, "unrelated.png"]) == {key}
 
 
 def test_business_references_block_an_otherwise_verified_duplicate():

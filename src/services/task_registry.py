@@ -1,7 +1,9 @@
 import logging
 import time
 
-from src.services.redis_client import redis_client
+from config import REDIS_URL
+from src.services.redis_client import RedisClient, redis_client
+from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,28 @@ class TaskRegistry:
     @classmethod
     async def get_all_tasks_strict(cls):
         return await redis_client.get_active_tasks_strict()
+
+    @classmethod
+    async def find_active_task_references_strict(
+        cls,
+        keys: list[str],
+        *,
+        socket_timeout: float | None = None,
+    ):
+        if socket_timeout is None:
+            return await redis_client.find_active_task_references_strict(keys)
+
+        isolated_redis = build_redis_client(
+            REDIS_URL,
+            decode_responses=True,
+            socket_timeout=socket_timeout,
+        )
+        isolated_client = object.__new__(RedisClient)
+        isolated_client.redis = isolated_redis
+        try:
+            return await isolated_client.find_active_task_references_strict(keys)
+        finally:
+            await isolated_redis.aclose()
 
     @classmethod
     async def log_restart_recovery_policy(cls, bot=None):
