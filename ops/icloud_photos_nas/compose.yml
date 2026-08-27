@@ -41,7 +41,7 @@ services:
         read_only: true
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=1000,gid=100
+      - /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=100
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
