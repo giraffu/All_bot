@@ -288,8 +288,10 @@ SHA256，总计 114,106,812,703 bytes，准备前要求模型卷至少 110 GiB �
 revision、filename/modelVersion/fileId、SHA256 和 size。新版本必须使用新 bundle version，
 不能覆盖旧 manifest；完整校验、focused tests 与 GPU canary 通过后才可单独更新部署指针。
 
-镜像模块仍为 `minimax_h3`。本次 GPU artifact 只写入 LAN registry，不推送 GHCR，
-也不修改 RunPod profile、autoscaler 或 RunPod artifact；ComfyUI revision 固定为
+镜像模块仍为 `minimax_h3`。LAN 与 RunPod artifact 独立发布；RunPod profile 只接受
+`ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:<digest>` 形式的精确镜像引用，并从
+`RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY` 指向的不可变模型清单同步资产。不得复用 LAN
+mutable tag 或源码同步替代 RunPod artifact。ComfyUI revision 固定为
 `7fe8a6138504f90ff7be82f3babf416da32876b1`，并保留
 DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安装
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
@@ -315,6 +317,19 @@ H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 
 RunPod；LAN/RunPod runtime 在该语境中都保持正式 Worker 身份。测试 agent 可以经
 受限私网或测试主机 loopback 传输调用已经运行的 H3 ComfyUI，但不得启停、重启、
 切换或重新标记该正式 runtime。
+
+显式授权的 RunPod GPU artifact canary 使用
+`scripts/gpu_pool_controller.py runpod canary --task-type minimax_h3`，与上述普通测试
+Worker 操作语义不同。该入口只允许 `cloud-test`，强制单 Pod 成本门禁、RTX 5090、
+精确镜像 digest、H3 不可变模型清单、test Central 与 `user-data-test`，并串行提交
+T2V/I2V/FLF2V/REF2V 四条 5 秒 preview 任务。每条任务必须由目标 RunPod agent 接单、
+Central 终态为 `done`、Web 结果成功且存在尾帧；无论成功或失败均恢复被临时关闭的
+测试 Worker 并删除新建 Pod。该最小 cloud-test canary 不替代下文完整 GPU artifact
+验收。
+
+H3 RunPod volume 固定至少 140 GB，用于 `/workspace/ComfyUI/models`；不能沿用通用
+100 GB 默认值，因为当前不可变 bundle 为 114,106,812,703 bytes，模型同步还需要目录、
+临时文件和运行缓存余量。
 
 不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
 revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test
@@ -350,6 +365,9 @@ history/evidence，不回写本文。
   tests/web_api/test_gallery_apply_context.py \
   tests/workers/test_minimax_h3_workflows.py \
   tests/scripts/test_prepare_minimax_h3_model_bundle.py
+.venv/bin/python -m pytest -q \
+  tests/ops/test_runpod_canary.py \
+  tests/ops/test_runpod_cloud_test_canary.py
 cd frontend && npm test -- --run \
   src/composables/lab-workbench/useLabSubmitPayload.test.ts \
   src/composables/lab-workbench/usePromptOptimizer.test.ts \
