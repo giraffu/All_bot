@@ -55,6 +55,8 @@ sequenceDiagram
   H3 Pro 与人物角色图仍默认隐藏。展示开关只影响新页面/新键盘，不停用任务、历史详情、
   模板深链、旧 Telegram 按钮或命令；默认入口被隐藏时 Web 选择下一个可见入口。
   Web 读取公开安全布尔值，写接口仍受 Dashboard 鉴权与 Cloudflare Access 双层保护。
+  Web“人物角色图”关闭时，高级图生视频 Pro 的 REF2V 人物图库选择器也随之隐藏；
+  该联动不关闭 REF2V 的临时参考图上传能力。
 - Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
   查询、状态转换、Telegram 投递与事务提交已收口到
   `support_ticket_admin_service.py`。`private_bots.py` 与

@@ -58,16 +58,33 @@ describe('test Web video feature visibility', () => {
   })
 
   it('shows original advanced video while hiding H3 Pro and character entry cards', async () => {
-    const { UNIFIED_LAB_MODES, resolveLabModeIdFromTaskType } = await import('./labModeConfig')
+    const {
+      UNIFIED_LAB_MODES,
+      WEB_CHARACTER_LIBRARY_PICKER_ENABLED,
+      resolveLabModeIdFromTaskType,
+    } = await import('./labModeConfig')
     const visibleModeIds = UNIFIED_LAB_MODES.map(mode => mode.id)
 
     expect(visibleModeIds).toContain('ltx_video')
     expect(visibleModeIds).not.toContain('minimax_h3')
     expect(visibleModeIds).not.toContain('character_reference')
+    expect(WEB_CHARACTER_LIBRARY_PICKER_ENABLED).toBe(false)
     expect(visibleModeIds).not.toContain('ltx_video_v2')
     expect(visibleModeIds).not.toContain('ltx_t2v')
     expect(resolveLabModeIdFromTaskType('character_reference')).toBe('character_reference')
     expect(resolveLabModeIdFromTaskType('minimax_h3_ref2v')).toBe('minimax_h3')
+  })
+
+  it('enables the Pro character picker only when the character entry is visible', async () => {
+    window.__ALLBOT_CONFIG__ = {
+      ...window.__ALLBOT_CONFIG__,
+      enable_character_assets_entry: true,
+    }
+    vi.resetModules()
+
+    const { WEB_CHARACTER_LIBRARY_PICKER_ENABLED } = await import('./labModeConfig')
+
+    expect(WEB_CHARACTER_LIBRARY_PICKER_ENABLED).toBe(true)
   })
 
   it('rejects the REF2V deep link when its independent capability flag is off', async () => {
