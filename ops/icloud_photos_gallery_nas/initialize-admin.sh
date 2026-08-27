@@ -5,21 +5,27 @@ umask 077
 
 runtime_root=/volume1/ApplePhotosGalleryRuntime
 secret_file=$runtime_root/secrets/admin-password
+username_file=$runtime_root/secrets/admin-username
 marker=$runtime_root/state/admin-initialized
 cookie_file=$runtime_root/state/init-cookie
 users_file=$runtime_root/state/init-users.json
 gallery_url=http://127.0.0.1:8099
-gallery_user=nas-gallery
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "gallery administrator initialization must run as root" >&2
   exit 2
 fi
 test -s "$secret_file" || { echo "missing gallery administrator secret" >&2; exit 2; }
+test -s "$username_file" || { echo "missing gallery administrator username" >&2; exit 2; }
 test ! -e "$marker" || exit 0
 
 gallery_password=$(tr -d '\r\n' < "$secret_file")
+gallery_user=$(tr -d '\r\n' < "$username_file")
 test -n "$gallery_password" || { echo "empty gallery administrator secret" >&2; exit 2; }
+case "$gallery_user" in
+  ''|*[!A-Za-z0-9._-]*) echo "invalid gallery administrator username" >&2; exit 2 ;;
+esac
+export gallery_password gallery_user
 rm -f "$cookie_file" "$users_file"
 trap 'rm -f "$cookie_file" "$users_file"' EXIT HUP INT TERM
 
@@ -28,13 +34,13 @@ printf '%s' '{"loginCredential":{"username":"admin","password":"admin","remember
     -H 'Content-Type: application/json' --data-binary @- \
     "$gallery_url/pgapi/user/login"
 
-printf '{"newUser":{"name":"nas-gallery","password":"%s","role":4}}' "$gallery_password" |
+python3 -c 'import json, os; print(json.dumps({"newUser": {"name": os.environ["gallery_user"], "password": os.environ["gallery_password"], "role": 4}}))' |
   curl -fsS -o /dev/null -b "$cookie_file" -X PUT \
     -H 'Content-Type: application/json' --data-binary @- \
     "$gallery_url/pgapi/user"
 
 rm -f "$cookie_file"
-printf '{"loginCredential":{"username":"nas-gallery","password":"%s","rememberMe":false}}' "$gallery_password" |
+python3 -c 'import json, os; print(json.dumps({"loginCredential": {"username": os.environ["gallery_user"], "password": os.environ["gallery_password"], "rememberMe": False}}))' |
   curl -fsS -o /dev/null -c "$cookie_file" \
     -H 'Content-Type: application/json' --data-binary @- \
     "$gallery_url/pgapi/user/login"
@@ -56,11 +62,12 @@ curl -fsS -o /dev/null -b "$cookie_file" -X DELETE \
 curl -fsS -b "$cookie_file" "$gallery_url/pgapi/user/list" > "$users_file"
 python3 -c '
 import json, sys
+import os
 payload = json.load(sys.stdin)
 users = payload.get("result", payload)
 if any(user.get("name") == "admin" for user in users):
     raise SystemExit("upstream default administrator is still active")
-matches = [user for user in users if user.get("name") == "nas-gallery" and user.get("role") == 4]
+matches = [user for user in users if user.get("name") == os.environ["gallery_user"] and user.get("role") == 4]
 if len(matches) != 1:
     raise SystemExit("replacement gallery administrator is not active")
 ' < "$users_file"

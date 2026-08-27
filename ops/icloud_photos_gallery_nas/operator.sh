@@ -7,6 +7,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 deploy_root=/volume1/ApplePhotosGalleryRuntime/deploy
+username_file=/volume1/ApplePhotosGalleryRuntime/secrets/admin-username
 cd "$deploy_root"
 
 case "${1:-}" in
@@ -23,7 +24,10 @@ case "${1:-}" in
     exec docker compose stop icloud-photos-gallery
     ;;
   credentials)
-    echo "username: nas-gallery"
+    test -s "$username_file" || { echo "missing gallery administrator username" >&2; exit 2; }
+    gallery_user=$(tr -d '\r\n' < "$username_file")
+    test -n "$gallery_user" || { echo "empty gallery administrator username" >&2; exit 2; }
+    echo "username: $gallery_user"
     echo "password file: /volume1/ApplePhotosGalleryRuntime/secrets/admin-password"
     ;;
   *)
@@ -31,4 +35,3 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-

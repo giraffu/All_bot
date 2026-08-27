@@ -91,6 +91,8 @@ def test_bootstrap_accepts_only_approved_images_and_initializes_before_lan() -> 
     assert "write_env 127.0.0.1 http://127.0.0.1:8099" in text
     assert "write_env 192.168.1.150 http://192.168.1.150:8099" in text
     assert "--force-recreate" in text
+    assert "admin-username" in text
+    assert "default_gallery_user=nas-gallery" in text
 
 
 def test_initializer_removes_upstream_default_before_marking_complete() -> None:
@@ -104,8 +106,22 @@ def test_initializer_removes_upstream_default_before_marking_complete() -> None:
     assert "/pgapi/user/list" in text
     assert "-X DELETE" in text
     assert "replacement gallery administrator is not active" in text
+    assert "admin-username" in text
+    assert 'gallery_user=$(tr -d' in text
     assert "default_status" not in text
     assert "admin-initialized" in text
+
+
+def test_operator_reads_runtime_admin_identity_without_printing_password() -> None:
+    script = OPS / "operator.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    text = script.read_text(encoding="utf-8")
+
+    assert "admin-username" in text
+    assert 'gallery_user=$(tr -d' in text
+    assert 'echo "username: $gallery_user"' in text
+    assert 'echo "username: nas-gallery"' not in text
+    assert "cat /volume1/ApplePhotosGalleryRuntime/secrets/admin-password" not in text
 
 
 def test_offline_loader_verifies_archive_and_exact_image_id() -> None:
