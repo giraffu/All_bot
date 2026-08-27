@@ -231,12 +231,16 @@ Compose 禁止源码 bind mount，镜像必须 digest pinned。rollback 只回�
 上一 exact digest。prod mutation 仍需用户明确确认。
 
 115 GPU0 与正式图生图共享显存时，只允许运行
-`scripts/prompt_optimizer_worker_ops.py preflight|takeover|recover|status`。`takeover`
+`scripts/prompt_optimizer_worker_ops.py preflight|takeover|recover|retire|status`。`takeover`
 通过 LAN fleet 事务排空、持久禁用并停止精确图生图 slot，再以 16K/parallel 4/full
 offload 加载 LM Studio，并验证 `/ready` 与四条 test Central idle heartbeat。任一步骤
 失败会停止优化器、卸载本次模型并调用 fleet `recover`；主动恢复也必须先 drain 四条
 lane。若 preflight 的 fleet live observation 已明确表明精确旧 slot 不在运行，
 `takeover` 将该停机视为幂等完成，不再对已停止容器调用 Comfy queue 检查。
+`recover` 会恢复原正式 GPU slot；仅在该能力也应恢复时使用。若优化器永久停用且
+fleet ledger/live 都证明目标 physical slot intentionally empty，使用 `retire`：它先
+drain lane，只移除固定优化器 Compose、卸载模型并更新优化器账本，不调用 fleet
+recover、不启动任何正式 Worker；任一 current/ledger/live 占用证据都会 fail closed。
 Central 状态核验必须使用测试环境 `AGENT_SECRET_TOKEN`，不得匿名读取
 `/system/workers`。Prompt Optimizer Compose 使用独立 project name；清理只允许移除
 该项目及固定的 `allbot-prompt-optimizer-test` 容器，禁止 `--remove-orphans` 波及同机

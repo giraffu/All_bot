@@ -471,10 +471,79 @@ def _recover(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _fleet_reports_intentionally_empty(
+    fleet: dict[str, Any],
+    *,
+    physical_slot: str,
+    slot: str,
+) -> bool:
+    if not fleet.get("ok"):
+        return False
+    state = fleet.get("state", {})
+    if state.get("live_current", {}).get(physical_slot):
+        return False
+    if state.get("ledger_current", {}).get(physical_slot):
+        return False
+    observations = state.get("live_observations", {}).get(physical_slot, [])
+    matching = [
+        item
+        for item in observations
+        if isinstance(item, dict) and item.get("slot_id") == slot
+    ]
+    return bool(matching) and all(item.get("running") is False for item in matching)
+
+
+def _retire(args: argparse.Namespace) -> dict[str, Any]:
+    """Retire the test optimizer while preserving an intentionally empty GPU slot."""
+
+    state = _read_state()
+    if state.get("status") != "optimizer_active":
+        raise RuntimeError("no active prompt optimizer takeover is recorded")
+    slot = str(state["slot"])
+    physical_slot = str(state["physical_slot"])
+    fleet = _fleet("status", slot=slot)
+    if not _fleet_reports_intentionally_empty(
+        fleet,
+        physical_slot=physical_slot,
+        slot=slot,
+    ):
+        raise RuntimeError(
+            f"physical slot {physical_slot} is not intentionally empty; "
+            "refusing optimizer-only retirement"
+        )
+
+    image = _exact_image(str(state["image"]))
+    env_file = str(state["env_file"])
+    drained = _wait_drained()
+    _stop_optimizer(
+        image,
+        env_file,
+        stop_server=not bool(state.get("server_was_running")),
+    )
+    operation_id = args.operation_id or f"prompt-optimizer-retire-{uuid.uuid4()}"
+    retired = {
+        **state,
+        "status": "optimizer_retired",
+        "retirement_operation_id": operation_id,
+        "retired_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _write_state(retired)
+    return {
+        "ok": True,
+        "action": "retire",
+        "optimizer_drain": drained,
+        "fleet_preserved": {
+            "physical_slot": physical_slot,
+            "current": None,
+        },
+        "state": retired,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=("preflight", "takeover", "recover", "status")
+        "action", choices=("preflight", "takeover", "recover", "retire", "status")
     )
     parser.add_argument("--image")
     parser.add_argument("--env-file")
@@ -495,6 +564,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = _preflight(args)
     elif args.action == "takeover":
         payload = _takeover(args)
+    elif args.action == "retire":
+        payload = _retire(args)
     else:
         payload = _recover(args)
     print(json.dumps(payload, ensure_ascii=False, indent=2))

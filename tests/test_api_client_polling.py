@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -456,6 +457,33 @@ async def test_request_log_preserves_blank_transport_error_type(monkeypatch, cap
             )
 
     assert "ReadTimeout" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_expected_status_404_is_not_logged_as_request_error(caplog):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+
+    class MissingHttpClient:
+        async def request(self, method, url, **kwargs):
+            return httpx.Response(
+                404,
+                request=httpx.Request(method, url),
+            )
+
+    client.headers = {}
+    client.client = MissingHttpClient()
+
+    with caplog.at_level("DEBUG", logger="src.api_client"):
+        with pytest.raises(httpx.HTTPStatusError):
+            await client._request(
+                "GET",
+                "http://central/status/task-missing",
+                expected_status_codes={404},
+                use_circuit_breaker=False,
+            )
+
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "expected_status=404" in caplog.text
 
 
 @pytest.mark.asyncio

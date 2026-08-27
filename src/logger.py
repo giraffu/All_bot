@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
+from .log_redaction import install_log_redaction
 from .services.storage import storage
 from shared.r2_retention_contract import (
     build_staged_user_upload_key,
@@ -23,6 +24,7 @@ def setup_logging(log_file="logs/bot.log"):
     Setup standard logging configuration.
     Output to file and console with TraceID.
     """
+    install_log_redaction()
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
 
     # Configure format with correlation_id

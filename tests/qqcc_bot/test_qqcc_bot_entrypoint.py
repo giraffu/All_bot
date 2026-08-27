@@ -1046,6 +1046,11 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
 
     monkeypatch.setattr(qqcc_main, "get_quick_image_fsm_handler", lambda: "quick-image")
     monkeypatch.setattr(qqcc_main, "get_quick_video_fsm_handler", lambda: "quick-video")
+    monkeypatch.setattr(
+        qqcc_main,
+        "get_wan22_video_v2_fsm_handler",
+        lambda: "wan22-video-v2",
+    )
 
     qqcc_main.register_handlers(FakeApp())
 
@@ -1059,6 +1064,7 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
     )
     assert "quick-image" in handlers
     assert "quick-video" in handlers
+    assert "wan22-video-v2" in handlers
     assert sum(isinstance(handler, CommandHandler) for handler in handlers) == 2
     assert sum(isinstance(handler, CallbackQueryHandler) for handler in handlers) == 1
     assert sum(isinstance(handler, MessageHandler) for handler in handlers) == 2

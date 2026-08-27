@@ -215,3 +215,90 @@ def test_recover_drains_optimizer_before_stopping_and_restoring_fleet(monkeypatc
 
     assert result["ok"] is True
     assert events == ["drained", "optimizer-stopped", "fleet-restored"]
+
+
+def test_retire_stops_optimizer_without_restoring_intentionally_empty_fleet(
+    monkeypatch,
+):
+    events = []
+    written = []
+    monkeypatch.setattr(
+        operator,
+        "_read_state",
+        lambda: {
+            "status": "optimizer_active",
+            "image": EXACT_IMAGE,
+            "env_file": "/tmp/prompt.env",
+            "server_was_running": True,
+            "slot": operator.DEFAULT_SLOT,
+            "physical_slot": operator.DEFAULT_PHYSICAL_SLOT,
+        },
+    )
+    monkeypatch.setattr(
+        operator,
+        "_fleet",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "state": {
+                "live_current": {operator.DEFAULT_PHYSICAL_SLOT: None},
+                "ledger_current": {operator.DEFAULT_PHYSICAL_SLOT: None},
+                "live_observations": {
+                    operator.DEFAULT_PHYSICAL_SLOT: [
+                        {
+                            "slot_id": operator.DEFAULT_SLOT,
+                            "exists": True,
+                            "running": False,
+                        }
+                    ]
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(
+        operator,
+        "_wait_drained",
+        lambda: events.append("drained") or {"active_lanes": 0},
+    )
+    monkeypatch.setattr(
+        operator,
+        "_stop_optimizer",
+        lambda *args, **kwargs: events.append(
+            ("optimizer-stopped", kwargs["stop_server"])
+        ),
+    )
+    monkeypatch.setattr(operator, "_write_state", written.append)
+
+    result = operator._retire(argparse.Namespace(operation_id="retire-operation"))
+
+    assert result["ok"] is True
+    assert result["action"] == "retire"
+    assert events == ["drained", ("optimizer-stopped", False)]
+    assert written[0]["status"] == "optimizer_retired"
+    assert written[0]["retirement_operation_id"] == "retire-operation"
+
+
+def test_retire_refuses_to_change_optimizer_when_fleet_is_not_empty(monkeypatch):
+    monkeypatch.setattr(
+        operator,
+        "_read_state",
+        lambda: {
+            "status": "optimizer_active",
+            "slot": operator.DEFAULT_SLOT,
+            "physical_slot": operator.DEFAULT_PHYSICAL_SLOT,
+        },
+    )
+    monkeypatch.setattr(
+        operator,
+        "_fleet",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "state": {
+                "live_current": {operator.DEFAULT_PHYSICAL_SLOT: operator.DEFAULT_SLOT},
+                "ledger_current": {operator.DEFAULT_PHYSICAL_SLOT: None},
+                "live_observations": {},
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="not intentionally empty"):
+        operator._retire(argparse.Namespace(operation_id="retire-operation"))

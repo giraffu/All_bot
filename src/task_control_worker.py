@@ -11,6 +11,7 @@ from src.control_worker_health import (
     build_task_control_health_payload,
     build_task_control_worker_id,
 )
+from src.log_redaction import install_log_redaction
 
 logger = logging.getLogger("task-control-worker")
 TASK_CONTROL_HEALTH_PORT = 8031
@@ -124,6 +125,7 @@ async def run_task_control_worker(
 
 
 def main() -> None:
+    install_log_redaction()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

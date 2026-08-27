@@ -27,6 +27,7 @@ from src.database.core import init_db
 from src.handlers.error_handlers import global_error_handler
 from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
 from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
+from src.handlers.fsm.wan22_video_v2_fsm import get_wan22_video_v2_fsm_handler
 from src.logger import setup_logging
 from src.services.qqcc_runtime_context import QQCC_BOT_CLIENT_TYPE
 from src.services.qqcc_channel_membership_service import (
@@ -150,6 +151,7 @@ def register_handlers(app, *, include_private_bot_provisioning: bool = True):
     app.add_handler(TypeHandler(Update, global_middleware), group=-1)
     if include_private_bot_provisioning:
         app.add_handler(get_private_bot_provisioning_handler())
+    app.add_handler(get_wan22_video_v2_fsm_handler())
     app.add_handler(get_quick_image_fsm_handler())
     app.add_handler(get_quick_video_fsm_handler())
     app.add_handler(CommandHandler("start", start))

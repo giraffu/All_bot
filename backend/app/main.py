@@ -50,8 +50,10 @@ from fastapi import (
 )
 from fastapi.security import HTTPBearer
 from minio import Minio
+from src.log_redaction import install_log_redaction
 
 # Setup logging
+install_log_redaction()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

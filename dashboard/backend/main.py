@@ -51,7 +51,9 @@ from src.billing_core_provider_setup import ensure_billing_core_providers_regist
 from src.database.core import AsyncSessionLocal, init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 from src.task_application_runtime import configure_task_application
+from src.log_redaction import install_log_redaction
 
+install_log_redaction()
 logging.basicConfig(level=logging.INFO)
 background_tasks = set()
 logger = logging.getLogger("dashboard")
