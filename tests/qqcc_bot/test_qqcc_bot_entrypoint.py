@@ -500,7 +500,7 @@ async def test_ref2v_scene_defaults_first_template_and_accepts_person_image_imme
     assert "点击下方“替换：模板名称”按钮" in prompt
     assert "可以直接发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
-    assert "预计消耗：10 灵石" in prompt
+    assert "预计消耗：11 灵石" in prompt
 
 
 @pytest.mark.asyncio
@@ -687,7 +687,7 @@ async def test_ref2v_replacement_image_updates_template_without_starting_generat
     assert "其他模板仍然保留" in prompt
     assert "现在请发送女性人物图片" in prompt
     assert "正面、脸部清晰" in prompt
-    assert "预计消耗：10 灵石" in prompt
+    assert "预计消耗：11 灵石" in prompt
     buttons = reply.await_args.kwargs["reply_markup"].inline_keyboard
     assert [button.text for row in buttons for button in row] == [
         "替换：黑色模板",
