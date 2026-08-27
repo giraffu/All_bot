@@ -13,6 +13,8 @@ iCloud 删除或本地镜像删除参数。NAS 原片位于独立 Btrfs 子卷�
 - 镜像固定为 `icloudpd` 1.32.3 的精确多架构 OCI digest；NAS 无法访问 registry
   时，只接受从可信机离线导入后核验一致的精确 `sha256:<image-id>`。
 - 容器以 NAS `1000:100` 运行，无监听端口、只读 rootfs、无 Linux capability。
+- `icloudpd` 单文件程序只在 256 MB 内存临时盘解包运行；该临时盘允许执行但保留
+  `nosuid,nodev`，容器退出即清空，不授予任何 NAS 数据目录执行权限。
 - 原片写入 `/volume1/ApplePhotos/originals`；凭据与 session 写入
   `/volume1/ApplePhotosRuntime`，两者不共享快照。
 - 下载命名包含 iCloud asset ID，避免多个设备产生同名 `IMG_0001` 时互相覆盖。
@@ -67,8 +69,7 @@ Apple ID 只在 NAS 终端输入，不要写入聊天、Git 或 shell history：
 
 ```bash
 sudo /volume1/ApplePhotosRuntime/deploy/set-apple-id.sh
-cd /volume1/ApplePhotosRuntime/deploy
-sudo docker compose run --rm --entrypoint /opt/allbot/auth.sh icloud-photo-backup
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh authenticate
 ```
 
 按提示输入 Apple 密码与双重认证验证码。中国大陆 iCloud 默认使用 `cn` domain；若
@@ -81,15 +82,15 @@ sudo docker compose run --rm --entrypoint /opt/allbot/auth.sh icloud-photo-backu
 认证后先只下载最近 10 项：
 
 ```bash
-sudo docker compose run --rm icloud-photo-backup canary
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh canary
 ```
 
 确认照片、视频、Live Photo 和 XMP 可读取后，再启动全量循环：
 
 ```bash
-sudo docker compose up -d icloud-photo-backup
-sudo docker compose ps
-sudo docker compose logs --tail 100 icloud-photo-backup
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh start
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh status
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh logs
 ```
 
 首次几 TB 下载可能持续数天。下载器每轮完整遍历后等待 6 小时；失败会保留已完成
@@ -101,7 +102,7 @@ iCloud 项目数、NAS 文件数与总字节，并随机回读照片、普通视
 普通停止不会删除数据：
 
 ```bash
-sudo docker compose stop icloud-photo-backup
+sudo /volume1/ApplePhotosRuntime/deploy/operator.sh stop
 ```
 
 每日快照位于 `/volume1/.apple-photos-snapshots`，默认保留 30 份。恢复应先停止下载器，

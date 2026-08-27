@@ -24,6 +24,9 @@ def test_sync_container_is_immutable_non_root_and_has_no_listener() -> None:
     assert service["read_only"] is True
     assert service["cap_drop"] == ["ALL"]
     assert service["security_opt"] == ["no-new-privileges:true"]
+    assert service["tmpfs"] == [
+        "/tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=100"
+    ]
     assert "ports" not in service
     assert service["entrypoint"] == ["/opt/allbot/run.sh"]
     assert service["command"] == ["watch"]
@@ -222,6 +225,28 @@ def test_bootstrap_persists_only_approved_content_addressed_images() -> None:
     assert "docker image inspect --format" in text
     assert '"$icloudpd_image"' in text
     assert 'pull icloud-photo-backup' in text
+
+
+def test_root_operator_owns_compose_workdir_and_rejects_unknown_actions() -> None:
+    script = OPS / "operator.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    text = script.read_text(encoding="utf-8")
+
+    assert "/volume1/ApplePhotosRuntime/deploy" in text
+    assert "docker compose run --rm --entrypoint /opt/allbot/auth.sh" in text
+    assert "docker compose run --rm icloud-photo-backup canary" in text
+    assert "docker compose up -d icloud-photo-backup" in text
+    assert "docker compose stop icloud-photo-backup" in text
+
+    rejected = subprocess.run(
+        [str(script), "unknown"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert "must run as root" in rejected.stderr
 
 
 def test_snapshots_cover_originals_but_never_credentials() -> None:

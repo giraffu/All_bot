@@ -96,7 +96,7 @@ install_runtime_file() {
 }
 
 install_runtime_file "$source_root/compose.yml" "$deploy_root/compose.yml" 0644
-for script in run.sh auth.sh notify-reauth.sh set-apple-id.sh snapshot.sh bootstrap.sh load-offline-image.sh; do
+for script in run.sh auth.sh notify-reauth.sh set-apple-id.sh snapshot.sh bootstrap.sh load-offline-image.sh operator.sh; do
   install_runtime_file "$source_root/$script" "$deploy_root/$script" 0755
 done
 
@@ -127,4 +127,3 @@ systemctl daemon-reload
 systemctl enable --now allbot-icloud-photos-snapshot.timer
 
 echo "bootstrap complete; run set-apple-id.sh and interactive authentication next"
-
