@@ -81,7 +81,10 @@ NAS 无法直连镜像 registry 时，从可信主机导出官方 digest 对应�
 归档 SHA-256；NAS 导入后还必须核对精确 `sha256:<image-id>`。Compose 只接受代码登记
 的官方 digest 或离线 image ID，并把实际选择投影到 root-only `.env`；不得改用 tag。
 
-首轮全量验收前，iCloud 原片不接入 PiGallery2。后续浏览接线只能把
-`/volume1/ApplePhotos/originals` 作为新的精确只读白名单源；不得把
+首轮全量验收前默认不把 iCloud 原片接入 PiGallery2。用户明确要求提前查看时，只能
+以“不完整预览”部署独立 NAS 实例，并持续提示当前内容不代表完整备份。浏览接线只能把
+`/volume1/ApplePhotos/originals` 作为精确只读白名单源；不得把
 `/volume1/ApplePhotos`、运行态、快照根或 Apple 凭据目录整体暴露给图库容器。部署、
 认证续期、启动、停止、快照恢复和目录接线详见 `ops/icloud_photos_nas/README.md`。
+NAS 预览实例的离线镜像、账户初始化和运维入口见
+`ops/icloud_photos_gallery_nas/README.md`。

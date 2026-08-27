@@ -268,4 +268,4 @@ def test_runbook_keeps_icloud_ingest_separate_from_gallery_and_credentials() -> 
 
     assert "不上传文件" in readme
     assert "keyring/session" in domain_doc
-    assert "首轮全量验收前，iCloud 原片不接入 PiGallery2" in domain_doc
+    assert "首轮全量验收前默认不把 iCloud 原片接入 PiGallery2" in domain_doc
