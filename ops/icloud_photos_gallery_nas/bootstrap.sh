@@ -35,6 +35,8 @@ secrets_root=$runtime_root/secrets
 state_root=$runtime_root/state
 deploy_root=$runtime_root/deploy
 secret_file=$secrets_root/admin-password
+username_file=$secrets_root/admin-username
+default_gallery_user=nas-gallery
 marker=$state_root/admin-initialized
 source_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -85,6 +87,11 @@ if [ ! -s "$secret_file" ]; then
 fi
 chown root:root "$secret_file"
 chmod 0600 "$secret_file"
+if [ ! -s "$username_file" ]; then
+  printf '%s\n' "$default_gallery_user" > "$username_file"
+fi
+chown root:root "$username_file"
+chmod 0600 "$username_file"
 
 write_env() {
   bind_ip=$1
@@ -136,4 +143,3 @@ wait_healthy
 
 echo "gallery ready: http://192.168.1.150:8099"
 echo "credentials: sudo $deploy_root/operator.sh credentials"
-

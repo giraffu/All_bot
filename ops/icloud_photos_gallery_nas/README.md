@@ -31,8 +31,10 @@ sudo env \
 ```
 
 bootstrap 先只绑定 `127.0.0.1:8099`，生成随机管理员并删除上游默认账户；只有初始化
-成功才重建到 `192.168.1.150:8099`。管理员用户名为 `nas-gallery`，密码保存在
-root-only `/volume1/ApplePhotosGalleryRuntime/secrets/admin-password`。
+成功才重建到 `192.168.1.150:8099`。管理员用户名和密码分别保存在 root-only
+`/volume1/ApplePhotosGalleryRuntime/secrets/admin-username` 与
+`/volume1/ApplePhotosGalleryRuntime/secrets/admin-password`；首次初始化时用户名默认为
+`nas-gallery`，之后重部署会保留运行时账号信息。
 
 ## 运维
 
@@ -46,4 +48,3 @@ sudo /volume1/ApplePhotosGalleryRuntime/deploy/operator.sh start
 浏览器访问 `http://192.168.1.150:8099`。日期目录按 `年/月/日` 展示；图片使用缩略图，
 浏览器不能直接播放的 MOV 等视频在独立 `tmp/` 中生成派生 MP4。原始图片、视频、XMP
 和 iCloud 下载状态都不会被图库修改。
-
