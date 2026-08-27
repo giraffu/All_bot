@@ -1,0 +1,54 @@
+name: allbot-icloud-photos-gallery-nas
+
+services:
+  icloud-photos-gallery:
+    image: ${PIGALLERY_IMAGE:-docker.io/bpatrik/pigallery2@sha256:d7a61b6daa410537064d4f661122545bc4d9b16cd91a3862d654c3555cb63992}
+    container_name: allbot-icloud-photos-gallery
+    restart: unless-stopped
+    user: "1000:100"
+    read_only: true
+    init: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Shanghai
+    command:
+      - --default-Server-applicationTitle=iCloud 原片预览图库
+      - --default-Server-publicUrl=${GALLERY_PUBLIC_URL:-http://127.0.0.1:8099}
+      - --default-Upload-enabled=false
+      - --default-Sharing-enabled=false
+      - --default-Gallery-AutoUpdate-enable=true
+      - --default-Gallery-AutoUpdate-interval=60
+      - --default-Media-Photo-concurrentThumbnailGenerationsLimit=2
+      - --default-Jobs-scheduled=[]
+    ports:
+      - "${GALLERY_BIND_IP:-127.0.0.1}:8099:80"
+    volumes:
+      - type: bind
+        source: /volume1/ApplePhotos/originals
+        target: /app/data/images/iCloud原片
+        read_only: true
+      - type: bind
+        source: /volume1/ApplePhotosGalleryRuntime/config
+        target: /app/data/config
+      - type: bind
+        source: /volume1/ApplePhotosGalleryRuntime/db
+        target: /app/data/db
+      - type: bind
+        source: /volume1/ApplePhotosGalleryRuntime/tmp
+        target: /app/data/tmp
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:80').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    stop_grace_period: 30s
+
