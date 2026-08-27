@@ -46,6 +46,7 @@ def _status(
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "minimax_h3",
         "pornmaster_flux2_edit",
         "pornmaster_flux2_edit_bf16",
     ]
@@ -61,6 +62,12 @@ def _status(
         ],
         "scail2": ["scail2_action_transfer", "scail2_video_replacement"],
         "ltx_video": ["ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"],
+        "minimax_h3": [
+            "minimax_h3_t2v",
+            "minimax_h3_i2v",
+            "minimax_h3_flf2v",
+            "minimax_h3_ref2v",
+        ],
         "pornmaster_flux2_edit": [
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
@@ -161,6 +168,7 @@ def _runpod_worker(
         "i2i_pro": "runpod_prod_i2i_pro_manual_",
         "scail2": "runpod_prod_scail2_manual_",
         "ltx_video": "runpod_prod_ltx_video_manual_",
+        "minimax_h3": "runpod_prod_minimax_h3_manual_",
         "pornmaster_flux2_edit": "runpod_prod_pornmaster_flux2_edit_manual_",
         "pornmaster_flux2_edit_bf16": (
             "runpod_prod_pornmaster_flux2_edit_bf16_manual_"
@@ -173,6 +181,9 @@ def _runpod_worker(
         "i2i_pro": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap",
         "scail2": "scail2_action_transfer,scail2_video_replacement",
         "ltx_video": "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio",
+        "minimax_h3": (
+            "minimax_h3_t2v,minimax_h3_i2v,minimax_h3_flf2v,minimax_h3_ref2v"
+        ),
         "pornmaster_flux2_edit": (
             "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
         ),
@@ -455,6 +466,48 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
     assert decision["action"] == "scale_up"
     assert decision["estimated_clear_time_seconds"] == 1830
     assert calls[0]["profile"] == "pornmaster_flux2_edit_bf16"
+
+
+async def test_autoscaler_scales_minimax_h3_for_ref2v_backlog():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-add-minimax-h3",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="minimax_h3",
+            pending=7,
+            wait=1800,
+            pending_count_by_task_type={"minimax_h3_ref2v": 7},
+        ),
+        workers_payload=_workers(
+            _local_worker(
+                "minimax_h3_t2v,minimax_h3_i2v,minimax_h3_flf2v,minimax_h3_ref2v"
+            )
+        ),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "minimax_h3"
+    ]
+    assert decision["action"] == "scale_up"
+    assert decision["estimated_clear_time_seconds"] == 2100
+    assert calls[0]["profile"] == "minimax_h3"
 
 
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():

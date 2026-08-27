@@ -1,11 +1,13 @@
 # 子模块：GPU 算力资源池控制器
 
-MiniMax H3 使用独立 `minimax_h3` manual-only profile；不加入 autoscaler。当前 24 文件
-模型包为 112,485,084,951 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认
-10Eros v3 TURBO 与官方 INT8 ConvRot FL2VA/Ref2VA checkpoint。首版 GPU allowlist 为 RTX 5090。REF2V 只扩展正式 LAN
-`gpu-177-gpu1-minimax_h3` 的四类 capability；RunPod profile/autoscaler 与
-`gpu-177-gpu1-minimax_h3_test` 候选不扩展。LAN 候选只能在 canonical 镜像
-digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。
+MiniMax H3 使用独立 `minimax_h3` profile。RunPod profile 已加入 autoscaler，并以
+`minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、
+`minimax_h3_ref2v` 四类 execution task 的聚合积压做扩缩容和 Worker 拉取；默认工时
+只用于容量估算，可由 Dashboard autoscaler 设置覆盖。当前 24 文件模型包为
+112,485,084,951 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认 10Eros v3
+TURBO 与官方 INT8 ConvRot FL2VA/Ref2VA checkpoint。GPU allowlist 仍为 RTX 5090。
+`gpu-177-gpu1-minimax_h3_test` LAN 测试候选仍不声明 REF2V；正式 LAN 候选只能在
+canonical 镜像 digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。
 
 本文是 GPU Pool、RunPod 与 LAN AIO 的当前导航和稳定操作边界。完整历史
 profile、canary、现场故障与某次节点状态已归档；实时数量和 current mapping
@@ -147,6 +149,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   ComfyUI health 和 heartbeat，再允许接单；失败恢复旧 exact digest。
 - autoscaler 使用 leader lease、profile 阈值和 operation store，不能绕过
   provider 门禁或直接操作 LAN worker。
+- `minimax_h3` autoscaler 的四类 task 共用同一 RunPod profile。创建 Pod 仍必须同时
+  通过 exact image pin、asset-contract canary allowlist、固定模型 manifest/prefix
+  和 RTX 5090 门禁；代码进入 autoscaler catalog 不等于已有 artifact、canary 或正式
+  运行态，缺任一证据均 fail closed。
 - profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
   已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
   变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。

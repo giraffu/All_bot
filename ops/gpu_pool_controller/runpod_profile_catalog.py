@@ -196,6 +196,7 @@ RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
+    "minimax_h3_ref2v",
 )
 RUNPOD_MINIMAX_H3_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS = (
@@ -406,7 +407,6 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
         "profile": "minimax_h3",
         "label": "MiniMax H3 / DaSiWa",
         "supported_task_types": list(RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES),
-        "autoscaler_enabled": False,
     },
     {
         "profile": "pornmaster_flux2_edit_bf16",
