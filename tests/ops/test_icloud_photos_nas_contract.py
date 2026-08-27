@@ -11,6 +11,7 @@ IMAGE = (
     "docker.io/icloudpd/icloudpd@"
     "sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801"
 )
+OFFLINE_IMAGE = "sha256:6fe2cb61721e21f16a1a6506e623b0ae584495ff81d2e1faad72b55043443122"
 
 
 def test_sync_container_is_immutable_non_root_and_has_no_listener() -> None:
@@ -18,7 +19,7 @@ def test_sync_container_is_immutable_non_root_and_has_no_listener() -> None:
     service = compose["services"]["icloud-photo-backup"]
 
     assert compose["name"] == "allbot-icloud-photos-nas"
-    assert service["image"] == IMAGE
+    assert service["image"] == f"${{ICLOUDPD_IMAGE:-{IMAGE}}}"
     assert service["user"] == "1000:100"
     assert service["read_only"] is True
     assert service["cap_drop"] == ["ALL"]
@@ -169,6 +170,58 @@ def test_bootstrap_is_dry_run_by_default_and_requires_exact_confirmation() -> No
     )
     assert rejected.returncode == 2
     assert "exact confirmation" in rejected.stderr
+
+
+def test_offline_image_loader_requires_frozen_archive_and_image_id() -> None:
+    script = OPS / "load-offline-image.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    text = script.read_text(encoding="utf-8")
+
+    assert OFFLINE_IMAGE in text
+    assert "--archive-sha256" in text
+    assert "LOAD_ICLOUDPD_OFFLINE_IMAGE" in text
+    assert "docker load" in text
+    assert "docker image inspect" in text
+
+    dry_run = subprocess.run(
+        [str(script), "--archive", "/tmp/not-used.tar.gz", "--archive-sha256", "0" * 64],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert dry_run.returncode == 0, dry_run.stderr
+    assert "dry-run" in dry_run.stdout
+
+    rejected = subprocess.run(
+        [
+            str(script),
+            "--archive",
+            "/tmp/not-used.tar.gz",
+            "--archive-sha256",
+            "0" * 64,
+            "--execute",
+            "--confirm",
+            "wrong",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert "exact confirmation" in rejected.stderr
+
+
+def test_bootstrap_persists_only_approved_content_addressed_images() -> None:
+    text = (OPS / "bootstrap.sh").read_text(encoding="utf-8")
+
+    assert IMAGE in text
+    assert OFFLINE_IMAGE in text
+    assert 'ICLOUDPD_IMAGE=' in text
+    assert "docker image inspect --format" in text
+    assert '"$icloudpd_image"' in text
+    assert 'pull icloud-photo-backup' in text
 
 
 def test_snapshots_cover_originals_but_never_credentials() -> None:

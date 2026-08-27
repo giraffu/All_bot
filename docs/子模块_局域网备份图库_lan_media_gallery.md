@@ -77,6 +77,10 @@ asset ID 防止跨设备同名覆盖。实现不携带 `delete-after-download`�
 全量循环。Advanced Data Protection 账号不支持该 Web API 登录路径；账号还必须允许
 网页访问 iCloud 数据。
 
+NAS 无法直连镜像 registry 时，从可信主机导出官方 digest 对应镜像，冻结并核对传输
+归档 SHA-256；NAS 导入后还必须核对精确 `sha256:<image-id>`。Compose 只接受代码登记
+的官方 digest 或离线 image ID，并把实际选择投影到 root-only `.env`；不得改用 tag。
+
 首轮全量验收前，iCloud 原片不接入 PiGallery2。后续浏览接线只能把
 `/volume1/ApplePhotos/originals` 作为新的精确只读白名单源；不得把
 `/volume1/ApplePhotos`、运行态、快照根或 Apple 凭据目录整体暴露给图库容器。部署、
