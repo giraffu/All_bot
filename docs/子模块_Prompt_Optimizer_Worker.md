@@ -125,7 +125,7 @@ snapshot。Worker 发布前逐条核对 `<d>[Language] 原文</d>`；翻译、�
 对象键，不能再次包含桶名。
 
 H3 默认生成基础链固定 10Eros TURBO hybrid Beta3 与原生 7-step er_sde；LightX2V
-8-step 只保留给官方 FL2VA。十七个 LoRA 由生成任务的
+8-step 只保留给官方 FL2VA。十八个 LoRA 由生成任务的
 服务端目录可选注入。Prompt Optimizer 自身仍不接受非空 `lora_items`、单模型字段
 或自由规则文本；它只编译内容，不决定或输出 LoRA。`minimax_h3_hmnsfw@1` 与
 `minimax_h3_10eros_naughtytimes@1/@2/@3/@4` 及三个 `@1/@2/@3/@4` profile 仅用于历史

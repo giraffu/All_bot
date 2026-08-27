@@ -119,12 +119,13 @@ def test_minimax_h3_image_pins_parallel_nvidia_vfx_build_dependency():
     assert '--parallelism "${NVIDIA_VFX_DOWNLOAD_PARALLELISM}"' in dockerfile
 
 
-def test_minimax_h3_exposes_seventeen_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_eighteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
         "motion_booster",
         "motion_booster_ref2va",
+        "video_reasoning",
         "mystic_xxx",
         "breast_play",
         "innie",
@@ -143,6 +144,16 @@ def test_minimax_h3_exposes_seventeen_local_addons_and_defaults_to_none():
 
 
 def test_minimax_h3_pins_new_and_updated_addon_contracts():
+    reasoning = MINIMAX_H3_ADDON_MODELS["video_reasoning"]
+    assert reasoning.model_path == "MiniMaxH3/VBVR_H3_attn_only.safetensors"
+    assert reasoning.default_strength == 1.0
+    assert reasoning.prompt_prefix == ""
+    assert reasoning.supported_modes == ("t2v", "i2v")
+    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].model_path == (
+        "MiniMaxH3/HMNSFW-AIO-V2.5.safetensors"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].default_strength == 0.5
+    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].prompt_prefix == ""
     assert MINIMAX_H3_ADDON_MODELS["motion_booster"].model_path == (
         "MiniMaxH3/H3_Motion_BoosterV2.safetensors"
     )
@@ -187,12 +198,12 @@ def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
         "（人体结构增强）"
     )
     assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.startswith(
-        "Mystic XXX v3"
+        "Mystic XXX v4"
     )
     assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].model_path == (
-        "MiniMaxH3/MysticXXX_MMH3-V3.safetensors"
+        "MiniMaxH3/MysticXXX_MMH3-V4.safetensors"
     )
-    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].default_strength == 0.9
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].default_strength == 1.0
 
 
 def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
@@ -217,7 +228,7 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ("naughty_times", 0.8),
         ("sex_pose", 0.5),
         ("motion_booster", 0.7),
-        ("mystic_xxx", 0.9),
+        ("mystic_xxx", 1.0),
         ("breast_play", 0.75),
         ("innie", 0.8),
         ("deepthroat", 0.75),
@@ -244,6 +255,30 @@ def test_minimax_h3_ref2va_motion_booster_is_restricted_to_ref2v():
             MINIMAX_H3_T2V,
             {"lora_items": [{"name": "motion_booster_ref2va"}]},
         )
+
+
+def test_minimax_h3_video_reasoning_is_restricted_to_trained_modes():
+    for task_type in (MINIMAX_H3_T2V, MINIMAX_H3_I2V):
+        inputs = {"lora_items": [{"name": "video_reasoning"}]}
+        if task_type == MINIMAX_H3_I2V:
+            inputs["images"] = ["first.png"]
+        spec = build_minimax_h3_spec(task_type, inputs)
+        assert [(item.name, item.strength) for item in spec.addon_items] == [
+            ("video_reasoning", 1.0)
+        ]
+
+    for task_type, images in (
+        (MINIMAX_H3_FLF2V, ["first.png", "last.png"]),
+        (MINIMAX_H3_REF2V, ["subject.png", "reference.png"]),
+    ):
+        with pytest.raises(MiniMaxH3ValidationError, match="不支持当前生成模式"):
+            build_minimax_h3_spec(
+                task_type,
+                {
+                    "images": images,
+                    "lora_items": [{"name": "video_reasoning"}],
+                },
+            )
 
 
 @pytest.mark.parametrize(

@@ -101,16 +101,16 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17
+    version: 2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17/files
-      discovered_size_gb: 106.56
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18/files
+      discovered_size_gb: 106.27
       import_status: prepared_by_script
-      notes: Pinned 10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA plus official Comfy-Org pruned INT8 ConvRot selectable bases, LightX2V FL2VA 8-step and Ref2VA 4-step acceleration for their dedicated official profiles, seventeen optional LoRAs including Mystic XXX v3, and official Qwen3-VL/video/audio VAE assets. Native Ref2VA Motion v0.2 is a REF2V-only candidate and does not replace the Ref2VA acceleration LoRA or H3 Motion Booster v2; HMPussy V1 Stills and Better Titfuck v0.5 likewise remain separate candidates. All twenty-five sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
+      notes: Pinned 10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA plus official Comfy-Org pruned INT8 ConvRot selectable bases, LightX2V FL2VA 8-step and Ref2VA 4-step acceleration for their dedicated official profiles, and eighteen optional LoRAs including VBVR H3 v1, Mystic XXX v4, and HMNSFW AIO v2.5. Native Ref2VA Motion v0.2 is a REF2V-only candidate and does not replace the Ref2VA acceleration LoRA or H3 Motion Booster v2; HMPussy V1 Stills and Better Titfuck v0.5 likewise remain separate candidates. All twenty-six sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates.
     files:
       - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors
         sha256: ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2
@@ -139,18 +139,21 @@ bundles:
       - relative_path: loras/MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors
         sha256: 947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a
         size_bytes: 2242444272
-      - relative_path: loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors
-        sha256: 608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb
-        size_bytes: 310168344
+      - relative_path: loras/MiniMaxH3/HMNSFW-AIO-V2.5.safetensors
+        sha256: a07732a84fd733085eb5d910f602f918fa7a3658117116927e4329f5951a9d2d
+        size_bytes: 86040232
       - relative_path: loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors
         sha256: f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3
         size_bytes: 155110272
       - relative_path: loras/MiniMaxH3/ref2VA_Motion_v2.safetensors
         sha256: b48cf96ebb14985789528449fe61985babf786feb658740a82a88ac685167fd9
         size_bytes: 155110288
-      - relative_path: loras/MiniMaxH3/MysticXXX_MMH3-V3.safetensors
-        sha256: 99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6
-        size_bytes: 298259688
+      - relative_path: loras/MiniMaxH3/VBVR_H3_attn_only.safetensors
+        sha256: 372597997f646301dea204bf00e899b0f470254d7b9ac345e7b7417cc2140b34
+        size_bytes: 32826752
+      - relative_path: loras/MiniMaxH3/MysticXXX_MMH3-V4.safetensors
+        sha256: fc3e856d14c6c19557c888f48662d591e4794e281233ec0d987be5003068afba
+        size_bytes: 155095800
       - relative_path: loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors
         sha256: f9cbcaa596b6b281f154388e407e7b4c4ee97ba9917614ab36bc5e86edf374f5
         size_bytes: 298260984

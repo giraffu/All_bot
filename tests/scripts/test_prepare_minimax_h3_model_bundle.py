@@ -8,7 +8,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
+def test_split_author_stack_uses_exact_twenty_six_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -56,9 +56,10 @@ def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
         2_242_444_272,
         "https://civitai.red/api/download/models/3212436?fileId=3094173",
     )
-    assert files["loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors"][1:3] == (
-        "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
-        310_168_344,
+    assert files["loras/MiniMaxH3/HMNSFW-AIO-V2.5.safetensors"][1:4] == (
+        "a07732a84fd733085eb5d910f602f918fa7a3658117116927e4329f5951a9d2d",
+        86_040_232,
+        "https://civitai.red/api/download/models/3268303?fileId=3152083",
     )
     assert files["loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors"][1:4] == (
         "f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3",
@@ -70,10 +71,15 @@ def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
         155_110_288,
         "https://civitai.red/api/download/models/3246346?fileId=3129119",
     )
-    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V3.safetensors"][1:4] == (
-        "99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6",
-        298_259_688,
-        "https://civitai.red/api/download/models/3260276?fileId=3143593",
+    assert files["loras/MiniMaxH3/VBVR_H3_attn_only.safetensors"][1:4] == (
+        "372597997f646301dea204bf00e899b0f470254d7b9ac345e7b7417cc2140b34",
+        32_826_752,
+        "https://civitai.red/api/download/models/3220766?fileId=3102749",
+    )
+    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V4.safetensors"][1:4] == (
+        "fc3e856d14c6c19557c888f48662d591e4794e281233ec0d987be5003068afba",
+        155_095_800,
+        "https://civitai.red/api/download/models/3266628?fileId=3150341",
     )
     assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
         "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
@@ -129,8 +135,8 @@ def test_split_author_stack_uses_exact_twenty_five_pinned_assets():
         155_110_304,
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
-    assert len(files) == 25
-    assert sum(entry[2] for entry in module.FILES) == 114_441_277_951
+    assert len(files) == 26
+    assert sum(entry[2] for entry in module.FILES) == 114_106_812_703
     assert module.MIN_FREE_BYTES == 110 * 1024**3
 
 

@@ -9,8 +9,9 @@
 强度。Dashboard“入口控制”的独立“Pro 模型预设”子页按四种模式维护主模型与最多
 十三个附加模型，并逐项保存 `0.1..2.0` 强度；Web 与主 Bot 子页只维护入口/菜单开关。
 Web 和主 Bot 的新提交都由服务端读取并覆盖客户端模型字段，精确使用后台保存的附加
-模型强度。其中十六项支持全部模式，原生 REF2VA Motion v0.2 只允许 REF2V。
-QQCC 配置 Web 同样从这一领域目录下发 17 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
+模型强度。其中十六项支持全部模式，原生 REF2VA Motion v0.2 只允许 REF2V，
+VBVR H3 v1 只允许 T2V/I2V。
+QQCC 配置 Web 同样从这一领域目录下发 18 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
 官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图；Worker 防御上限为 5 张。私有
@@ -177,10 +178,10 @@ checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
   `5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-十七个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+十八个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2.5
 （0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、原生 REF2VA Motion v0.2
-（0.7，触发词 `dynv2`，仅 REF2V）、Mystic XXX v3（0.9，
-无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
+（0.7，触发词 `dynv2`，仅 REF2V）、VBVR H3 v1（1.0，仅 T2V/I2V）、
+Mystic XXX v4（1.0，无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
 `inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
 Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
 （0.35）、HMPenis v2.0（1.0，触发词 `HMPenis`）、HMCumshot v0.5（0.9，触发词
@@ -190,6 +191,21 @@ Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）�
 Motion Booster 链接的 V0.2（modelVersion `3228867`）与既有正式资产 SHA256 完全一致，
 因此保留稳定 ID 和原文件，不重复注册；HMPenis 稳定 ID 原位升级到 modelVersion
 `3247473`，旧场景无需迁移。
+VBVR H3 v1 使用 modelVersion `3220766`、file `3102749`，文件
+`VBVR_H3_attn_only.safetensors` 为 32,826,752 bytes，SHA256
+`372597997f646301dea204bf00e899b0f470254d7b9ac345e7b7417cc2140b34`。
+作者将其定位为提示词遵循、时序一致性与动作精度辅助，并明确以 `1.0` 使用；H3
+版本只声明训练 T2V/I2V，因此系统只在这两种模式下发，不把未验证的 FLF2V/REF2V
+当作兼容模式。它没有触发词，且不替代 Prompt Optimizer。
+HMNSFW AIO 保留稳定 ID `sex_pose`，原位升级到 v2.5 modelVersion `3268303`、
+file `3152083`；文件 `HMNSFW-AIO-V2.5.safetensors` 为 86,040,232 bytes，SHA256
+`a07732a84fd733085eb5d910f602f918fa7a3658117116927e4329f5951a9d2d`。作者建议
+`0.5..0.9`，目录继续以 `0.5` 作为新选择初始值；v2.5 未声明旧版 `hmmotion`
+触发词，因此不再自动注入，已有场景显式保存的强度保持不变。
+Mystic XXX 保留稳定 ID `mystic_xxx`，原位升级到 v4 modelVersion `3266628`、
+file `3150341`；文件 `MysticXXX_MMH3-V4.safetensors` 为 155,095,800 bytes，
+SHA256 `fc3e856d14c6c19557c888f48662d591e4794e281233ec0d987be5003068afba`。
+作者将 `1.0` 作为推荐起点，因此新选择默认改为 `1.0`，已有场景显式保存的强度不变。
 原生 REF2VA Motion v0.2 使用 modelVersion `3246346`、file `3129119`，文件
 `ref2VA_Motion_v2.safetensors` 为 155,110,288 bytes，SHA256
 `b48cf96ebb14985789528449fe61985babf786feb658740a82a88ac685167fd9`。作者将它定位为
@@ -225,7 +241,7 @@ REF2V 在 `10eros` 下使用同一 TURBO hybrid Beta3，不加载 LightX2V。其
 PyTorch attention、video/audio sigma shift `11/4`、
 `MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("er_sde") →
 ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
-SamplerCustomAdvanced`；禁止 `BasicScheduler`。十七个候选 LoRA 中最多十三个仍按选择顺序注入；
+SamplerCustomAdvanced`；禁止 `BasicScheduler`。十八个候选 LoRA 中最多十三个仍按选择顺序注入；
 REF2VA Motion v0.2 可进入任一 REF2V profile，并始终追加在所选基础/加速链之后。
 
 `official + REF2V` 是独立执行 profile：同一基础节点在 patch 后切换为官方 INT8
@@ -242,7 +258,7 @@ sampler、缩放策略和专用 LoRA 是同一蒸馏契约，不能替换为 FL2
 改成 8 steps。`official` 20-step 高保真 profile 继续保留。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
-10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十七个
+10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十八个
 可选 LoRA，不包含 RedMix。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；7-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
@@ -255,13 +271,9 @@ patcher 删除未使用节点和连接并保持剩余图片顺序。
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17`、25 个文件的字节数与
-SHA256，总计 114,441,277,951 bytes，准备前要求模型卷至少 110 GiB 可用。
-Mystic XXX v3 使用 modelVersion `3260276`、
-file `3143593`，文件 `MysticXXX_MMH3-V3.safetensors` 为 298,259,688 bytes，
-SHA256 `99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6`；作者建议
-v3 可在较高强度下使用并以 `0.9` 为示例，因此新选择默认使用 `0.9`，已有场景中
-显式保存的强度保持不变。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18`、26 个文件的字节数与
+SHA256，总计 114,106,812,703 bytes，准备前要求模型卷至少 110 GiB 可用。
+脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

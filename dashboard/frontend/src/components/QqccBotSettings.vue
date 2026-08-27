@@ -304,7 +304,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ai_video_addon_models_version: 6,
+  ai_video_addon_models_version: 7,
   ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],

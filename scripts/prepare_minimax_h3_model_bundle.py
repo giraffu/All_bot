@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17"
+VERSION = "2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18"
 MIN_FREE_BYTES = 110 * 1024**3
 FILES = (
     (
@@ -78,10 +78,10 @@ FILES = (
         "https://civitai.red/api/download/models/3212436?fileId=3094173",
     ),
     (
-        "loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors",
-        "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
-        310_168_344,
-        "https://civitai.red/api/download/models/3206518",
+        "loras/MiniMaxH3/HMNSFW-AIO-V2.5.safetensors",
+        "a07732a84fd733085eb5d910f602f918fa7a3658117116927e4329f5951a9d2d",
+        86_040_232,
+        "https://civitai.red/api/download/models/3268303?fileId=3152083",
     ),
     (
         "loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors",
@@ -96,10 +96,16 @@ FILES = (
         "https://civitai.red/api/download/models/3246346?fileId=3129119",
     ),
     (
-        "loras/MiniMaxH3/MysticXXX_MMH3-V3.safetensors",
-        "99307e313784cbea7d9ee2a56ecb8794272f1024737985b824eca8c5c619a0b6",
-        298_259_688,
-        "https://civitai.red/api/download/models/3260276?fileId=3143593",
+        "loras/MiniMaxH3/VBVR_H3_attn_only.safetensors",
+        "372597997f646301dea204bf00e899b0f470254d7b9ac345e7b7417cc2140b34",
+        32_826_752,
+        "https://civitai.red/api/download/models/3220766?fileId=3102749",
+    ),
+    (
+        "loras/MiniMaxH3/MysticXXX_MMH3-V4.safetensors",
+        "fc3e856d14c6c19557c888f48662d591e4794e281233ec0d987be5003068afba",
+        155_095_800,
+        "https://civitai.red/api/download/models/3266628?fileId=3150341",
     ),
     (
         "loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors",
@@ -259,10 +265,11 @@ def prepare(registry: ModelRegistry) -> Path:
                 "Comfy-Org/MiniMax-H3",
                 "lightx2v/Minimax-h3-Turbo",
                 "civitai:modelVersion/3212436:file/3094173",
-                "civitai:modelVersion/3206518",
+                "civitai:modelVersion/3268303:file/3152083",
                 "civitai:modelVersion/3228867:file/3111185",
                 "civitai:modelVersion/3246346:file/3129119",
-                "civitai:modelVersion/3260276:file/3143593",
+                "civitai:modelVersion/3220766:file/3102749",
+                "civitai:modelVersion/3266628:file/3150341",
                 "civitai:modelVersion/3225638:file/3107724",
                 "civitai:modelVersion/3222484:file/3104474",
                 "civitai:modelVersion/3226989:file/3109184",
@@ -283,10 +290,10 @@ def prepare(registry: ModelRegistry) -> Path:
                 "10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA, "
                 "official pruned INT8 ConvRot FL2VA and Ref2VA bases, "
                 "plus LightX2V FL2VA 8-step v1.0 and Ref2VA 4-step v0.1 "
-                "acceleration for their selectable official profiles, and seventeen "
+                "acceleration for their selectable official profiles, and eighteen "
                 "optional one-file LoRAs: NaughtyTimes "
-                "v2, HMNSFW AIO v2, H3 Motion Booster v2, native Ref2VA Motion v0.2, "
-                "Mystic XXX v3, HMBreasts, "
+                "v2, HMNSFW AIO v2.5, H3 Motion Booster v2, native Ref2VA Motion v0.2, "
+                "VBVR H3 v1, Mystic XXX v4, HMBreasts, "
                 "VagAssist, HMPussy v6, HMPenis v2.0, HMCumshot v0.5, Breast Play & Jiggle v1, HMInnie "
                 "v1, Deepthroat v0.2, POV Missionary v0.7, Footjobs Type B v1, "
                 "HMPussy V1 Stills and Better Titfuck v0.5; "

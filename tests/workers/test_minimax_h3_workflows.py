@@ -334,7 +334,7 @@ def test_minimax_h3_patcher_injects_selected_addons_after_v3_base_in_order():
     }
     assert patched["101"]["inputs"] == {
         "model": ["100", 0],
-        "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        "lora_name": "MiniMaxH3/HMNSFW-AIO-V2.5.safetensors",
         "strength_model": 0.45,
     }
     assert patched["102"]["inputs"] == {
@@ -344,7 +344,7 @@ def test_minimax_h3_patcher_injects_selected_addons_after_v3_base_in_order():
     }
     assert patched["2"]["inputs"]["model"] == ["102", 0]
     assert patched["30"]["inputs"]["prompt"] == (
-        "hmmotion, Vagina, two adults move in a bedroom"
+        "Vagina, two adults move in a bedroom"
     )
 
 
@@ -389,11 +389,33 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
     }
     assert workflow["101"]["inputs"] == {
         "model": ["100", 0],
-        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V3.safetensors",
-        "strength_model": 0.9,
+        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V4.safetensors",
+        "strength_model": 1.0,
     }
     assert workflow["2"]["inputs"]["model"] == ["101", 0]
     assert workflow["30"]["inputs"]["prompt"] == "dynv2, scene"
+
+
+def test_minimax_h3_worker_injects_video_reasoning_without_prompt_trigger():
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 I2V.api.json").read_text()
+    )
+    patch_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_i2v",
+        params={
+            "prompt": "a precise sequence of actions",
+            "image": "first.png",
+            "lora_items": [{"name": "video_reasoning"}],
+        },
+    )
+
+    assert workflow["100"]["inputs"] == {
+        "model": ["1", 0],
+        "lora_name": "MiniMaxH3/VBVR_H3_attn_only.safetensors",
+        "strength_model": 1.0,
+    }
+    assert workflow["30"]["inputs"]["prompt"] == "a precise sequence of actions"
 
 
 def test_minimax_h3_worker_chains_new_action_loras_and_injects_declared_triggers():

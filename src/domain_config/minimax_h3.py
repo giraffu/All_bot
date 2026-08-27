@@ -104,11 +104,10 @@ MINIMAX_H3_ADDON_MODELS = {
     ),
     "sex_pose": MiniMaxH3AddonModel(
         "sex_pose",
-        "HMNSFW AIO v2（成人动作测试二）",
-        "HMNSFW AIO v2 (adult action test 2)",
-        "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        "HMNSFW AIO v2.5（成人动作测试二）",
+        "HMNSFW AIO v2.5 (adult action test 2)",
+        "MiniMaxH3/HMNSFW-AIO-V2.5.safetensors",
         0.5,
-        "hmmotion",
     ),
     "motion_booster": MiniMaxH3AddonModel(
         "motion_booster",
@@ -127,12 +126,20 @@ MINIMAX_H3_ADDON_MODELS = {
         "dynv2",
         ("ref2v",),
     ),
+    "video_reasoning": MiniMaxH3AddonModel(
+        "video_reasoning",
+        "VBVR H3 v1（提示词遵循与时序辅助）",
+        "VBVR H3 v1 (prompt-following and temporal aid)",
+        "MiniMaxH3/VBVR_H3_attn_only.safetensors",
+        1.0,
+        supported_modes=("t2v", "i2v"),
+    ),
     "mystic_xxx": MiniMaxH3AddonModel(
         "mystic_xxx",
-        "Mystic XXX v3（人体结构增强）",
-        "Mystic XXX v3 (anatomy enhancement)",
-        "MiniMaxH3/MysticXXX_MMH3-V3.safetensors",
-        0.9,
+        "Mystic XXX v4（人体结构增强）",
+        "Mystic XXX v4 (anatomy enhancement)",
+        "MiniMaxH3/MysticXXX_MMH3-V4.safetensors",
+        1.0,
     ),
     "breast_play": MiniMaxH3AddonModel(
         "breast_play",
@@ -297,7 +304,9 @@ def normalize_minimax_h3_addon_items(
         if model is None:
             raise MiniMaxH3ValidationError("不支持该附加模型。")
         if mode is not None and mode not in model.supported_modes:
-            raise MiniMaxH3ValidationError("该附加模型仅支持参考图生视频。")
+            if model.supported_modes == ("ref2v",):
+                raise MiniMaxH3ValidationError("该附加模型仅支持参考图生视频。")
+            raise MiniMaxH3ValidationError("该附加模型不支持当前生成模式。")
         if name in seen:
             raise MiniMaxH3ValidationError("附加模型不得重复选择。")
         seen.add(name)
