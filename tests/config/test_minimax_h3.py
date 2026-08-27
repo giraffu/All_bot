@@ -370,10 +370,10 @@ def test_minimax_h3_rejects_ref2v_turbo_profile_outside_ref2v(
 @pytest.mark.parametrize(
     "preset,duration,cost,frames",
     [
-        ("preview", 5, 9, 124),
-        ("small", 5, 10, 124),
-        ("standard", 10, 24, 243),
-        ("hd", 15, 53, 362),
+        ("preview", 5, 10, 124),
+        ("small", 5, 11, 124),
+        ("standard", 10, 27, 243),
+        ("hd", 15, 59, 362),
     ],
 )
 def test_minimax_h3_t2v_resolution_duration_cost_and_frame_grid(preset, duration, cost, frames):
@@ -440,21 +440,23 @@ def test_minimax_h3_ref2v_rejects_worker_image_count_outside_one_to_five(count):
 @pytest.mark.parametrize(
     "duration,preset,normal",
     [
-        (5, "preview", 9),
-        (5, "small", 10),
-        (5, "standard", 13),
-        (5, "hd", 15),
-        (10, "preview", 12),
-        (10, "small", 15),
-        (10, "standard", 24),
-        (10, "hd", 30),
-        (15, "preview", 17),
-        (15, "small", 24),
-        (15, "standard", 38),
-        (15, "hd", 53),
+        (5, "preview", 10),
+        (5, "small", 11),
+        (5, "standard", 15),
+        (5, "hd", 17),
+        (10, "preview", 14),
+        (10, "small", 17),
+        (10, "standard", 27),
+        (10, "hd", 33),
+        (15, "preview", 19),
+        (15, "small", 27),
+        (15, "standard", 42),
+        (15, "hd", 59),
     ],
 )
-def test_minimax_h3_resolution_price_matrix(duration, preset, normal):
+def test_minimax_h3_resolution_price_matrix_applies_public_1_1_multiplier(
+    duration, preset, normal
+):
     assert build_minimax_h3_spec(
         MINIMAX_H3_T2V,
         {"duration": duration, "resolution_preset": preset},
@@ -464,21 +466,23 @@ def test_minimax_h3_resolution_price_matrix(duration, preset, normal):
 @pytest.mark.parametrize(
     "preset,duration,cost",
     [
-        ("preview", 5, 10),
-        ("small", 5, 11),
-        ("standard", 5, 15),
-        ("hd", 5, 20),
-        ("preview", 10, 15),
-        ("small", 10, 21),
-        ("standard", 10, 33),
-        ("hd", 10, 45),
-        ("preview", 15, 23),
-        ("small", 15, 34),
-        ("standard", 15, 58),
-        ("hd", 15, 82),
+        ("preview", 5, 11),
+        ("small", 5, 13),
+        ("standard", 5, 17),
+        ("hd", 5, 22),
+        ("preview", 10, 17),
+        ("small", 10, 24),
+        ("standard", 10, 37),
+        ("hd", 10, 50),
+        ("preview", 15, 26),
+        ("small", 15, 38),
+        ("standard", 15, 64),
+        ("hd", 15, 91),
     ],
 )
-def test_minimax_h3_ref2v_uses_premium_price_matrix(preset, duration, cost):
+def test_minimax_h3_ref2v_price_matrix_applies_public_1_1_multiplier(
+    preset, duration, cost
+):
     spec = build_minimax_h3_spec(
         MINIMAX_H3_REF2V,
         {

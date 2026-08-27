@@ -69,6 +69,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
         "addon_items": [],
     }
     assert "高级图生视频pro" in reply.await_args.args[1]
+    assert "如果要切换功能，请发送 /cancel。" in reply.await_args.args[1]
     mode_callbacks = [button.callback_data for row in reply.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert "avp_mode_ref2v" in mode_callbacks
 
@@ -140,6 +141,7 @@ async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_
     ):
         assert private_term not in public_copy
     assert "直接发送提示词" in settings_text
+    assert "如果要切换功能，请发送 /cancel。" in settings_text
     assert "成人动作测试一" not in button_text
     assert "成人动作测试二" not in button_text
     assert "成人动作强化" not in button_text
@@ -260,9 +262,9 @@ async def test_pro_prompt_submits_immediately_without_confirmation(monkeypatch):
 @pytest.mark.parametrize(
     ("mode", "duration", "preset", "expected_cost"),
     [
-        ("t2v", 10, "hd", 30),
-        ("i2v", 15, "standard", 38),
-        ("ref2v", 5, "preview", 10),
+        ("t2v", 10, "hd", 33),
+        ("i2v", 15, "standard", 42),
+        ("ref2v", 5, "preview", 11),
     ],
 )
 def test_pro_settings_show_current_credit_cost_and_option_prices(
@@ -288,6 +290,43 @@ def test_pro_settings_show_current_credit_cost_and_option_prices(
         str(expected_cost) in label and label.startswith("✅")
         for label in button_text
     )
+
+
+@pytest.mark.parametrize(
+    ("media_received", "expected_action"),
+    [
+        (False, "请输入视频提示词。"),
+        (True, "图片已收到，请输入视频提示词。"),
+    ],
+)
+def test_pro_prompt_request_explains_how_to_switch_features(
+    media_received, expected_action
+):
+    text = fsm._prompt_request_text(
+        SimpleNamespace(lang="zh"), {}, media_received=media_received
+    )
+
+    assert expected_action in text
+    assert "如果要切换功能，请发送 /cancel。" in text
+
+
+@pytest.mark.asyncio
+async def test_pro_non_t2v_settings_prompt_explains_image_and_cancel_commands(
+    monkeypatch,
+):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: {"mode": "i2v"}},
+        lang="zh",
+    )
+    update = SimpleNamespace(effective_message=object())
+
+    state = await fsm.receive_settings_prompt(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_SETTINGS
+    assert "请直接发送图片。" in reply.await_args.args[1]
+    assert "如果要切换功能，请发送 /cancel。" in reply.await_args.args[1]
 
 
 def test_pro_handler_has_no_prompt_confirmation_state():

@@ -29,16 +29,46 @@ MINIMAX_H3_PIXEL_PRESETS = {
     "standard": 520_000,
     "hd": 650_000,
 }
-MINIMAX_H3_NORMAL_PRICE_BY_DURATION = {
+MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_NUMERATOR = 11
+MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_DENOMINATOR = 10
+
+
+def _apply_public_price_multiplier(price: int) -> int:
+    numerator = price * MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_NUMERATOR
+    denominator = MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_DENOMINATOR
+    return (numerator + denominator - 1) // denominator
+
+
+_MINIMAX_H3_NORMAL_BASE_PRICE_BY_DURATION = {
     5: {"preview": 9, "small": 10, "standard": 13, "hd": 15},
     10: {"preview": 12, "small": 15, "standard": 24, "hd": 30},
     15: {"preview": 17, "small": 24, "standard": 38, "hd": 53},
 }
-MINIMAX_H3_REF2V_PRICE_BY_DURATION = {
+_MINIMAX_H3_REF2V_BASE_PRICE_BY_DURATION = {
     5: {"preview": 10, "small": 11, "standard": 15, "hd": 20},
     10: {"preview": 15, "small": 21, "standard": 33, "hd": 45},
     15: {"preview": 23, "small": 34, "standard": 58, "hd": 82},
 }
+
+
+def _build_public_price_matrix(
+    base_matrix: dict[int, dict[str, int]],
+) -> dict[int, dict[str, int]]:
+    return {
+        duration: {
+            preset: _apply_public_price_multiplier(price)
+            for preset, price in prices.items()
+        }
+        for duration, prices in base_matrix.items()
+    }
+
+
+MINIMAX_H3_NORMAL_PRICE_BY_DURATION = _build_public_price_matrix(
+    _MINIMAX_H3_NORMAL_BASE_PRICE_BY_DURATION
+)
+MINIMAX_H3_REF2V_PRICE_BY_DURATION = _build_public_price_matrix(
+    _MINIMAX_H3_REF2V_BASE_PRICE_BY_DURATION
+)
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
     "9:16": 9 / 16,

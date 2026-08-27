@@ -458,4 +458,4 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
 def test_ref2v_registry_exposes_gallery_and_template_reuse_capabilities():
     assert is_gallery_supported_task_type("minimax_h3_ref2v") is True
     assert is_apply_input_reuse_supported_task_type("minimax_h3_ref2v") is True
-    assert get_task_cost("minimax_h3_ref2v") == 10
+    assert get_task_cost("minimax_h3_ref2v") == 11

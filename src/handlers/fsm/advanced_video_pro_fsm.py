@@ -56,12 +56,20 @@ PRESET_LABELS = {
     "standard": ("标准（约 720p）", "Standard (approx. 720p)"),
     "hd": ("高清（约 810p）", "HD (approx. 810p)"),
 }
+CANCEL_HINT_ZH = "如果要切换功能，请发送 /cancel。"
+CANCEL_HINT_EN = "To switch features, send /cancel."
+
+
 def _lang(context) -> str:
     return "en" if getattr(context, "lang", "zh") == "en" else "zh"
 
 
 def _text(context, zh: str, en: str) -> str:
     return en if _lang(context) == "en" else zh
+
+
+def _with_cancel_hint(context, text: str) -> str:
+    return f"{text.rstrip()}\n\n{_text(context, CANCEL_HINT_ZH, CANCEL_HINT_EN)}"
 
 
 def _mode_keyboard(context) -> InlineKeyboardMarkup:
@@ -161,10 +169,13 @@ def _settings_text(context, data: dict) -> str:
         else "No settings confirmation is needed. Send the image and prompt to generate immediately."
     )
     cost = _settings_cost(data)
-    return _text(
+    return _with_cancel_hint(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n预计消耗：{cost} 灵石\n\n{direct_action_zh}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nEstimated cost: {cost} credits\n\n{direct_action_en}",
+        _text(
+            context,
+            f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n预计消耗：{cost} 灵石\n\n{direct_action_zh}",
+            f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nEstimated cost: {cost} credits\n\n{direct_action_en}",
+        ),
     )
 
 
@@ -176,7 +187,7 @@ def _prompt_request_text(context, data: dict, *, media_received: bool = False) -
         if media_received
         else "Send the video prompt.",
     )
-    return intro
+    return _with_cancel_hint(context, intro)
 
 
 def _extract_image(update: Update) -> tuple[str | None, str]:
@@ -237,10 +248,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     }
     await robust_reply_text(
         update.effective_message,
-        _text(
+        _with_cancel_hint(
             context,
-            "🎬 *高级图生视频pro*\n\n请选择生成模式：",
-            "🎬 *Advanced Image-to-Video Pro*\n\nChoose a generation mode:",
+            _text(
+                context,
+                "🎬 *高级图生视频pro*\n\n请选择生成模式：",
+                "🎬 *Advanced Image-to-Video Pro*\n\nChoose a generation mode:",
+            ),
         ),
         reply_markup=_mode_keyboard(context),
         parse_mode="Markdown",
@@ -287,8 +301,13 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return AdvancedVideoProState.WAIT_PROMPT
         await robust_edit_text(
             query.message,
-            _text(
-                context, "请上传第一张参考图片。", "Upload the first reference image."
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "请上传第一张参考图片。",
+                    "Upload the first reference image.",
+                ),
             ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
@@ -308,17 +327,24 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if data.get("mode") not in {"i2v", "flf2v", "ref2v"}:
         await robust_reply_text(
             update.message,
-            _text(
+            _with_cancel_hint(
                 context,
-                "请先选择图生视频模式。",
-                "Choose an image-to-video mode first.",
+                _text(
+                    context,
+                    "请先选择图生视频模式。",
+                    "Choose an image-to-video mode first.",
+                ),
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
     file_id, suffix = _extract_image(update)
     if not file_id:
         await robust_reply_text(
-            update.message, _text(context, "请上传有效图片。", "Upload a valid image.")
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(context, "请上传有效图片。", "Upload a valid image."),
+            ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
     telegram_file = await context.bot.get_file(file_id)
@@ -330,10 +356,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if mode == "flf2v" and len(data["images"]) < 2:
         await robust_reply_text(
             update.message,
-            _text(
+            _with_cancel_hint(
                 context,
-                "起始帧已收到，请上传终止帧。",
-                "Start frame received. Upload the end frame.",
+                _text(
+                    context,
+                    "起始帧已收到，请上传终止帧。",
+                    "Start frame received. Upload the end frame.",
+                ),
             ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
@@ -343,7 +372,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         except AdvancedVideoProSubmissionError as exc:
             data["images"].pop()
             Path(path).unlink(missing_ok=True)
-            await robust_reply_text(update.message, str(exc))
+            await robust_reply_text(
+                update.message, _with_cancel_hint(context, str(exc))
+            )
             return AdvancedVideoProState.WAIT_MEDIA
     if mode == "ref2v":
         count = len(data["images"])
@@ -366,10 +397,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         await robust_reply_text(
             update.message,
-            _text(
+            _with_cancel_hint(
                 context,
-                f"已收到 {count} 张参考图。可继续添加，最多 4 张。",
-                f"Received {count} reference image(s). You may add up to 4.",
+                _text(
+                    context,
+                    f"已收到 {count} 张参考图。可继续添加，最多 4 张。",
+                    f"Received {count} reference image(s). You may add up to 4.",
+                ),
             ),
             reply_markup=keyboard,
         )
@@ -410,7 +444,14 @@ async def receive_reference_description(
     keyboard = InlineKeyboardMarkup(rows)
     await robust_reply_text(
         update.message,
-        _text(context, f"已添加 {count} 个角色。", f"{count} character(s) added."),
+        _with_cancel_hint(
+            context,
+            _text(
+                context,
+                f"已添加 {count} 个角色。",
+                f"{count} character(s) added.",
+            ),
+        ),
         reply_markup=keyboard,
     )
     return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
@@ -425,10 +466,13 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query.data == "avp_refs_more" and len(data["images"]) < 4:
         await robust_edit_text(
             query.message,
-            _text(
+            _with_cancel_hint(
                 context,
-                "请上传下一张参考图。",
-                "Upload the next reference image.",
+                _text(
+                    context,
+                    "请上传下一张参考图。",
+                    "Upload the next reference image.",
+                ),
             ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
@@ -456,7 +500,7 @@ async def _submit_generation(
             addon_items=list(data.get("addon_items", [])),
         )
     except AdvancedVideoProSubmissionError as exc:
-        await robust_reply_text(message, str(exc))
+        await robust_reply_text(message, _with_cancel_hint(context, str(exc)))
         return AdvancedVideoProState.WAIT_PROMPT
     user = update.effective_user
     try:
@@ -520,7 +564,10 @@ async def receive_settings_prompt(
     if not data or data.get("mode") != "t2v":
         await robust_reply_text(
             update.effective_message,
-            _text(context, "请直接发送图片。", "Send the image directly."),
+            _with_cancel_hint(
+                context,
+                _text(context, "请直接发送图片。", "Send the image directly."),
+            ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
     return await receive_prompt(update, context)

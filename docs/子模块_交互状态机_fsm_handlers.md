@@ -28,6 +28,8 @@ I2V、FLF2V 与 REF2V 原生生成记录都设置 `allow_contribute=true`，可�
 Dashboard 独立“Pro 模型预设”子页已校验的主模型与附加模型精确强度交给
 `advanced_video_pro_submission_service.py`。历史 `avp_settings_done` callback 只作已发消息
 兼容，新键盘不得再次发送该按钮或 `avp_addon_*` 按钮。
+Pro 会话中凡是继续等待用户选择模式、上传图片或输入提示词的提示，都同时说明可发送
+`/cancel` 取消当前流程并切换功能；终态成功、余额不足和配置不可用提示不重复追加。
 
 ## 1. 目标与范围
 
