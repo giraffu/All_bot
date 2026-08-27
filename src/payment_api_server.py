@@ -29,7 +29,9 @@ from src.services.alipay_direct_service import validate_alipay_direct_startup_co
 from src.database.core import AsyncSessionLocal
 from src.database.models import Order
 from src.services.rmb_payment_provider_service import HUANYUY
+from src.log_redaction import install_log_redaction
 
+install_log_redaction()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("payment_api")
 

@@ -10,11 +10,13 @@ from telegram.request import HTTPXRequest
 from paid_group_guard_bot.moderation_handlers import build_message_moderation_handler
 from standalone_group_manage_bot.config import GroupManageBotSettings
 from standalone_group_manage_bot.moderation import GroupManageConfigProvider
+from src.log_redaction import install_log_redaction
 
 logger = logging.getLogger(__name__)
 
 
 def setup_logging(log_file: str) -> None:
+    install_log_redaction()
     path = Path(log_file)
     path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(

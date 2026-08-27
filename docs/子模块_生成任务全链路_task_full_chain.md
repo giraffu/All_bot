@@ -174,6 +174,8 @@ application 调用与失败清理。
 
 当低阶外门用户因目标 Worker 执行池的 projected pending 达到容量上限而被拒绝时，`billing_core` 会经 task core 抛出 `QueueCapacityError`。`POST /api/tasks/generate` 将其映射为 HTTP 429，并返回结构化 `detail.code=GENERATION_QUEUE_FULL`；Vue 根据该 code 展示“当前任务队列已满”、可改用其他任务，以及仅适用于外门练气期及以下用户的充值升级身份提示。其它并发限制仍使用普通 429，避免将用户自身并发已满或其它接口限流误称为执行池满载。
 
+跨用户 staging 引用抛 `StagedInputOwnershipError` 并固定映射 HTTP 403；不得暴露对象 key 或来源用户 ID，其它 promotion 失败仍是内部错误。
+
 这意味着 Web 成功返回给前端时，任务通常已经：
 
 - 完成了计费检查
@@ -353,8 +355,8 @@ dispatcher 下游通常会继续经过：
 
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
-- `api_client.py` 的 HTTP circuit breaker 按请求类别隔离：任务提交走 `submit`，状态轮询走 `status`，媒体下载走 `media`，系统状态检查继续跳过 breaker。HTTP 4xx 不计入 breaker 失败，网络错误、超时和 5xx 才计入；Central Redis transient 503 会被上游忙碌识别处理，不应让状态轮询拖垮提交链路。
-- Web 粗状态接口只在 active registry 已确认任务归属后调用 Central。Central 状态查询出现传输错误、超时或 `status` breaker 打开时，接口按 registry 中的 `backend_task_id`、`status` 与公开 `task_type` 返回保守的 `pending/running` 粗状态，不向用户放大为 HTTP 500；已有 History 时仍以 History 终态为准。Central 404 继续表示本次查询无状态，并且和其它 HTTP 4xx 一样不计入 breaker。相关错误日志必须保留 `error_type`，避免 `ReadTimeout` 等空字符串异常无法辨认。
+- `api_client.py` 的 breaker 按 `submit/status/media` 隔离；4xx 不计失败，网络错误、超时和 5xx 才计入。Central Redis transient 503 由上游忙碌处理；单任务 status 404 是预期缺失，只记 DEBUG。
+- Web 只在 active registry 确认归属后查询 Central；传输错误、超时或 status breaker 打开时，按 registry 返回保守 `pending/running`，History 终态优先。404 不计 breaker/ERROR；其它错误保留 `error_type`。R2 deletion gate 默认关闭，增量 prune 静默返回且不记录用户 ID。
 - Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 兼容 re-export 已删除，不应作为新增逻辑的事实源。
 - `custom_video` / `video_lora`、Telegram 懒人动图 mode 与 `wan22_video_v2` 是不同用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 

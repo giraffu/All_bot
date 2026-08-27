@@ -33,7 +33,8 @@ description: 开发和运维 AllBot 多模态 Prompt Optimizer。修改优化任
 - Bot draft/投递：`src/services/advanced_video_prompt_task_*`
 - Worker 镜像/Compose：`deploy/docker/Dockerfile.test-execution`、
   `deploy/docker-compose-prompt-optimizer-test.yml`
-- 精确运维入口：`scripts/prompt_optimizer_worker_ops.py`
+- 精确运维：`scripts/prompt_optimizer_worker_ops.py`；`recover` 恢复正式 GPU，
+  `retire` 仅在 fleet 确认空卡时停优化器。
 
 ## 不可越过的契约
 

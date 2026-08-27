@@ -21,6 +21,7 @@ from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 from src.web_api.services.r2_public_probe_service import r2_public_probe_service
 from src.payment_callback_router import router as alipay_callback_router
 from src.services.alipay_direct_service import validate_alipay_direct_startup_config
+from src.log_redaction import install_log_redaction
 
 from src.database.core import engine
 from src.web_api.routers import (
@@ -40,6 +41,7 @@ from src.web_api.routers import (
 )
 
 # Configure logging
+install_log_redaction()
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )

@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from src.services.storage import StorageService
@@ -157,7 +159,10 @@ async def test_prune_user_web_history_r2_cache_skips_when_no_overflow_task(
 
 
 @pytest.mark.asyncio
-async def test_prune_user_web_history_r2_cache_is_fail_closed_by_default(monkeypatch):
+async def test_prune_user_web_history_r2_cache_is_fail_closed_by_default(
+    monkeypatch,
+    caplog,
+):
     service = StorageService()
     service.r2_client = object()
     service.r2_bucket = "unit-test-r2"
@@ -170,5 +175,8 @@ async def test_prune_user_web_history_r2_cache_is_fail_closed_by_default(monkeyp
         return len(keys)
 
     monkeypatch.setattr(service, "async_delete_r2_objects", _fake_delete)
-    await service.async_prune_user_web_history_r2_cache(user_id=123, keep_recent=1)
+    with caplog.at_level("INFO", logger="src.services.storage_r2_cleanup"):
+        await service.async_prune_user_web_history_r2_cache(user_id=123, keep_recent=1)
     assert deleted_keys == []
+    assert "123" not in caplog.text
+    assert not [record for record in caplog.records if record.levelno >= logging.INFO]

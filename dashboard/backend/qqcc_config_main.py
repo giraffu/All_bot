@@ -22,7 +22,9 @@ from dashboard.backend.qqcc_config_auth import (
 from dashboard.backend.routers import private_bots, qqcc
 from src.database.core import init_db
 from src.services.private_qqcc_bot_management import PRIVATE_BOT_CONFIG_MAX_BYTES
+from src.log_redaction import install_log_redaction
 
+install_log_redaction()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("qqcc_config")
 DB_INIT_RETRY_ATTEMPTS = 5

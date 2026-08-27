@@ -131,6 +131,7 @@ class APIClient:
         """
         use_circuit_breaker = kwargs.pop("use_circuit_breaker", True)
         circuit_breaker_key = kwargs.pop("circuit_breaker_key", "default")
+        expected_status_codes = frozenset(kwargs.pop("expected_status_codes", ()))
         trace_id = correlation_id.get()
         if not trace_id:
             trace_id = str(uuid.uuid4())
@@ -159,6 +160,22 @@ class APIClient:
                 circuit_breaker_key,
                 url,
             )
+            raise
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in expected_status_codes:
+                logger.debug(
+                    "[%s] Request returned expected_status=%s",
+                    trace_id,
+                    status_code,
+                )
+            else:
+                logger.error(
+                    "[%s] Request failed: error_type=%s status=%s",
+                    trace_id,
+                    type(exc).__name__,
+                    status_code,
+                )
             raise
         except Exception as e:
             logger.error(
@@ -1260,6 +1277,7 @@ class APIClient:
                 timeout=10,
                 params=params,
                 circuit_breaker_key="status",
+                expected_status_codes={404},
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:

@@ -29,6 +29,7 @@ from src.web_api.services.task_result_service import get_task_result_payload
 from src.web_api.services.task_submission_service import submit_generation_task
 from src.web_api.services.user_task_api_service import cancel_pending_task_payload
 from src.services.compat_telemetry import record_compat_hit
+from src.services.storage_r2_promotion import StagedInputOwnershipError
 from src.web_api.services.task_runtime_api_service import (
     build_task_status_stream_response_for_user,
     get_queue_status_payload,
@@ -83,6 +84,11 @@ async def create_generation_task(
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except InsufficientCreditsError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
+    except StagedInputOwnershipError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="staged upload is not owned by the current user",
+        ) from exc
     except CoreDomainError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

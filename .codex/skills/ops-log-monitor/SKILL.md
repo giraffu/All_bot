@@ -5,9 +5,8 @@ description: "AllBot 只读运维观测与事故分诊。用户说网站/Bot/管
 
 # AllBot 日志监控与排障
 
-日志采集只读、最小范围、全程脱敏。容器名、主机/IP、worker 集合、域名和 SSH
-可用性属于运行态：先由部署文档、release state、Central/provider 和只读发现
-得到，不能依赖 Skill 中的历史快照。
+日志采集只读、最小、全程脱敏。容器、主机/IP、worker、域名和 SSH 可用性从部署
+事实源与只读发现取得，不依赖 Skill 历史快照。
 
 同时加载 `allbot-diagnosing-bugs` 建立可复现反馈环；涉及 test/prod、容器或
 远端环境时加载 `allbot-ops-deployment`。日志分析本身不授权修复、重启、部署、
@@ -55,8 +54,8 @@ description: "AllBot 只读运维观测与事故分诊。用户说网站/Bot/管
 
 ## 4. 脱敏与授权红线
 
-- 不输出 env、compose 展开、Authorization、JWT、Bot token、agent secret、
-  DB/Redis URL、R2 key、预签 URL、cookie 或请求正文中的私密媒体/提示词。
+- 不输出 env/compose、凭据、DB/Redis/R2 URL/key、预签 URL、cookie 或私密正文；
+  新增 `basicConfig` 须安装 `src/log_redaction.py`，明文 token 仍按事故处理。
 - 用户 ID、task ID、IP、邮箱等只保留定位所需最短形式；报告不复制大段原始
   日志。
 - 只读排障不得执行 restart、scale、delete、retry、cancel、queue cleanup、

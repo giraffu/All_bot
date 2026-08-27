@@ -166,10 +166,7 @@ async def async_prune_user_web_history_r2_cache(
     }
     confirmation = os.getenv("R2_ARCHIVE_DELETE_CONFIRMATION", "")
     if not deletion_enabled or confirmation != "DELETE_VERIFIED_COLD_R2":
-        logger.info(
-            "Incremental R2 prune disabled: archive deletion gate is closed for user %s",
-            user_id,
-        )
+        logger.debug("Incremental R2 prune skipped: archive deletion gate is closed")
         return
 
     async with async_session_factory() as session:

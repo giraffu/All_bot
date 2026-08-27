@@ -133,6 +133,10 @@ sequenceDiagram
 - Dashboard RunPod mutation 只打开显式执行门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`。全局 Pod 数、单类型 Pod 数、小时成本上限不再由 Dashboard/API/provider 校验；`RUNPOD_PROD_MAX_MANUAL_SLOTS` 默认按 `100` 作为 manual slot 命名空间。
 - Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；不可变云正式容器默认使用 `/dev/null` 作为两个 env-file 参数，让 operation 子进程继承容器已注入的环境变量，不依赖或挂载 `/app/.env`。镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、`/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py` 与 `/app/ops`。
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
+- Python 服务在 handler 格式化前通过 `src/log_redaction.py` 统一遮蔽 Telegram Bot
+  API URL 中的 token，并把 `httpx/httpcore` 常规请求日志降到 WARNING。主 Bot、QQCC、
+  Web API、Central、Dashboard、task-control、payment 与独立群管理 Bot 的 logging
+  入口都必须安装该 guard；业务异常只记录错误类型/状态，不拼回完整敏感 URL。
 
 ## 5. 测试要求
 

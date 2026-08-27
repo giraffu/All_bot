@@ -1,64 +1,19 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
 from src.services.private_qqcc_bot_service import PrivateBotTelegramIdentity
+from src.log_redaction import install_log_redaction
 from src.services.private_qqcc_bot_telegram_transport import (
     build_private_telegram_bot_base_url,
 )
 
 
-_TELEGRAM_BOT_TOKEN_URL_PATTERN = re.compile(r"/bot[^/\s\"']+/")
-
-
-def _redact_telegram_token_url(value: object) -> object:
-    rendered = str(value)
-    if "/bot" not in rendered:
-        return value
-    return _TELEGRAM_BOT_TOKEN_URL_PATTERN.sub("/bot<redacted>/", rendered)
-
-
-class _TelegramTokenLogFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = _redact_telegram_token_url(record.msg)
-        if isinstance(record.args, tuple):
-            record.args = tuple(_redact_telegram_token_url(arg) for arg in record.args)
-        elif isinstance(record.args, dict):
-            record.args = {
-                key: _redact_telegram_token_url(value)
-                for key, value in record.args.items()
-            }
-        return True
-
-
-def _install_http_client_token_log_guard() -> None:
-    current_factory = logging.getLogRecordFactory()
-    if not getattr(current_factory, "_private_bot_token_guard", False):
-        token_filter = _TelegramTokenLogFilter()
-
-        def _guarded_record_factory(*args, **kwargs):
-            record = current_factory(*args, **kwargs)
-            token_filter.filter(record)
-            return record
-
-        _guarded_record_factory._private_bot_token_guard = True
-        logging.setLogRecordFactory(_guarded_record_factory)
-
-    for logger_name in ("httpx", "httpcore"):
-        target = logging.getLogger(logger_name)
-        if not any(isinstance(item, _TelegramTokenLogFilter) for item in target.filters):
-            target.addFilter(_TelegramTokenLogFilter())
-        # These libraries include full URLs in lower-level diagnostics. The
-        # application logs sanitized gateway error codes instead.
-        target.setLevel(logging.WARNING)
-
-
-_install_http_client_token_log_guard()
+install_log_redaction()
 
 
 class PrivateBotTelegramGatewayError(RuntimeError):

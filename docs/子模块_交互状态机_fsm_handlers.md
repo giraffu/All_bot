@@ -116,7 +116,7 @@ FSM 入口与过程中，当前推荐组合为：
 
 旧 `快速脱衣`、`快速自慰`、`menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本入口和主 Bot 上的 `qvid_*` callback 必须回复前往 QQCC 懒人 Bot 的 inline URL 按钮或入口未配置提示，不得进入任务提交。QQCC Bot 仍保留 `AI绘图` / `AI滤镜` / `AI动图` 动态场景入口、`qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 与旧 `qvid_mode:*` 已发按钮兼容。
 
-主 Bot `src/bot_main.py` 与 QQCC Bot `qqcc_bot/main.py` 共享 `src/services/telegram_runtime_bootstrap.py`，统一 Local Bot API URL、HTTPXRequest、Telegram File/Poll patch 和语言/i18n middleware。共享 bootstrap 不改变注册边界：主 Bot 仍注册完整 FSM/支付/恢复，QQCC 仍只注册 quick image/video、QQCC market 和最小 callback，并继续用 `bot:qqcc` 过滤恢复任务。
+主 Bot `src/bot_main.py` 与 QQCC Bot `qqcc_bot/main.py` 共享 `src/services/telegram_runtime_bootstrap.py`，统一 Local Bot API URL、HTTPXRequest、Telegram File/Poll patch 和语言/i18n middleware。共享 bootstrap 不改变注册边界：主 Bot仍注册完整 FSM/支付/恢复；QQCC 注册 quick image/video、QQCC market、最小 callback，以及结果消息已经公开的 Wan22 扩展/重生成 ConversationHandler 入口，并继续用 `bot:qqcc` 过滤恢复任务。`wan22v2_extend:*` 不能只出现在结果键盘中，官方/私有 QQCC Application 都必须在全局 callback fallback 之前注册该 FSM，否则按钮会被记为 unmatched callback。
 
 主 Bot 和 QQCC Bot 都注册 PTB `ConversationHandler`，入口构建不得开启无键全局并发 `concurrent_updates(True)`。主 Bot 使用 `src/services/telegram_update_processor.py` 的 `PerUserUpdateProcessor`：以 `effective_user.id` 为串行键，同一用户的 Update 严格按顺序执行，不同用户最多并发处理 `MAIN_BOT_MAX_CONCURRENT_UPDATES` 个（默认 32，上限 256）；无用户 Update 回退到 chat 键，无 user/chat 的系统 Update 共用保守串行键。处理器为每个 Update 记录 `telegram_update_timing`，包含 `queue_wait_ms` 与 `handler_duration_ms`，用于日志侧计算排队和执行耗时分位数。主 Bot long polling 的 `poll_interval` 为 0，避免原先额外 0～2 秒轮询抖动。QQCC 官方 Bot 当前仍保持单通道；`paid_group_guard_bot` 不注册生成 FSM，仍允许保持全局并发处理群审核与消息删除。
 
@@ -126,7 +126,7 @@ FSM 入口与过程中，当前推荐组合为：
 
 `qqcc_bot/private_bot_fsm.py` 的 `私有bot` 入口只注册在官方 QQCC。首次点击说明 `@BotFather` + `/newbot` 申请步骤；文本状态收到 token 后必须先尽力删除原 Telegram 消息，禁止在回复、日志、异常或审计 metadata 中回显。验证有效后无需审核直接注册 webhook；同一 owner 已有绑定时只返回管理入口。全局菜单打断、`/cancel` 和 300 秒超时都结束 token 接收状态。
 
-私有 QQCC Application 由 webhook worker 装配，不注册申请入口、不启动 polling，并继续复用 quick image/video FSM。worker 为每个 private Bot 使用独立顺序队列，防止同一 Bot 的 ConversationHandler update 交错；不同 Bot 才通过全局并发门限并行。详细凭据/worker/Host 契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
+私有 QQCC Application 由 webhook worker 装配，不注册申请入口、不启动 polling，并继续复用 quick image/video 与 Wan22 结果续段 FSM。worker 为每个 private Bot 使用独立顺序队列，防止同一 Bot 的 ConversationHandler update 交错；不同 Bot 才通过全局并发门限并行。详细凭据/worker/Host 契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
 
 Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
 

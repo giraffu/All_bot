@@ -18,6 +18,11 @@ class StagedInputPromotionError(RuntimeError):
     pass
 
 
+class StagedInputOwnershipError(StagedInputPromotionError):
+    def __init__(self) -> None:
+        super().__init__("staged upload belongs to another user")
+
+
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -151,7 +156,7 @@ async def promote_staged_user_inputs(
             promoted[ordinal] = str(ref)
             return
         if not key.startswith(expected_prefix):
-            raise StagedInputPromotionError("staged upload belongs to another user")
+            raise StagedInputOwnershipError()
         durable_key = build_task_input_key(
             task_id=task_id,
             ordinal=ordinal,
