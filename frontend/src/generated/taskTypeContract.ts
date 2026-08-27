@@ -30,10 +30,10 @@ export const TASK_TYPE_CONTRACT = {
   "ltx_video_v2_flf2v": { publicType: "ltx_video_v2", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 10 },
   "ltx_video_v2v_audio": { publicType: "ltx_video_v2v_audio", isGeneration: false, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: null },
   "masturbation": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: 2 },
-  "minimax_h3_flf2v": { publicType: "minimax_h3_flf2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 9 },
-  "minimax_h3_i2v": { publicType: "minimax_h3_i2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 9 },
-  "minimax_h3_ref2v": { publicType: "minimax_h3_ref2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: true, cost: 10 },
-  "minimax_h3_t2v": { publicType: "minimax_h3_t2v", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 9 },
+  "minimax_h3_flf2v": { publicType: "minimax_h3_flf2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 10 },
+  "minimax_h3_i2v": { publicType: "minimax_h3_i2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: false, cost: 10 },
+  "minimax_h3_ref2v": { publicType: "minimax_h3_ref2v", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: true, cost: 11 },
+  "minimax_h3_t2v": { publicType: "minimax_h3_t2v", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 10 },
   "penetration_step1": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: 2 },
   "penetration_step2": { publicType: "img2img", isGeneration: true, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: null },
   "perfect_video_edit": { publicType: "image_to_video", isGeneration: false, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: null },
@@ -63,42 +63,42 @@ export const TASK_TYPE_CONTRACT = {
 export const MINIMAX_H3_PRICE_CONTRACT = {
   "normal": {
     "5": {
-      "preview": 9,
-      "small": 10,
-      "standard": 13,
-      "hd": 15
+      "preview": 10,
+      "small": 11,
+      "standard": 15,
+      "hd": 17
     },
     "10": {
-      "preview": 12,
-      "small": 15,
-      "standard": 24,
-      "hd": 30
+      "preview": 14,
+      "small": 17,
+      "standard": 27,
+      "hd": 33
     },
     "15": {
-      "preview": 17,
-      "small": 24,
-      "standard": 38,
-      "hd": 53
+      "preview": 19,
+      "small": 27,
+      "standard": 42,
+      "hd": 59
     }
   },
   "ref2v": {
     "5": {
-      "preview": 10,
-      "small": 11,
-      "standard": 15,
-      "hd": 20
+      "preview": 11,
+      "small": 13,
+      "standard": 17,
+      "hd": 22
     },
     "10": {
-      "preview": 15,
-      "small": 21,
-      "standard": 33,
-      "hd": 45
+      "preview": 17,
+      "small": 24,
+      "standard": 37,
+      "hd": 50
     },
     "15": {
-      "preview": 23,
-      "small": 34,
-      "standard": 58,
-      "hd": 82
+      "preview": 26,
+      "small": 38,
+      "standard": 64,
+      "hd": 91
     }
   }
 } as const
