@@ -254,6 +254,9 @@ export const WEB_CHARACTER_ASSETS_ENTRY_ENABLED = getRuntimeFlag(
   'enable_character_assets_entry',
   WEB_CHARACTER_ASSETS_ENABLED,
 )
+export const WEB_CHARACTER_LIBRARY_PICKER_ENABLED = (
+  WEB_CHARACTER_ASSETS_ENABLED && WEB_CHARACTER_ASSETS_ENTRY_ENABLED
+)
 export const WEB_CHARACTER_EXPLICIT_VIEWS_ENABLED = getRuntimeFlag('enable_character_explicit_views', false)
 export const WEB_MINIMAX_H3_ENABLED = getRuntimeFlag('enable_minimax_h3', false)
 export const WEB_MINIMAX_H3_ENTRY_ENABLED = getRuntimeFlag('enable_minimax_h3_entry', false)
@@ -766,9 +769,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
-  && (mode.id !== 'character_reference' || (
-    WEB_CHARACTER_ASSETS_ENABLED && WEB_CHARACTER_ASSETS_ENTRY_ENABLED
-  ))
+  && (mode.id !== 'character_reference' || WEB_CHARACTER_LIBRARY_PICKER_ENABLED)
   && (mode.id !== 'ltx_video' || (WEB_LTX_VIDEO_ENABLED && WEB_LTX_VIDEO_ENTRY_ENABLED))
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)

@@ -33,6 +33,9 @@ REF2V 子能力由 `enable_minimax_h3_ref2v` 控制。后端分别由
 `MINIMAX_H3_BACKEND_ENABLED` 和
 `MINIMAX_H3_REF2V_ENABLED` 控制。入口隐藏不删除已有投稿，也不阻止作品详情、
 模板深链或 `/advanced_video_pro` 命令测试。
+REF2V 的“从人物库选择”还同时要求人物能力 `enable_character_assets` 与 Dashboard
+Web“人物角色图”入口开关 `character_assets` 均开启；管理员关闭人物角色图入口后，
+Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临时上传参考图仍可使用。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard
 可分别维护共享场景配置 `minimax_h3`。该开关只控制 Web H3 优化能力；主 Bot
 新 Pro 会话不展示优化或生成确认入口，接收提示词后直接生成。

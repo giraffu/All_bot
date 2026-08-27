@@ -20,7 +20,7 @@ import H3CharacterViewPicker from '@/components/lab/H3CharacterViewPicker.vue'
 import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
 import {
-  WEB_CHARACTER_ASSETS_ENABLED,
+  WEB_CHARACTER_LIBRARY_PICKER_ENABLED,
   WEB_MINIMAX_H3_REF2V_ENABLED,
 } from '@/features/generation/labModeConfig'
 
@@ -222,7 +222,7 @@ const promptLockedHint = computed(() => (
               </div>
             </div>
             <H3CharacterViewPicker
-              v-if="minimaxH3Mode === 'ref2v' && WEB_CHARACTER_ASSETS_ENABLED"
+              v-if="minimaxH3Mode === 'ref2v' && WEB_CHARACTER_LIBRARY_PICKER_ENABLED"
               :references="uploadedReferences"
               :max-items="4"
               @select="addReference"
