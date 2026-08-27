@@ -60,6 +60,59 @@ _ROLLBACK_USER_CONCURRENCY_ACQUIRE_SCRIPT = (
     _DECREMENT_USER_CONCURRENCY_ONCE_SCRIPT
 )
 
+_FIND_ACTIVE_TASK_REFERENCES_SCRIPT = """
+local targets = {}
+for index = 1, #ARGV do
+    targets[ARGV[index]] = true
+end
+
+local found = {}
+local function inspect_string(raw)
+    local normalized = string.match(raw, '^%s*(.-)%s*$')
+    if targets[normalized] then
+        found[normalized] = true
+    end
+    local offset = 1
+    while true do
+        local slash = string.find(normalized, '/', offset, true)
+        if not slash then
+            break
+        end
+        local suffix = string.sub(normalized, slash + 1)
+        if targets[suffix] then
+            found[suffix] = true
+        end
+        offset = slash + 1
+    end
+end
+
+local function walk(value)
+    local value_type = type(value)
+    if value_type == 'string' then
+        inspect_string(value)
+    elseif value_type == 'table' then
+        for _, nested in pairs(value) do
+            walk(nested)
+        end
+    end
+end
+
+for _, raw in ipairs(redis.call('HVALS', KEYS[1])) do
+    local decoded, payload = pcall(cjson.decode, raw)
+    if not decoded then
+        return redis.error_reply('invalid JSON in active task registry')
+    end
+    walk(payload)
+end
+
+local result = {}
+for key, _ in pairs(found) do
+    table.insert(result, key)
+end
+table.sort(result)
+return result
+"""
+
 
 class RedisClient:
     _instance = None
@@ -76,6 +129,23 @@ class RedisClient:
         key = f"{REDIS_PREFIX}active_tasks"
         tasks_raw = await self.redis.hgetall(key)
         return {k: json.loads(v) for k, v in tasks_raw.items()}
+
+    async def find_active_task_references_strict(
+        self,
+        keys: list[str],
+    ) -> set[str]:
+        """Atomically return candidate keys referenced by any active task."""
+
+        if not keys:
+            return set()
+        key = f"{REDIS_PREFIX}active_tasks"
+        matches = await self.redis.eval(
+            _FIND_ACTIVE_TASK_REFERENCES_SCRIPT,
+            1,
+            key,
+            *keys,
+        )
+        return {str(match) for match in matches}
 
     async def set_prompt_result(
         self, task_id: str, payload: Dict[str, Any], *, ttl_seconds: int

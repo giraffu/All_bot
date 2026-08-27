@@ -282,8 +282,10 @@ async def _active_task_references(keys: list[str]) -> set[str]:
         return set()
     from src.services.task_registry import TaskRegistry
 
-    active_tasks = await TaskRegistry.get_all_tasks_strict()
-    return _matching_refs(active_tasks, set(keys))
+    return await TaskRegistry.find_active_task_references_strict(
+        keys,
+        socket_timeout=60,
+    )
 
 
 def _r2_client():
