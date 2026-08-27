@@ -57,6 +57,6 @@ def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
     target = TARGETS_BY_NAME["minimax_h3"]
 
     assert target in OPTIONAL_TARGETS
-    assert target.prefix == "minimax_h3/2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17"
-    assert target.manifest_key == "minimax_h3/2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17/manifest.json"
-    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-26-10eros-v3-official-int8-h3-turbo-profiles-addon17"),)
+    assert target.prefix == "minimax_h3/2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18"
+    assert target.manifest_key == "minimax_h3/2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18/manifest.json"
+    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18"),)

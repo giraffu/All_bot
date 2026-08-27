@@ -37,9 +37,15 @@ describe('labModeConfig', () => {
       supportedModes: ['ref2v'],
     })
     expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'video_reasoning',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.video_reasoning',
+      defaultStrength: 1.0,
+      supportedModes: ['t2v', 'i2v'],
+    })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
       value: 'mystic_xxx',
       labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx',
-      defaultStrength: 0.9,
+      defaultStrength: 1.0,
     })
     expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
       value: 'cumshot',
@@ -70,7 +76,7 @@ describe('labModeConfig', () => {
   })
 
   it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {
-    expect(MINIMAX_H3_ADDON_OPTIONS.slice(5, 10)).toEqual([
+    expect(MINIMAX_H3_ADDON_OPTIONS.slice(6, 11)).toEqual([
       { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
       { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
       { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },

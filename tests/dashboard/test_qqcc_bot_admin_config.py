@@ -565,7 +565,7 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                 "aspect_ratio": "16:9",
             "lora_items": [
                 {"name": "motion_booster", "strength": 0.75},
-                {"name": "mystic_xxx", "strength": 0.9},
+                {"name": "mystic_xxx", "strength": 1.0},
             ],
             "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
@@ -683,7 +683,7 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 6
+    assert options["ai_video_addon_models_version"] == 7
     assert options["ai_video_addon_models"] == [
         {
             "value": model.id,
@@ -707,11 +707,21 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert next(
         item
         for item in options["ai_video_addon_models"]
+        if item["value"] == "video_reasoning"
+    ) == {
+        "value": "video_reasoning",
+        "label": "VBVR H3 v1（提示词遵循与时序辅助）",
+        "default_strength": 1.0,
+        "supported_modes": ["t2v", "i2v"],
+    }
+    assert next(
+        item
+        for item in options["ai_video_addon_models"]
         if item["value"] == "mystic_xxx"
     ) == {
         "value": "mystic_xxx",
-        "label": "Mystic XXX v3（人体结构增强）",
-        "default_strength": 0.9,
+        "label": "Mystic XXX v4（人体结构增强）",
+        "default_strength": 1.0,
         "supported_modes": ["t2v", "i2v", "flf2v", "ref2v"],
     }
 
