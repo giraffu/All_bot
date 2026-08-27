@@ -700,6 +700,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "legacy-face-swap-task": {"task_type": "face_swap"},
         "scail2-action-task": {"task_type": "scail2_action_transfer"},
         "scail2-face-swap-task": {"task_type": "scail2_face_swap_v2"},
+        "h3-ref2v-task": {"task_type": "minimax_h3_ref2v"},
         "pornmaster-single-task": {"task_type": "pornmaster_flux2_single_edit"},
         "pornmaster-multi-task": {"task_type": "pornmaster_flux2_multi_edit"},
     }
@@ -737,6 +738,13 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "max_pending_wait_seconds": 999,
             "oldest_pending_task_id": "pending-scail2-face-swap",
             "oldest_pending_created_at": 1782050300.0,
+        },
+        "minimax_h3_ref2v": {
+            "pending_count": 3,
+            "max_pending_wait_seconds": 700,
+            "max_non_low_trust_pending_wait_seconds": 650,
+            "oldest_pending_task_id": "pending-h3-ref2v",
+            "oldest_pending_created_at": 1782050350.0,
         },
         "pornmaster_flux2_single_edit": {
             "pending_count": 1,
@@ -780,6 +788,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "scail2",
         "ltx_video",
         "ltx_t2v",
+        "minimax_h3",
         "pornmaster_flux2_edit_bf16",
     ]
     assert profiles["i2i_pro"] == {
@@ -822,6 +831,16 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     assert profiles["ltx_video"]["active_count"] == 0
     assert profiles["ltx_video"]["pending_count"] == 0
     assert profiles["ltx_video"]["max_pending_wait_seconds"] is None
+    assert profiles["minimax_h3"]["supported_task_types"] == [
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+    ]
+    assert profiles["minimax_h3"]["autoscaler_enabled"] is True
+    assert profiles["minimax_h3"]["active_count"] == 1
+    assert profiles["minimax_h3"]["pending_count"] == 3
+    assert profiles["minimax_h3"]["max_pending_wait_seconds"] == 700
     assert "pornmaster_flux2_edit" not in profiles
     assert profiles["pornmaster_flux2_edit_bf16"]["label"] == (
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
