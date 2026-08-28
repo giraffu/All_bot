@@ -22,6 +22,8 @@ describe('NotificationCenter', () => {
       authorized_group_ids: [-1001],
       support_ticket_user_ids: [84],
       queue_alerts_enabled: true,
+      queue_total_pending_threshold: 20,
+      queue_type_pending_threshold: 10,
       group_collection_enabled: true,
       daily_reports_enabled: false,
       weekly_reports_enabled: false,
@@ -53,5 +55,24 @@ describe('NotificationCenter', () => {
 
     expect(wrapper.text()).toContain('报告记录')
     expect(wrapper.text()).toContain('通知记录')
+  })
+
+  it('loads and saves total and per-type queue thresholds', async () => {
+    const wrapper = mount(NotificationCenter, { global: { stubs: { 'a-switch': true } } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="queue-total-threshold"]').element).toHaveProperty('value', '20')
+    expect(wrapper.get('[data-testid="queue-type-threshold"]').element).toHaveProperty('value', '10')
+    await wrapper.get('[data-testid="queue-total-threshold"]').setValue('30')
+    await wrapper.get('[data-testid="queue-type-threshold"]').setValue('6')
+    await wrapper.get('[data-testid="save-settings"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateNotificationCenterSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queue_total_pending_threshold: 30,
+        queue_type_pending_threshold: 6,
+      }),
+    )
   })
 })

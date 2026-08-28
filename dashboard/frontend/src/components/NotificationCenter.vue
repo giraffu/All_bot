@@ -20,6 +20,10 @@ const saved = ref(false)
 const adminIdsText = ref('')
 const groupIdsText = ref('')
 const supportIdsText = ref('')
+const queueThresholds = reactive({
+  queue_total_pending_threshold: 20,
+  queue_type_pending_threshold: 10,
+})
 const flags = reactive({
   queue_alerts_enabled: true,
   group_collection_enabled: true,
@@ -52,6 +56,8 @@ const applySettings = (settings: NotificationCenterSettings) => {
   groupIdsText.value = settings.authorized_group_ids.join('\n')
   supportIdsText.value = settings.support_ticket_user_ids.join('\n')
   flags.queue_alerts_enabled = settings.queue_alerts_enabled
+  queueThresholds.queue_total_pending_threshold = settings.queue_total_pending_threshold
+  queueThresholds.queue_type_pending_threshold = settings.queue_type_pending_threshold
   flags.group_collection_enabled = settings.group_collection_enabled
   flags.daily_reports_enabled = settings.daily_reports_enabled
   flags.weekly_reports_enabled = settings.weekly_reports_enabled
@@ -85,10 +91,21 @@ const saveSettings = async () => {
   saved.value = false
   let payload: NotificationCenterSettings
   try {
+    if (
+      !Number.isInteger(queueThresholds.queue_total_pending_threshold)
+      || queueThresholds.queue_total_pending_threshold < 1
+      || queueThresholds.queue_total_pending_threshold > 100_000
+      || !Number.isInteger(queueThresholds.queue_type_pending_threshold)
+      || queueThresholds.queue_type_pending_threshold < 1
+      || queueThresholds.queue_type_pending_threshold > 100_000
+    ) {
+      throw new Error('排队阈值必须是 1 到 100000 的整数')
+    }
     payload = {
       admin_telegram_user_ids: parseIds(adminIdsText.value, 'user'),
       authorized_group_ids: parseIds(groupIdsText.value, 'group'),
       support_ticket_user_ids: parseIds(supportIdsText.value, 'user'),
+      ...queueThresholds,
       ...flags,
     }
   } catch (reason) {
@@ -203,6 +220,21 @@ onMounted(loadSettings)
       <article class="card switches-card">
         <div class="card-heading"><div><h2>功能开关</h2><p>各功能相互独立，关闭报告不会影响队列告警。</p></div></div>
         <div class="switch-row"><div><b>AllBot 队列告警</b><span>拥堵、无可接单 Worker、监控恢复</span></div><a-switch v-model:checked="flags.queue_alerts_enabled" /></div>
+        <div class="threshold-panel">
+          <div class="threshold-heading"><b>拥堵阈值</b><span>达到阈值时通知管理员，保存后约 15 秒生效。</span></div>
+          <div class="threshold-grid">
+            <label>
+              总排队数量
+              <input data-testid="queue-total-threshold" v-model.number="queueThresholds.queue_total_pending_threshold" type="number" min="1" max="100000" step="1" />
+              <small>所有任务类型的待处理数量合计。</small>
+            </label>
+            <label>
+              单个类型排队数量
+              <input data-testid="queue-type-threshold" v-model.number="queueThresholds.queue_type_pending_threshold" type="number" min="1" max="100000" step="1" />
+              <small>任一任务类型达到此数量即告警。</small>
+            </label>
+          </div>
+        </div>
         <div class="switch-row"><div><b>授权群消息采集</b><span>日报、周报、月报的数据来源</span></div><a-switch v-model:checked="flags.group_collection_enabled" /></div>
         <div class="switch-row"><div><b>日报</b><span>每天按设定时区生成</span></div><a-switch v-model:checked="flags.daily_reports_enabled" /></div>
         <div class="switch-row"><div><b>周报</b><span>每周汇总授权群信息</span></div><a-switch v-model:checked="flags.weekly_reports_enabled" /></div>
@@ -236,6 +268,8 @@ onMounted(loadSettings)
 .settings-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;box-shadow:0 5px 18px #0f172a0a}.card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;margin-bottom:18px}.card-heading h2{font-size:17px;margin:0 0 4px}.card-heading p{margin:0;color:var(--muted);font-size:13px}.card-heading button,.records-card button,.pager button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:6px 11px;cursor:pointer}
 label{display:block;font-weight:600;margin-top:15px}textarea{display:block;width:100%;box-sizing:border-box;margin:7px 0 5px;border:1px solid #cbd5e1;border-radius:9px;padding:10px 12px;resize:vertical;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}textarea:focus{outline:2px solid #bfdbfe;border-color:#60a5fa}small{display:block;color:var(--muted);font-weight:400}
 .switch-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:15px 0;border-bottom:1px solid #edf2f7}.switch-row b,.switch-row span{display:block}.switch-row span{font-size:12px;color:var(--muted);margin-top:3px}.lm-note{margin:18px 0;padding:13px;background:#f8fafc;border-left:3px solid #60a5fa;border-radius:7px}.lm-note p{margin:4px 0 0;color:var(--muted);font-size:12px}.primary-button{width:100%;border:0;border-radius:9px;padding:11px;background:#1677ff;color:#fff;font-weight:600;cursor:pointer}.primary-button:disabled{opacity:.55}.feedback{margin:0;padding:10px 13px;border-radius:8px}.feedback.error{background:#fff1f0;color:#b42318}.feedback.success{background:#f0fdf4;color:#15803d}
+.threshold-panel{padding:14px 0 16px;border-bottom:1px solid #edf2f7}.threshold-heading b,.threshold-heading span{display:block}.threshold-heading span{margin-top:3px;color:var(--muted);font-size:12px}.threshold-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.threshold-grid label{margin-top:12px;font-size:13px}.threshold-grid input{display:block;width:100%;box-sizing:border-box;margin:7px 0 5px;border:1px solid #cbd5e1;border-radius:9px;padding:9px 10px;color:var(--ink);font:600 14px/1.4 inherit}.threshold-grid input:focus{outline:2px solid #bfdbfe;border-color:#60a5fa}
 .records-card{position:relative;min-height:400px}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid #edf2f7;vertical-align:top}th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.status{display:inline-block;padding:3px 8px;border-radius:999px;background:#f1f5f9}.status.completed,.status.sent{background:#dcfce7;color:#166534}.status.failed{background:#fee2e2;color:#991b1b}.status.running{background:#dbeafe;color:#1e40af}.preview{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.empty{text-align:center;color:var(--muted);padding:48px}.pager{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:16px;color:var(--muted);font-size:12px}.pager button:disabled{opacity:.4}.report-detail{position:absolute;inset:72px 20px 20px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:18px;box-shadow:0 12px 36px #0f172a1f;overflow:auto}.report-detail h3{margin-top:0}.report-detail pre{white-space:pre-wrap;font:13px/1.7 inherit}.close-detail{float:right}
 @media(max-width:900px){.settings-layout{grid-template-columns:1fr}.page-header{flex-direction:column}.isolation-badge{align-self:flex-start}.view-tabs{width:100%;box-sizing:border-box}.view-tabs button{flex:1}.card{padding:16px}}
+@media(max-width:520px){.threshold-grid{grid-template-columns:1fr}}
 </style>

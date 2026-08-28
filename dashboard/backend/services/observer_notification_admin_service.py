@@ -32,7 +32,8 @@ class ObserverNotificationAdminService:
         try:
             settings = await connection.fetchrow(
                 """
-                SELECT queue_alerts_enabled, group_collection_enabled,
+                SELECT queue_alerts_enabled, queue_total_pending_threshold,
+                       queue_type_pending_threshold, group_collection_enabled,
                        daily_reports_enabled, weekly_reports_enabled,
                        monthly_reports_enabled
                 FROM observer_runtime_settings
@@ -59,14 +60,16 @@ class ObserverNotificationAdminService:
                 ],
                 "authorized_group_ids": [int(row["chat_id"]) for row in group_rows],
                 "queue_alerts_enabled": bool(settings["queue_alerts_enabled"]),
-                "group_collection_enabled": bool(
-                    settings["group_collection_enabled"]
+                "queue_total_pending_threshold": int(
+                    settings["queue_total_pending_threshold"]
                 ),
+                "queue_type_pending_threshold": int(
+                    settings["queue_type_pending_threshold"]
+                ),
+                "group_collection_enabled": bool(settings["group_collection_enabled"]),
                 "daily_reports_enabled": bool(settings["daily_reports_enabled"]),
                 "weekly_reports_enabled": bool(settings["weekly_reports_enabled"]),
-                "monthly_reports_enabled": bool(
-                    settings["monthly_reports_enabled"]
-                ),
+                "monthly_reports_enabled": bool(settings["monthly_reports_enabled"]),
             }
         finally:
             await connection.close()
@@ -77,6 +80,8 @@ class ObserverNotificationAdminService:
         admin_telegram_user_ids: list[int],
         authorized_group_ids: list[int],
         queue_alerts_enabled: bool,
+        queue_total_pending_threshold: int,
+        queue_type_pending_threshold: int,
         group_collection_enabled: bool,
         daily_reports_enabled: bool,
         weekly_reports_enabled: bool,
@@ -91,16 +96,20 @@ class ObserverNotificationAdminService:
                     """
                     UPDATE observer_runtime_settings
                     SET queue_alerts_enabled = $1,
-                        group_collection_enabled = $2,
-                        daily_reports_enabled = $3,
-                        weekly_reports_enabled = $4,
-                        monthly_reports_enabled = $5,
+                        queue_total_pending_threshold = $2,
+                        queue_type_pending_threshold = $3,
+                        group_collection_enabled = $4,
+                        daily_reports_enabled = $5,
+                        weekly_reports_enabled = $6,
+                        monthly_reports_enabled = $7,
                         recipients_initialized = TRUE,
                         groups_initialized = TRUE,
                         updated_at = NOW()
                     WHERE singleton = TRUE
                     """,
                     queue_alerts_enabled,
+                    queue_total_pending_threshold,
+                    queue_type_pending_threshold,
                     group_collection_enabled,
                     daily_reports_enabled,
                     weekly_reports_enabled,
@@ -139,9 +148,7 @@ class ObserverNotificationAdminService:
             page_size=page_size,
         )
 
-    async def list_notifications(
-        self, *, page: int, page_size: int
-    ) -> dict[str, Any]:
+    async def list_notifications(self, *, page: int, page_size: int) -> dict[str, Any]:
         return await self._list_rows(
             table="observer_notification_logs",
             columns=(
@@ -167,7 +174,9 @@ class ObserverNotificationAdminService:
             raise ValueError("unsupported observer table")
         connection = await self._connection()
         try:
-            total_row = await connection.fetchrow(f"SELECT COUNT(*) AS total FROM {table}")
+            total_row = await connection.fetchrow(
+                f"SELECT COUNT(*) AS total FROM {table}"
+            )
             rows = await connection.fetch(
                 f"""
                 SELECT {columns} FROM {table}

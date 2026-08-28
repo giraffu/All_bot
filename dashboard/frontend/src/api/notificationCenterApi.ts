@@ -5,6 +5,8 @@ export interface NotificationCenterSettings {
   authorized_group_ids: number[]
   support_ticket_user_ids: number[]
   queue_alerts_enabled: boolean
+  queue_total_pending_threshold: number
+  queue_type_pending_threshold: number
   group_collection_enabled: boolean
   daily_reports_enabled: boolean
   weekly_reports_enabled: boolean
