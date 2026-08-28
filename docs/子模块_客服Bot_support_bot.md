@@ -9,6 +9,10 @@
 客服 Bot 不读取生成维护标记、不提交生成任务，也不承载支付履约。它负责收集
 工单；Dashboard 负责已认证管理员的查看、备注、状态处理、附件访问和回复。
 
+Dashboard 的“客服工单 → 通知设置”允许管理员配置最多 20 个 Telegram 数字
+用户 ID。接收者必须先私聊并启动当前客服 Bot；Telegram Bot 不能仅凭普通用户
+的 `@username` 主动发起私聊。留空保存会关闭全部新工单通知。
+
 ## 2. 工单提交契约
 
 用户可选择充值问题、Bug 反馈、意见反馈、商业合作四类工单；未先选择分类的
@@ -20,6 +24,13 @@
 - 空草稿切换或超时不创建工单；同类按钮重复点击不重复创建草稿。
 - 数据库提交失败时保留进程内草稿，用户可以重试。
 - Dashboard 在事务提交前看不到草稿。
+- 工单事务提交成功后，客服 Bot 才读取
+  `support_notification_recipients` 并逐个发送通知。通知包含工单元数据、用户逐段
+  提交的文字和附件文件名；超长内容在 Telegram 单消息上限前截断，并引导管理员
+  到 Dashboard 查看完整工单。
+- 通知是 post-commit 尽力副作用：单个接收者阻止 Bot、未先启动 Bot 或发送失败
+  时继续通知其他接收者；配置读取或通知失败不得回滚工单，也不得让用户看到
+  “提交失败”。
 
 分类枚举与展示格式以 `support_bot/main.py`、support ticket service 和
 Dashboard tests 为事实源。未知历史分类必须显示原始值，不能产生空标题。
@@ -38,6 +49,12 @@ Dashboard tests 为事实源。未知历史分类必须显示原始值，不能�
 配置事实源为 `deploy/service-env-contract.yml`。正式环境只向
 `support-bot` 与需要回复/签名附件的 Dashboard Backend 投影
 `SUPPORT_BOT_TOKEN`；其它服务不得获得该 token。
+
+通知配置 API 为已认证的
+`GET/PUT /api/support-tickets/notification-settings`，持久化事实源是数据库表
+`support_notification_recipients`，不是 env、运行时内存或 Git 配置。Dashboard
+Backend 只管理接收者 ID；通知发送继续由独立 `support-bot` 使用
+`SUPPORT_BOT_TOKEN` 完成。
 
 ## 4. 发布与迁移
 
@@ -75,5 +92,8 @@ python3 scripts/doc_quality_checker.py
 - 附件大小门禁、Local API 下载、私有 R2 上传失败与短时访问链接。
 - token 只投影到允许的服务，多个 polling Bot 不共用 token。
 - 独立 `support-bot` exact-digest 发布不会替换 Dashboard 或其它正式容器。
+- 通知接收者保存去重、空列表关闭、无效 ID 拒绝、最多 20 人。
+- 工单提交后通知包含全部文字与附件名；接收者局部失败不阻塞其余接收者，通知
+  系统整体失败也不改变已提交工单。
 
 本地测试通过不表示正式 Bot、数据库、R2 或 Dashboard 已验证。

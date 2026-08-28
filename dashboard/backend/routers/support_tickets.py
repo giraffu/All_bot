@@ -5,10 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.backend.auth import TokenData, get_current_user
 from dashboard.backend.services.support_ticket_admin_service import (
     SupportTicketAdminError,
+    get_support_ticket_notification_settings_admin,
     get_support_ticket_admin,
     list_support_tickets_admin,
     reply_support_ticket_admin,
     update_support_ticket_admin,
+    update_support_ticket_notification_settings_admin,
 )
 from src.database.core import get_db
 
@@ -27,11 +29,16 @@ class ReplyTicketRequest(BaseModel):
     )
 
 
+class NotificationSettingsRequest(BaseModel):
+    telegram_user_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
 ERRORS = {
     "invalid_status": (422, "Invalid status"),
     "ticket_not_found": (404, "Ticket not found"),
     "support_bot_not_configured": (503, "Support Bot is not configured"),
     "reply_delivery_failed": (502, "Unable to deliver reply"),
+    "invalid_notification_recipients": (422, "Invalid Telegram user IDs"),
 }
 
 
@@ -52,6 +59,29 @@ async def get_tickets(
     try:
         return await list_support_tickets_admin(
             db, page=page, page_size=page_size, status=status, category=category
+        )
+    except SupportTicketAdminError as exc:
+        raise _map_service_error(exc) from exc
+
+
+@router.get("/notification-settings")
+async def get_notification_settings(
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+):
+    return await get_support_ticket_notification_settings_admin(db)
+
+
+@router.put("/notification-settings")
+async def update_notification_settings(
+    payload: NotificationSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+):
+    try:
+        return await update_support_ticket_notification_settings_admin(
+            db,
+            telegram_user_ids=payload.telegram_user_ids,
         )
     except SupportTicketAdminError as exc:
         raise _map_service_error(exc) from exc

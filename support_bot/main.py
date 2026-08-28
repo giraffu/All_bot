@@ -23,6 +23,9 @@ from telegram.ext import (
 from src.database.core import AsyncSessionLocal, init_db
 from src.services.storage import storage
 from src.services.support_ticket_service import finalize_ticket_submission
+from src.services.support_ticket_notification_service import (
+    notify_support_ticket_submission,
+)
 from src.services.telegram_runtime_bootstrap import (
     build_telegram_bot_base_url,
     build_telegram_httpx_request,
@@ -200,6 +203,18 @@ async def _persist_active_submission(context):
                 category=draft["category"],
                 messages=list(draft["messages"]),
             )
+            try:
+                await notify_support_ticket_submission(
+                    session,
+                    ticket=ticket,
+                    messages=draft["messages"],
+                    send_message=context.bot.send_message,
+                )
+            except Exception:
+                logger.exception(
+                    "support ticket persisted but notification setup failed: ticket_id=%s",
+                    ticket.id,
+                )
     except Exception:
         draft["finalizing"] = False
         raise

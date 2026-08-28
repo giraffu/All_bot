@@ -498,6 +498,106 @@ async def test_database_failure_preserves_active_draft(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_persisted_submission_notifies_recipients_before_clearing_draft(
+    monkeypatch,
+):
+    from support_bot import main as support_main
+
+    session = SimpleNamespace()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, *_args):
+            return None
+
+    draft = {
+        "id": "notify-draft",
+        "category": "bug",
+        "messages": [{"body": "页面打不开", "attachments": []}],
+        "user": {
+            "id": 123,
+            "username": "reporter",
+            "full_name": "Report User",
+            "language_code": "zh",
+        },
+        "chat_id": 123,
+        "finalizing": False,
+    }
+    context = SimpleNamespace(
+        user_data={"support_submission": draft},
+        job_queue=None,
+        bot=SimpleNamespace(send_message=AsyncMock()),
+    )
+    ticket = SimpleNamespace(id=96)
+    finalize = AsyncMock(return_value=ticket)
+    notify = AsyncMock()
+    monkeypatch.setattr(support_main, "AsyncSessionLocal", SessionContext)
+    monkeypatch.setattr(support_main, "finalize_ticket_submission", finalize)
+    monkeypatch.setattr(support_main, "notify_support_ticket_submission", notify)
+
+    result = await support_main._persist_active_submission(context)
+
+    assert result is ticket
+    notify.assert_awaited_once_with(
+        session,
+        ticket=ticket,
+        messages=draft["messages"],
+        send_message=context.bot.send_message,
+    )
+    assert "support_submission" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_notification_failure_does_not_fail_persisted_submission(monkeypatch):
+    from support_bot import main as support_main
+
+    class SessionContext:
+        async def __aenter__(self):
+            return SimpleNamespace()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    draft = {
+        "id": "notify-failure-draft",
+        "category": "suggestion",
+        "messages": [{"body": "建议内容", "attachments": []}],
+        "user": {
+            "id": 123,
+            "username": None,
+            "full_name": None,
+            "language_code": None,
+        },
+        "chat_id": 123,
+        "finalizing": False,
+    }
+    context = SimpleNamespace(
+        user_data={"support_submission": draft},
+        job_queue=None,
+        bot=SimpleNamespace(send_message=AsyncMock()),
+    )
+    ticket = SimpleNamespace(id=97)
+    monkeypatch.setattr(support_main, "AsyncSessionLocal", SessionContext)
+    monkeypatch.setattr(
+        support_main,
+        "finalize_ticket_submission",
+        AsyncMock(return_value=ticket),
+    )
+    monkeypatch.setattr(
+        support_main,
+        "notify_support_ticket_submission",
+        AsyncMock(side_effect=RuntimeError("notification database unavailable")),
+    )
+
+    result = await support_main._persist_active_submission(context)
+
+    assert result is ticket
+    assert "support_submission" not in context.user_data
+
+
+@pytest.mark.asyncio
 async def test_content_is_not_acknowledged_while_submission_is_finalizing(monkeypatch):
     from support_bot import main as support_main
 

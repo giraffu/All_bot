@@ -144,6 +144,10 @@ export const fetchSupportTickets = async ({ page = 1, pageSize = 30, status = nu
 export const fetchSupportTicket = async (ticketId) => get(`/api/support-tickets/${ticketId}`)
 export const updateSupportTicket = async (ticketId, payload) => api.patch(`/api/support-tickets/${ticketId}`, payload).then(unwrapData)
 export const replySupportTicket = async (ticketId, payload) => post(`/api/support-tickets/${ticketId}/reply`, payload)
+export const fetchSupportTicketNotificationSettings = async () =>
+  get('/api/support-tickets/notification-settings')
+export const updateSupportTicketNotificationSettings = async (payload) =>
+  put('/api/support-tickets/notification-settings', payload)
 
 /**
  * @param {number} userId

@@ -11,12 +11,37 @@ from telegram import Bot
 from src.database.models import SupportMessage, SupportTicket
 from src.services.r2_presign import build_r2_presigned_url
 from src.services.support_ticket_service import STATUSES, list_tickets
+from src.services.support_ticket_notification_service import (
+    list_support_notification_recipient_ids,
+    replace_support_notification_recipient_ids,
+)
 
 
 class SupportTicketAdminError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+async def get_support_ticket_notification_settings_admin(db: AsyncSession) -> dict:
+    return {
+        "telegram_user_ids": await list_support_notification_recipient_ids(db),
+    }
+
+
+async def update_support_ticket_notification_settings_admin(
+    db: AsyncSession,
+    *,
+    telegram_user_ids: list[int],
+) -> dict:
+    try:
+        normalized = await replace_support_notification_recipient_ids(
+            db,
+            telegram_user_ids,
+        )
+    except ValueError as exc:
+        raise SupportTicketAdminError("invalid_notification_recipients") from exc
+    return {"telegram_user_ids": normalized}
 
 
 def _ticket_payload(ticket: SupportTicket) -> dict:
