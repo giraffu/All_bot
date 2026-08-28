@@ -1,5 +1,3 @@
-import pytest
-
 from observer_bot.config import ObserverSettings
 
 
@@ -20,12 +18,13 @@ def test_settings_parse_isolated_bot_admins_and_authorized_groups():
     assert settings.central_api_url == "http://central-api:8003"
 
 
-def test_settings_require_at_least_one_admin():
-    with pytest.raises(ValueError, match="OBSERVER_ADMIN_CHAT_IDS"):
-        ObserverSettings.from_mapping(
-            {
-                "OBSERVER_BOT_TOKEN": "observer-token",
-                "OBSERVER_DATABASE_URL": "postgresql://observer@db/observer_prod",
-                "OBSERVER_LM_STUDIO_BASE_URL": "http://lmstudio:1234",
-            }
-        )
+def test_settings_allow_database_managed_admins():
+    settings = ObserverSettings.from_mapping(
+        {
+            "OBSERVER_BOT_TOKEN": "observer-token",
+            "OBSERVER_DATABASE_URL": "postgresql://observer@db/observer_prod",
+            "OBSERVER_LM_STUDIO_BASE_URL": "http://lmstudio:1234",
+        }
+    )
+
+    assert settings.admin_chat_ids == frozenset()

@@ -37,6 +37,7 @@ export type DashboardTabKey =
   | 'referrals'
   | 'site_notice'
   | 'support_tickets'
+  | 'notification_center'
   | 'reference_assets'
   | 'prompt_optimizer'
   | 'character_generation'
@@ -224,6 +225,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     component: markRaw(defineAsyncComponent(() => import('../components/SupportTickets.vue'))),
     containerClass: PANEL_CONTAINER_CLASS,
     scrollable: false,
+  },
+  {
+    key: 'notification_center',
+    label: '通知中心',
+    icon: NotificationOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/NotificationCenter.vue'))),
+    containerClass: BASE_CONTAINER_CLASS,
+    scrollable: true,
   },
   {
     key: 'site_notice',

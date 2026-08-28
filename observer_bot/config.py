@@ -74,7 +74,7 @@ class ObserverSettings:
         return cls(
             token=_required(values, "OBSERVER_BOT_TOKEN"),
             database_url=_required(values, "OBSERVER_DATABASE_URL"),
-            admin_chat_ids=_ids(values, "OBSERVER_ADMIN_CHAT_IDS", required=True),
+            admin_chat_ids=_ids(values, "OBSERVER_ADMIN_CHAT_IDS"),
             authorized_group_ids=_ids(values, "OBSERVER_AUTHORIZED_GROUP_IDS"),
             lm_studio_base_url=_required(values, "OBSERVER_LM_STUDIO_BASE_URL").rstrip("/"),
             central_api_url=str(

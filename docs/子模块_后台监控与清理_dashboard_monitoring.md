@@ -66,6 +66,10 @@ sequenceDiagram
   `support_ticket_admin_service.py`。`private_bots.py` 与
   `reference_assets.py` 是剩余的事务型 router 迁移清单；AST 门禁只允许
   该清单缩小，禁止新 router 重新直接调用 session 事务方法。
+- 左侧独立“通知中心”聚合两套边界清晰的设置：客服工单接收者仍写 AllBot 主库
+  `support_notification_recipients`；observer 管理员、授权群、开关、报告和发送日志
+  通过 `OBSERVER_DATABASE_URL` 访问独立 `observer_prod`。Dashboard 不复制报告任务，
+  不持有 observer token，也不让 observer 跨库读取工单或用户数据。
 
 ### 3.2 Dashboard 不负责什么
 
@@ -184,6 +188,8 @@ sequenceDiagram
 - 覆盖支付宝直连名单的服务端筛选分页、跨分页全选、明确用户批量开关、批量上限、
   行锁与审计原子提交、后台周期自动移除已成功直连付款用户，以及 Dashboard 前端
   typecheck/组件交互。
+- 覆盖通知中心 ID 校验、observer 独立库设置替换、报告/通知分页、工单页移除旧弹窗、
+  Vue typecheck 与桌面/移动布局。
 
 ## 6. 部署与运维
 

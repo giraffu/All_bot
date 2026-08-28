@@ -2,11 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   fetchSupportTicket,
-  fetchSupportTicketNotificationSettings,
   fetchSupportTickets,
   replySupportTicket,
   updateSupportTicket,
-  updateSupportTicketNotificationSettings,
 } from '../api/api'
 import { formatSupportTicketCategory, SUPPORT_TICKET_CATEGORY_OPTIONS } from '../supportTicketCategories'
 
@@ -19,12 +17,6 @@ const category = ref<string | undefined>()
 const reply = ref('')
 const internalNote = ref('')
 const loading = ref(false)
-const notificationSettingsOpen = ref(false)
-const notificationSettingsLoading = ref(false)
-const notificationSettingsSaving = ref(false)
-const notificationRecipientText = ref('')
-const notificationSettingsError = ref('')
-const notificationSettingsSaved = ref(false)
 const labelSender: Record<string, string> = { user: '用户', admin: '管理员', internal: '内部备注' }
 const isImage = (mimeType?: string) => Boolean(mimeType?.startsWith('image/'))
 const load = async () => { loading.value = true; try { tickets.value = (await fetchSupportTickets({ status: status.value ?? null, category: category.value ?? null })).items } finally { loading.value = false } }
@@ -32,70 +24,16 @@ const openTicket = async (id: number) => { selected.value = await fetchSupportTi
 const updateStatus = async () => { if (!selected.value) return; await updateSupportTicket(selected.value.id, { status: selected.value.status, internal_note: internalNote.value || null }); internalNote.value = ''; await openTicket(selected.value.id); await load() }
 const sendReply = async () => { if (!selected.value || !reply.value.trim()) return; await replySupportTicket(selected.value.id, { body: reply.value, status: selected.value.status }); reply.value = ''; await openTicket(selected.value.id); await load() }
 const detailTitle = computed(() => selected.value ? `工单 #${selected.value.id}` : '选择一条工单')
-const openNotificationSettings = async () => {
-  notificationSettingsOpen.value = true
-  notificationSettingsLoading.value = true
-  notificationSettingsError.value = ''
-  notificationSettingsSaved.value = false
-  try {
-    const payload = await fetchSupportTicketNotificationSettings()
-    notificationRecipientText.value = (payload.telegram_user_ids ?? []).join('\n')
-  } catch {
-    notificationSettingsError.value = '通知设置加载失败，请稍后重试。'
-  } finally {
-    notificationSettingsLoading.value = false
-  }
-}
-const parseNotificationRecipientIds = (): number[] => {
-  const tokens = notificationRecipientText.value.split(/[\s,，]+/).filter(Boolean)
-  if (tokens.some(token => !/^\d+$/.test(token) || Number(token) <= 0)) {
-    throw new Error('invalid Telegram user ID')
-  }
-  return [...new Set(tokens.map(Number))]
-}
-const saveNotificationSettings = async () => {
-  notificationSettingsError.value = ''
-  notificationSettingsSaved.value = false
-  let telegramUserIds: number[]
-  try {
-    telegramUserIds = parseNotificationRecipientIds()
-  } catch {
-    notificationSettingsError.value = '请输入正整数 Telegram 用户 ID，可用换行或逗号分隔。'
-    return
-  }
-  notificationSettingsSaving.value = true
-  try {
-    const payload = await updateSupportTicketNotificationSettings({
-      telegram_user_ids: telegramUserIds,
-    })
-    notificationRecipientText.value = (payload.telegram_user_ids ?? []).join('\n')
-    notificationSettingsSaved.value = true
-  } catch {
-    notificationSettingsError.value = '通知设置保存失败，请稍后重试。'
-  } finally {
-    notificationSettingsSaving.value = false
-  }
-}
 onMounted(load)
 </script>
 
 <template>
   <div class="support-grid">
     <section class="ticket-list ticket-scroll-pane" aria-label="工单列表" tabindex="0">
-      <div class="toolbar"><a-select v-model:value="status" class="status-filter" allow-clear placeholder="状态" :options="['open','processing','resolved','closed'].map(value => ({ value, label: value }))" @change="load" /><a-select v-model:value="category" class="category-filter" allow-clear placeholder="分类" :options="SUPPORT_TICKET_CATEGORY_OPTIONS" @change="load" /><a-button @click="load">刷新</a-button><a-button @click="openNotificationSettings">通知设置</a-button></div>
+      <div class="toolbar"><a-select v-model:value="status" class="status-filter" allow-clear placeholder="状态" :options="['open','processing','resolved','closed'].map(value => ({ value, label: value }))" @change="load" /><a-select v-model:value="category" class="category-filter" allow-clear placeholder="分类" :options="SUPPORT_TICKET_CATEGORY_OPTIONS" @change="load" /><a-button @click="load">刷新</a-button></div>
       <a-spin :spinning="loading"><a-list :data-source="tickets" bordered><template #renderItem="{ item }"><a-list-item class="ticket-item" @click="openTicket(item.id)"><div><strong>#{{ item.id }} {{ formatSupportTicketCategory(item.category) }}</strong><div>{{ item.full_name || item.username || item.id }}</div><small>{{ item.last_message_at }}</small></div><a-tag :color="item.status === 'open' ? 'red' : 'blue'">{{ item.status }}</a-tag></a-list-item></template></a-list></a-spin>
     </section>
     <section class="ticket-detail ticket-scroll-pane" aria-label="工单详情" tabindex="0"><h2>{{ detailTitle }}</h2><template v-if="selected"><div class="meta">用户：{{ selected.full_name || selected.username || selected.telegram_user_id }} · {{ formatSupportTicketCategory(selected.category) }}</div><div class="messages"><article v-for="message in selected.messages" :key="message.id" :class="`message ${message.sender_type}`"><b>{{ labelSender[message.sender_type] }}</b><p v-if="message.body">{{ message.body }}</p><a v-for="attachment in message.attachments" :key="attachment.url" class="attachment" :href="attachment.url" target="_blank" rel="noreferrer"><img v-if="isImage(attachment.mime_type)" class="attachment-image" :src="attachment.url" :alt="attachment.filename" /><span>{{ attachment.filename }}</span></a><small>{{ message.created_at }}</small></article></div><a-select v-model:value="selected.status" :options="['open','processing','resolved','closed'].map(value => ({value,label:value}))" /><a-textarea v-model:value="internalNote" placeholder="内部备注（用户不可见）" :rows="2" /><a-button @click="updateStatus">保存状态/备注</a-button><a-textarea v-model:value="reply" placeholder="回复用户" :rows="3" /><a-button type="primary" @click="sendReply">发送回复</a-button></template></section>
-    <a-modal v-model:open="notificationSettingsOpen" title="客服工单 Telegram 通知" :footer="null">
-      <a-spin :spinning="notificationSettingsLoading">
-        <p>每行填写一个 Telegram 数字用户 ID。接收者必须先私聊并启动当前客服 Bot，Bot 无法仅凭 @username 主动联系普通用户。</p>
-        <textarea v-model="notificationRecipientText" class="notification-recipient-input" rows="7" placeholder="例如：123456789" />
-        <p class="settings-hint">留空并保存可关闭全部工单通知，最多可配置 20 人。</p>
-        <p v-if="notificationSettingsError" class="settings-error">{{ notificationSettingsError }}</p>
-        <p v-if="notificationSettingsSaved" class="settings-success">通知用户已保存。</p>
-        <a-button type="primary" :loading="notificationSettingsSaving" @click="saveNotificationSettings">保存通知用户</a-button>
-      </a-spin>
-    </a-modal>
   </div>
 </template>
 
@@ -107,7 +45,5 @@ onMounted(load)
 .ticket-scroll-pane::-webkit-scrollbar-thumb { background:#94a3b8; border:2px solid #f1f5f9; border-radius:10px }
 .ticket-scroll-pane::-webkit-scrollbar-thumb:hover { background:#64748b }
 .ticket-scroll-pane:focus-visible { outline:2px solid #1677ff; outline-offset:2px }
-.notification-recipient-input { width:100%; box-sizing:border-box; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; resize:vertical }
-.settings-hint { color:#64748b; margin-top:6px }.settings-error { color:#cf1322 }.settings-success { color:#389e0d }
 .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px }.status-filter { width:110px }.category-filter { width:140px }.ticket-item { cursor:pointer }.messages { margin:16px 0 }.message { padding:10px; margin:8px 0; border-radius:8px; background:#f5f5f5 }.message.admin { background:#e6f4ff }.message.internal { background:#fffbe6 }.message p { white-space:pre-wrap; margin:6px 0 }.message a,.message small { display:block }.attachment { width:max-content; max-width:100%; margin:8px 0 }.attachment-image { display:block; max-width:min(360px, 100%); max-height:280px; border-radius:8px; object-fit:contain; margin-bottom:4px }.ticket-detail :deep(.ant-input),.ticket-detail :deep(.ant-select),.ticket-detail :deep(.ant-btn) { margin:6px 0; width:100% } @media (max-width: 800px) { .support-grid { grid-template-columns:1fr; grid-template-rows:repeat(2, minmax(0, 1fr)) } }
 </style>

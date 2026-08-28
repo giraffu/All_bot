@@ -26,6 +26,7 @@ from observer_bot.runtime import (
     report_tick_job,
     retention_job,
 )
+from observer_bot.runtime_config import ObserverRuntimeConfigProvider
 from src.log_redaction import install_log_redaction
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,16 @@ def build_application(
 
     async def post_init(application) -> None:
         await repository.open()
-        notifier = TelegramAdminNotifier(application.bot, settings.admin_chat_ids)
+        await repository.bootstrap_runtime_config(
+            admin_chat_ids=settings.admin_chat_ids,
+            authorized_group_ids=settings.authorized_group_ids,
+        )
+        runtime_config_provider = ObserverRuntimeConfigProvider(repository)
+        notifier = TelegramAdminNotifier(
+            application.bot,
+            runtime_config_provider=runtime_config_provider,
+            repository=repository,
+        )
         queue_monitor = QueueMonitor(
             client=queue_client,
             state_repository=repository,
@@ -86,6 +96,7 @@ def build_application(
             notifier=notifier,
             queue_monitor=queue_monitor,
             report_service=report_service,
+            runtime_config_provider=runtime_config_provider,
         )
         if application.job_queue is None:
             raise RuntimeError("python-telegram-bot job queue dependency is unavailable")

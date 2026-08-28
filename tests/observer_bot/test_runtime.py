@@ -15,6 +15,20 @@ class FakeClosable:
     async def close(self):
         return None
 
+    async def bootstrap_runtime_config(self, **_kwargs):
+        return None
+
+    async def get_runtime_config(self):
+        return SimpleNamespace(
+            admin_chat_ids=frozenset({42}),
+            authorized_group_ids=frozenset({-1001}),
+            queue_alerts_enabled=True,
+            group_collection_enabled=True,
+            daily_reports_enabled=True,
+            weekly_reports_enabled=True,
+            monthly_reports_enabled=True,
+        )
+
 
 def _settings():
     return ObserverSettings(
@@ -63,9 +77,19 @@ async def test_runtime_rejects_non_admin_status_command():
         effective_message=SimpleNamespace(reply_text=lambda text: replies.append(text)),
     )
     context = SimpleNamespace(
-        application=SimpleNamespace(bot_data={"settings": _settings()})
+        application=SimpleNamespace(
+            bot_data={
+                "runtime_config_provider": SimpleNamespace(
+                    get=lambda: _async_value(SimpleNamespace(admin_chat_ids=frozenset({42})))
+                )
+            }
+        )
     )
 
     await handle_status(update, context)
 
     assert replies == []
+
+
+async def _async_value(value):
+    return value

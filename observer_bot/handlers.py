@@ -9,8 +9,13 @@ async def collect_authorized_group_message(update, context) -> None:
     if chat is None or message is None:
         return
 
-    settings = context.application.bot_data["settings"]
-    if int(chat.id) not in settings.authorized_group_ids:
+    runtime_config = await context.application.bot_data[
+        "runtime_config_provider"
+    ].get()
+    if (
+        not runtime_config.group_collection_enabled
+        or int(chat.id) not in runtime_config.authorized_group_ids
+    ):
         return
 
     author = message.from_user
