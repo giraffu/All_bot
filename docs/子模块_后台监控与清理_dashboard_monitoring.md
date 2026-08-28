@@ -151,7 +151,7 @@ sequenceDiagram
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
 - `POST /api/runpod/scale` 接收多 profile 新增数量。Dashboard 先用只读 add planner 排除已有 Pod 与 Redis 手动预留，再把每个 profile 的 `count=N` 拆成 N 个带明确 `slot` 的 `add --count 1 --slot NN` operation 并发启动；响应返回共同 `batch_id`，每个 operation 返回自身 `slot`、`agent_id` 与 `requested_count=1`。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 仍不允许重复，但已有手动批次运行时允许继续追加同 profile。
-- 当前可管理 profile 为 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`。`scail2` 支持正式 `scail2_action_transfer`、`scail2_video_replacement`；`ltx_video` 支持正式 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override；`pornmaster_flux2_edit` 支持正式 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，模型 manifest 为 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。这些 profile 都是手动备用/临时扩容能力，不代表系统里固定常驻一个 RunPod；没有 heartbeat 或已删除的 `manual_NN` 不应计入可用容量。
+- 当前可管理 profile 以 `RUNPOD_ADMIN_PROFILE_OPTIONS` 为事实源，包括 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`ltx_t2v / Sulphur + Ingredients`、`minimax_h3 / MiniMax H3` 与 `pornmaster_flux2_edit_bf16 / 自由P图 v2.5 + v3 共用执行池`。`minimax_h3` 支持正式 `minimax_h3_t2v,minimax_h3_i2v,minimax_h3_flf2v,minimax_h3_ref2v`；这些正式 `runpod_prod_<profile>_manual_NN` Worker 均保留暂停、重启、锁定/解锁和删除操作。所有 profile 都是手动备用/临时扩容能力，不代表系统里固定常驻一个 RunPod；没有 heartbeat 或已删除的 `manual_NN` 不应计入可用容量。
 - `POST /api/runpod/workers/{agent_id}/pause` 只提交 `disable` operation，停止目标 RunPod worker 接新单但保留 Pod。
 - `DELETE /api/runpod/workers/{agent_id}` 提交 `down` operation，先 disable 并等待 `current_task_id` 清空，再删除 Pod 释放 RunPod 计费资源。
 - RunPod operation 状态通过 `RunPodOperationStore` seam 持久化；生产默认使用 Redis，测试可注入 in-memory fake。Redis key 使用 `dashboard:runpod:operations` sorted set、`dashboard:runpod:operation:{id}` JSON、`dashboard:runpod:active_add:{profile}` autoscaler/legacy 独占 add 锁，以及 `dashboard:runpod:manual_add_slots:{profile}` 手动 slot 预留。手动预留整批原子写入并逐 operation 释放；存在手动预留时 autoscaler add 不启动，存在 autoscaler 独占 add 时手动批次不接收。
@@ -171,7 +171,7 @@ sequenceDiagram
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
 - 覆盖 `queue_by_type_details` 的 active/pending 分离、pending 采样从 Worker Redis 空队列兜底到通用 Redis、最长 pending 等待按 `created_at` 而不是 zset score 计算、low trust free tier pending 用户/任务数聚合，以及 Redis / 低信任统计失败时的降级返回。
-- 覆盖 `runpod_profile_queue_details` 的 8 类正式 RunPod profile 固定返回、`i2i_pro` 四执行类型汇总（含 legacy `face_swap`）、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`pornmaster_flux2_edit_bf16` 自动 add/down、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`，以及最长等待与非低信任最长等待取 profile 内最大 pending 等待。
+- 覆盖 `runpod_profile_queue_details` 的 9 类正式 RunPod profile 固定返回、`i2i_pro` 四执行类型汇总（含 legacy `face_swap`）、`minimax_h3` 四执行类型汇总、`pornmaster_flux2_edit_bf16` 自动 add/down、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`，以及最长等待与非低信任最长等待取 profile 内最大 pending 等待。
 - 覆盖 `healthy_workers`、`accepting_workers`、`error_workers`、`quarantined_workers`、`workers_by_status` 与 `workers_by_control_state` 聚合
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示、`vue-tsc`
   和 legacy JavaScript SFC 只减不增门禁
