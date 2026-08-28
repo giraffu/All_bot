@@ -19,6 +19,7 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 | 付费群审核 Bot | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` |
 | 独立普通群管理 Bot | `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md` |
 | 独立客服 Bot、工单草稿与附件 | `docs/子模块_客服Bot_support_bot.md` |
+| Observer Bot、授权群采集与管理员命令 | `allbot-observer-bot` |
 | 任务提交与 continuation | `allbot-task-engine` |
 
 具体功能按钮、历史 callback、模型和任务类型枚举只保留在专项文档及代码路由，
@@ -44,18 +45,10 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 ## 3. FSM 与 service 分层
 
-- handler/FSM 负责 Telegram 状态、素材接收、额度提示、消息和清理；输入
-  归一、提交计划、payload、历史恢复与扩展链放 application service。
-- quick image 计划位于 `quick_image_submission_service.py`；quick video
-  位于 `quick_video_submission_service.py`。
-- 主 Bot 高级视频计划位于 `advanced_video_submission_service.py`，设置
-  view-model/callback 解析位于 `advanced_video_settings_view_service.py`。
-- LTX 扩展/拼接历史准备位于 `ltx_video_extension_service.py`；Wan22
-  扩展/重生成/拼接位于 `wan22_video_v2_extension_service.py`。
-- Telegram `Update` 不进入 core。FSM 把平台输入转换为内部 request/context，
-  再调用公开 task application/facade。
-- 提交参数由 plan 显式传入 actor/application service，不能借用顶层
-  `context.user_data` 作为后台任务隐式参数桥。
+- handler/FSM 只负责 Telegram 状态、素材、消息与清理；归一、提交计划、payload、
+  历史和扩展链放 application service，具体入口按专项文档定位。
+- `Update` 不进入 core；FSM 转为内部 request/context 后调用公开 facade。
+- plan 参数显式传给后台 actor/service，不借顶层 `context.user_data` 隐式传递。
 
 ## 4. 对话与文件不变量
 
@@ -75,19 +68,10 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 ## 5. Bot 隔离
 
-- 主业务 Bot、QQCC Bot、付费群审核 Bot、客服 Bot 使用不同 token；相同 token
-  不能由两个 polling 进程同时使用。
-- QQCC 只注册 quick image/video、market 和最小 callback，不导入主 Bot 高级、
-  支付或 Gallery handler；私有 Bot 用 webhook。private worker 的官方 token
-  只做会员 checker，不启动 `getUpdates`。
-- 私有 Bot 申请 token 消息先尽力删除；不得回显、记录或放入审计 metadata。
-- 付费群审核 Bot 只处理目标群 join request 与轻量消息治理，不接入生成 FSM
-  或复用主 Bot token。
-- 普通群管理 Bot 只订阅 `message`，不处理 `chat_join_request`，并隔离 token、
-  配置、日志和后台 API。
-- 客服 Bot 只收集工单草稿和私有附件，不读取生成维护标记、不提交生成任务，
-  也不把未提交草稿写入数据库。
-- 主 Bot 旧 QQCC 入口只跳转或提示未配置；callback 兼容由 QQCC Skill 管理。
+- 各 Bot 隔离 token、进程、handler、配置和日志；同一 token 不得双 polling。
+- QQCC handler/webhook、付费群 join request、普通群 `message`、客服工单和
+  Observer 采集边界分别以专项 Skill/文档为准，不互相导入入口。
+- token 不回显、不记录；旧入口只安全跳转/拒绝，兼容由所属 Skill 管理。
 
 ## 6. 维护与运行时红线
 
@@ -102,16 +86,8 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 ## 7. 最小验证
 
-- 全局菜单：任意状态打断、明确回复、END 与临时文件清理。
-- callback：注册导入、前缀优先级、正常/拒绝/未知均 answer。
-- 并发：同用户不重叠、不同用户可并发、全局上限、取消等待任务后不阻塞
-  后续 update。
-- 文件：下载成功、超时、异常、半文件和所有退出路径清理。
-- service seam：handler 只做 Telegram 编排，payload/设置/历史由对应 service；
-  plan 参数显式传递。
-- Bot 隔离：token、handler 集、polling/webhook、官方 checker callable。
-- 菜单配置与 i18n：默认/归一化、排序分行、显隐、能力 gate、读取失败回退、
-  旧文本仍安全路由。
-- 任务：提交成功、额度不足、维护、不可取消 continuation、完成/失败展示。
-- 交付说明触达 Bot、入口、状态/callback、临时文件、任务/计费影响和 focused
-  tests；不把代码或本地测试描述成线上已生效。
+- 菜单/FSM：任意状态退出、明确回复、END、i18n/旧文本安全路由与文件清理。
+- callback：注册、前缀优先级，正常/拒绝/未知都 answer。
+- 并发：同用户串行、不同用户有界并发，取消后不阻塞后续 update。
+- service/任务：显式 plan seam；成功、额度不足、维护、取消限制和终态展示。
+- Bot 隔离：token、handler、polling/webhook；交付列出 focused tests 和环境状态。
