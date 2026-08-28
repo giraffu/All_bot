@@ -17,7 +17,11 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "ComfyUI-MiniMax-ContextIR" not in dockerfile
     assert "be93b9375ebe8b24fa431609f56fa8f441b4b37f" in dockerfile
     assert "22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c" in dockerfile
-    assert "192.168.1.115:5000/allbot/comfyui-boot@sha256:09c810dd" in dockerfile
+    assert (
+        "yanwk/comfyui-boot:cu128-slim@sha256:"
+        "4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9"
+    ) in dockerfile
+    assert "192.168.1.115:5000/allbot/comfyui-boot" not in dockerfile
     assert "ghcr.io" not in dockerfile
     assert "get_cuda_arch_versions" not in dockerfile
     assert "SAGEATTENTION_REPO" not in dockerfile
