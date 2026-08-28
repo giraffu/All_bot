@@ -65,7 +65,7 @@ export const RUNPOD_FALLBACK_PROFILES: RunPodProfile[] = [
 ]
 
 const RUNPOD_MANUAL_AGENT_ID_PATTERN =
-  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|ltx_t2v|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16)_manual_\d+$/
+  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|ltx_t2v|minimax_h3|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16)_manual_\d+$/
 
 export const isRunPodManualAgentId = (agentId: string) =>
   RUNPOD_MANUAL_AGENT_ID_PATTERN.test(agentId)
