@@ -418,6 +418,22 @@ def test_minimax_h3_worker_injects_video_reasoning_without_prompt_trigger():
     assert workflow["30"]["inputs"]["prompt"] == "a precise sequence of actions"
 
 
+def test_minimax_h3_worker_forces_pytorch_attention_when_requested(monkeypatch):
+    monkeypatch.setenv("MINIMAX_H3_FORCE_PYTORCH_ATTENTION", "true")
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 I2V.api.json").read_text()
+    )
+
+    patch_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_i2v",
+        params={"prompt": "scene", "image": "first.png"},
+    )
+
+    assert workflow["2"]["class_type"] == "ModelAttentionBackend"
+    assert workflow["2"]["inputs"]["attention"] == "pytorch attention"
+
+
 def test_minimax_h3_worker_chains_new_action_loras_and_injects_declared_triggers():
     workflow = json.loads(
         Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()

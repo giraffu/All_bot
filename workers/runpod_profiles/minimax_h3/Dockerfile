@@ -19,6 +19,9 @@ ARG NVIDIA_VFX_WHEEL_URL=https://pypi.nvidia.com/nvidia-vfx/nvidia_vfx-0.1.0.1-c
 ARG NVIDIA_VFX_WHEEL_SHA256=e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905
 ARG NVIDIA_VFX_WHEEL_SIZE=597321055
 ARG NVIDIA_VFX_DOWNLOAD_PARALLELISM=1
+ARG COMFY_KITCHEN_PURE_WHEEL_URL=https://files.pythonhosted.org/packages/27/d1/e53410260b81610233cb56c2fac1a9f3d39887be3cbb983cd8baa6a07528/comfy_kitchen-0.2.31-py3-none-any.whl
+ARG COMFY_KITCHEN_PURE_WHEEL_SHA256=5117946c30f308cfc73b9c26f723ae3918308bd090e57a8eae298406934aabd6
+ARG COMFY_KITCHEN_PURE_WHEEL_SIZE=180907
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
@@ -92,6 +95,11 @@ RUN set -euo pipefail; \
     pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache --index-url "${PIP_INDEX_URL}" "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; rm -rf /tmp/allbot-pip-cache; \
+    comfy_kitchen_wheel=/tmp/comfy_kitchen-0.2.31-py3-none-any.whl; \
+    python3 /tmp/download_pinned_file.py --url "${COMFY_KITCHEN_PURE_WHEEL_URL}" --output "$comfy_kitchen_wheel" --size "${COMFY_KITCHEN_PURE_WHEEL_SIZE}" --sha256 "${COMFY_KITCHEN_PURE_WHEEL_SHA256}" --parallelism 1; \
+    pip_install_with_retry --force-reinstall --no-deps "$comfy_kitchen_wheel"; \
+    rm -f "$comfy_kitchen_wheel"; \
+    python3 -c "from pathlib import Path; import comfy_kitchen; root=Path(comfy_kitchen.__file__).parent; assert not (root / 'backends/cuda/_C.abi3.so').exists()"; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \

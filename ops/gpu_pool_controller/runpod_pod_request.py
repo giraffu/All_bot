@@ -483,6 +483,7 @@ class RunPodPodRequestBuilder:
             env["RUNPOD_MODEL_TARGET_DIR"] = (
                 f"{self.settings.volume_mount_path.rstrip('/')}/ComfyUI/models"
             )
+            env["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] = "true"
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides

@@ -33,6 +33,7 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
     assert body["env"]["POOL_RUNTIME_PROFILE"] == "minimax_h3"
     assert body["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
+    assert body["env"]["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "4"
     assert prod_body["env"]["RUNPOD_MODEL_PREFIX"] == RUNPOD_MINIMAX_H3_MODEL_PREFIX

@@ -1,3 +1,4 @@
+import os
 import re
 from typing import Any, Callable
 
@@ -1586,6 +1587,18 @@ def patch_minimax_h3_workflow(
             raise ValueError(f"invalid MiniMax H3 main model: {message}") from exc
         raise ValueError(f"invalid MiniMax H3 addon configuration: {message}") from exc
     workflow["1"]["inputs"]["unet_name"] = spec.model_name
+    if os.getenv("MINIMAX_H3_FORCE_PYTORCH_ATTENTION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        attention_node = workflow.get("2")
+        if not isinstance(attention_node, dict) or attention_node.get(
+            "class_type"
+        ) != "ModelAttentionBackend":
+            raise ValueError("MiniMax H3 attention backend node is missing")
+        attention_node.setdefault("inputs", {})["attention"] = "pytorch attention"
     model_input = _apply_minimax_h3_execution_profile(
         workflow,
         main_model=spec.main_model,

@@ -301,6 +301,14 @@ DaSiWa 的 NVIDIA VFX 构建依赖固定为官方 `0.1.0.1` CPython 3.12 ABI3 wh
 `597,321,055` bytes 与 SHA256 `e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905`
 并行分段下载并在安装前合并校验，避免 NVIDIA wheel-stub 的单连接损坏重试；该 wheel
 只属于镜像构建依赖，不进入模型 bundle。
+RunPod H3 不得使用 `comfy-kitchen 0.2.31` 的 manylinux CUDA 扩展 wheel：该 wheel
+由 CUDA 13.0 编译，会在只满足 CUDA 12.8 的宿主驱动上于 `detect_k_anchor` 首次启动
+时报 driver/runtime 不兼容。镜像必须按固定 URL、`180,907` bytes 与 SHA256
+`5117946c30f308cfc73b9c26f723ae3918308bd090e57a8eae298406934aabd6` 覆盖安装同版本
+pure-Python wheel，并验证 `backends/cuda/_C.abi3.so` 不存在；RunPod request 同时写入
+`MINIMAX_H3_FORCE_PYTORCH_ATTENTION=true`，由公共 patcher 将四种 H3 workflow 的
+`ModelAttentionBackend` 统一切为 PyTorch attention。该开关只属于 RunPod adapter；
+未设置时 LAN 现有 workflow 仍保留其受控 attention 选择。
 当前 RTX 5090 运行态保留 DynamicVRAM，但镜像将 AIMDO cast buffer 的
 最大预留从 16 GiB 收紧为 8 GiB，避免 32 GiB 显卡上 PyTorch 只剩
 16 GiB 可分配空间。运行参数同时启用 `--cache-none`，以便在图执行期间尽快
