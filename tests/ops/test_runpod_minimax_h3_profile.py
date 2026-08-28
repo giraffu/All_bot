@@ -7,6 +7,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+    RUNPOD_TASK_PROFILES,
 )
 
 
@@ -32,6 +33,7 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
     assert body["env"]["POOL_RUNTIME_PROFILE"] == "minimax_h3"
     assert body["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
+    assert body["env"]["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "4"
     assert prod_body["env"]["RUNPOD_MODEL_PREFIX"] == RUNPOD_MINIMAX_H3_MODEL_PREFIX
@@ -62,3 +64,15 @@ def test_minimax_h3_rejects_mutable_or_missing_image_reference():
             RunPodPodRequestBuilder(
                 RunPodSettings(image_name_minimax_h3=image_name)
             ).create_pod_body(task_type="minimax_h3_t2v", environment="cloud-test")
+
+
+def test_minimax_h3_projected_cost_env_drives_scale_guard(monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3", "0.99")
+
+    settings = RunPodSettings.from_env()
+    builder = RunPodPodRequestBuilder(settings)
+
+    assert settings.projected_cost_per_hr_minimax_h3 == pytest.approx(0.99)
+    assert builder.configured_projected_cost(
+        RUNPOD_TASK_PROFILES["minimax_h3"]
+    ) == pytest.approx(0.99)

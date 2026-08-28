@@ -191,7 +191,7 @@ RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY = (
     "minimax_h3/2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18/manifest.json"
 )
 RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB = 100
-RUNPOD_MINIMAX_H3_VOLUME_GB = 100
+RUNPOD_MINIMAX_H3_VOLUME_GB = 140
 RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",

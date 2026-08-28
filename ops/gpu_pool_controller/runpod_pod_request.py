@@ -483,6 +483,7 @@ class RunPodPodRequestBuilder:
             env["RUNPOD_MODEL_TARGET_DIR"] = (
                 f"{self.settings.volume_mount_path.rstrip('/')}/ComfyUI/models"
             )
+            env["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] = "true"
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides
@@ -612,6 +613,8 @@ class RunPodPodRequestBuilder:
             return self.settings.projected_cost_per_hr_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.projected_cost_per_hr_ltx_t2v
+        if profile.task_type == "minimax_h3":
+            return self.settings.projected_cost_per_hr_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.projected_cost_per_hr_pornmaster_flux2_edit
         return 0.0

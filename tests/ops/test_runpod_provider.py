@@ -20,6 +20,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+    RUNPOD_MINIMAX_H3_VOLUME_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS,
@@ -119,6 +120,29 @@ def test_validate_key_uses_bearer_auth_header_without_mutation():
             },
         }
     ]
+
+
+def test_minimax_h3_render_reserves_volume_for_full_immutable_bundle():
+    provider = RunPodProvider(
+        _settings(
+            image_name_minimax_h3=(
+                "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "a" * 64
+            ),
+            model_bucket="allbot-model-cache",
+            model_sync_enabled=True,
+            volume_gb=100,
+        )
+    )
+
+    body = provider.render_create_pod_request(
+        task_type="minimax_h3",
+        environment="cloud-test",
+        redact=False,
+    )["json"]
+
+    assert RUNPOD_MINIMAX_H3_VOLUME_GB == 140
+    assert body["volumeInGb"] == 140
+    assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
 
 
 def test_list_pods_filters_managed_pods_and_redacts_secrets():

@@ -32,6 +32,9 @@ from .providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
+    RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
@@ -61,6 +64,11 @@ from .providers.runpod import (
     RunPodProvider,
     redact_payload,
     redact_text,
+)
+from .runpod_profile_catalog import (
+    RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX,
+    RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+    RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
 )
 from .runpod_cloud_test_canary import (
     RunPodCloudTestCanaryAssets,
@@ -96,6 +104,8 @@ EXPECTED_LTX_VIDEO_MODEL_PREFIX = RUNPOD_LTX_VIDEO_MODEL_PREFIX
 EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY = RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
 EXPECTED_LTX_T2V_MODEL_PREFIX = RUNPOD_LTX_T2V_MODEL_PREFIX
 EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY = RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+EXPECTED_MINIMAX_H3_MODEL_PREFIX = RUNPOD_MINIMAX_H3_MODEL_PREFIX
+EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY = RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
@@ -112,7 +122,9 @@ EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro
 EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX
 EXPECTED_LTX_T2V_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX
-DEFAULT_CONTROL_HOST = "100.82.124.91"
+EXPECTED_MINIMAX_H3_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX
+DEFAULT_CLOUD_TEST_WEB_API_URL = "https://api-cf-test.aivison.it.com/api"
+DEFAULT_CLOUD_TEST_CENTRAL_URL = EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
 EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES = ("image_to_video", "wan22_video_v2")
@@ -121,6 +133,7 @@ EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 EXPECTED_SCAIL2_GPU_TYPE_IDS = RUNPOD_SCAIL2_GPU_TYPE_IDS
 EXPECTED_LTX_VIDEO_GPU_TYPE_IDS = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
 EXPECTED_LTX_T2V_GPU_TYPE_IDS = RUNPOD_LTX_T2V_GPU_TYPE_IDS
+EXPECTED_MINIMAX_H3_GPU_TYPE_IDS = RUNPOD_MINIMAX_H3_GPU_TYPE_IDS
 EXPECTED_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS = (
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
 )
@@ -134,6 +147,7 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
+    RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX,
 )
@@ -285,6 +299,21 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
             "temporarily disable cloud-test workers supporting ltx_t2v or ltx_t2v_ic"
         ),
     ),
+    "minimax_h3": RunPodCanaryProfileSpec(
+        task_type="minimax_h3",
+        image_ref_prefix=EXPECTED_MINIMAX_H3_IMAGE_REF_PREFIX,
+        supported_task_types=RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+        model_prefix=EXPECTED_MINIMAX_H3_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_MINIMAX_H3_GPU_TYPE_IDS,
+        task_summary=(
+            "submit MiniMax H3 T2V, I2V, FLF2V, and REF2V 5s preview tasks "
+            "serially"
+        ),
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting MiniMax H3 task types"
+        ),
+    ),
 }
 
 
@@ -340,7 +369,17 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         os.getenv("RUNPOD_CANARY_CONTROL_HOST")
         or os.getenv("CLOUD_TEST_CONTROL_HOST")
         or os.getenv("CLOUD_TEST_TAILSCALE_IP")
-        or DEFAULT_CONTROL_HOST
+        or ""
+    ).strip()
+    default_web_api_url = (
+        f"http://{control_host}:8001/api"
+        if control_host
+        else DEFAULT_CLOUD_TEST_WEB_API_URL
+    )
+    default_central_url = (
+        f"http://{control_host}:8004"
+        if control_host
+        else DEFAULT_CLOUD_TEST_CENTRAL_URL
     )
     arg_worker_ids = getattr(args, "worker_id", None)
     env_worker_ids = _worker_ids_from_env()
@@ -359,12 +398,12 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         web_api_url=(
             getattr(args, "web_api_url", None)
             or os.getenv("RUNPOD_CANARY_WEB_API_URL")
-            or f"http://{control_host}:8001/api"
+            or default_web_api_url
         ).rstrip("/"),
         central_url=(
             getattr(args, "central_url", None)
             or os.getenv("RUNPOD_CANARY_CENTRAL_URL")
-            or f"http://{control_host}:8004"
+            or default_central_url
         ).rstrip("/"),
         web_user_id=int(
             getattr(args, "web_user_id", None)
@@ -1207,8 +1246,10 @@ class RunPodCanaryRunner:
             failures.append(
                 f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
             )
-        if spec.task_type == "ltx_t2v" and not uses_canonical_digest:
-            failures.append("ltx_t2v imageName must use an exact sha256 digest")
+        if spec.task_type in {"ltx_t2v", "minimax_h3"} and not uses_canonical_digest:
+            failures.append(
+                f"{spec.task_type} imageName must use an exact sha256 digest"
+            )
         if (
             spec.expected_gpu_type_ids
             and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids

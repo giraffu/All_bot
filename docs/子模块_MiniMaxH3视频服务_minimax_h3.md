@@ -288,8 +288,10 @@ SHA256，总计 114,106,812,703 bytes，准备前要求模型卷至少 110 GiB �
 revision、filename/modelVersion/fileId、SHA256 和 size。新版本必须使用新 bundle version，
 不能覆盖旧 manifest；完整校验、focused tests 与 GPU canary 通过后才可单独更新部署指针。
 
-镜像模块仍为 `minimax_h3`。本次 GPU artifact 只写入 LAN registry，不推送 GHCR，
-也不修改 RunPod profile、autoscaler 或 RunPod artifact；ComfyUI revision 固定为
+镜像模块仍为 `minimax_h3`。LAN 与 RunPod artifact 独立发布；RunPod profile 只接受
+`ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:<digest>` 形式的精确镜像引用，并从
+`RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY` 指向的不可变模型清单同步资产。不得复用 LAN
+mutable tag 或源码同步替代 RunPod artifact。ComfyUI revision 固定为
 `7fe8a6138504f90ff7be82f3babf416da32876b1`，并保留
 DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安装
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
@@ -299,6 +301,14 @@ DaSiWa 的 NVIDIA VFX 构建依赖固定为官方 `0.1.0.1` CPython 3.12 ABI3 wh
 `597,321,055` bytes 与 SHA256 `e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905`
 并行分段下载并在安装前合并校验，避免 NVIDIA wheel-stub 的单连接损坏重试；该 wheel
 只属于镜像构建依赖，不进入模型 bundle。
+RunPod H3 不得使用 `comfy-kitchen 0.2.31` 的 manylinux CUDA 扩展 wheel：该 wheel
+由 CUDA 13.0 编译，会在只满足 CUDA 12.8 的宿主驱动上于 `detect_k_anchor` 首次启动
+时报 driver/runtime 不兼容。镜像必须按固定 URL、`180,907` bytes 与 SHA256
+`5117946c30f308cfc73b9c26f723ae3918308bd090e57a8eae298406934aabd6` 覆盖安装同版本
+pure-Python wheel，并验证 `backends/cuda/_C.abi3.so` 不存在；RunPod request 同时写入
+`MINIMAX_H3_FORCE_PYTORCH_ATTENTION=true`，由公共 patcher 将四种 H3 workflow 的
+`ModelAttentionBackend` 统一切为 PyTorch attention。该开关只属于 RunPod adapter；
+未设置时 LAN 现有 workflow 仍保留其受控 attention 选择。
 当前 RTX 5090 运行态保留 DynamicVRAM，但镜像将 AIMDO cast buffer 的
 最大预留从 16 GiB 收紧为 8 GiB，避免 32 GiB 显卡上 PyTorch 只剩
 16 GiB 可分配空间。运行参数同时启用 `--cache-none`，以便在图执行期间尽快
@@ -315,6 +325,22 @@ H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 
 RunPod；LAN/RunPod runtime 在该语境中都保持正式 Worker 身份。测试 agent 可以经
 受限私网或测试主机 loopback 传输调用已经运行的 H3 ComfyUI，但不得启停、重启、
 切换或重新标记该正式 runtime。
+
+显式授权的 RunPod GPU artifact canary 使用
+`scripts/gpu_pool_controller.py runpod canary --task-type minimax_h3`，与上述普通测试
+Worker 操作语义不同。该入口只允许 `cloud-test`，强制单 Pod 成本门禁、RTX 5090、
+精确镜像 digest、H3 不可变模型清单、test Central 与 `user-data-test`，并串行提交
+T2V/I2V/FLF2V/REF2V 四条 5 秒 preview 任务。每条任务必须由目标 RunPod agent 接单、
+Central 终态为 `done`、Web 结果成功且存在尾帧；无论成功或失败均恢复被临时关闭的
+测试 Worker 并删除新建 Pod。该最小 cloud-test canary 不替代下文完整 GPU artifact
+验收。
+
+H3 RunPod volume 固定至少 140 GB，用于 `/workspace/ComfyUI/models`；不能沿用通用
+100 GB 默认值，因为当前不可变 bundle 为 114,106,812,703 bytes，模型同步还需要目录、
+临时文件和运行缓存余量。
+正式 autoscaler 还必须通过 `RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3`
+配置正数的单 Pod 预估时租；缺失或非正数时成本门禁 fail closed，不得以
+0 成本绕过每小时预算上限。
 
 不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
 revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test
@@ -350,6 +376,9 @@ history/evidence，不回写本文。
   tests/web_api/test_gallery_apply_context.py \
   tests/workers/test_minimax_h3_workflows.py \
   tests/scripts/test_prepare_minimax_h3_model_bundle.py
+.venv/bin/python -m pytest -q \
+  tests/ops/test_runpod_canary.py \
+  tests/ops/test_runpod_cloud_test_canary.py
 cd frontend && npm test -- --run \
   src/composables/lab-workbench/useLabSubmitPayload.test.ts \
   src/composables/lab-workbench/usePromptOptimizer.test.ts \

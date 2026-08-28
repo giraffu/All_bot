@@ -51,6 +51,10 @@ Runtime commands are dry-run first:
 
 RunPod canary is also dry-run first. The one-command dry-run validates the
 RunPod key, managed Pod count, reconcile state, and cloud-test create payload.
+Control preflight defaults to the public test Web API and Central endpoints so
+local HTTP proxy settings cannot intercept Tailscale addresses. Set
+`RUNPOD_CANARY_CONTROL_HOST` only when an operator intentionally needs direct
+private-host access.
 Real execution still requires the explicit cost gates and `--execute`:
 
 ```bash
@@ -75,6 +79,23 @@ python scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test
 python scripts/gpu_pool_controller.py runpod render-create --task-type scail2 --env cloud-test
 python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-file .env.cloud.test --quiet
 ```
+
+MiniMax H3 uses an exact digest-pinned GHCR image, the immutable H3 model
+manifest, one RTX 5090 Pod, and test Central/storage only. Its cloud-test canary
+serially covers T2V, I2V, FLF2V, and REF2V with 5s preview tasks and requires a
+last-frame result for every case:
+
+```bash
+RUNPOD_IMAGE_NAME_MINIMAX_H3=ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:<digest> \
+python scripts/gpu_pool_controller.py runpod canary \
+  --task-type minimax_h3 \
+  --env-file .env.cloud.test \
+  --quiet
+```
+
+Add the four explicit cost gates and `--execute` only for an authorized real
+canary. The operator restores test-worker controls and deletes the Pod in its
+cleanup path.
 
 `prepare_scail2_model_r2_bundle.py --execute` writes only to
 `allbot-model-cache/scail2/2026-06-17-test`; RunPod SCAIL-2 user inputs and
