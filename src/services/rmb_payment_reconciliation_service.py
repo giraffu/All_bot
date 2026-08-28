@@ -154,6 +154,7 @@ async def claim_due_rmb_reconciliation_jobs(
     lease_until: datetime,
     max_age: timedelta,
     payment_providers: tuple[str, ...],
+    run_maintenance: bool = True,
 ) -> list[ClaimedRMBReconciliationJob]:
     normalized_providers = tuple(dict.fromkeys(payment_providers))
     if not normalized_providers:
@@ -183,12 +184,13 @@ async def claim_due_rmb_reconciliation_jobs(
         )
     lease_token = uuid.uuid4().hex
     async with AsyncSessionLocal() as session:
-        await _finalize_inactive_jobs(
-            session,
-            now=now,
-            max_age=max_age,
-            provider_filter=provider_filter,
-        )
+        if run_maintenance:
+            await _finalize_inactive_jobs(
+                session,
+                now=now,
+                max_age=max_age,
+                provider_filter=provider_filter,
+            )
         rows = (
             await session.execute(
                 select(RMBPaymentReconciliationJob, Order)
@@ -358,6 +360,7 @@ class RMBPaymentReconciler:
         batch_size: int = 50,
         concurrency: int = 5,
         lease_seconds: int = 60,
+        maintenance_interval_seconds: int = 60,
         max_age: timedelta = timedelta(hours=24),
         now_func: Callable[[], datetime] = datetime.now,
     ):
@@ -375,8 +378,13 @@ class RMBPaymentReconciler:
         self.batch_size = max(1, int(batch_size))
         self.concurrency = max(1, int(concurrency))
         self.lease_seconds = max(1, int(lease_seconds))
+        self.maintenance_interval_seconds = max(
+            self.poll_interval_seconds,
+            int(maintenance_interval_seconds),
+        )
         self.max_age = max_age
         self.now_func = now_func
+        self._next_maintenance_at: datetime | None = None
 
     async def _process_job(self, job: ClaimedRMBReconciliationJob) -> None:
         try:
@@ -460,13 +468,22 @@ class RMBPaymentReconciler:
 
     async def run_once(self) -> int:
         now = self.now_func()
+        run_maintenance = (
+            self._next_maintenance_at is None
+            or now >= self._next_maintenance_at
+        )
         jobs = await self.dependencies.claim_jobs_func(
             now=now,
             batch_size=self.batch_size,
             lease_until=now + timedelta(seconds=self.lease_seconds),
             max_age=self.max_age,
             payment_providers=self.payment_providers,
+            run_maintenance=run_maintenance,
         )
+        if run_maintenance:
+            self._next_maintenance_at = now + timedelta(
+                seconds=self.maintenance_interval_seconds
+            )
         semaphore = asyncio.Semaphore(self.concurrency)
 
         async def _bounded(job):
