@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot 公司运营"
+  short_description: "管理公司主体、税务、资金、账本、备案与本机敏感凭据资料"
+  default_prompt: "Use $allbot-company-operations to review the company operations calendar and outstanding compliance items."
