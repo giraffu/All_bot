@@ -330,6 +330,9 @@ Central 终态为 `done`、Web 结果成功且存在尾帧；无论成功或失�
 H3 RunPod volume 固定至少 140 GB，用于 `/workspace/ComfyUI/models`；不能沿用通用
 100 GB 默认值，因为当前不可变 bundle 为 114,106,812,703 bytes，模型同步还需要目录、
 临时文件和运行缓存余量。
+正式 autoscaler 还必须通过 `RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3`
+配置正数的单 Pod 预估时租；缺失或非正数时成本门禁 fail closed，不得以
+0 成本绕过每小时预算上限。
 
 不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
 revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test

@@ -658,6 +658,10 @@ class RunPodSettings:
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_LTX_T2V"),
                 default=0.0,
             ),
+            projected_cost_per_hr_minimax_h3=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3"),
+                default=0.0,
+            ),
             projected_cost_per_hr_pornmaster_flux2_edit=_float_env(
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_PORNMASTER_FLUX2_EDIT"),
                 default=0.0,
