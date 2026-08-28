@@ -31,6 +31,32 @@ def test_settings_allow_database_managed_admins():
     assert settings.admin_chat_ids == frozenset()
 
 
+def test_settings_build_python_telegram_bot_base_url_from_shared_api_root():
+    settings = ObserverSettings.from_mapping(
+        {
+            "OBSERVER_BOT_TOKEN": "observer-token",
+            "OBSERVER_DATABASE_URL": "postgresql://observer@db/observer_prod",
+            "OBSERVER_LM_STUDIO_BASE_URL": "http://lmstudio:1234",
+            "TELEGRAM_API_BASE_URL": "http://telegram-local-api:8081/",
+        }
+    )
+
+    assert settings.telegram_base_url == "http://telegram-local-api:8081/bot"
+
+
+def test_settings_preserve_explicit_python_telegram_bot_base_url():
+    settings = ObserverSettings.from_mapping(
+        {
+            "OBSERVER_BOT_TOKEN": "observer-token",
+            "OBSERVER_DATABASE_URL": "postgresql://observer@db/observer_prod",
+            "OBSERVER_LM_STUDIO_BASE_URL": "http://lmstudio:1234",
+            "TELEGRAM_API_BASE_URL": "https://api.telegram.org/bot",
+        }
+    )
+
+    assert settings.telegram_base_url == "https://api.telegram.org/bot"
+
+
 def test_managed_postgres_ssl_query_is_normalized_for_raw_asyncpg():
     assert normalize_asyncpg_dsn(
         "postgresql+asyncpg://observer:secret@db.example/observer_prod?ssl=require"

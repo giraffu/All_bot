@@ -35,6 +35,13 @@ def _integer(values: Mapping[str, str], key: str, default: int, *, minimum: int 
     return value
 
 
+def _telegram_bot_base_url(values: Mapping[str, str]) -> str:
+    api_root = str(values.get("TELEGRAM_API_BASE_URL", "")).strip().rstrip("/")
+    if not api_root or api_root.endswith("/bot"):
+        return api_root
+    return f"{api_root}/bot"
+
+
 @dataclass(frozen=True)
 class ObserverSettings:
     token: str
@@ -114,7 +121,7 @@ class ObserverSettings:
             telegram_pool_size=_integer(values, "OBSERVER_BOT_POOL_SIZE", 20),
             telegram_poll_interval=_integer(values, "OBSERVER_BOT_POLL_INTERVAL", 2),
             telegram_poll_timeout=_integer(values, "OBSERVER_BOT_POLL_TIMEOUT", 30),
-            telegram_base_url=str(values.get("TELEGRAM_API_BASE_URL", "")).strip(),
+            telegram_base_url=_telegram_bot_base_url(values),
             telegram_file_base_url=str(values.get("TELEGRAM_FILE_BASE_URL", "")).strip(),
         )
 
