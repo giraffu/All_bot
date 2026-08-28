@@ -1,7 +1,5 @@
 [Unit]
 Description=AllBot LAN registry compatibility sockets
-After=network-online.target
-Wants=network-online.target
 
 [Socket]
 ListenStream=127.0.0.1:5000
@@ -11,4 +9,3 @@ FreeBind=true
 
 [Install]
 WantedBy=sockets.target
-
