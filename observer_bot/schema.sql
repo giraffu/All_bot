@@ -46,6 +46,10 @@ CREATE INDEX IF NOT EXISTS ix_observer_report_runs_updated_at
 CREATE TABLE IF NOT EXISTS observer_runtime_settings (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
     queue_alerts_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    queue_total_pending_threshold INTEGER NOT NULL DEFAULT 20
+        CHECK (queue_total_pending_threshold BETWEEN 1 AND 100000),
+    queue_type_pending_threshold INTEGER NOT NULL DEFAULT 10
+        CHECK (queue_type_pending_threshold BETWEEN 1 AND 100000),
     group_collection_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     daily_reports_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     weekly_reports_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -54,6 +58,15 @@ CREATE TABLE IF NOT EXISTS observer_runtime_settings (
     groups_initialized BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE observer_runtime_settings
+    ADD COLUMN IF NOT EXISTS queue_total_pending_threshold
+    INTEGER NOT NULL DEFAULT 20
+    CHECK (queue_total_pending_threshold BETWEEN 1 AND 100000);
+ALTER TABLE observer_runtime_settings
+    ADD COLUMN IF NOT EXISTS queue_type_pending_threshold
+    INTEGER NOT NULL DEFAULT 10
+    CHECK (queue_type_pending_threshold BETWEEN 1 AND 100000);
 
 INSERT INTO observer_runtime_settings (singleton)
 VALUES (TRUE)

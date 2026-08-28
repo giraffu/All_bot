@@ -95,7 +95,8 @@ class ObserverRepository:
         pool = self._ready_pool()
         settings = await pool.fetchrow(
             """
-            SELECT queue_alerts_enabled, group_collection_enabled,
+            SELECT queue_alerts_enabled, queue_total_pending_threshold,
+                   queue_type_pending_threshold, group_collection_enabled,
                    daily_reports_enabled, weekly_reports_enabled,
                    monthly_reports_enabled
             FROM observer_runtime_settings
@@ -117,9 +118,15 @@ class ObserverRepository:
             """
         )
         return ObserverRuntimeConfig(
-            admin_chat_ids=frozenset(int(row["telegram_user_id"]) for row in admin_rows),
+            admin_chat_ids=frozenset(
+                int(row["telegram_user_id"]) for row in admin_rows
+            ),
             authorized_group_ids=frozenset(int(row["chat_id"]) for row in group_rows),
             queue_alerts_enabled=bool(settings["queue_alerts_enabled"]),
+            queue_total_pending_threshold=int(
+                settings["queue_total_pending_threshold"]
+            ),
+            queue_type_pending_threshold=int(settings["queue_type_pending_threshold"]),
             group_collection_enabled=bool(settings["group_collection_enabled"]),
             daily_reports_enabled=bool(settings["daily_reports_enabled"]),
             weekly_reports_enabled=bool(settings["weekly_reports_enabled"]),
@@ -253,7 +260,9 @@ class ObserverRepository:
         )
         return row is not None
 
-    async def complete_report(self, *, run_key: str, model_id: str, content: str) -> None:
+    async def complete_report(
+        self, *, run_key: str, model_id: str, content: str
+    ) -> None:
         await self._ready_pool().execute(
             """
             UPDATE observer_report_runs

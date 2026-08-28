@@ -80,7 +80,6 @@ def build_application(
             client=queue_client,
             state_repository=repository,
             notifier=notifier,
-            queue_size_threshold=settings.queue_size_threshold,
             wait_threshold_seconds=settings.queue_wait_threshold_seconds,
             cooldown_seconds=settings.queue_alert_cooldown_seconds,
             failure_threshold=settings.queue_failure_threshold,
@@ -99,7 +98,9 @@ def build_application(
             runtime_config_provider=runtime_config_provider,
         )
         if application.job_queue is None:
-            raise RuntimeError("python-telegram-bot job queue dependency is unavailable")
+            raise RuntimeError(
+                "python-telegram-bot job queue dependency is unavailable"
+            )
         application.job_queue.run_repeating(
             queue_monitor_job,
             interval=settings.queue_poll_seconds,

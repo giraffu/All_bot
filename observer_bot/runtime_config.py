@@ -10,6 +10,8 @@ class ObserverRuntimeConfig:
     admin_chat_ids: frozenset[int]
     authorized_group_ids: frozenset[int]
     queue_alerts_enabled: bool
+    queue_total_pending_threshold: int
+    queue_type_pending_threshold: int
     group_collection_enabled: bool
     daily_reports_enabled: bool
     weekly_reports_enabled: bool

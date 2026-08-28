@@ -47,7 +47,9 @@ Celery、消息总线或第二个 worker。PostgreSQL `observer_report_runs` 是
 
 队列监控使用 Central 的短缓存观测接口，不替代实际调度。告警条件为任一满足：
 
-- 全局 `queue_size` 达到阈值；
+- 全局 `queue_size` 达到管理后台设置的“总排队数量”阈值；
+- 任一任务类型 `pending_count` 达到管理后台设置的“单个类型排队数量”阈值，
+  通知中列出命中的任务类型；
 - 任一任务类型 `max_pending_wait_seconds` 达到阈值；
 - 队列非空且 `accepting_workers=0`。
 
@@ -87,24 +89,24 @@ LM Studio MCP 或工具调用。
 
 ## 数据库
 
-复用现有 managed PostgreSQL 集群，但创建独立逻辑数据库 `observer_prod` 和
-独立 runtime role。Observer 不使用主系统 `DATABASE_URL`，也不查询用户、工单、
-History、账本或 Worker 日志表。
+复用现有 managed PostgreSQL 集群，但使用独立逻辑数据库 `observer_prod`；数据库
+账号按当前操作者批准的部署配置复用。Observer 不使用主系统 `DATABASE_URL`，也不
+查询用户、工单、History、账本或 Worker 日志表。
 
 七张表：
 
 - `observer_group_messages`：授权群文本；
 - `observer_alert_states`：跨重启告警状态；
 - `observer_report_runs`：报告 claim、状态、模型和结果。
-- `observer_runtime_settings`：队列、采集和三类报告开关；报告默认关闭；
+- `observer_runtime_settings`：队列告警开关、总排队与单类型排队阈值、采集和三类
+  报告开关；报告默认关闭；
 - `observer_admin_recipients`：observer 管理员 Telegram 用户 ID；
 - `observer_authorized_chats`：允许采集的群 ID；
 - `observer_notification_logs`：发送目标、结果、错误类型和有限内容预览。
 
-建库、role/grant 和 schema 应由迁移/管理员连接执行；runtime role 只保留上述
-observer 表和 identity sequence 所需的最小 DML/USAGE。Dashboard Backend 使用
-同一 `OBSERVER_DATABASE_URL` 的低流量连接管理 observer 配置和记录，不把这些表
-加入 AllBot 主库。schema 命令：
+建库和 schema 应由迁移/管理员连接执行。Dashboard Backend 使用同一
+`OBSERVER_DATABASE_URL` 的低流量连接管理 observer 配置和记录，不把这些表加入
+AllBot 主库。schema 命令：
 
 ```bash
 OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
@@ -127,7 +129,6 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
   初始化后以 Dashboard“通知中心”的数据库配置为准
 - `OBSERVER_LM_STUDIO_API_KEY`
 - `OBSERVER_LM_STUDIO_MODEL`
-- `OBSERVER_QUEUE_SIZE_THRESHOLD`
 - `OBSERVER_QUEUE_WAIT_THRESHOLD_SECONDS`
 - `OBSERVER_QUEUE_ALERT_COOLDOWN_SECONDS`
 - `OBSERVER_REPORT_HOUR`、`OBSERVER_TIMEZONE`
@@ -139,15 +140,18 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
 
 Dashboard 独立导航页“通知中心”通过已认证接口
 `GET/PUT /api/notification-center/settings` 管理 observer 管理员、授权群、工单
-通知接收者和功能开关；`GET /api/notification-center/reports` 与
+通知接收者、功能开关以及总排队/单类型排队阈值；
+`GET /api/notification-center/reports` 与
 `GET /api/notification-center/notifications` 分页查看报告及通知记录。配置由 Bot
-短缓存读取，最多约 15 秒生效，不需要重启。
+短缓存读取，最多约 15 秒生效，不需要重启。两个数量阈值均为 `1..100000` 的整数，
+默认分别为 20 和 10；schema 使用 `ADD COLUMN IF NOT EXISTS` 升级已有数据库，
+不会覆盖既有收件人、授权群或开关设置。
 
 ## 发布与验证
 
 正式发布模块名 `observer-bot`，Compose service 同名，profile 为 `observer`。
 按不可变发布流程从完整 main SHA 构建镜像并以精确 digest 部署；不得在云主机
-同步源码或 build。首次上线顺序：建独立数据库/role → 执行 schema → 配置 LM
+同步源码或 build。首次上线顺序：建独立数据库 → 执行 schema → 配置 LM
 Studio/Tailscale → 投影 observer env → 构建并部署单个模块 → 验证管理员私聊、
 授权群采集、队列告警和报告。
 

@@ -26,6 +26,8 @@ class NotificationCenterSettingsRequest(BaseModel):
     authorized_group_ids: list[int] = Field(default_factory=list, max_length=100)
     support_ticket_user_ids: list[int] = Field(default_factory=list, max_length=20)
     queue_alerts_enabled: bool = True
+    queue_total_pending_threshold: int = Field(default=20, ge=1, le=100_000)
+    queue_type_pending_threshold: int = Field(default=10, ge=1, le=100_000)
     group_collection_enabled: bool = True
     daily_reports_enabled: bool = False
     weekly_reports_enabled: bool = False

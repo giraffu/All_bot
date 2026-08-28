@@ -79,19 +79,22 @@ async def handle_report(update, context) -> None:
             windows[requested]
         )
         if result is None:
-            await update.effective_message.reply_text("该周期报告已经生成，无需重复执行。")
+            await update.effective_message.reply_text(
+                "该周期报告已经生成，无需重复执行。"
+            )
 
     context.application.create_task(generate(), update=update)
 
 
 async def queue_monitor_job(context) -> None:
-    runtime_config = await context.application.bot_data[
-        "runtime_config_provider"
-    ].get()
+    runtime_config = await context.application.bot_data["runtime_config_provider"].get()
     if not runtime_config.queue_alerts_enabled:
         return
     try:
-        await context.application.bot_data["queue_monitor"].poll()
+        await context.application.bot_data["queue_monitor"].poll(
+            total_pending_threshold=runtime_config.queue_total_pending_threshold,
+            type_pending_threshold=runtime_config.queue_type_pending_threshold,
+        )
     except Exception:
         logger.exception("observer queue monitor job failed")
 
@@ -103,9 +106,7 @@ async def report_tick_job(context) -> None:
         timezone_name=settings.timezone,
         report_hour=settings.report_hour,
     )
-    runtime_config = await context.application.bot_data[
-        "runtime_config_provider"
-    ].get()
+    runtime_config = await context.application.bot_data["runtime_config_provider"].get()
     for window in windows:
         if not runtime_config.report_enabled(window.report_type):
             continue
@@ -117,11 +118,13 @@ async def report_tick_job(context) -> None:
 
 async def retention_job(context) -> None:
     settings = context.application.bot_data["settings"]
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.message_retention_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=settings.message_retention_days
+    )
     try:
-        deleted = await context.application.bot_data["repository"].delete_messages_before(
-            cutoff
-        )
+        deleted = await context.application.bot_data[
+            "repository"
+        ].delete_messages_before(cutoff)
         logger.info("observer retention completed deleted=%s", deleted)
     except Exception:
         logger.exception("observer retention job failed")

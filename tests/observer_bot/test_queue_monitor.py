@@ -50,16 +50,27 @@ async def test_queue_monitor_alerts_once_then_recovers():
         client=client,
         state_repository=repository,
         notifier=notifier,
-        queue_size_threshold=20,
         wait_threshold_seconds=900,
         cooldown_seconds=1800,
         failure_threshold=3,
     )
     now = datetime(2026, 8, 29, tzinfo=timezone.utc)
 
-    await monitor.poll(now=now)
-    await monitor.poll(now=now + timedelta(minutes=2))
-    await monitor.poll(now=now + timedelta(minutes=4))
+    await monitor.poll(
+        now=now,
+        total_pending_threshold=20,
+        type_pending_threshold=10,
+    )
+    await monitor.poll(
+        now=now + timedelta(minutes=2),
+        total_pending_threshold=20,
+        type_pending_threshold=10,
+    )
+    await monitor.poll(
+        now=now + timedelta(minutes=4),
+        total_pending_threshold=20,
+        type_pending_threshold=10,
+    )
 
     assert len(notifier.messages) == 2
     assert "队列拥堵" in notifier.messages[0]
@@ -72,14 +83,17 @@ async def test_queue_monitor_reports_repeated_central_failure_and_recovery():
     repository = MemoryStateRepository()
     notifier = RecordingNotifier()
     client = FakeQueueClient(
-        [RuntimeError("offline"), RuntimeError("offline"), RuntimeError("offline"),
-         QueueSnapshot(queue_size=0, accepting_workers=1, max_wait_seconds=0)]
+        [
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            QueueSnapshot(queue_size=0, accepting_workers=1, max_wait_seconds=0),
+        ]
     )
     monitor = QueueMonitor(
         client=client,
         state_repository=repository,
         notifier=notifier,
-        queue_size_threshold=20,
         wait_threshold_seconds=900,
         cooldown_seconds=1800,
         failure_threshold=3,
@@ -87,7 +101,11 @@ async def test_queue_monitor_reports_repeated_central_failure_and_recovery():
     now = datetime(2026, 8, 29, tzinfo=timezone.utc)
 
     for minute in range(4):
-        await monitor.poll(now=now + timedelta(minutes=minute))
+        await monitor.poll(
+            now=now + timedelta(minutes=minute),
+            total_pending_threshold=20,
+            type_pending_threshold=10,
+        )
 
     assert ["监控不可用" in text for text in notifier.messages] == [True, False]
     assert "监控恢复" in notifier.messages[1]
@@ -110,3 +128,38 @@ def test_queue_snapshot_uses_central_wait_details():
     assert snapshot.queue_size == 7
     assert snapshot.accepting_workers == 0
     assert snapshot.max_wait_seconds == 1234
+    assert snapshot.pending_by_type == {"image_to_video": 5}
+
+
+@pytest.mark.asyncio
+async def test_queue_monitor_alerts_when_one_task_type_reaches_its_threshold():
+    repository = MemoryStateRepository()
+    notifier = RecordingNotifier()
+    monitor = QueueMonitor(
+        client=FakeQueueClient(
+            [
+                QueueSnapshot(
+                    queue_size=7,
+                    accepting_workers=2,
+                    max_wait_seconds=30,
+                    pending_by_type={"image_to_video": 5, "text_to_image": 2},
+                )
+            ]
+        ),
+        state_repository=repository,
+        notifier=notifier,
+        wait_threshold_seconds=900,
+        cooldown_seconds=1800,
+        failure_threshold=3,
+    )
+
+    await monitor.poll(
+        now=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        total_pending_threshold=20,
+        type_pending_threshold=5,
+    )
+
+    assert len(notifier.messages) == 1
+    assert "image_to_video" in notifier.messages[0]
+    assert "待处理 5（单类型阈值 5）" in notifier.messages[0]
+    assert "text_to_image" not in notifier.messages[0]

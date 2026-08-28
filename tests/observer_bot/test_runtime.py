@@ -23,6 +23,8 @@ class FakeClosable:
             admin_chat_ids=frozenset({42}),
             authorized_group_ids=frozenset({-1001}),
             queue_alerts_enabled=True,
+            queue_total_pending_threshold=20,
+            queue_type_pending_threshold=10,
             group_collection_enabled=True,
             daily_reports_enabled=True,
             weekly_reports_enabled=True,
@@ -49,8 +51,12 @@ def test_observer_application_registers_only_its_commands_and_group_collection()
     )
     handlers = [handler for group in app.handlers.values() for handler in group]
 
-    command_handlers = [handler for handler in handlers if isinstance(handler, CommandHandler)]
-    message_handlers = [handler for handler in handlers if isinstance(handler, MessageHandler)]
+    command_handlers = [
+        handler for handler in handlers if isinstance(handler, CommandHandler)
+    ]
+    message_handlers = [
+        handler for handler in handlers if isinstance(handler, MessageHandler)
+    ]
     commands = {command for handler in command_handlers for command in handler.commands}
 
     assert commands == {"start", "status", "report"}
@@ -80,7 +86,9 @@ async def test_runtime_rejects_non_admin_status_command():
         application=SimpleNamespace(
             bot_data={
                 "runtime_config_provider": SimpleNamespace(
-                    get=lambda: _async_value(SimpleNamespace(admin_chat_ids=frozenset({42})))
+                    get=lambda: _async_value(
+                        SimpleNamespace(admin_chat_ids=frozenset({42}))
+                    )
                 )
             }
         )
@@ -89,6 +97,36 @@ async def test_runtime_rejects_non_admin_status_command():
     await handle_status(update, context)
 
     assert replies == []
+
+
+@pytest.mark.asyncio
+async def test_queue_monitor_job_uses_database_runtime_thresholds():
+    from observer_bot.runtime import queue_monitor_job
+
+    calls = []
+
+    async def poll(**kwargs):
+        calls.append(kwargs)
+
+    runtime_config = SimpleNamespace(
+        queue_alerts_enabled=True,
+        queue_total_pending_threshold=30,
+        queue_type_pending_threshold=6,
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "runtime_config_provider": SimpleNamespace(
+                    get=lambda: _async_value(runtime_config)
+                ),
+                "queue_monitor": SimpleNamespace(poll=poll),
+            }
+        )
+    )
+
+    await queue_monitor_job(context)
+
+    assert calls == [{"total_pending_threshold": 30, "type_pending_threshold": 6}]
 
 
 async def _async_value(value):
