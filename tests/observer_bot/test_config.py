@@ -1,4 +1,5 @@
 from observer_bot.config import ObserverSettings
+from src.database.asyncpg_dsn import normalize_asyncpg_dsn
 
 
 def test_settings_parse_isolated_bot_admins_and_authorized_groups():
@@ -28,3 +29,11 @@ def test_settings_allow_database_managed_admins():
     )
 
     assert settings.admin_chat_ids == frozenset()
+
+
+def test_managed_postgres_ssl_query_is_normalized_for_raw_asyncpg():
+    assert normalize_asyncpg_dsn(
+        "postgresql+asyncpg://observer:secret@db.example/observer_prod?ssl=require"
+    ) == (
+        "postgresql://observer:secret@db.example/observer_prod?sslmode=require"
+    )
