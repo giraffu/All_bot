@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-08-28`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-08-29`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
@@ -53,6 +53,7 @@
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | 独立审核 Bot | paid group code/config | current | 入群审核 |
 | `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md` | 独立群管理 Bot | group manage code/config | current | 消息治理 |
 | `docs/子模块_客服Bot_support_bot.md` | 客服工单 Bot | support bot、Dashboard、schema | current | 客服能力 |
+| `docs/子模块_Telegram观察与报告Bot_observer_bot.md` | Observer Bot 的通知、队列监控、群采集和 LM Studio 报告 | `observer_bot/`、schema、发布/env 契约 | current | Observer 开发或运维 |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | JWT/密码/权限 | auth core、Web security | current | 鉴权 |
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、支付宝直连白名单、affiliate、USDT 人工出款 | billing core、payment providers、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery 一致性、R2、apply-context | Gallery core/services、migration、audit/storage scripts | current | 社区/媒体 |
@@ -113,6 +114,7 @@
 | `docs/adr/0007-promote-tested-candidate-artifacts.md` | 旧 candidate 晋级 | ADR 0009 | superseded | 历史原因 |
 | `docs/adr/0008-main-first-release-batches.md` | 旧 main-first 批次 | ADR 0009 | superseded | 历史原因 |
 | `docs/adr/0009-operator-decides-module-release.md` | 人工结果与独立模块发布 | module catalog、release/coordinator scripts | current | 当前发布设计 |
+| `docs/adr/0010-observer-bot-isolated-runtime.md` | Observer 独立进程、逻辑数据库与本地 LM Studio 边界 | `observer_bot/`、schema、发布契约 | current | Observer 架构取舍 |
 
 ## 项目 Skills
 
@@ -122,6 +124,7 @@
 | `.codex/skills/allbot-billing-auth/SKILL.md` | 计费鉴权红线 | billing/auth code | current | 金钱/身份 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 路由 | Gallery/storage code | current | 社区/存储 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | Telegram FSM 路由 | handlers/runtime services | current | Bot 交互 |
+| `.codex/skills/allbot-observer-bot/SKILL.md` | Observer Bot 路由 | Observer 代码、专项文档与发布契约 | current | 通知、队列告警或群报告 |
 | `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | QQCC 官方/私有 Bot 路由 | QQCC code/docs | current | QQCC |
 | `.codex/skills/allbot-ops-deployment/SKILL.md` | 发布运维路由 | release/compose/docs | current | 运维 |
 | `.codex/skills/allbot-concurrent-workspaces/SKILL.md` | A–H/handoff 路由 | workspace/integration scripts | current | 仓库写任务 |

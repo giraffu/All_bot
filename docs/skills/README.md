@@ -11,6 +11,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-billing-auth` | JWT、账本、支付履约、affiliate、会员 |
 | `allbot-gallery-storage` | Gallery、互动、举报、R2、apply-context |
 | `allbot-tg-fsm` | Telegram FSM、callback、菜单、文件、更新并发与独立 Bot 隔离 |
+| `allbot-observer-bot` | Telegram 管理员通知、队列监控、授权群采集和 LM Studio 周期报告 |
 | `allbot-qqcc-lazy-bot` | QQCC 官方/私有 Bot、配置、webhook 和租户归属 |
 | `allbot-ops-deployment` | 不可变发布、服务启停/重建、env/config、NAS artifact、数据库迁移/恢复和灾备 |
 | `allbot-concurrent-workspaces` | A–H worktree、claim、handoff 和 main 单写者集成 |

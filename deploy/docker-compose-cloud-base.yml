@@ -136,6 +136,19 @@ services:
       TZ: Asia/Shanghai
     command: ["python", "-m", "support_bot.main"]
 
+  observer-bot:
+    <<: *app-base
+    image: ${ALLBOT_OBSERVER_BOT_IMAGE:?release.env must pin ALLBOT_OBSERVER_BOT_IMAGE by digest}
+    profiles: ["observer"]
+    env_file:
+      - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/observer-bot.env
+        required: false
+        format: raw
+    command: ["python", "-m", "observer_bot"]
+    depends_on:
+      central-api:
+        condition: service_healthy
+
   dashboard-frontend:
     profiles: [owner-tools]
     image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}

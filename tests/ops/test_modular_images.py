@@ -27,6 +27,7 @@ def test_cloud_compose_uses_one_image_contract_per_module():
         "qqcc-private-bot-worker": "ALLBOT_PRIVATE_BOT_WORKER_IMAGE",
         "paid-group-guard-bot": "ALLBOT_PAID_GROUP_BOT_IMAGE",
         "group-manage-bot": "ALLBOT_GROUP_MANAGE_BOT_IMAGE",
+        "observer-bot": "ALLBOT_OBSERVER_BOT_IMAGE",
     }
     for service, variable in expected.items():
         assert variable in services[service]["image"]
@@ -66,6 +67,7 @@ def test_python_bases_and_thin_targets_are_explicit():
         "paid-group-bot",
         "group-manage-bot",
         "support-bot",
+        "observer-bot",
         "dashboard-backend",
         "qqcc-config-backend",
     )

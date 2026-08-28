@@ -100,6 +100,15 @@ COPY support_bot /app/support_bot
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=support-bot
 CMD ["python", "-m", "support_bot.main"]
 
+FROM ${RUNTIME_BASE_IMAGE} AS observer-bot
+ARG ALLBOT_GIT_SHA
+COPY config.py /app/config.py
+COPY src /app/src
+COPY shared /app/shared
+COPY observer_bot /app/observer_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=observer-bot
+CMD ["python", "-m", "observer_bot"]
+
 FROM ${RUNTIME_BASE_IMAGE} AS dashboard-backend
 ARG ALLBOT_GIT_SHA
 COPY config.py /app/config.py

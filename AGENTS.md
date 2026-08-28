@@ -67,6 +67,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | 计费、JWT、支付、affiliate、会员 | `allbot-billing-auth` |
 | Gallery、评论、举报、R2、apply-context | `allbot-gallery-storage` |
 | Telegram FSM、callback、文件、菜单、独立客服 Bot | `allbot-tg-fsm` |
+| Observer Bot、管理员通知、队列告警、授权群摘要与 LM Studio 报告 | `allbot-observer-bot` |
 | QQCC 官方/私有 Bot、webhook、租户归属 | `allbot-qqcc-lazy-bot` |
 | Docker、不可变发布、迁移、灾备 | `allbot-ops-deployment` |
 | A–H worktree、handoff、main 批次 | `allbot-concurrent-workspaces` |
