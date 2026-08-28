@@ -90,9 +90,69 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.ltx_video_task_cases(image_object_key)
         if profile.task_type == "ltx_t2v":
             return self.ltx_t2v_task_cases(image_object_key)
+        if profile.task_type == "minimax_h3":
+            return self.minimax_h3_task_cases(image_object_key)
         if profile.task_type == "pornmaster_flux2_edit_bf16":
             return self.pornmaster_flux2_edit_bf16_task_cases(image_object_key)
         return self.img2img_task_cases(image_object_key)
+
+    def minimax_h3_task_cases(
+        self, image_object_key: str
+    ) -> list[dict[str, Any]]:
+        def task(
+            label: str,
+            task_type: str,
+            *,
+            images: list[str] | None = None,
+            main_model: str | None = None,
+        ) -> dict[str, Any]:
+            inputs: dict[str, Any] = {
+                "duration": 5,
+                "duration_seconds": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": (
+                    "source"
+                    if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}
+                    else "16:9"
+                ),
+                "seed": 20260804,
+                "extract_last_frame": True,
+            }
+            if images is not None:
+                inputs["images"] = images
+            if main_model is not None:
+                inputs["main_model"] = main_model
+            return {
+                "label": label,
+                "expected_central_task_type": task_type,
+                "payload": {
+                    "task_type": task_type,
+                    "inputs": inputs,
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            }
+
+        return [
+            task("minimax_h3_t2v_5s_preview", "minimax_h3_t2v"),
+            task(
+                "minimax_h3_i2v_5s_preview",
+                "minimax_h3_i2v",
+                images=[image_object_key],
+            ),
+            task(
+                "minimax_h3_flf2v_5s_preview",
+                "minimax_h3_flf2v",
+                images=[image_object_key, image_object_key],
+            ),
+            task(
+                "minimax_h3_ref2v_official_turbo_5s_preview",
+                "minimax_h3_ref2v",
+                images=[image_object_key],
+                main_model="official_ref2v_turbo",
+            ),
+        ]
 
     def pornmaster_flux2_edit_bf16_task_cases(
         self, image_object_key: str

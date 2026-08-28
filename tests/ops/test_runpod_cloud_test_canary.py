@@ -104,6 +104,25 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     assert "Hard cut at 15s" in ic_case["payload"]["prompt"]
     assert "never show a contact sheet" in ic_case["payload"]["prompt"]
 
+    h3_cases = RunPodCloudTestCanaryCaseBuilder(
+        _config(tmp_path, task_type="minimax_h3")
+    ).task_cases(image_key)
+    assert [case["expected_central_task_type"] for case in h3_cases] == [
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+    ]
+    assert all(case["payload"]["inputs"]["duration"] == 5 for case in h3_cases)
+    assert all(
+        case["payload"]["inputs"]["resolution_preset"] == "preview"
+        for case in h3_cases
+    )
+    assert h3_cases[0]["payload"]["inputs"].get("images") is None
+    assert h3_cases[1]["payload"]["inputs"]["images"] == [image_key]
+    assert h3_cases[2]["payload"]["inputs"]["images"] == [image_key, image_key]
+    assert h3_cases[3]["payload"]["inputs"]["main_model"] == "official_ref2v_turbo"
+
 
 def test_split_video_case_builder_preserves_fixed_order(tmp_path):
     cases = RunPodCloudTestCanaryCaseBuilder(_config(tmp_path)).split_video_task_cases(

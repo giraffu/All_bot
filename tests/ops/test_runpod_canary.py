@@ -19,6 +19,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_LTX_T2V_IMAGE_REF_PREFIX,
     EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY,
     EXPECTED_LTX_T2V_MODEL_PREFIX,
+    EXPECTED_MINIMAX_H3_GPU_TYPE_IDS,
+    EXPECTED_MINIMAX_H3_IMAGE_REF_PREFIX,
+    EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    EXPECTED_MINIMAX_H3_MODEL_PREFIX,
     EXPECTED_SCAIL2_GPU_TYPE_IDS,
     EXPECTED_SCAIL2_IMAGE_REF_PREFIX,
     EXPECTED_SCAIL2_MODEL_MANIFEST_KEY,
@@ -48,6 +52,9 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
 )
+from ops.gpu_pool_controller.runpod_profile_catalog import (
+    RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+)
 
 
 PUBLIC_GHCR_IMAGE = (
@@ -68,6 +75,10 @@ PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
 PUBLIC_LTX_T2V_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:"
     "83a5f8c1ccafcd146cd73545643b39b64d6d94a5a077cfdf5a0338f381c24f15"
+)
+PUBLIC_MINIMAX_H3_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:"
+    "bacc24a0faf1d4462eaee1af2403a1eb858a0168835ba80a73ca50f3febd62f9"
 )
 
 
@@ -193,6 +204,13 @@ class FakeRunPodProvider:
                 if self.settings.use_template_ltx_video
                 else ""
             )
+        elif task_type == "minimax_h3":
+            image_name = PUBLIC_MINIMAX_H3_GHCR_IMAGE
+            supported_task_types = ",".join(RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES)
+            model_prefix = EXPECTED_MINIMAX_H3_MODEL_PREFIX
+            model_manifest_key = EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_MINIMAX_H3_GPU_TYPE_IDS)
+            template_id = ""
         elif task_type == "ltx_t2v":
             image_name = PUBLIC_LTX_T2V_GHCR_IMAGE
             supported_task_types = ",".join(RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES)
@@ -474,6 +492,35 @@ def test_runpod_canary_ltx_t2v_dry_run_preflights_disabled_profile():
     assert provider.create_calls == 0
 
 
+def test_runpod_canary_minimax_h3_dry_run_requires_exact_release_profile():
+    provider = FakeRunPodProvider()
+    payload = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(task_type="minimax_h3", execute=False, quiet=True),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] == PUBLIC_MINIMAX_H3_GHCR_IMAGE
+    assert payload["render"]["gpu_type_ids"] == list(
+        EXPECTED_MINIMAX_H3_GPU_TYPE_IDS
+    )
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["model_prefix"] == EXPECTED_MINIMAX_H3_MODEL_PREFIX
+    assert (
+        payload["render"]["model_manifest_key"]
+        == EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY
+    )
+    assert any(
+        "submit MiniMax H3 T2V, I2V, FLF2V, and REF2V 5s preview tasks serially"
+        in step
+        for step in payload["would_execute"]
+    )
+    assert provider.create_calls == 0
+
+
 def test_runpod_canary_ltx_t2v_rejects_mutable_image_tag():
     class TaggedLtxProvider(FakeRunPodProvider):
         def render_create_pod_request(self, **kwargs):
@@ -721,6 +768,23 @@ def test_runpod_canary_cli_parses_prod_pod_allowance_and_reuse_pod_id():
 
     assert options.reuse_pod_ids == {"i2i_pro": "pod-1"}
     assert options.allow_existing_prod_managed_pods is True
+
+
+def test_runpod_canary_defaults_to_public_cloud_test_control_endpoints(monkeypatch):
+    for key in (
+        "RUNPOD_CANARY_WEB_API_URL",
+        "RUNPOD_CANARY_CENTRAL_URL",
+        "RUNPOD_CANARY_CONTROL_HOST",
+        "CLOUD_TEST_CONTROL_HOST",
+        "CLOUD_TEST_TAILSCALE_IP",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    args = build_parser().parse_args(["runpod", "canary"])
+
+    options = options_from_args_env(args)
+
+    assert options.web_api_url == "https://api-cf-test.aivison.it.com/api"
+    assert options.central_url == "https://worker-central-test.aivison.it.com"
 
 
 def test_runpod_canary_keyboard_interrupt_returns_cleanup_summary():
