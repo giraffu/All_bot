@@ -8,10 +8,11 @@ import asyncpg
 
 from observer_bot.domain import GroupMessage
 from observer_bot.runtime_config import ObserverRuntimeConfig
+from src.database.asyncpg_dsn import normalize_asyncpg_dsn
 
 
 def _asyncpg_url(database_url: str) -> str:
-    return database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    return normalize_asyncpg_dsn(database_url)
 
 
 class ObserverRepository:
