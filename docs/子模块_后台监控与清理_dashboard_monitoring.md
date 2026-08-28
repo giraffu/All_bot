@@ -45,6 +45,10 @@ sequenceDiagram
 - task stats、worker/queue 状态聚合
 - 管理员显式触发的终止、清理与只读查询
 - 用户列表过滤/排序与用户资产迁移预览；用户转移接口支持 `dry_run=true` 先返回迁移计划且不修改数据库
+- “支付宝直连名单”使用独立 typed API 与 Vue 页面，默认展示已开启直连的用户；
+  后端先按用户聚合成功付费次数和历史直连成功付款，再按付费次数、首次使用日期、
+  当前直连状态和历史直连付款三态做服务端筛选、排序与分页。前端只保留当前页，
+  不把全量用户下载到浏览器。
 - 管理接口鉴权与审计
 - “入口控制”页以 Web 端、主 Bot、修仙市集三个同级横向子页管理展示入口。
   Web 子页覆盖当前练功房全部正式入口，包括自由 P 图各版本、文生图、幻想换脸、
@@ -118,7 +122,19 @@ sequenceDiagram
 - 源用户不再物理删除：保留 Telegram / Web 登录身份、基础资料、创建时间与封禁状态，清零灵石、会员身份、成长/签到/邀请/贡献统计和频道成员缓存。这样原 Telegram 身份仍由既有用户占用，再次 `/start` 必须返回 `is_new=false`，不能重复领取新手或邀请奖励。源封禁同时合并到目标并继续保留在源账户，禁止通过转移洗掉处罚。
 - 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts、`source_sanitized=true`、`source_deleted=false`，以及 membership / ban / stats 的合并决策，便于后续追溯。
 
-### 4.4 RunPod 管理
+### 4.4 支付宝直连名单
+
+- `GET /api/alipay-direct-users` 每页最多 100 条，付费次数只聚合
+  `SUCCESS + paid_at` 订单并包含后台赠送；“直连付款过”还要求订单 provider 为
+  `ALIPAY_DIRECT`。常用列表查询应保持单次数据库聚合和窗口总数，不为每行发起
+  附加查询。
+- 管理员可勾选明确用户，也可选择当前完整筛选结果跨分页批量处理。
+  `POST /api/alipay-direct-users/bulk-status` 单次最多匹配 10000 人，超过时要求
+  缩小筛选条件；命中用户使用行锁，状态与 `user_logs` 审计在同一事务提交。
+- 页面保存成功后重新请求第一页；当前筛选、分页或浏览器状态不充当支付路由缓存。
+  下一笔支付宝订单直接读取持久化用户开关，因此无需重启 Web、Bot 或 Payment。
+
+### 4.5 RunPod 管理
 
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
@@ -157,6 +173,8 @@ sequenceDiagram
 - 覆盖 worker / queue 视图补齐与异常场景
 - 覆盖 stats 缓存命中、single-flight 并发合并、Central proxy 超时兜底与前端不击穿 stats 缓存
 - 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用、真实转移审计快照，以及提示词解锁/关注关系迁移去重
+- 覆盖支付宝直连名单的服务端筛选分页、跨分页全选、明确用户批量开关、批量上限、
+  行锁与审计原子提交，以及 Dashboard 前端 typecheck/组件交互。
 
 ## 6. 部署与运维
 
@@ -174,6 +192,9 @@ sequenceDiagram
   并以精确 digest 逐模块部署；正式 mutation 每次都要求 `--confirm-prod`。
   发布器不查询 CI/test evidence，只重建目标服务并保存该模块 previous identity。
 - 只更新管理后台系统时，操作范围应限于 `dashboard-backend-prod` / `dashboard-frontend-prod`；如果只改 Dashboard 后端统计、RunPod operation 入口或 Dashboard 后端镜像闭包，只重建 `dashboard-backend-prod`；如果只改前端展示或 RunPod profile 识别，只重建 `dashboard-frontend-prod`。验证使用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`，并确认 Central/Web/Bot/Payment/imgproxy/worker/RunPod 未被重启或重建。
+- 支付宝直连名单同时修改 Dashboard Backend API 与 Dashboard Frontend 页面时，按
+  后端再前端顺序分别发布精确 digest；不需要数据库迁移、Web/Main Bot/Payment
+  发布或服务重启。前端切换前先确认新后端列表与批量接口已就绪。
 - 面向公网访问管理后台时，必须使用 Cloudflare Tunnel + Cloudflare Access 或等价身份层保护，回源到 `100.107.220.127:8086`；不要把 `8086` 或 `8043` 裸露到公网。
 - 本地管理后台入口由 `dashboard/docker-compose-local-gateway.yml` 管理，可作为局域网/回退入口。原本地上线流程是先启动 `dashboard-local-gateway-8085` canary，验证后停止旧 `8086` Vite dev 进程，再启动 `dashboard-local-gateway-8086`；该流程不需要重建云端正式 Dashboard Backend。
 - 本地 `dashboard/docker-compose.yml` 运行在 host network，必须显式提供 `DASHBOARD_REDIS_URL` 与 `DASHBOARD_WORKER_REDIS_URL`；不得把 Redis 写死为本机 loopback。局域网网关健康检查只探测公开的 `/api/health`，根路径访问控制不能作为 readiness 信号。

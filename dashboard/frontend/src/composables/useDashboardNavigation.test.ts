@@ -15,6 +15,20 @@ describe('useDashboardNavigation', () => {
     expect(navigation.currentTabTitle.value).toBe('入口控制')
   })
 
+  it('exposes the Alipay direct roster in the authenticated Dashboard', () => {
+    const navigation = useDashboardNavigation(ref(['alipay_direct_users']))
+
+    expect(navigation.menuItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'alipay_direct_users',
+          label: '支付宝直连名单',
+        }),
+      ])
+    )
+    expect(navigation.currentTabTitle.value).toBe('支付宝直连名单')
+  })
+
   it('keeps QQCC lazy bot settings out of the main dashboard shell', () => {
     const activeTab = ref(['qqcc_bot'])
     const navigation = useDashboardNavigation(activeTab)

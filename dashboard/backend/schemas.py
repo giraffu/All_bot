@@ -1,7 +1,7 @@
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -30,6 +30,47 @@ class UpdateSubmissionBanRequest(BaseModel):
 
 class UpdateAlipayDirectRequest(BaseModel):
     enabled: bool
+
+
+class AlipayDirectBulkFilters(BaseModel):
+    min_paid_count: Optional[int] = Field(default=None, ge=0)
+    max_paid_count: Optional[int] = Field(default=None, ge=0)
+    first_used_from: Optional[date] = None
+    first_used_to: Optional[date] = None
+    direct_paid: Optional[bool] = None
+    enabled: Optional[bool] = None
+    query: Optional[str] = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_ranges(self):
+        if (
+            self.min_paid_count is not None
+            and self.max_paid_count is not None
+            and self.min_paid_count > self.max_paid_count
+        ):
+            raise ValueError("min_paid_count cannot exceed max_paid_count")
+        if (
+            self.first_used_from is not None
+            and self.first_used_to is not None
+            and self.first_used_from > self.first_used_to
+        ):
+            raise ValueError("first_used_from cannot exceed first_used_to")
+        return self
+
+
+class AlipayDirectBulkUpdateRequest(BaseModel):
+    enabled: bool
+    selection_mode: Literal["ids", "filters"]
+    user_ids: List[int] = Field(default_factory=list, max_length=10_000)
+    filters: Optional[AlipayDirectBulkFilters] = None
+
+    @model_validator(mode="after")
+    def validate_selection(self):
+        if self.selection_mode == "ids" and not self.user_ids:
+            raise ValueError("user_ids are required for ids selection")
+        if self.selection_mode == "filters" and self.filters is None:
+            raise ValueError("filters are required for filtered selection")
+        return self
 
 
 class AdminGiftRequest(BaseModel):
@@ -345,12 +386,8 @@ class AdvancedVideoProModeConfig(BaseModel):
 
 
 class AdvancedVideoProConfig(BaseModel):
-    t2v: AdvancedVideoProModeConfig = Field(
-        default_factory=AdvancedVideoProModeConfig
-    )
-    i2v: AdvancedVideoProModeConfig = Field(
-        default_factory=AdvancedVideoProModeConfig
-    )
+    t2v: AdvancedVideoProModeConfig = Field(default_factory=AdvancedVideoProModeConfig)
+    i2v: AdvancedVideoProModeConfig = Field(default_factory=AdvancedVideoProModeConfig)
     flf2v: AdvancedVideoProModeConfig = Field(
         default_factory=AdvancedVideoProModeConfig
     )

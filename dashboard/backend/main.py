@@ -17,6 +17,7 @@ from jose import JWTError
 
 from dashboard.backend.auth import auth_router, get_current_user
 from dashboard.backend.routers import (
+    alipay_direct,
     gallery,
     feature_entry_visibility,
     history,
@@ -174,6 +175,7 @@ app.state.dashboard_health = _initial_dashboard_health()
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(stats.router)
+app.include_router(alipay_direct.router)
 app.include_router(users.router)
 app.include_router(history.router)
 app.include_router(plans.router)
