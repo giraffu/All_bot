@@ -4,6 +4,7 @@ import sqlite3
 import threading
 import time
 import json
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,13 @@ from scripts.r2_temp_cleanup import (
     load_approved_plan,
     seal_plan,
 )
+
+
+def test_database_migration_artifact_contains_temp_cleanup_worker():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "deploy/docker/Dockerfile.migration").read_text()
+
+    assert "scripts/r2_temp_cleanup.py" in dockerfile
 
 
 def _inventory():

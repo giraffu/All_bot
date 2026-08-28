@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends iproute2 \
     && rm -rf /var/lib/apt/lists/*
 COPY src /app/src
 COPY shared /app/shared
-COPY scripts/history_media_r2_migration.py scripts/history_media_r2_copy_adaptive.py scripts/history_media_r2_cloud_copy.py scripts/history_media_r2_cloud_switch.py scripts/history_media_r2_retirement.py scripts/media_archive_catalog.py scripts/media_archive_worker.py /app/scripts/
+COPY scripts/history_media_r2_migration.py scripts/history_media_r2_copy_adaptive.py scripts/history_media_r2_cloud_copy.py scripts/history_media_r2_cloud_switch.py scripts/history_media_r2_retirement.py scripts/r2_temp_cleanup.py scripts/media_archive_catalog.py scripts/media_archive_worker.py /app/scripts/
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=database-migration
