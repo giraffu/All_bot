@@ -245,10 +245,12 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 模式，而不是把 R2 读取拆回本机。`database-migration` artifact 包含
 `scripts/r2_temp_cleanup.py`；操作者从受保护 main 的完整 SHA 构建精确 digest，随后只在
 正式 SGP1 控制主机以一次性容器运行该脚本。目标主机禁止 build、源码同步、bind mount
-源码或 mutable tag。运行输入仅包括 0600 inventory、正式环境受控配置和输出 state
-目录；显式清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及小写同名变量，确保 R2
-正文不回流本机 YepFast。inventory 在上传前后核对完整 SHA-256，云端计划的
-`inventory.sha256` 必须与其一致。
+源码或 mutable tag。artifact 同时包含
+`scripts/refresh_r2_temp_cleanup_inventory.py`；云端先在 0700 state 目录直接列举正式桶，
+生成 0600 inventory 并完成 SQLite integrity、对象数、字节和 SHA-256 验收，不从本机
+上传 inventory。刷新和计划都显式清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及
+小写同名变量，确保对象元数据与 R2 正文都不回流本机 YepFast。云端计划的
+`inventory.sha256` 必须与本次云端刷新回执一致。
 
 首次换到云路由不复用本机未完成计划。先在云端以同一精确 artifact、inventory 和
 正式引用依赖生成最多 100 对象的 dry-run；计划文件保持 0600，并回传低基数摘要和精确

@@ -29,6 +29,7 @@ def test_database_migration_artifact_contains_temp_cleanup_worker():
     dockerfile = (root / "deploy/docker/Dockerfile.migration").read_text()
 
     assert "scripts/r2_temp_cleanup.py" in dockerfile
+    assert "scripts/refresh_r2_temp_cleanup_inventory.py" in dockerfile
 
 
 def _inventory():
