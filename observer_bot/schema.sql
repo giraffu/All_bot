@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS observer_group_messages (
+    chat_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    thread_id BIGINT,
+    chat_title TEXT NOT NULL,
+    author_user_id BIGINT,
+    author_username TEXT NOT NULL DEFAULT '',
+    author_display_name TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    sent_at TIMESTAMPTZ NOT NULL,
+    edited_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (chat_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_observer_group_messages_sent_at
+    ON observer_group_messages (sent_at);
+CREATE INDEX IF NOT EXISTS ix_observer_group_messages_chat_sent
+    ON observer_group_messages (chat_id, sent_at);
+
+CREATE TABLE IF NOT EXISTS observer_alert_states (
+    state_key TEXT PRIMARY KEY,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS observer_report_runs (
+    run_key TEXT PRIMARY KEY,
+    report_type TEXT NOT NULL,
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+    attempts INTEGER NOT NULL DEFAULT 1,
+    model_id TEXT,
+    content TEXT,
+    error TEXT,
+    locked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
