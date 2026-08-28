@@ -23,6 +23,11 @@ import boto3  # noqa: E402
 from botocore.config import Config  # noqa: E402
 from botocore.exceptions import ClientError  # noqa: E402
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
+
+from src.runtime_environment import require_env  # noqa: E402
 
 
 PRODUCTION_BUCKET = "user-data-prod"
@@ -140,7 +145,6 @@ def _file_sha256(path: Path) -> str:
 async def _history_references(keys: list[str]) -> set[str]:
     if not keys:
         return set()
-    from src.database.core import AsyncSessionLocal
 
     query = text(
         """
@@ -159,8 +163,12 @@ async def _history_references(keys: list[str]) -> set[str]:
         ) select candidate.key from refs join candidate using(key)
         """
     )
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(query, {"keys": keys})).scalars().all()
+    engine, session_factory = _runtime_database()
+    try:
+        async with session_factory() as session:
+            rows = (await session.execute(query, {"keys": keys})).scalars().all()
+    finally:
+        await engine.dispose()
     return set(map(str, rows))
 
 
@@ -174,7 +182,6 @@ async def _business_references(keys: list[str]) -> dict[str, set[str]]:
     """
     if not keys:
         return {}
-    from src.database.core import AsyncSessionLocal
 
     query = text(
         """
@@ -230,8 +237,12 @@ async def _business_references(keys: list[str]) -> dict[str, set[str]]:
         ) select category,key from refs
         """
     )
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(query, {"keys": keys})).all()
+    engine, session_factory = _runtime_database()
+    try:
+        async with session_factory() as session:
+            rows = (await session.execute(query, {"keys": keys})).all()
+    finally:
+        await engine.dispose()
     result: dict[str, set[str]] = {}
     for category, key in rows:
         result.setdefault(str(category), set()).add(str(key))
@@ -277,15 +288,57 @@ def _matching_refs(value, keys: set[str]) -> set[str]:
     return matches
 
 
-async def _active_task_references(keys: list[str]) -> set[str]:
+async def _active_task_references(
+    keys: list[str], *, lookup_func=None
+) -> set[str]:
     if not keys:
         return set()
-    from src.services.task_registry import TaskRegistry
-
-    return await TaskRegistry.find_active_task_references_strict(
-        keys,
+    lookup = lookup_func or _strict_active_task_reference_lookup
+    return await lookup(
+        redis_url=require_env("REDIS_URL"),
+        redis_prefix=require_env("REDIS_PREFIX"),
+        keys=keys,
         socket_timeout=60,
     )
+
+
+def _runtime_database():
+    engine = create_async_engine(
+        require_env("DATABASE_URL"),
+        echo=False,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+    )
+    return engine, sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+async def _strict_active_task_reference_lookup(
+    *,
+    redis_url: str,
+    redis_prefix: str,
+    keys: list[str],
+    socket_timeout: float,
+) -> set[str]:
+    from src.services.redis_connection import build_redis_client
+
+    client = build_redis_client(
+        redis_url,
+        decode_responses=True,
+        socket_timeout=socket_timeout,
+    )
+    try:
+        raw_tasks = await client.hvals(f"{redis_prefix}active_tasks")
+        targets = set(keys)
+        matches: set[str] = set()
+        for raw in raw_tasks:
+            matches.update(_matching_refs(json.loads(raw), targets))
+        return matches
+    finally:
+        await client.aclose()
 
 
 def _r2_client():
