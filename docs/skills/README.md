@@ -34,6 +34,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `frontend-browser-preview` | Playwright 预览和响应式截图 |
 | `ops-log-monitor` | 服务不可用/5xx/超时/容器异常的只读观测、日志归因和事故报告 |
 | `allbot-code-analyzer` | 全局静态分析、死代码和质量评估 |
+| `allbot-company-operations` | 公司主体、财税、银行/支付商户、会计账本、备案与本机私密资料 |
 
 ## 分层约定
 

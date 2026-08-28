@@ -22,6 +22,9 @@
   mutable tag 和 force push main。
 - **运行态不入 Git**：实时 worker/Pod 数量、LAN current/cache、一次性任务
   与事故现场只属于 provider/XDG/日志/归档，不写成稳定 Skill 或当前 SOP。
+- **公司秘密不入 Git**：公司登录密码、支付密码、银行/E 盾信息、证件原件与
+  税务回执只进入本机 `~/.config/allbot/company-operations/` 受限目录；Skill、
+  docs、聊天、日志和提交只记录脱敏引用。
 
 ## 2. 主目录自动接单
 
@@ -88,6 +91,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | 浏览器预览与响应式截图 | `frontend-browser-preview` |
 | 日志采集、异常归因和事故报告 | `ops-log-monitor` |
 | 全局静态分析、死代码和质量评估 | `allbot-code-analyzer` |
+| 公司主体、税务、支付宝/微信/银行、会计账本、网站/AI 备案 | `allbot-company-operations` |
 
 ### 运维意图优先路由
 
@@ -116,6 +120,8 @@ Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维�
 - Vue UI 视觉验收：`vue-best-practices` + `frontend-browser-preview`。
 - 云 SSH 失败：`allbot-cloud-ssh`；线上事故再加 `allbot-diagnosing-bugs`，
   需要日志采集再加 `ops-log-monitor`。
+- 公司收款/报税：`allbot-company-operations`；修改产品支付履约再加
+  `allbot-billing-auth`，执行报税、转账或商户配置前必须再次明确确认具体动作。
 
 ## 5. 知识库分层
 
