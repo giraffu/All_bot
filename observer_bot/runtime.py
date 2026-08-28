@@ -8,20 +8,22 @@ from observer_bot.report_service import due_report_windows
 logger = logging.getLogger(__name__)
 
 
-def _is_admin_private(update, settings) -> bool:
+async def _is_admin_private(update, runtime_config_provider) -> bool:
     user = update.effective_user
     chat = update.effective_chat
+    runtime_config = await runtime_config_provider.get()
     return bool(
         user is not None
         and chat is not None
         and str(chat.type) == "private"
-        and int(user.id) in settings.admin_chat_ids
+        and int(user.id) in runtime_config.admin_chat_ids
     )
 
 
 async def handle_start(update, context) -> None:
-    settings = context.application.bot_data["settings"]
-    if not _is_admin_private(update, settings):
+    if not await _is_admin_private(
+        update, context.application.bot_data["runtime_config_provider"]
+    ):
         return
     await update.effective_message.reply_text(
         "Observer Bot 已运行。\n/status 查看队列\n/report [daily|weekly|monthly] 生成最近报告"
@@ -29,8 +31,9 @@ async def handle_start(update, context) -> None:
 
 
 async def handle_status(update, context) -> None:
-    settings = context.application.bot_data["settings"]
-    if not _is_admin_private(update, settings):
+    if not await _is_admin_private(
+        update, context.application.bot_data["runtime_config_provider"]
+    ):
         return
     try:
         snapshot = await context.application.bot_data["queue_client"].fetch()
@@ -47,7 +50,8 @@ async def handle_status(update, context) -> None:
 
 async def handle_report(update, context) -> None:
     settings = context.application.bot_data["settings"]
-    if not _is_admin_private(update, settings):
+    runtime_config_provider = context.application.bot_data["runtime_config_provider"]
+    if not await _is_admin_private(update, runtime_config_provider):
         return
     requested = str(context.args[0]).lower() if context.args else "daily"
     windows = {
@@ -63,6 +67,10 @@ async def handle_report(update, context) -> None:
             "报告类型只支持 daily、weekly 或 monthly。"
         )
         return
+    runtime_config = await runtime_config_provider.get()
+    if not runtime_config.report_enabled(requested):
+        await update.effective_message.reply_text("该类型报告当前已在管理后台关闭。")
+        return
 
     await update.effective_message.reply_text("已开始生成报告，完成后会发给管理员。")
 
@@ -77,6 +85,11 @@ async def handle_report(update, context) -> None:
 
 
 async def queue_monitor_job(context) -> None:
+    runtime_config = await context.application.bot_data[
+        "runtime_config_provider"
+    ].get()
+    if not runtime_config.queue_alerts_enabled:
+        return
     try:
         await context.application.bot_data["queue_monitor"].poll()
     except Exception:
@@ -90,7 +103,12 @@ async def report_tick_job(context) -> None:
         timezone_name=settings.timezone,
         report_hour=settings.report_hour,
     )
+    runtime_config = await context.application.bot_data[
+        "runtime_config_provider"
+    ].get()
     for window in windows:
+        if not runtime_config.report_enabled(window.report_type):
+            continue
         try:
             await context.application.bot_data["report_service"].generate(window)
         except Exception:

@@ -7,6 +7,7 @@ from typing import Any
 import asyncpg
 
 from observer_bot.domain import GroupMessage
+from observer_bot.runtime_config import ObserverRuntimeConfig
 
 
 def _asyncpg_url(database_url: str) -> str:
@@ -36,6 +37,115 @@ class ObserverRepository:
         if self._pool is None:
             raise RuntimeError("observer repository is not open")
         return self._pool
+
+    async def bootstrap_runtime_config(
+        self,
+        *,
+        admin_chat_ids: frozenset[int],
+        authorized_group_ids: frozenset[int],
+    ) -> None:
+        pool = self._ready_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """
+                    SELECT recipients_initialized, groups_initialized
+                    FROM observer_runtime_settings
+                    WHERE singleton = TRUE
+                    FOR UPDATE
+                    """
+                )
+                if row is None:
+                    raise RuntimeError("observer runtime schema is not initialized")
+                if not row["recipients_initialized"]:
+                    await connection.executemany(
+                        """
+                        INSERT INTO observer_admin_recipients (telegram_user_id)
+                        VALUES ($1)
+                        ON CONFLICT (telegram_user_id) DO NOTHING
+                        """,
+                        [(chat_id,) for chat_id in sorted(admin_chat_ids)],
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE observer_runtime_settings
+                        SET recipients_initialized = TRUE, updated_at = NOW()
+                        WHERE singleton = TRUE
+                        """
+                    )
+                if not row["groups_initialized"]:
+                    await connection.executemany(
+                        """
+                        INSERT INTO observer_authorized_chats (chat_id)
+                        VALUES ($1)
+                        ON CONFLICT (chat_id) DO NOTHING
+                        """,
+                        [(chat_id,) for chat_id in sorted(authorized_group_ids)],
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE observer_runtime_settings
+                        SET groups_initialized = TRUE, updated_at = NOW()
+                        WHERE singleton = TRUE
+                        """
+                    )
+
+    async def get_runtime_config(self) -> ObserverRuntimeConfig:
+        pool = self._ready_pool()
+        settings = await pool.fetchrow(
+            """
+            SELECT queue_alerts_enabled, group_collection_enabled,
+                   daily_reports_enabled, weekly_reports_enabled,
+                   monthly_reports_enabled
+            FROM observer_runtime_settings
+            WHERE singleton = TRUE
+            """
+        )
+        if settings is None:
+            raise RuntimeError("observer runtime schema is not initialized")
+        admin_rows = await pool.fetch(
+            """
+            SELECT telegram_user_id FROM observer_admin_recipients
+            WHERE enabled = TRUE ORDER BY telegram_user_id
+            """
+        )
+        group_rows = await pool.fetch(
+            """
+            SELECT chat_id FROM observer_authorized_chats
+            WHERE enabled = TRUE ORDER BY chat_id
+            """
+        )
+        return ObserverRuntimeConfig(
+            admin_chat_ids=frozenset(int(row["telegram_user_id"]) for row in admin_rows),
+            authorized_group_ids=frozenset(int(row["chat_id"]) for row in group_rows),
+            queue_alerts_enabled=bool(settings["queue_alerts_enabled"]),
+            group_collection_enabled=bool(settings["group_collection_enabled"]),
+            daily_reports_enabled=bool(settings["daily_reports_enabled"]),
+            weekly_reports_enabled=bool(settings["weekly_reports_enabled"]),
+            monthly_reports_enabled=bool(settings["monthly_reports_enabled"]),
+        )
+
+    async def log_notification(
+        self,
+        *,
+        event_type: str,
+        destination_chat_id: int | None,
+        status: str,
+        content_preview: str,
+        error_type: str | None = None,
+    ) -> None:
+        await self._ready_pool().execute(
+            """
+            INSERT INTO observer_notification_logs (
+                event_type, destination_chat_id, status, content_preview, error_type
+            ) VALUES ($1, $2, $3, $4, $5)
+            """,
+            event_type[:80],
+            destination_chat_id,
+            status,
+            content_preview[:500],
+            error_type[:160] if error_type else None,
+        )
 
     async def save_group_message(self, message: GroupMessage) -> None:
         await self._ready_pool().execute(

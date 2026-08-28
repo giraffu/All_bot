@@ -57,8 +57,10 @@ LLM。
 
 ## 群采集与报告
 
-只有 `OBSERVER_AUTHORIZED_GROUP_IDS` 中的 chat ID 会被保存。当前只保存文本或
-caption，忽略 Bot 作者和无文本媒体；编辑消息按 `(chat_id, message_id)` 更新。
+只有管理后台“通知中心”中启用的授权群 chat ID 会被保存；env 中的
+`OBSERVER_AUTHORIZED_GROUP_IDS` 只在数据库首次初始化时作为可选 bootstrap。
+当前只保存文本或 caption，忽略 Bot 作者和无文本媒体；编辑消息按
+`(chat_id, message_id)` 更新。
 需要在群内明确告知成员消息会被持久化并由本地模型分析。
 
 报告按配置时区生成最近完成的自然日、自然周和自然月。报告 run key 由类型和
@@ -89,14 +91,20 @@ LM Studio MCP 或工具调用。
 独立 runtime role。Observer 不使用主系统 `DATABASE_URL`，也不查询用户、工单、
 History、账本或 Worker 日志表。
 
-三张表：
+七张表：
 
 - `observer_group_messages`：授权群文本；
 - `observer_alert_states`：跨重启告警状态；
 - `observer_report_runs`：报告 claim、状态、模型和结果。
+- `observer_runtime_settings`：队列、采集和三类报告开关；报告默认关闭；
+- `observer_admin_recipients`：observer 管理员 Telegram 用户 ID；
+- `observer_authorized_chats`：允许采集的群 ID；
+- `observer_notification_logs`：发送目标、结果、错误类型和有限内容预览。
 
-建库、role/grant 和 schema 应由迁移/管理员连接执行；runtime role 只保留三张表
-的 SELECT/INSERT/UPDATE/DELETE。schema 命令：
+建库、role/grant 和 schema 应由迁移/管理员连接执行；runtime role 只保留上述
+observer 表和 identity sequence 所需的最小 DML/USAGE。Dashboard Backend 使用
+同一 `OBSERVER_DATABASE_URL` 的低流量连接管理 observer 配置和记录，不把这些表
+加入 AllBot 主库。schema 命令：
 
 ```bash
 OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
@@ -111,12 +119,12 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
 
 - `OBSERVER_BOT_TOKEN`
 - `OBSERVER_DATABASE_URL`
-- `OBSERVER_ADMIN_CHAT_IDS`：逗号分隔的 Telegram 私聊目标/管理员 user ID
 - `OBSERVER_LM_STUDIO_BASE_URL`
 
 主要可选：
 
-- `OBSERVER_AUTHORIZED_GROUP_IDS`
+- `OBSERVER_ADMIN_CHAT_IDS`、`OBSERVER_AUTHORIZED_GROUP_IDS`：仅首次启动 bootstrap；
+  初始化后以 Dashboard“通知中心”的数据库配置为准
 - `OBSERVER_LM_STUDIO_API_KEY`
 - `OBSERVER_LM_STUDIO_MODEL`
 - `OBSERVER_QUEUE_SIZE_THRESHOLD`
@@ -128,6 +136,12 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
 
 管理员私聊命令：`/status` 查看实时 Central 快照；
 `/report [daily|weekly|monthly]` 生成最近完成周期的报告。
+
+Dashboard 独立导航页“通知中心”通过已认证接口
+`GET/PUT /api/notification-center/settings` 管理 observer 管理员、授权群、工单
+通知接收者和功能开关；`GET /api/notification-center/reports` 与
+`GET /api/notification-center/notifications` 分页查看报告及通知记录。配置由 Bot
+短缓存读取，最多约 15 秒生效，不需要重启。
 
 ## 发布与验证
 

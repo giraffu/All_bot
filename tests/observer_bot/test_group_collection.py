@@ -14,6 +14,17 @@ class RecordingRepository:
         self.messages.append(message)
 
 
+class RuntimeConfigProvider:
+    def __init__(self, *, enabled=True, group_ids=frozenset({-1001})):
+        self.config = SimpleNamespace(
+            group_collection_enabled=enabled,
+            authorized_group_ids=group_ids,
+        )
+
+    async def get(self):
+        return self.config
+
+
 def _update(*, chat_id=-1001, text="hello", is_bot=False):
     user = SimpleNamespace(
         id=42,
@@ -42,7 +53,7 @@ async def test_authorized_group_text_is_persisted():
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
-                "settings": SimpleNamespace(authorized_group_ids=frozenset({-1001})),
+                "runtime_config_provider": RuntimeConfigProvider(),
                 "repository": repository,
             }
         )
@@ -62,7 +73,7 @@ async def test_unapproved_group_and_bot_messages_are_not_persisted():
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
-                "settings": SimpleNamespace(authorized_group_ids=frozenset({-1001})),
+                "runtime_config_provider": RuntimeConfigProvider(),
                 "repository": repository,
             }
         )
@@ -70,5 +81,22 @@ async def test_unapproved_group_and_bot_messages_are_not_persisted():
 
     await collect_authorized_group_message(_update(chat_id=-9999), context)
     await collect_authorized_group_message(_update(is_bot=True), context)
+
+    assert repository.messages == []
+
+
+@pytest.mark.asyncio
+async def test_group_collection_can_be_disabled_without_restarting_bot():
+    repository = RecordingRepository()
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "runtime_config_provider": RuntimeConfigProvider(enabled=False),
+                "repository": repository,
+            }
+        )
+    )
+
+    await collect_authorized_group_message(_update(), context)
 
     assert repository.messages == []

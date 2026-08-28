@@ -9,7 +9,7 @@
 客服 Bot 不读取生成维护标记、不提交生成任务，也不承载支付履约。它负责收集
 工单；Dashboard 负责已认证管理员的查看、备注、状态处理、附件访问和回复。
 
-Dashboard 的“客服工单 → 通知设置”允许管理员配置最多 20 个 Telegram 数字
+Dashboard 的独立“通知中心 → 通知设置”允许管理员配置最多 20 个 Telegram 数字
 用户 ID。接收者必须先私聊并启动当前客服 Bot；Telegram Bot 不能仅凭普通用户
 的 `@username` 主动发起私聊。留空保存会关闭全部新工单通知。
 
@@ -55,6 +55,10 @@ Dashboard tests 为事实源。未知历史分类必须显示原始值，不能�
 `support_notification_recipients`，不是 env、运行时内存或 Git 配置。Dashboard
 Backend 只管理接收者 ID；通知发送继续由独立 `support-bot` 使用
 `SUPPORT_BOT_TOKEN` 完成。
+
+前端不再在客服工单页面内嵌通知弹窗；统一通过“通知中心”调用聚合接口
+`GET/PUT /api/notification-center/settings`。旧 support notification API 保留为
+后端兼容入口，持久化位置和发送者均不改变。
 
 ## 4. 发布与迁移
 

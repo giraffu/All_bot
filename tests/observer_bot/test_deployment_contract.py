@@ -25,3 +25,7 @@ def test_observer_has_an_isolated_prod_image_and_env_projection():
     assert projection["patterns"] == ["OBSERVER_*", "TELEGRAM_*"]
     assert "DATABASE_URL" not in projection["required"]
     assert "OBSERVER_DATABASE_URL" in projection["required"]
+    assert "OBSERVER_ADMIN_CHAT_IDS" not in projection["required"]
+    assert "OBSERVER_DATABASE_URL" in env_contract["services"]["dashboard-backend"][
+        "patterns"
+    ]

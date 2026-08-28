@@ -23,6 +23,7 @@ from dashboard.backend.routers import (
     history,
     logs,
     main_bot_menu,
+    observer_notifications,
     paid_group_guard,
     group_manage,
     plans,
@@ -201,6 +202,7 @@ app.include_router(gallery.router)
 app.include_router(referrals.router)
 app.include_router(site_notice.router)
 app.include_router(support_tickets.router)
+app.include_router(observer_notifications.router)
 app.include_router(reference_assets.router)
 app.include_router(prompt_optimizer.router)
 app.include_router(character_generation.router)

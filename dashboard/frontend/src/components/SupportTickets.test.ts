@@ -9,8 +9,6 @@ const apiMocks = vi.hoisted(() => ({
   fetchSupportTicket: vi.fn(),
   updateSupportTicket: vi.fn(),
   replySupportTicket: vi.fn(),
-  fetchSupportTicketNotificationSettings: vi.fn(),
-  updateSupportTicketNotificationSettings: vi.fn(),
 }))
 
 vi.mock('../api/api', () => apiMocks)
@@ -57,12 +55,6 @@ describe('SupportTickets', () => {
       ],
       total: 1,
     })
-    apiMocks.fetchSupportTicketNotificationSettings.mockResolvedValue({
-      telegram_user_ids: [123456789, 987654321],
-    })
-    apiMocks.updateSupportTicketNotificationSettings.mockResolvedValue({
-      telegram_user_ids: [123456789, 987654321],
-    })
   })
 
   it('renders ticket fields from the list render-item slot payload', async () => {
@@ -85,46 +77,6 @@ describe('SupportTickets', () => {
     expect(wrapper.text()).toContain('#42 充值问题')
     expect(wrapper.text()).toContain('测试用户')
     expect(wrapper.text()).toContain('open')
-  })
-
-  it('loads and saves Telegram notification recipients from the ticket toolbar', async () => {
-    const wrapper = mount(SupportTickets, {
-      global: {
-        stubs: {
-          'a-list': ListStub,
-          'a-list-item': passthroughStub('ListItemStub'),
-          'a-spin': passthroughStub('SpinStub'),
-          'a-select': SelectStub,
-          'a-button': passthroughStub('ButtonStub'),
-          'a-tag': passthroughStub('TagStub'),
-          'a-textarea': passthroughStub('TextareaStub'),
-          'a-modal': passthroughStub('ModalStub'),
-        },
-      },
-    })
-
-    await flushPromises()
-    const settingsButton = wrapper
-      .findAllComponents({ name: 'ButtonStub' })
-      .find(button => button.text().includes('通知设置'))
-    expect(settingsButton).toBeTruthy()
-    await settingsButton!.trigger('click')
-    await flushPromises()
-
-    expect(apiMocks.fetchSupportTicketNotificationSettings).toHaveBeenCalledOnce()
-    const input = wrapper.get('textarea.notification-recipient-input')
-    expect((input.element as HTMLTextAreaElement).value).toContain('123456789')
-    await input.setValue('123456789\n222333444\n123456789')
-
-    const saveButton = wrapper
-      .findAllComponents({ name: 'ButtonStub' })
-      .find(button => button.text().includes('保存通知用户'))
-    await saveButton!.trigger('click')
-    await flushPromises()
-
-    expect(apiMocks.updateSupportTicketNotificationSettings).toHaveBeenCalledWith({
-      telegram_user_ids: [123456789, 222333444],
-    })
   })
 
   it('keeps both ticket columns available as visible vertical scroll regions', async () => {

@@ -75,7 +75,7 @@
           ]
         }
       },
-      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "BOT_*", "TELEGRAM_*", "GROUP_MANAGE_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "OBSERVER_DATABASE_URL", "BOT_*", "TELEGRAM_*", "GROUP_MANAGE_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-frontend": {
       "environments": ["test", "prod"],
@@ -140,7 +140,7 @@
     "observer-bot": {
       "environments": ["prod"],
       "enabled_if": {"key": "OBSERVER_BOT_TOKEN", "nonempty": true},
-      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "OBSERVER_BOT_TOKEN", "OBSERVER_DATABASE_URL", "OBSERVER_ADMIN_CHAT_IDS", "OBSERVER_LM_STUDIO_BASE_URL"],
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "OBSERVER_BOT_TOKEN", "OBSERVER_DATABASE_URL", "OBSERVER_LM_STUDIO_BASE_URL"],
       "patterns": ["OBSERVER_*", "TELEGRAM_*"]
     },
     "telegram-local-api": {
