@@ -14,6 +14,10 @@ workspaces.
   server address `10.250.150.1`.
 - The main server preserves `127.0.0.1/192.168.1.115:5000` and `:9010` with
   socket-activated TCP proxies to the NAS direct-link backends.
+- The compatibility `.socket` units start directly from `sockets.target` and use
+  `FreeBind=true`; they must not order themselves after `network-online.target`,
+  which would create a boot ordering cycle. Network readiness belongs to the
+  triggered proxy `.service` units.
 - GPU nodes keep their local exact-digest images and verified model workspaces.
   NAS loss blocks new pulls, warm-cache and profile changes, but does not make a
   healthy current runtime read models over NFS.
@@ -69,6 +73,10 @@ workspaces.
   source/mount options and an exact Registry manifest/model-cache preflight.
   Observe GPU current/queue state without draining or restarting healthy
   runtimes.
+- After installing proxy unit changes, run `systemctl daemon-reload`, restart only
+  the two compatibility socket units, and verify they remain enabled and active.
+  A real host reboot is a separate maintenance-window check; journal evidence must
+  show both sockets joined the boot transaction without an ordering cycle.
 - After local retirement, never promise an instant local rollback. A NAS
   outage is recovered in place or from the readonly snapshot; rebuilding local
   stores requires a newly scoped migration with its own capacity check,

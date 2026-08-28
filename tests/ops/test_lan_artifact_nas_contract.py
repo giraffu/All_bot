@@ -52,6 +52,18 @@ def test_main_server_proxies_preserve_existing_lan_endpoints():
     assert "systemd-socket-proxyd 10.250.150.2:9010" in cache_service
 
 
+def test_main_server_proxy_sockets_do_not_create_a_boot_ordering_cycle():
+    for name in (
+        "allbot-lan-registry-proxy.socket",
+        "allbot-lan-model-cache-proxy.socket",
+    ):
+        socket = (OPS / name).read_text(encoding="utf-8")
+
+        assert "WantedBy=sockets.target" in socket
+        assert "FreeBind=true" in socket
+        assert "network-online.target" not in socket
+
+
 def test_preflight_defaults_to_read_only_and_requires_exact_confirmation():
     script = OPS / "preflight.sh"
     subprocess.run(["bash", "-n", str(script)], check=True)
