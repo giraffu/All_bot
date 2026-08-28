@@ -25,7 +25,10 @@ async def test_register_payment_api_providers_invokes_provider_setup(monkeypatch
 @pytest.mark.asyncio
 async def test_payment_api_lifespan_starts_enabled_reconciler(monkeypatch):
     run_forever = AsyncMock()
-    reconciler = SimpleNamespace(run_forever=run_forever)
+    reconciler = SimpleNamespace(
+        run_forever=run_forever,
+        payment_providers=("ALIPAY_DIRECT",),
+    )
     monkeypatch.setattr(
         payment_api_server,
         "build_rmb_payment_reconciler_if_enabled",
@@ -46,6 +49,16 @@ async def test_payment_api_lifespan_starts_enabled_reconciler(monkeypatch):
 @pytest.mark.asyncio
 async def test_payment_health_reports_reconciler_state(monkeypatch):
     monkeypatch.setattr(payment_api_server.app.state, "reconciler_enabled", True)
+    monkeypatch.setattr(
+        payment_api_server.app.state,
+        "huanyuy_reconciliation_enabled",
+        False,
+    )
+    monkeypatch.setattr(
+        payment_api_server.app.state,
+        "alipay_direct_reconciliation_enabled",
+        True,
+    )
 
     transport = httpx.ASGITransport(app=payment_api_server.app)
     async with httpx.AsyncClient(
@@ -58,6 +71,8 @@ async def test_payment_health_reports_reconciler_state(monkeypatch):
     assert response.json() == {
         "status": "ok",
         "rmb_reconciliation_enabled": True,
+        "huanyuy_reconciliation_enabled": False,
+        "alipay_direct_reconciliation_enabled": True,
         "alipay_direct_configured": False,
     }
 

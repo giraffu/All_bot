@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +50,7 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
         identity_name="内门弟子",
     )
 
+    started_at = datetime.now()
     order, _public_id = await telegram_billing_service.create_rmb_pending_order(
         internal_user_id=55,
         plan=plan,
@@ -62,4 +64,5 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
     assert isinstance(session.added[1], RMBPaymentReconciliationJob)
     assert session.added[1].order_id == order.id
     assert session.added[1].status == "pending"
+    assert 29 <= (session.added[1].next_attempt_at - started_at).total_seconds() <= 31
     assert order.payment_provider == "ALIPAY_DIRECT"

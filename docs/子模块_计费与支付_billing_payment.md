@@ -138,11 +138,15 @@ sequenceDiagram
   主动查单。只有签名查单响应同时确认订单号、数据库金额、已支付状态和外部流水
   时才进入共享履约；回调自带的金额与 `trade_no` 在该兜底路径中不得使用。查单
   未支付、异常、订单不存在或提供方错误都返回 `fail`，不产生资产副作用。
-- Payment API 的 reconciler 只处理新建 job：60 秒后首次查单，按
-  1/2/5/10/30 分钟及每小时退避，最多跟踪 24 小时。查到已支付后仍调用
+- Payment API 的 reconciler 按订单提供方隔离。支付宝直连随
+  `ALIPAY_DIRECT_ENABLED=true` 自动启用，只 claim `ALIPAY_DIRECT + PENDING`：
+  下单 30 秒后首次查单；未支付或查询异常时再分别等待
+  40/60/90/150/200/300 秒，第 7 次仍未确认支付则把 job 标记为 `exhausted` 并
+  停止（相对下单时间约为 30/70/130/220/370/570/870 秒，另有最多 5 秒 sweep
+  抖动）。环宇查单仍只由 `RMB_RECONCILIATION_ENABLED=true` 显式开启，继续要求
+  `HUANYUY_QUERY_URL` 并保持原有退避/24 小时上限。两者查到已支付后都调用
   `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
-  边界；没有稳定服务端查单接口时禁止用浏览器 Cookie、后台抓取或自动“补发”
-  替代。
+  边界；直连扫描不会 claim 环宇/微信订单。
 - 已通过后台赠送同套餐完成用户补偿的真实 RMB 支付，使用
   `adopt_compensated_rmb_payment(...)` 一次性认领：必须在同一事务锁定并核对
   支付单、赠送单、用户、套餐、金额、时间顺序与外部流水唯一性，只收口真实
@@ -280,12 +284,14 @@ sequenceDiagram
     `fail`。
 - 支付宝直连回调：`POST /api/pay/notify/alipay`
   - 同时挂载于 Web API 与 Payment API；只有 RSA2、证书 SN、AppID、Seller ID、
-    订单提供方、订单号、金额及成功交易状态全部匹配才进入共享履约内核。
+    订单提供方、订单号、金额及成功交易状态全部匹配才直接进入共享履约内核；
+    直接检查失败时只允许走上文数据库金额驱动的签名查单兜底。
   - 成功和幂等重复通知返回精确小写纯文本 `success`；非法通知返回 `fail`。
   - 浏览器同步回跳只回到充值页轮询本地订单，不作为到账证据。
 - Payment API 健康：`GET /healthz`
-  - 返回非敏感服务状态、RMB reconciler 是否启用及支付宝直连配置是否就绪，
-    不暴露 URL、凭据、证书或订单。
+  - 返回非敏感服务状态、任一 RMB reconciler、环宇 reconciler、支付宝直连
+    reconciler 是否分别启用，以及支付宝直连配置是否就绪；不暴露 URL、凭据、
+    证书或订单。
 - Dashboard 支付宝直连名单：
   `GET /api/alipay-direct-users` 与
   `POST /api/alipay-direct-users/bulk-status`
@@ -331,8 +337,10 @@ sequenceDiagram
     交易、错误目标、缺失 forward payload 和错误金额均不得发货。
 - RMB 主动补偿
   - 新订单与 reconciliation job 同事务；迁移不回填历史订单。
-  - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、24 小时耗尽、查单字段
-    冲突 fail closed，以及默认关闭/启用缺 URL 阻断启动。
+  - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、环宇 24 小时耗尽、查单
+    字段冲突 fail closed，以及环宇默认关闭/启用缺 URL 阻断启动。
+  - 支付宝直连覆盖 provider-only claim、首次 30 秒、后续
+    40/60/90/150/200/300 秒、7 次 exhausted 和不依赖环宇 query URL 启动。
   - 支付宝通知覆盖排除 `sign/sign_type` 的真实 RSA2 原文；主动查单覆盖已签名
     成功响应不含可选 `seller_id`、返回错误 `seller_id`、订单号/金额/流水冲突。
   - 支付宝通知验签失败后的查单兜底覆盖：伪造回调金额/流水被忽略、数据库金额
