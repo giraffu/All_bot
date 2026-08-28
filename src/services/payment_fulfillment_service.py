@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -11,7 +13,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import MembershipPlan, Order, User, UserLog
+from src.database.models import (
+    MembershipPlan,
+    Order,
+    RMBPaymentReconciliationJob,
+    User,
+    UserLog,
+)
 from src.core.affiliate_core import (
     calculate_and_set_commission_for_paid_order,
     invalidate_invitation_recharge_cache,
@@ -23,6 +31,7 @@ from src.services.membership_settlement_service import (
     settle_membership_plan_in_session,
 )
 from src.services.order_v2_service import build_order_public_lookup_stmt
+from src.services.rmb_payment_provider_service import ALIPAY_DIRECT
 from config import TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger("payment_fulfillment")
@@ -66,6 +75,21 @@ class PaymentFulfillmentCommand:
     legacy_plan_id: int | None = None
     legacy_original_price: Decimal | str | int | None = None
     notify: Callable[[PaymentFulfillmentResult], Awaitable[None]] | None = None
+
+
+@dataclass(frozen=True)
+class CompensatedRMBPaymentAdoptionCommand:
+    order_lookup: str
+    compensation_order_lookup: str
+    expected_internal_user_id: int
+    external_tx_id: str
+    paid_amount: Decimal | str | int
+    source: str
+    now: datetime | None = None
+
+
+class CompensatedPaymentAdoptionError(RuntimeError):
+    """Raised when a paid order cannot safely adopt an existing admin gift."""
 
 
 @dataclass(frozen=True)
@@ -776,6 +800,248 @@ async def fulfill_payment_command(
                 command.channel,
                 command.order_lookup or command.legacy_order_id,
             )
+            raise
+
+
+def _compensation_marker(*, target_order, external_tx_id: str, now: datetime) -> dict:
+    return {
+        "order_id": int(target_order.id),
+        "external_tx_key": hashlib.sha256(external_tx_id.encode()).hexdigest()[:12],
+        "adopted_at": now.isoformat(),
+    }
+
+
+def _validate_compensated_payment_orders(
+    *,
+    target_order,
+    compensation_order,
+    command: CompensatedRMBPaymentAdoptionCommand,
+) -> None:
+    if target_order.payment_channel != "RMB":
+        raise CompensatedPaymentAdoptionError("target order is not RMB")
+    if target_order.payment_provider != ALIPAY_DIRECT:
+        raise CompensatedPaymentAdoptionError("target order is not Alipay direct")
+    if int(target_order.internal_user_id) != int(command.expected_internal_user_id):
+        raise CompensatedPaymentAdoptionError("target user does not match expectation")
+    if _normalize_rmb_amount(target_order.final_price) != _normalize_rmb_amount(
+        command.paid_amount
+    ):
+        raise CompensatedPaymentAdoptionError("paid amount does not match target order")
+
+    if not str(compensation_order.order_id or "").startswith("GIFT:"):
+        raise CompensatedPaymentAdoptionError("compensation order is not an admin gift")
+    if not str(compensation_order.tx_hash or "").startswith("manual_"):
+        raise CompensatedPaymentAdoptionError("compensation order is not manual")
+    if compensation_order.status != "SUCCESS" or compensation_order.paid_at is None:
+        raise CompensatedPaymentAdoptionError("compensation order is not successful")
+    if _normalize_rmb_amount(compensation_order.final_price) != Decimal("0.00"):
+        raise CompensatedPaymentAdoptionError("compensation order is not free")
+    if int(compensation_order.internal_user_id) != int(target_order.internal_user_id):
+        raise CompensatedPaymentAdoptionError("compensation user does not match")
+    if int(compensation_order.plan_id) != int(target_order.plan_id):
+        raise CompensatedPaymentAdoptionError("compensation plan does not match")
+    if compensation_order.created_at < target_order.created_at:
+        raise CompensatedPaymentAdoptionError("compensation predates the paid order")
+
+    marker = dict(compensation_order.settlement_snapshot or {}).get(
+        "payment_compensation_adoption"
+    )
+    if marker and int(marker.get("order_id", 0)) != int(target_order.id):
+        raise CompensatedPaymentAdoptionError(
+            "compensation order is already linked to another payment"
+        )
+
+
+async def adopt_compensated_rmb_payment(
+    command: CompensatedRMBPaymentAdoptionCommand,
+    *,
+    dependencies: PaymentFulfillmentDependencies | None = None,
+) -> PaymentFulfillmentResult:
+    """Record a verified RMB payment whose user benefits were already gifted.
+
+    The target payment, admin gift, user, external transaction and reconciliation
+    job are validated under row locks. The payment and affiliate ledger are
+    finalized, while membership and credit settlement is deliberately skipped.
+    """
+
+    dependencies = dependencies or build_default_payment_fulfillment_dependencies()
+    now = command.now or datetime.now()
+    external_tx_id = _truncate_tx_hash(command.external_tx_id)
+    payment_command = PaymentFulfillmentCommand(
+        channel="RMB",
+        order_lookup=command.order_lookup,
+        external_tx_id=external_tx_id,
+        paid_amount=command.paid_amount,
+        paid_unit="rmb",
+        source=command.source,
+        affiliate_source=command.source,
+        audit_source=command.source,
+        now=now,
+    )
+
+    async with dependencies.session_factory() as session:
+        try:
+            target_order = (
+                await session.execute(
+                    build_order_public_lookup_stmt(
+                        command.order_lookup,
+                        for_update=True,
+                    )
+                )
+            ).scalar_one_or_none()
+            if target_order is None:
+                raise CompensatedPaymentAdoptionError("target order was not found")
+
+            compensation_order = (
+                await session.execute(
+                    build_order_public_lookup_stmt(
+                        command.compensation_order_lookup,
+                        for_update=True,
+                    )
+                )
+            ).scalar_one_or_none()
+            if compensation_order is None:
+                raise CompensatedPaymentAdoptionError(
+                    "compensation order was not found"
+                )
+
+            user = await _load_locked_user(session, target_order.internal_user_id)
+            if user is None:
+                raise CompensatedPaymentAdoptionError("target user was not found")
+
+            _validate_compensated_payment_orders(
+                target_order=target_order,
+                compensation_order=compensation_order,
+                command=command,
+            )
+            marker = dict(compensation_order.settlement_snapshot or {}).get(
+                "payment_compensation_adoption"
+            )
+            if target_order.status == "SUCCESS":
+                if target_order.tx_hash == external_tx_id and marker:
+                    return _result_from_snapshot(
+                        status="noop",
+                        user=user,
+                        order=target_order,
+                        command=payment_command,
+                    )
+                raise CompensatedPaymentAdoptionError(
+                    "target order is already successful with another transaction"
+                )
+            if target_order.status != "PENDING":
+                raise CompensatedPaymentAdoptionError("target order is not pending")
+
+            conflicting_order = (
+                await session.execute(
+                    select(Order)
+                    .where(Order.tx_hash == external_tx_id, Order.id != target_order.id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if conflicting_order is not None:
+                raise CompensatedPaymentAdoptionError(
+                    "external transaction is already linked to another order"
+                )
+
+            target_order.status = "SUCCESS"
+            target_order.tx_hash = external_tx_id
+            target_order.paid_at = now
+            target_snapshot = dict(target_order.settlement_snapshot or {})
+            target_snapshot["payment_compensation_adoption"] = {
+                "compensation_order_id": int(compensation_order.id),
+                "source": command.source,
+                "adopted_at": now.isoformat(),
+            }
+            target_order.settlement_snapshot = target_snapshot
+
+            compensation_snapshot = dict(compensation_order.settlement_snapshot or {})
+            compensation_snapshot["payment_compensation_adoption"] = (
+                _compensation_marker(
+                    target_order=target_order,
+                    external_tx_id=external_tx_id,
+                    now=now,
+                )
+            )
+            compensation_order.settlement_snapshot = compensation_snapshot
+
+            await session.flush()
+            referral = await _record_order_affiliate_ledger(
+                session,
+                target_order,
+                command=payment_command,
+                dependencies=dependencies,
+            )
+
+            reconciliation_job = (
+                await session.execute(
+                    select(RMBPaymentReconciliationJob)
+                    .where(RMBPaymentReconciliationJob.order_id == target_order.id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if reconciliation_job is not None:
+                reconciliation_job.status = "completed"
+                reconciliation_job.last_outcome = "compensated_payment_adopted"
+                reconciliation_job.last_error_code = None
+                reconciliation_job.last_checked_at = now
+                reconciliation_job.completed_at = now
+                reconciliation_job.lease_token = None
+                reconciliation_job.lease_until = None
+                reconciliation_job.updated_at = now
+
+            session.add(
+                UserLog(
+                    user_id=user.id,
+                    username=user.username,
+                    operation_type="compensated_payment_adoption",
+                    credit_change=0,
+                    current_balance=int(user.credits or 0),
+                    created_at=now,
+                    extra_info=json.dumps(
+                        {
+                            "payment_order_id": int(target_order.id),
+                            "compensation_order_id": int(compensation_order.id),
+                            "external_tx_key": hashlib.sha256(
+                                external_tx_id.encode()
+                            ).hexdigest()[:12],
+                            "source": command.source,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+            await session.commit()
+
+            applied_snapshot = {
+                "credits_granted": 0,
+                "converted_days": 0,
+                "final_identity": user.current_identity,
+                "final_expire_at": (
+                    user.identity_expire_at.isoformat()
+                    if user.identity_expire_at is not None
+                    else None
+                ),
+                "current_credits": int(user.credits or 0),
+                "is_pure_credit_plan": False,
+                "is_downgrade": False,
+                "settlement_reason": "ADMIN_GIFT_ALREADY_APPLIED",
+            }
+            result = _result_from_snapshot(
+                status="success",
+                user=user,
+                order=target_order,
+                command=payment_command,
+                applied_snapshot=applied_snapshot,
+            )
+            await _run_post_commit_payment_side_effects(
+                command=payment_command,
+                dependencies=dependencies,
+                referral=referral,
+                result=result,
+            )
+            return result
+        except Exception:
+            await session.rollback()
             raise
 
 

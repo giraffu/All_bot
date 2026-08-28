@@ -170,6 +170,14 @@ def _signing_content(params: dict[str, object]) -> str:
     )
 
 
+def _callback_signing_content(params: dict[str, object]) -> str:
+    return "&".join(
+        f"{key}={params[key]}"
+        for key in sorted(params)
+        if params[key] not in (None, "") and key not in {"sign", "sign_type"}
+    )
+
+
 def _extract_raw_response_object(payload: str, response_key: str) -> tuple[dict, str]:
     key_literal = json.dumps(response_key, ensure_ascii=False)
     key_index = payload.find(key_literal)
@@ -294,7 +302,7 @@ class AlipayDirectService:
         try:
             self.alipay_public_key.verify(
                 base64.b64decode(params["sign"], validate=True),
-                _signing_content(params).encode("utf-8"),
+                _callback_signing_content(params).encode("utf-8"),
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
@@ -370,7 +378,8 @@ class AlipayDirectService:
             raise ValueError("Alipay order query was rejected")
         if str(data.get("out_trade_no") or "") != out_trade_no:
             raise ValueError("Alipay order query returned a different order")
-        if str(data.get("seller_id") or "") != self.config.seller_id:
+        seller_id = str(data.get("seller_id") or "")
+        if seller_id and seller_id != self.config.seller_id:
             raise ValueError("Alipay order query seller mismatch")
         trade_status = str(data.get("trade_status") or "")
         if trade_status not in {"TRADE_SUCCESS", "TRADE_FINISHED"}:
