@@ -48,6 +48,9 @@ from dashboard.backend.services.runpod_autoscaler_service import (
     should_start_runpod_autoscaler_loop,
 )
 from dashboard.backend.services.history_service import run_history_count_cache_warmer
+from dashboard.backend.services.alipay_direct_roster_reconciler import (
+    run_alipay_direct_roster_reconciler,
+)
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import AsyncSessionLocal, init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
@@ -112,6 +115,12 @@ async def startup_event():
     )
     background_tasks.add(history_count_task)
     history_count_task.add_done_callback(background_tasks.discard)
+
+    alipay_direct_roster_task = asyncio.create_task(
+        run_alipay_direct_roster_reconciler()
+    )
+    background_tasks.add(alipay_direct_roster_task)
+    alipay_direct_roster_task.add_done_callback(background_tasks.discard)
 
     if should_start_runpod_autoscaler_loop():
         runpod_autoscaler_task = asyncio.create_task(run_runpod_autoscaler_loop())

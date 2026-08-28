@@ -283,6 +283,12 @@ sequenceDiagram
     锁定命中用户，在同一事务内写 `alipay_direct_enabled` 与逐用户审计流水后提交。
     提交完成后 Web 与 Bot 的下一笔支付宝订单立即读取新状态；微信仍固定走
     `HUANYUY`，既有订单的 `payment_provider` 不变化。
+  - Dashboard Backend 还运行独立的直连名单清理循环，默认每 60 秒从
+    `ALIPAY_DIRECT + SUCCESS + paid_at` 订单索引查找仍开启直连的用户，使用
+    `FOR UPDATE ... SKIP LOCKED` 分批锁定，并在同一事务中关闭名单状态、写入
+    `auto_disable_alipay_direct_after_payment` 审计。可用
+    `DASHBOARD_ALIPAY_DIRECT_RECONCILE_INTERVAL_SECONDS` 调整周期，最低 10 秒。
+    该循环不参与支付履约；Dashboard 暂停只会延后移除，不影响下单、回调或到账。
 - Telegram 登录：`POST /api/auth/telegram`
   - 支持 Mini App `initData` 与 Login Widget 字段。
 - 密码登录：`POST /api/auth/login`
@@ -332,6 +338,8 @@ sequenceDiagram
 - Dashboard 直连名单
   - 覆盖服务端分页、累计成功付费/历史直连付款聚合、首次使用日期与三态筛选、
     跨分页筛选全选、明确 ID 批量更新、10000 人上限，以及状态与审计同事务提交。
+  - 覆盖 Dashboard 生命周期启动周期清理、成功直连付款口径、空结果无写入、
+    用户行锁和自动关闭状态与审计同事务提交。
 
 ## 7. 文档维护约束
 

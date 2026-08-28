@@ -133,6 +133,14 @@ sequenceDiagram
   缩小筛选条件；命中用户使用行锁，状态与 `user_logs` 审计在同一事务提交。
 - 页面保存成功后重新请求第一页；当前筛选、分页或浏览器状态不充当支付路由缓存。
   下一笔支付宝订单直接读取持久化用户开关，因此无需重启 Web、Bot 或 Payment。
+- Dashboard Backend 生命周期会启动名单清理循环，默认每 60 秒检查一次。查询从
+  `payment_provider='ALIPAY_DIRECT' AND status='SUCCESS' AND paid_at IS NOT NULL`
+  的订单索引出发，只锁定仍开启直连的用户；命中后在同一事务关闭状态并写
+  `auto_disable_alipay_direct_after_payment` 审计。周期可通过
+  `DASHBOARD_ALIPAY_DIRECT_RECONCILE_INTERVAL_SECONDS` 调整，最低 10 秒。
+- 自动清理不是支付履约依赖：管理后台不可用时只延迟名单移除，Web、Bot、
+  Payment API 的下单、回调和到账仍独立运行。恢复管理后台后下一轮会补扫历史
+  直连成功付款，因此管理员重新启用已付款用户也会在下一轮再次被移除。
 
 ### 4.5 RunPod 管理
 
@@ -174,7 +182,8 @@ sequenceDiagram
 - 覆盖 stats 缓存命中、single-flight 并发合并、Central proxy 超时兜底与前端不击穿 stats 缓存
 - 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用、真实转移审计快照，以及提示词解锁/关注关系迁移去重
 - 覆盖支付宝直连名单的服务端筛选分页、跨分页全选、明确用户批量开关、批量上限、
-  行锁与审计原子提交，以及 Dashboard 前端 typecheck/组件交互。
+  行锁与审计原子提交、后台周期自动移除已成功直连付款用户，以及 Dashboard 前端
+  typecheck/组件交互。
 
 ## 6. 部署与运维
 
