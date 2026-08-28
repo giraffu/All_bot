@@ -128,11 +128,21 @@ sequenceDiagram
   `ALIPAY_DIRECT_ENABLED=true` 才强制要求完整 `ALIPAY_*` 配置并校验应用私钥
   与应用公钥证书匹配。私钥和证书只允许通过受保护 Base64 环境投影进入
   `web-api`、`main-bot` 与 `payment-api`，不得进入 Git、镜像或日志。
+- 支付宝异步通知验签按官方通知口径从非空参数中排除 `sign` 与 `sign_type`，
+  再按字段名排序验证 RSA2；请求加签仍包含 `sign_type`，两种原文不能复用。
+  主动查单必须验证支付宝响应签名、证书 SN、商户订单号、金额和外部流水；
+  `seller_id` 在响应中出现时必须匹配，未返回该可选字段时不能把已签名的成功
+  响应误判为商户不匹配。
 - Payment API 的 reconciler 只处理新建 job：60 秒后首次查单，按
   1/2/5/10/30 分钟及每小时退避，最多跟踪 24 小时。查到已支付后仍调用
   `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
   边界；没有稳定服务端查单接口时禁止用浏览器 Cookie、后台抓取或自动“补发”
   替代。
+- 已通过后台赠送同套餐完成用户补偿的真实 RMB 支付，使用
+  `adopt_compensated_rmb_payment(...)` 一次性认领：必须在同一事务锁定并核对
+  支付单、赠送单、用户、套餐、金额、时间顺序与外部流水唯一性，只收口真实
+  支付状态、affiliate 和 reconciliation job，不再次结算灵石或身份。赠送单与
+  支付单保存双向认领标记，用户写 0 变动审计；相同交易重放返回幂等 `noop`。
 - 环宇平台签名按字段名 a-z 升序拼接，排除 `sign`、`sign_type` 与空值，
   参数值不额外 urlencode，末尾直接拼接商户 Key 后计算 MD5。平台文档同时写有
   “降序”和“a-z”，两者互相矛盾；当前实现保持与既有成功订单及易支付 a-z
@@ -318,6 +328,10 @@ sequenceDiagram
   - 新订单与 reconciliation job 同事务；迁移不回填历史订单。
   - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、24 小时耗尽、查单字段
     冲突 fail closed，以及默认关闭/启用缺 URL 阻断启动。
+  - 支付宝通知覆盖排除 `sign/sign_type` 的真实 RSA2 原文；主动查单覆盖已签名
+    成功响应不含可选 `seller_id`、返回错误 `seller_id`、订单号/金额/流水冲突。
+  - 人工赠送已补偿的支付认领覆盖资产不重复、赠送单只能绑定一张支付单、外部
+    流水唯一、reconciliation job 同事务完成和重复执行幂等 `noop`。
 - 支付金额校验
   - RMB 金额按 Decimal/字符串链路量化到两位，禁止 float 漂移。
   - USDT-TON 按六位微 USDT 整数精确相等；少付或多付都返回

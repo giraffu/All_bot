@@ -108,7 +108,9 @@ def test_callback_rejects_wrong_app_seller_and_certificate_serial():
         "alipay_cert_sn": service.alipay_public_cert_sn,
         "sign_type": "RSA2",
     }
-    signed = "&".join(f"{key}={valid[key]}" for key in sorted(valid))
+    signed = "&".join(
+        f"{key}={valid[key]}" for key in sorted(valid) if key != "sign_type"
+    )
     valid["sign"] = base64.b64encode(
         alipay_key.sign(signed.encode(), padding.PKCS1v15(), hashes.SHA256())
     ).decode()
@@ -221,6 +223,93 @@ async def test_query_order_verifies_response_using_gateway_charset(monkeypatch):
     )
 
     assert result.status is RMBOrderQueryStatus.NOT_PAID
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("seller_id", "expected_error"),
+    [
+        (None, None),
+        ("wrong-seller", "seller mismatch"),
+    ],
+)
+async def test_query_order_accepts_signed_paid_response_without_optional_seller_id(
+    monkeypatch,
+    seller_id,
+    expected_error,
+):
+    service, _app_key, alipay_key = _service()
+    response = {
+        "code": "10000",
+        "out_trade_no": "ORDER-PAID",
+        "trade_status": "TRADE_SUCCESS",
+        "trade_no": "TRADE-PAID",
+        "total_amount": "70.00",
+    }
+    if seller_id is not None:
+        response["seller_id"] = seller_id
+    raw_response = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
+    signature = base64.b64encode(
+        alipay_key.sign(
+            raw_response.encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    ).decode()
+    payload = (
+        '{"alipay_trade_query_response":'
+        + raw_response
+        + ',"sign":'
+        + json.dumps(signature)
+        + ',"alipay_cert_sn":'
+        + json.dumps(service.alipay_public_cert_sn)
+        + "}"
+    )
+
+    class FakeResponse:
+        status = 200
+        charset = "utf-8"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self):
+            return payload
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "src.services.alipay_direct_service.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    if expected_error:
+        with pytest.raises(ValueError, match=expected_error):
+            await service.query_order(
+                out_trade_no="ORDER-PAID",
+                expected_amount="70.00",
+            )
+        return
+
+    result = await service.query_order(
+        out_trade_no="ORDER-PAID",
+        expected_amount="70.00",
+    )
+
+    assert result.status is RMBOrderQueryStatus.PAID
+    assert result.external_trade_no == "TRADE-PAID"
+    assert result.paid_amount == Decimal("70.00")
 
 
 def test_enabled_config_requires_every_secret(monkeypatch):
