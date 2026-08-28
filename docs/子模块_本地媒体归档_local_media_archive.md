@@ -241,6 +241,24 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 持久副本摘要未变化。每日 runner 也先保存独立 plan，再在总开关和基础确认均有效
 时消费该 plan，未生成回执不得视为成功。
 
+当本机到 R2 的正文流量不能使用本地代理或本地出口时，临时清理采用“云端完整协调器”
+模式，而不是把 R2 读取拆回本机。`database-migration` artifact 包含
+`scripts/r2_temp_cleanup.py`；操作者从受保护 main 的完整 SHA 构建精确 digest，随后只在
+正式 SGP1 控制主机以一次性容器运行该脚本。目标主机禁止 build、源码同步、bind mount
+源码或 mutable tag。运行输入仅包括 0600 inventory、正式环境受控配置和输出 state
+目录；显式清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及小写同名变量，确保 R2
+正文不回流本机 YepFast。inventory 在上传前后核对完整 SHA-256，云端计划的
+`inventory.sha256` 必须与其一致。
+
+首次换到云路由不复用本机未完成计划。先在云端以同一精确 artifact、inventory 和
+正式引用依赖生成最多 100 对象的 dry-run；计划文件保持 0600，并回传低基数摘要和精确
+`plan_sha256`。真实 DELETE 仍需新的字面确认
+`DELETE_VERIFIED_TEMP_R2_user-data-prod:<plan_sha256>`，并在同一云主机、同一 artifact、
+同一 inventory 上执行。完成回执回传本机后，只有 `status=completed`、对象覆盖、
+`post_delete_verified_count`、plan SHA 和 inventory SHA 全部通过，才允许从本地 working
+inventory 移除已删除行。canary 验收前本机 supervisor 保持 disabled；后续批次不得因
+一次 canary 授权自动扩大。
+
 一次性全量临时治理使用独立入口
 `scripts/r2_temp_cleanup_campaign.py`，不改变每日 canary/cleanup 协议。`plan`
 只从固定 inventory 快照选择超过 24 小时的
