@@ -30,8 +30,12 @@ case "${1:-}" in
     echo "username: $gallery_user"
     echo "password file: /volume1/ApplePhotosGalleryRuntime/secrets/admin-password"
     ;;
+  precompute)
+    shift
+    exec "$deploy_root/precompute.sh" "$@"
+    ;;
   *)
-    echo "usage: operator.sh {start|status|logs|stop|credentials}" >&2
+    echo "usage: operator.sh {start|status|logs|stop|credentials|precompute}" >&2
     exit 2
     ;;
 esac

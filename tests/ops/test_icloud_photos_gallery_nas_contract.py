@@ -124,6 +124,32 @@ def test_operator_reads_runtime_admin_identity_without_printing_password() -> No
     assert "cat /volume1/ApplePhotosGalleryRuntime/secrets/admin-password" not in text
 
 
+def test_precompute_runs_index_thumbnails_and_video_transcoding_serially() -> None:
+    script = OPS / "precompute.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    text = script.read_text(encoding="utf-8")
+
+    assert "PRECOMPUTE_ICLOUD_PHOTOS_GALLERY" in text
+    assert 'run_phase "Indexing"' in text
+    assert 'run_phase "Photo Converting"' in text
+    assert 'run_phase "Video Converting"' in text
+    assert '"indexChangesOnly":false' in text
+    assert '"indexedOnly":true' in text
+    assert "allowParallelRun" in text
+    assert "admin-password" in text
+    assert "admin-username" in text
+    assert "docker compose restart" not in text
+
+
+def test_bootstrap_and_operator_install_and_expose_precompute() -> None:
+    bootstrap = (OPS / "bootstrap.sh").read_text(encoding="utf-8")
+    operator = (OPS / "operator.sh").read_text(encoding="utf-8")
+
+    assert "precompute.sh" in bootstrap
+    assert "precompute)" in operator
+    assert 'exec "$deploy_root/precompute.sh"' in operator
+
+
 def test_offline_loader_verifies_archive_and_exact_image_id() -> None:
     script = OPS / "load-offline-image.sh"
     subprocess.run(["bash", "-n", str(script)], check=True)
