@@ -176,6 +176,15 @@ class SupportMessage(Base):
     ticket = relationship("SupportTicket", backref="messages")
 
 
+class SupportNotificationRecipient(Base):
+    __tablename__ = "support_notification_recipients"
+
+    telegram_user_id = Column(BigInteger, primary_key=True, nullable=False)
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+
+
 class PrivateQqccBot(Base):
     __tablename__ = "private_qqcc_bots"
     __table_args__ = (
