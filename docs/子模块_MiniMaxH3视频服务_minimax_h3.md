@@ -295,7 +295,9 @@ mutable tag 或源码同步替代 RunPod artifact。ComfyUI revision 固定为
 `7fe8a6138504f90ff7be82f3babf416da32876b1`，并保留
 DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安装
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
-SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
+SageAttention。构建基础镜像固定为公开
+`yanwk/comfyui-boot:cu128-slim@sha256:4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9`，
+不得依赖 LAN Registry 中转或 mutable tag。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
 DaSiWa 的 NVIDIA VFX 构建依赖固定为官方 `0.1.0.1` CPython 3.12 ABI3 wheel，按
 `597,321,055` bytes 与 SHA256 `e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905`
