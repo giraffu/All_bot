@@ -133,7 +133,7 @@ sequenceDiagram
   缩小筛选条件；命中用户使用行锁，状态与 `user_logs` 审计在同一事务提交。
 - 页面保存成功后重新请求第一页；当前筛选、分页或浏览器状态不充当支付路由缓存。
   下一笔支付宝订单直接读取持久化用户开关，因此无需重启 Web、Bot 或 Payment。
-- Dashboard Backend 生命周期会启动名单清理循环，默认每 60 秒检查一次。查询从
+- Dashboard Backend 生命周期会启动名单清理循环，默认每 5 分钟检查一次。查询从
   `payment_provider='ALIPAY_DIRECT' AND status='SUCCESS' AND paid_at IS NOT NULL`
   的订单索引出发，只锁定仍开启直连的用户；命中后在同一事务关闭状态并写
   `auto_disable_alipay_direct_after_payment` 审计。周期可通过

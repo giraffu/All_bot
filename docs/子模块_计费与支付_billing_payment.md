@@ -283,7 +283,7 @@ sequenceDiagram
     锁定命中用户，在同一事务内写 `alipay_direct_enabled` 与逐用户审计流水后提交。
     提交完成后 Web 与 Bot 的下一笔支付宝订单立即读取新状态；微信仍固定走
     `HUANYUY`，既有订单的 `payment_provider` 不变化。
-  - Dashboard Backend 还运行独立的直连名单清理循环，默认每 60 秒从
+  - Dashboard Backend 还运行独立的直连名单清理循环，默认每 5 分钟从
     `ALIPAY_DIRECT + SUCCESS + paid_at` 订单索引查找仍开启直连的用户，使用
     `FOR UPDATE ... SKIP LOCKED` 分批锁定，并在同一事务中关闭名单状态、写入
     `auto_disable_alipay_direct_after_payment` 审计。可用

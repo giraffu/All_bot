@@ -126,3 +126,29 @@ async def test_periodic_reconciler_stops_without_waiting_for_another_interval():
     )
 
     reconcile_once.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_periodic_reconciler_defaults_to_five_minutes(monkeypatch):
+    observed_delays = []
+
+    async def cancel_after_observing_delay(delay):
+        observed_delays.append(delay)
+        raise asyncio.CancelledError
+
+    monkeypatch.delenv(
+        "DASHBOARD_ALIPAY_DIRECT_RECONCILE_INTERVAL_SECONDS",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        alipay_direct_roster_reconciler.asyncio,
+        "sleep",
+        cancel_after_observing_delay,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await alipay_direct_roster_reconciler.run_alipay_direct_roster_reconciler(
+            reconcile_once_func=AsyncMock(return_value=0),
+        )
+
+    assert observed_delays == [300]
