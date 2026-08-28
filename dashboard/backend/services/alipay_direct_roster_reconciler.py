@@ -16,7 +16,7 @@ from src.database.models import Order, User, UserLog
 from src.services.rmb_payment_provider_service import ALIPAY_DIRECT
 
 logger = logging.getLogger("dashboard.alipay_direct_roster_reconciler")
-DEFAULT_RECONCILE_INTERVAL_SECONDS = 60
+DEFAULT_RECONCILE_INTERVAL_SECONDS = 300
 DEFAULT_RECONCILE_BATCH_SIZE = 500
 MAX_RECONCILE_BATCH_SIZE = 1_000
 
