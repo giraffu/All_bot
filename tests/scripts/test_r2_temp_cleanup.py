@@ -81,22 +81,33 @@ def test_active_task_reference_matching_walks_nested_registry_payloads():
 
 @pytest.mark.asyncio
 async def test_active_task_reference_gate_uses_strict_atomic_query(monkeypatch):
-    from src.services.task_registry import TaskRegistry
-
     key = "12345678-1234-1234-1234-123456789abc__raw.png"
 
-    async def snapshot(cls, keys, *, socket_timeout):
+    async def snapshot(*, redis_url, redis_prefix, keys, socket_timeout):
+        assert redis_url == "redis://runtime"
+        assert redis_prefix == "prod:"
         assert keys == [key, "unrelated.png"]
         assert socket_timeout == 60
         return {key}
 
-    monkeypatch.setattr(
-        TaskRegistry,
-        "find_active_task_references_strict",
-        classmethod(snapshot),
+    monkeypatch.setenv("REDIS_URL", "redis://runtime")
+    monkeypatch.setenv("REDIS_PREFIX", "prod:")
+
+    assert await _active_task_references(
+        [key, "unrelated.png"], lookup_func=snapshot
+    ) == {key}
+
+
+def test_cloud_cleanup_runtime_does_not_import_global_config_dependencies():
+    runtime_source = "\n".join(
+        (
+            inspect.getsource(_history_references),
+            inspect.getsource(_active_task_references),
+        )
     )
 
-    assert await _active_task_references([key, "unrelated.png"]) == {key}
+    assert "src.database.core" not in runtime_source
+    assert "TaskRegistry" not in runtime_source
 
 
 def test_business_references_block_an_otherwise_verified_duplicate():

@@ -251,6 +251,9 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 上传 inventory。刷新和计划都显式清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及
 小写同名变量，确保对象元数据与 R2 正文都不回流本机 YepFast。云端计划的
 `inventory.sha256` 必须与本次云端刷新回执一致。
+清理脚本不得要求 migration artifact 打包顶层 `config.py`；生产引用检查只从受控环境
+读取 `DATABASE_URL`、`REDIS_URL` 与 `REDIS_PREFIX`，分别使用一次性数据库会话和原子
+Redis active-task 快照，任一连接或解码失败仍 fail closed。
 
 首次换到云路由不复用本机未完成计划。先在云端以同一精确 artifact、inventory 和
 正式引用依赖生成最多 100 对象的 dry-run；计划文件保持 0600，并回传低基数摘要和精确
