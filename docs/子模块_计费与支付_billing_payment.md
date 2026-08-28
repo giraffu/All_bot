@@ -143,7 +143,9 @@ sequenceDiagram
   下单 30 秒后首次查单；未支付或查询异常时再分别等待
   40/60/90/150/200/300 秒，第 7 次仍未确认支付则把 job 标记为 `exhausted` 并
   停止（相对下单时间约为 30/70/130/220/370/570/870 秒，另有最多 5 秒 sweep
-  抖动）。环宇查单仍只由 `RMB_RECONCILIATION_ENABLED=true` 显式开启，继续要求
+  抖动）。到期 job 仍每 5 秒 claim，但已履约/超龄 job 的维护扫描限流为
+  每 60 秒一次，避免空闲时产生无效更新。环宇查单仍只由
+  `RMB_RECONCILIATION_ENABLED=true` 显式开启，继续要求
   `HUANYUY_QUERY_URL` 并保持原有退避/24 小时上限。两者查到已支付后都调用
   `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
   边界；直连扫描不会 claim 环宇/微信订单。
@@ -340,7 +342,8 @@ sequenceDiagram
   - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、环宇 24 小时耗尽、查单
     字段冲突 fail closed，以及环宇默认关闭/启用缺 URL 阻断启动。
   - 支付宝直连覆盖 provider-only claim、首次 30 秒、后续
-    40/60/90/150/200/300 秒、7 次 exhausted 和不依赖环宇 query URL 启动。
+    40/60/90/150/200/300 秒、7 次 exhausted、5 秒 claim 与 60 秒维护扫描
+    分离，以及不依赖环宇 query URL 启动。
   - 支付宝通知覆盖排除 `sign/sign_type` 的真实 RSA2 原文；主动查单覆盖已签名
     成功响应不含可选 `seller_id`、返回错误 `seller_id`、订单号/金额/流水冲突。
   - 支付宝通知验签失败后的查单兜底覆盖：伪造回调金额/流水被忽略、数据库金额

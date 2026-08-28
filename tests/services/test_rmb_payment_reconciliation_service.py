@@ -254,7 +254,31 @@ async def test_reconciler_claims_with_configured_batch_and_lease():
         lease_until=now + timedelta(seconds=75),
         max_age=timedelta(hours=24),
         payment_providers=(HUANYUY, ALIPAY_DIRECT),
+        run_maintenance=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_reconciler_throttles_inactive_job_maintenance_without_delaying_claims():
+    dependencies = _dependencies()
+    current = [datetime(2026, 7, 28, 13, 0, 0)]
+    reconciler = RMBPaymentReconciler(
+        dependencies=dependencies,
+        query_url="https://gateway.test/query",
+        maintenance_interval_seconds=60,
+        now_func=lambda: current[0],
+    )
+
+    await reconciler.run_once()
+    current[0] += timedelta(seconds=5)
+    await reconciler.run_once()
+    current[0] += timedelta(seconds=55)
+    await reconciler.run_once()
+
+    assert [
+        call.kwargs["run_maintenance"]
+        for call in dependencies.claim_jobs_func.await_args_list
+    ] == [True, False, True]
 
 
 def test_reconciler_is_disabled_by_default(monkeypatch):
