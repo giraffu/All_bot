@@ -15,6 +15,7 @@ async def test_startup_event_registers_task_core_providers(monkeypatch):
     init_cache = MagicMock()
     init_db = AsyncMock()
     ensure_providers = MagicMock()
+    run_alipay_roster_reconciler = AsyncMock()
 
     monkeypatch.setattr(dashboard_main.FastAPICache, "init", init_cache)
     monkeypatch.setattr(dashboard_main, "init_db", init_db)
@@ -22,6 +23,11 @@ async def test_startup_event_registers_task_core_providers(monkeypatch):
         dashboard_main,
         "ensure_task_core_service_providers_registered",
         ensure_providers,
+    )
+    monkeypatch.setattr(
+        dashboard_main,
+        "run_alipay_direct_roster_reconciler",
+        run_alipay_roster_reconciler,
     )
 
     def fake_create_task(coro):
@@ -39,6 +45,7 @@ async def test_startup_event_registers_task_core_providers(monkeypatch):
     await dashboard_main.startup_event()
 
     ensure_providers.assert_called_once_with()
+    run_alipay_roster_reconciler.assert_called_once_with()
     init_db.assert_awaited_once_with()
     assert dashboard_main.app.state.dashboard_health["database_ready"] is True
     assert dashboard_main.app.state.dashboard_health["startup_complete"] is True
