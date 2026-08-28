@@ -217,6 +217,9 @@ async def test_allowlisted_user_uses_direct_checkout_and_failed_creation_never_f
     assert created_order.payment_provider == "ALIPAY_DIRECT"
     assert created_order.status == "FAILED"
     assert db.added[1].status == "completed"
+    assert 29 <= (
+        db.added[1].next_attempt_at - created_order.created_at
+    ).total_seconds() <= 31
     create_url.assert_awaited_once_with(
         provider="ALIPAY_DIRECT",
         out_trade_no=created_order.order_id,

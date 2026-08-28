@@ -16,6 +16,9 @@ from src.services.order_v2_service import (
     get_order_public_id,
 )
 from src.services.rmb_payment_provider_service import ALIPAY_DIRECT
+from src.services.rmb_payment_reconciliation_service import (
+    initial_reconciliation_delay_seconds,
+)
 
 
 async def list_visible_membership_plans(*, is_rmb: bool, is_subscription: bool):
@@ -63,7 +66,10 @@ async def create_rmb_pending_order(
             RMBPaymentReconciliationJob(
                 order_id=new_order.id,
                 status="pending",
-                next_attempt_at=datetime.now() + timedelta(seconds=60),
+                next_attempt_at=datetime.now()
+                + timedelta(
+                    seconds=initial_reconciliation_delay_seconds(payment_provider)
+                ),
             )
         )
         await session.commit()

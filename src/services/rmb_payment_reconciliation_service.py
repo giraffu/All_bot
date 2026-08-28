@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import Order, RMBPaymentReconciliationJob
@@ -18,14 +18,22 @@ from src.services.payment_fulfillment_service import (
     deliver_rmb_payment_success_notification,
     fulfill_rmb_order,
 )
+from src.services.alipay_direct_service import is_alipay_direct_enabled
 from src.services.rmb_payment_service import (
     HUANYUY_QUERY_URL,
     RMBOrderQueryStatus,
 )
-from src.services.rmb_payment_provider_service import HUANYUY, query_rmb_order
+from src.services.rmb_payment_provider_service import (
+    ALIPAY_DIRECT,
+    HUANYUY,
+    query_rmb_order,
+)
 
 logger = logging.getLogger("rmb_payment_reconciliation")
-RETRY_DELAYS_SECONDS = (60, 120, 300, 600, 1800, 3600)
+HUANYUY_RETRY_DELAYS_SECONDS = (60, 120, 300, 600, 1800, 3600)
+ALIPAY_DIRECT_RETRY_DELAYS_SECONDS = (40, 60, 90, 150, 200, 300)
+ALIPAY_DIRECT_INITIAL_DELAY_SECONDS = 30
+ALIPAY_DIRECT_MAX_ATTEMPTS = 7
 
 
 @dataclass(frozen=True)
@@ -47,12 +55,33 @@ class RMBReconciliationDependencies:
     fulfill_order_func: Callable[..., Awaitable[Any]]
     complete_job_func: Callable[..., Awaitable[None]]
     reschedule_job_func: Callable[..., Awaitable[None]]
+    exhaust_job_func: Callable[..., Awaitable[None]]
     notify_func: Callable[..., Awaitable[None]]
 
 
-def retry_delay_seconds(attempt_count: int) -> int:
-    index = max(0, min(int(attempt_count) - 1, len(RETRY_DELAYS_SECONDS) - 1))
-    return RETRY_DELAYS_SECONDS[index]
+def initial_reconciliation_delay_seconds(payment_provider: str) -> int:
+    return 30 if payment_provider == ALIPAY_DIRECT else 60
+
+
+def retry_delay_seconds(
+    attempt_count: int,
+    *,
+    payment_provider: str = HUANYUY,
+) -> int:
+    delays = (
+        ALIPAY_DIRECT_RETRY_DELAYS_SECONDS
+        if payment_provider == ALIPAY_DIRECT
+        else HUANYUY_RETRY_DELAYS_SECONDS
+    )
+    index = max(0, min(int(attempt_count) - 1, len(delays) - 1))
+    return delays[index]
+
+
+def _attempt_limit_reached(job: ClaimedRMBReconciliationJob) -> bool:
+    return (
+        job.payment_provider == ALIPAY_DIRECT
+        and job.attempt_count >= ALIPAY_DIRECT_MAX_ATTEMPTS
+    )
 
 
 def is_rmb_reconciliation_enabled() -> bool:
@@ -73,9 +102,14 @@ async def _finalize_inactive_jobs(
     *,
     now: datetime,
     max_age: timedelta,
+    provider_filter,
 ) -> None:
     active_statuses = ("pending", "processing")
-    successful_order_ids = select(Order.id).where(Order.status == "SUCCESS")
+    provider_order_ids = select(Order.id).where(provider_filter)
+    successful_order_ids = select(Order.id).where(
+        provider_filter,
+        Order.status == "SUCCESS",
+    )
     await session.execute(
         update(RMBPaymentReconciliationJob)
         .where(
@@ -95,6 +129,7 @@ async def _finalize_inactive_jobs(
         update(RMBPaymentReconciliationJob)
         .where(
             RMBPaymentReconciliationJob.status.in_(active_statuses),
+            RMBPaymentReconciliationJob.order_id.in_(provider_order_ids),
             RMBPaymentReconciliationJob.created_at <= now - max_age,
             or_(
                 RMBPaymentReconciliationJob.lease_until.is_(None),
@@ -118,10 +153,42 @@ async def claim_due_rmb_reconciliation_jobs(
     batch_size: int,
     lease_until: datetime,
     max_age: timedelta,
+    payment_providers: tuple[str, ...],
 ) -> list[ClaimedRMBReconciliationJob]:
+    normalized_providers = tuple(dict.fromkeys(payment_providers))
+    if not normalized_providers:
+        return []
+    provider_conditions = []
+    if HUANYUY in normalized_providers:
+        provider_conditions.append(
+            or_(Order.payment_provider == HUANYUY, Order.payment_provider.is_(None))
+        )
+    if ALIPAY_DIRECT in normalized_providers:
+        provider_conditions.append(Order.payment_provider == ALIPAY_DIRECT)
+    if not provider_conditions:
+        return []
+    provider_filter = or_(*provider_conditions)
+    due_conditions = [RMBPaymentReconciliationJob.next_attempt_at <= now]
+    if ALIPAY_DIRECT in normalized_providers:
+        due_conditions.append(
+            and_(
+                Order.payment_provider == ALIPAY_DIRECT,
+                RMBPaymentReconciliationJob.attempt_count == 0,
+                Order.created_at
+                <= now
+                - timedelta(
+                    seconds=initial_reconciliation_delay_seconds(ALIPAY_DIRECT)
+                ),
+            )
+        )
     lease_token = uuid.uuid4().hex
     async with AsyncSessionLocal() as session:
-        await _finalize_inactive_jobs(session, now=now, max_age=max_age)
+        await _finalize_inactive_jobs(
+            session,
+            now=now,
+            max_age=max_age,
+            provider_filter=provider_filter,
+        )
         rows = (
             await session.execute(
                 select(RMBPaymentReconciliationJob, Order)
@@ -130,7 +197,7 @@ async def claim_due_rmb_reconciliation_jobs(
                     RMBPaymentReconciliationJob.status.in_(
                         ("pending", "processing")
                     ),
-                    RMBPaymentReconciliationJob.next_attempt_at <= now,
+                    or_(*due_conditions),
                     RMBPaymentReconciliationJob.created_at > now - max_age,
                     or_(
                         RMBPaymentReconciliationJob.lease_until.is_(None),
@@ -138,6 +205,7 @@ async def claim_due_rmb_reconciliation_jobs(
                     ),
                     Order.status == "PENDING",
                     Order.payment_channel == "RMB",
+                    provider_filter,
                 )
                 .order_by(
                     RMBPaymentReconciliationJob.next_attempt_at,
@@ -236,6 +304,37 @@ async def reschedule_rmb_reconciliation_job(
         await session.commit()
 
 
+async def exhaust_rmb_reconciliation_job(
+    job: ClaimedRMBReconciliationJob,
+    *,
+    outcome: str,
+    error_code: str | None,
+) -> None:
+    now = datetime.now()
+    async with AsyncSessionLocal() as session:
+        target = (
+            await session.execute(
+                select(RMBPaymentReconciliationJob)
+                .where(
+                    RMBPaymentReconciliationJob.id == job.job_id,
+                    RMBPaymentReconciliationJob.status == "processing",
+                    RMBPaymentReconciliationJob.lease_token == job.lease_token,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if target is None:
+            return
+        target.status = "exhausted"
+        target.last_outcome = outcome[:100]
+        target.last_error_code = error_code[:100] if error_code else None
+        target.completed_at = now
+        target.lease_token = None
+        target.lease_until = None
+        target.updated_at = now
+        await session.commit()
+
+
 def build_default_rmb_reconciliation_dependencies() -> RMBReconciliationDependencies:
     return RMBReconciliationDependencies(
         claim_jobs_func=claim_due_rmb_reconciliation_jobs,
@@ -243,6 +342,7 @@ def build_default_rmb_reconciliation_dependencies() -> RMBReconciliationDependen
         fulfill_order_func=fulfill_rmb_order,
         complete_job_func=complete_rmb_reconciliation_job,
         reschedule_job_func=reschedule_rmb_reconciliation_job,
+        exhaust_job_func=exhaust_rmb_reconciliation_job,
         notify_func=deliver_rmb_payment_success_notification,
     )
 
@@ -252,7 +352,8 @@ class RMBPaymentReconciler:
         self,
         *,
         dependencies: RMBReconciliationDependencies | None = None,
-        query_url: str,
+        query_url: str = "",
+        payment_providers: tuple[str, ...] = (HUANYUY, ALIPAY_DIRECT),
         poll_interval_seconds: int = 30,
         batch_size: int = 50,
         concurrency: int = 5,
@@ -260,12 +361,16 @@ class RMBPaymentReconciler:
         max_age: timedelta = timedelta(hours=24),
         now_func: Callable[[], datetime] = datetime.now,
     ):
-        if not query_url:
+        normalized_providers = tuple(dict.fromkeys(payment_providers))
+        if not normalized_providers:
+            raise ValueError("at least one RMB payment provider is required")
+        if HUANYUY in normalized_providers and not query_url:
             raise ValueError("HUANYUY_QUERY_URL is required")
         self.dependencies = (
             dependencies or build_default_rmb_reconciliation_dependencies()
         )
         self.query_url = query_url
+        self.payment_providers = normalized_providers
         self.poll_interval_seconds = max(1, int(poll_interval_seconds))
         self.batch_size = max(1, int(batch_size))
         self.concurrency = max(1, int(concurrency))
@@ -282,9 +387,19 @@ class RMBPaymentReconciler:
                 query_url=self.query_url,
             )
             if query_result.status == RMBOrderQueryStatus.NOT_PAID:
+                if _attempt_limit_reached(job):
+                    await self.dependencies.exhaust_job_func(
+                        job,
+                        outcome="attempt_limit_reached",
+                        error_code=None,
+                    )
+                    return
                 await self.dependencies.reschedule_job_func(
                     job,
-                    delay_seconds=retry_delay_seconds(job.attempt_count),
+                    delay_seconds=retry_delay_seconds(
+                        job.attempt_count,
+                        payment_provider=job.payment_provider,
+                    ),
                     error_code=None,
                 )
                 return
@@ -327,9 +442,19 @@ class RMBPaymentReconciler:
                 job.attempt_count,
                 type(exc).__name__,
             )
+            if _attempt_limit_reached(job):
+                await self.dependencies.exhaust_job_func(
+                    job,
+                    outcome="attempt_limit_reached",
+                    error_code=type(exc).__name__,
+                )
+                return
             await self.dependencies.reschedule_job_func(
                 job,
-                delay_seconds=retry_delay_seconds(job.attempt_count),
+                delay_seconds=retry_delay_seconds(
+                    job.attempt_count,
+                    payment_provider=job.payment_provider,
+                ),
                 error_code=type(exc).__name__,
             )
 
@@ -340,6 +465,7 @@ class RMBPaymentReconciler:
             batch_size=self.batch_size,
             lease_until=now + timedelta(seconds=self.lease_seconds),
             max_age=self.max_age,
+            payment_providers=self.payment_providers,
         )
         semaphore = asyncio.Semaphore(self.concurrency)
 
@@ -366,10 +492,24 @@ class RMBPaymentReconciler:
 
 
 def build_rmb_payment_reconciler_if_enabled() -> RMBPaymentReconciler | None:
-    if not is_rmb_reconciliation_enabled():
+    huanyuy_enabled = is_rmb_reconciliation_enabled()
+    alipay_enabled = is_alipay_direct_enabled()
+    if not huanyuy_enabled and not alipay_enabled:
         return None
-    if not HUANYUY_QUERY_URL:
+    if huanyuy_enabled and not HUANYUY_QUERY_URL:
         raise RuntimeError(
             "RMB_RECONCILIATION_ENABLED requires HUANYUY_QUERY_URL"
         )
-    return RMBPaymentReconciler(query_url=HUANYUY_QUERY_URL)
+    providers = tuple(
+        provider
+        for provider, enabled in (
+            (HUANYUY, huanyuy_enabled),
+            (ALIPAY_DIRECT, alipay_enabled),
+        )
+        if enabled
+    )
+    return RMBPaymentReconciler(
+        query_url=HUANYUY_QUERY_URL or "",
+        payment_providers=providers,
+        poll_interval_seconds=5 if providers == (ALIPAY_DIRECT,) else 30,
+    )

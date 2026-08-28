@@ -24,6 +24,9 @@ from src.services.rmb_payment_provider_service import (
     create_rmb_payment_url,
     select_rmb_payment_provider,
 )
+from src.services.rmb_payment_reconciliation_service import (
+    initial_reconciliation_delay_seconds,
+)
 from src.services.ton_payment_config import (
     TonPaymentAvailability,
     get_ton_payment_availability,
@@ -133,7 +136,10 @@ async def create_rmb_order_payload(
     reconciliation_job = RMBPaymentReconciliationJob(
         order_id=new_order.id,
         status="pending",
-        next_attempt_at=datetime.now() + timedelta(seconds=60),
+        next_attempt_at=datetime.now()
+        + timedelta(
+            seconds=initial_reconciliation_delay_seconds(payment_provider)
+        ),
     )
     db.add(reconciliation_job)
     await db.commit()

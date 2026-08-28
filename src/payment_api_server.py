@@ -28,7 +28,7 @@ from src.payment_callback_router import router as alipay_callback_router
 from src.services.alipay_direct_service import validate_alipay_direct_startup_config
 from src.database.core import AsyncSessionLocal
 from src.database.models import Order
-from src.services.rmb_payment_provider_service import HUANYUY
+from src.services.rmb_payment_provider_service import ALIPAY_DIRECT, HUANYUY
 from src.log_redaction import install_log_redaction
 
 install_log_redaction()
@@ -45,6 +45,9 @@ async def payment_api_lifespan(_app: FastAPI):
     _app.state.alipay_direct_configured = validate_alipay_direct_startup_config()
     reconciler = build_rmb_payment_reconciler_if_enabled()
     _app.state.reconciler_enabled = reconciler is not None
+    providers = tuple(getattr(reconciler, "payment_providers", ()))
+    _app.state.huanyuy_reconciliation_enabled = HUANYUY in providers
+    _app.state.alipay_direct_reconciliation_enabled = ALIPAY_DIRECT in providers
     reconciler_task = (
         asyncio.create_task(reconciler.run_forever()) if reconciler else None
     )
@@ -60,6 +63,8 @@ async def payment_api_lifespan(_app: FastAPI):
 app = FastAPI(title="RMB Payment Webhook API", lifespan=payment_api_lifespan)
 app.state.notification_tasks = set()
 app.state.reconciler_enabled = False
+app.state.huanyuy_reconciliation_enabled = False
+app.state.alipay_direct_reconciliation_enabled = False
 app.state.alipay_direct_configured = False
 app.include_router(alipay_callback_router, tags=["Payment"])
 
@@ -192,6 +197,12 @@ async def payment_health():
     return {
         "status": "ok",
         "rmb_reconciliation_enabled": bool(app.state.reconciler_enabled),
+        "huanyuy_reconciliation_enabled": bool(
+            app.state.huanyuy_reconciliation_enabled
+        ),
+        "alipay_direct_reconciliation_enabled": bool(
+            app.state.alipay_direct_reconciliation_enabled
+        ),
         "alipay_direct_configured": bool(app.state.alipay_direct_configured),
     }
 
