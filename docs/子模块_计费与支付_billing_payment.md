@@ -271,6 +271,18 @@ sequenceDiagram
 - Payment API 健康：`GET /healthz`
   - 返回非敏感服务状态、RMB reconciler 是否启用及支付宝直连配置是否就绪，
     不暴露 URL、凭据、证书或订单。
+- Dashboard 支付宝直连名单：
+  `GET /api/alipay-direct-users` 与
+  `POST /api/alipay-direct-users/bulk-status`
+  - 列表默认只展示当前 `users.alipay_direct_enabled=true` 的账户，并按服务端分页
+    返回；支持累计付费次数、首次使用日期、当前直连状态和是否已有
+    `ALIPAY_DIRECT` 成功付款记录筛选。累计付费次数口径为
+    `orders.status='SUCCESS' AND paid_at IS NOT NULL`，包含后台赠送订单；历史直连
+    付款还必须要求 `payment_provider='ALIPAY_DIRECT'`。
+  - 批量动作支持明确用户 ID 或当前完整筛选结果，单次最多处理 10000 人；服务端
+    锁定命中用户，在同一事务内写 `alipay_direct_enabled` 与逐用户审计流水后提交。
+    提交完成后 Web 与 Bot 的下一笔支付宝订单立即读取新状态；微信仍固定走
+    `HUANYUY`，既有订单的 `payment_provider` 不变化。
 - Telegram 登录：`POST /api/auth/telegram`
   - 支持 Mini App `initData` 与 Login Widget 字段。
 - 密码登录：`POST /api/auth/login`
@@ -317,6 +329,9 @@ sequenceDiagram
 - Provider 启动回归
   - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。
   - 管理后台退款/强制终止路径不得在运行时才暴露 `Billing core providers 未注册`。
+- Dashboard 直连名单
+  - 覆盖服务端分页、累计成功付费/历史直连付款聚合、首次使用日期与三态筛选、
+    跨分页筛选全选、明确 ID 批量更新、10000 人上限，以及状态与审计同事务提交。
 
 ## 7. 文档维护约束
 

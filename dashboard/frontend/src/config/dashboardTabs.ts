@@ -22,6 +22,7 @@ export type DashboardTabKey =
   | 'finance'
   | 'monitor'
   | 'users'
+  | 'alipay_direct_users'
   | 'history'
   | 'worker_history'
   | 'logs'
@@ -85,6 +86,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     label: '用户管理',
     icon: UserOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/UserTable.vue'))),
+    containerClass: PANEL_CONTAINER_CLASS,
+    scrollable: false,
+  },
+  {
+    key: 'alipay_direct_users',
+    label: '支付宝直连名单',
+    icon: PayCircleOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/AlipayDirectRoster.vue'))),
     containerClass: PANEL_CONTAINER_CLASS,
     scrollable: false,
   },
