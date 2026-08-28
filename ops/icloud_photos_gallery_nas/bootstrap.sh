@@ -77,7 +77,7 @@ install -d -o root -g root -m 0700 "$secrets_root" "$state_root"
 install -d -o root -g root -m 0755 "$deploy_root"
 
 install -o root -g root -m 0644 "$source_root/compose.yml" "$deploy_root/compose.yml"
-for script in bootstrap.sh initialize-admin.sh load-offline-image.sh operator.sh; do
+for script in bootstrap.sh initialize-admin.sh load-offline-image.sh operator.sh precompute.sh; do
   install -o root -g root -m 0755 "$source_root/$script" "$deploy_root/$script"
 done
 

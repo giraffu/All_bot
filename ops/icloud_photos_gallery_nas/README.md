@@ -45,6 +45,18 @@ sudo /volume1/ApplePhotosGalleryRuntime/deploy/operator.sh stop
 sudo /volume1/ApplePhotosGalleryRuntime/deploy/operator.sh start
 ```
 
+首次全量下载完成后，可启动一次完整索引、320px 缩略图/视频封面预生成和浏览器兼容
+H.264 MP4 视频转换。任务严格串行运行；可持续数小时或数天，转换结果只写入独立
+`tmp/`，原片挂载保持只读：
+
+```bash
+sudo /volume1/ApplePhotosGalleryRuntime/deploy/operator.sh precompute \
+  --execute --confirm PRECOMPUTE_ICLOUD_PHOTOS_GALLERY
+```
+
+重复调用会拒绝并发执行；认证 cookie 只保存在临时目录，结束时删除。任务进度可从
+PiGallery2 管理页面或 systemd 日志观察。
+
 浏览器访问 `http://192.168.1.150:8099`。日期目录按 `年/月/日` 展示；图片使用缩略图，
 浏览器不能直接播放的 MOV 等视频在独立 `tmp/` 中生成派生 MP4。原始图片、视频、XMP
 和 iCloud 下载状态都不会被图库修改。
