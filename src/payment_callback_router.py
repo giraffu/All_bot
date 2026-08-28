@@ -17,6 +17,7 @@ from src.services.payment_fulfillment_service import (
     fulfill_rmb_order,
 )
 from src.services.rmb_payment_provider_service import ALIPAY_DIRECT
+from src.services.rmb_payment_service import RMBOrderQueryStatus
 
 logger = logging.getLogger("alipay_payment_callback")
 router = APIRouter()
@@ -46,12 +47,16 @@ async def deliver_notification(result) -> None:
     task.add_done_callback(_finish)
 
 
-async def validate_alipay_callback_order(params: dict[str, str]) -> bool:
-    order_id = str(params.get("out_trade_no") or "")
+async def load_alipay_callback_order(order_id: str):
     async with AsyncSessionLocal() as session:
-        order = (
+        return (
             await session.execute(select(Order).where(Order.order_id == order_id))
         ).scalar_one_or_none()
+
+
+async def validate_alipay_callback_order(params: dict[str, str]) -> bool:
+    order_id = str(params.get("out_trade_no") or "")
+    order = await load_alipay_callback_order(order_id)
     if order is None:
         return False
     if order.payment_channel != "RMB":
@@ -70,6 +75,43 @@ async def validate_alipay_callback_order(params: dict[str, str]) -> bool:
     return expected == received
 
 
+async def query_verified_alipay_callback_payment(service, params: dict[str, str]):
+    """Resolve a rejected notification through Alipay's signed query response.
+
+    The callback contributes only the local order lookup. Provider and amount are
+    loaded from the database, and fulfillment identifiers come exclusively from
+    the signed query response.
+    """
+
+    order_id = str(params.get("out_trade_no") or "")
+    if not order_id:
+        return None
+    if params.get("trade_status") not in {"TRADE_SUCCESS", "TRADE_FINISHED"}:
+        return None
+    order = await load_alipay_callback_order(order_id)
+    if order is None:
+        return None
+    if order.payment_channel != "RMB" or order.payment_provider != ALIPAY_DIRECT:
+        return None
+    try:
+        result = await service.query_order(
+            out_trade_no=order_id,
+            expected_amount=order.final_price,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Alipay callback query fallback failed order_key=%s error_type=%s",
+            _order_log_key(order_id),
+            type(exc).__name__,
+        )
+        return None
+    if result.status != RMBOrderQueryStatus.PAID:
+        return None
+    if result.external_trade_no is None or result.paid_amount is None:
+        return None
+    return result
+
+
 @router.post("/api/pay/notify/alipay", response_class=PlainTextResponse)
 async def alipay_notify(request: Request):
     try:
@@ -81,23 +123,37 @@ async def alipay_notify(request: Request):
         return PlainTextResponse("fail")
     order_key = _order_log_key(params.get("out_trade_no"))
     if not service.verify_callback(params):
-        logger.warning(
-            "Alipay callback rejected order_key=%s reason=signature_or_identity",
+        query_result = await query_verified_alipay_callback_payment(service, params)
+        if query_result is None:
+            logger.warning(
+                "Alipay callback rejected order_key=%s "
+                "reason=signature_or_identity_and_query_unverified",
+                order_key,
+            )
+            return PlainTextResponse("fail")
+        external_trade_no = query_result.external_trade_no
+        paid_amount = query_result.paid_amount
+        source = "alipay_direct_callback_query_fallback"
+        logger.info(
+            "Alipay callback recovered by signed query order_key=%s",
             order_key,
         )
-        return PlainTextResponse("fail")
-    if not await validate_alipay_callback_order(params):
-        logger.warning(
-            "Alipay callback rejected order_key=%s reason=order_validation",
-            order_key,
-        )
-        return PlainTextResponse("fail")
+    else:
+        if not await validate_alipay_callback_order(params):
+            logger.warning(
+                "Alipay callback rejected order_key=%s reason=order_validation",
+                order_key,
+            )
+            return PlainTextResponse("fail")
+        external_trade_no = params["trade_no"]
+        paid_amount = params["total_amount"]
+        source = "alipay_direct_callback"
     try:
         result = await fulfill_rmb_order(
             params["out_trade_no"],
-            params["trade_no"],
-            params["total_amount"],
-            source="alipay_direct_callback",
+            external_trade_no,
+            paid_amount,
+            source=source,
         )
     except Exception as exc:
         logger.error(
@@ -116,4 +172,3 @@ async def alipay_notify(request: Request):
         result.status,
     )
     return PlainTextResponse("success")
-
