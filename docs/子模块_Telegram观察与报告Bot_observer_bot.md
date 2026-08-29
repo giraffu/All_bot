@@ -48,17 +48,17 @@ Celery、消息总线或第二个 worker。PostgreSQL `observer_report_runs` 是
 - `observer_bot/repository.py`：observer 自有 PostgreSQL 数据访问。
 - `observer_bot/schema.sql`：独立 schema 事实源。
 
-队列监控使用 Central 的短缓存观测接口，不替代实际调度。告警条件为任一满足：
+队列监控使用 Central 的短缓存观测接口，不替代实际调度。队列拥堵告警只由管理
+后台的两个数量设置值触发，条件为任一满足：
 
-- 全局 `queue_size` 达到管理后台设置的“总排队数量”阈值；
-- 任一任务类型 `pending_count` 达到管理后台设置的“单个类型排队数量”阈值，
+- 全局 `queue_size` 大于管理后台设置的“总排队数量”；
+- 任一任务类型 `pending_count` 大于管理后台设置的“单个类型排队数量”，
   通知中列出命中的任务类型；
-- 任一任务类型 `max_pending_wait_seconds` 达到阈值；
-- 队列非空且 `accepting_workers=0`。
 
-首次拥堵发送告警，持续拥堵按 cooldown 提醒，恢复后发送恢复消息。连续读取
-Central 失败达到阈值也告警，重新取得状态后发送监控恢复消息。以上逻辑不调用
-LLM。
+最长等待时间和可接单 Worker 数仍可通过管理员 `/status` 查询，但不会单独触发
+队列拥堵，也不会出现在拥堵通知中。首次超限发送告警，持续超限按 cooldown
+提醒，两个数量均恢复到设置值以内后发送恢复消息。连续读取 Central 失败达到
+阈值也告警，重新取得状态后发送监控恢复消息。以上逻辑不调用 LLM。
 
 ## 群采集与报告
 
@@ -132,7 +132,6 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
   初始化后以 Dashboard“通知中心”的数据库配置为准
 - `OBSERVER_LM_STUDIO_API_KEY`
 - `OBSERVER_LM_STUDIO_MODEL`
-- `OBSERVER_QUEUE_WAIT_THRESHOLD_SECONDS`
 - `OBSERVER_QUEUE_ALERT_COOLDOWN_SECONDS`
 - `OBSERVER_REPORT_HOUR`、`OBSERVER_TIMEZONE`
 - `OBSERVER_MESSAGE_RETENTION_DAYS`
@@ -146,9 +145,10 @@ Dashboard 独立导航页“通知中心”通过已认证接口
 通知接收者、功能开关以及总排队/单类型排队阈值；
 `GET /api/notification-center/reports` 与
 `GET /api/notification-center/notifications` 分页查看报告及通知记录。配置由 Bot
-短缓存读取，最多约 15 秒生效，不需要重启。两个数量阈值均为 `1..100000` 的整数，
-默认分别为 20 和 10；schema 使用 `ADD COLUMN IF NOT EXISTS` 升级已有数据库，
-不会覆盖既有收件人、授权群或开关设置。
+短缓存读取，最多约 15 秒生效，不需要重启。两个数量设置值均为 `1..100000` 的
+整数，默认分别为 20 和 10；实际数量严格大于设置值时触发，等于设置值时不触发。
+schema 使用 `ADD COLUMN IF NOT EXISTS` 升级已有数据库，不会覆盖既有收件人、
+授权群或开关设置。
 
 `OBSERVER_BOT_TOKEN` 也由配置契约最小投影到 `support-bot`，但只用于 outbound
 工单通知。改变该 token 时必须把 `observer-bot` 和 `support-bot` 都视为受影响

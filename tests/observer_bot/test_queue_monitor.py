@@ -50,7 +50,6 @@ async def test_queue_monitor_alerts_once_then_recovers():
         client=client,
         state_repository=repository,
         notifier=notifier,
-        wait_threshold_seconds=900,
         cooldown_seconds=1800,
         failure_threshold=3,
     )
@@ -94,7 +93,6 @@ async def test_queue_monitor_reports_repeated_central_failure_and_recovery():
         client=client,
         state_repository=repository,
         notifier=notifier,
-        wait_threshold_seconds=900,
         cooldown_seconds=1800,
         failure_threshold=3,
     )
@@ -132,7 +130,7 @@ def test_queue_snapshot_uses_central_wait_details():
 
 
 @pytest.mark.asyncio
-async def test_queue_monitor_alerts_when_one_task_type_reaches_its_threshold():
+async def test_queue_monitor_alerts_when_one_task_type_exceeds_its_threshold():
     repository = MemoryStateRepository()
     notifier = RecordingNotifier()
     monitor = QueueMonitor(
@@ -142,13 +140,12 @@ async def test_queue_monitor_alerts_when_one_task_type_reaches_its_threshold():
                     queue_size=7,
                     accepting_workers=2,
                     max_wait_seconds=30,
-                    pending_by_type={"image_to_video": 5, "text_to_image": 2},
+                    pending_by_type={"image_to_video": 6, "text_to_image": 2},
                 )
             ]
         ),
         state_repository=repository,
         notifier=notifier,
-        wait_threshold_seconds=900,
         cooldown_seconds=1800,
         failure_threshold=3,
     )
@@ -161,5 +158,103 @@ async def test_queue_monitor_alerts_when_one_task_type_reaches_its_threshold():
 
     assert len(notifier.messages) == 1
     assert "image_to_video" in notifier.messages[0]
-    assert "待处理 5（单类型阈值 5）" in notifier.messages[0]
+    assert "待处理 6（单类型阈值 5）" in notifier.messages[0]
     assert "text_to_image" not in notifier.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_queue_monitor_ignores_wait_time_and_worker_count_below_count_thresholds():
+    repository = MemoryStateRepository()
+    notifier = RecordingNotifier()
+    monitor = QueueMonitor(
+        client=FakeQueueClient(
+            [
+                QueueSnapshot(
+                    queue_size=200,
+                    accepting_workers=0,
+                    max_wait_seconds=5_733,
+                    pending_by_type={"image_to_image": 100, "text_to_image": 100},
+                )
+            ]
+        ),
+        state_repository=repository,
+        notifier=notifier,
+        cooldown_seconds=1800,
+        failure_threshold=3,
+    )
+
+    await monitor.poll(
+        now=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        total_pending_threshold=200,
+        type_pending_threshold=100,
+    )
+
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
+async def test_queue_monitor_reports_only_count_thresholds_that_are_exceeded():
+    repository = MemoryStateRepository()
+    notifier = RecordingNotifier()
+    monitor = QueueMonitor(
+        client=FakeQueueClient(
+            [
+                QueueSnapshot(
+                    queue_size=201,
+                    accepting_workers=0,
+                    max_wait_seconds=5_733,
+                    pending_by_type={"image_to_image": 120, "text_to_image": 81},
+                )
+            ]
+        ),
+        state_repository=repository,
+        notifier=notifier,
+        cooldown_seconds=1800,
+        failure_threshold=3,
+    )
+
+    await monitor.poll(
+        now=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        total_pending_threshold=200,
+        type_pending_threshold=100,
+    )
+
+    assert notifier.messages == [
+        "🚨 AllBot 队列拥堵\n"
+        "• 待处理 201（总量阈值 200）\n"
+        "• image_to_image 待处理 120（单类型阈值 100）"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_queue_monitor_does_not_send_recovery_for_legacy_wait_only_state():
+    repository = MemoryStateRepository()
+    repository.state["queue_monitor"] = {
+        "congested": True,
+        "last_notification_at": datetime(2026, 8, 29, tzinfo=timezone.utc).isoformat(),
+    }
+    notifier = RecordingNotifier()
+    monitor = QueueMonitor(
+        client=FakeQueueClient(
+            [
+                QueueSnapshot(
+                    queue_size=190,
+                    accepting_workers=0,
+                    max_wait_seconds=5_733,
+                    pending_by_type={"image_to_image": 95, "text_to_image": 95},
+                )
+            ]
+        ),
+        state_repository=repository,
+        notifier=notifier,
+        cooldown_seconds=1800,
+        failure_threshold=3,
+    )
+
+    await monitor.poll(
+        now=datetime(2026, 8, 29, 1, tzinfo=timezone.utc),
+        total_pending_threshold=200,
+        type_pending_threshold=100,
+    )
+
+    assert notifier.messages == []
