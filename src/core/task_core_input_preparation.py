@@ -4,7 +4,11 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, VideoTaskRequest
+from src.core.task_core_types import (
+    CoreDomainError,
+    TaskSubmissionContext,
+    VideoTaskRequest,
+)
 from src.core.user_logger_protocol import UserLoggerProtocol
 
 
@@ -17,9 +21,7 @@ def _call_with_supported_kwargs(func, **kwargs):
         return func(**kwargs)
 
     supported_kwargs = {
-        key: value
-        for key, value in kwargs.items()
-        if key in signature.parameters
+        key: value for key, value in kwargs.items() if key in signature.parameters
     }
     return func(**supported_kwargs)
 
@@ -78,7 +80,9 @@ async def prepare_task_submission_payload(
     video_request: VideoTaskRequest,
     user_logger_factory: Callable[[int, str], UserLoggerProtocol],
     validate_local_input_paths_func: Callable[..., None],
-    get_user_priority_and_identity_func: Callable[[int], Awaitable[tuple[int, Any, Any]]],
+    get_user_priority_and_identity_func: Callable[
+        [int], Awaitable[tuple[int, Any, Any]]
+    ],
     load_prompts_func: Callable[[], dict[str, str]],
     process_input_path_func: Callable[..., Awaitable[str]],
     promote_staged_inputs_func: Callable[..., Awaitable[list[str]]] | None = None,
@@ -132,5 +136,8 @@ async def prepare_task_submission_payload(
         video_request=video_request,
     )
     submission_context.apply_to_inputs(inputs)
+    apply_processed_input_refs = getattr(strategy, "apply_processed_input_refs", None)
+    if callable(apply_processed_input_refs):
+        apply_processed_input_refs(inputs, saved_inputs)
     submission_context.metadata = strategy.get_metadata(inputs)
     return submission_context

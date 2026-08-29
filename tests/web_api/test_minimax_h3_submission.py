@@ -17,7 +17,9 @@ async def test_minimax_h3_backend_flag_defaults_closed(monkeypatch):
     monkeypatch.delenv("MINIMAX_H3_BACKEND_ENABLED", raising=False)
     with pytest.raises(CoreDomainError, match="当前未开放") as exc_info:
         await service.submit_generation_task(
-            req=TaskGenerateRequest(task_type="minimax_h3_t2v", prompt="scene", inputs={"duration": 5}),
+            req=TaskGenerateRequest(
+                task_type="minimax_h3_t2v", prompt="scene", inputs={"duration": 5}
+            ),
             current_user=SimpleNamespace(id=7, username="tester"),
             get_balance=AsyncMock(return_value=100),
         )
@@ -82,3 +84,72 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
     assert prepared.inputs["lora_items"] == [
         {"name": "motion_booster", "strength": 0.7},
     ]
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_ref2v_resolves_single_audio_ref_without_rewriting_prompt(
+    monkeypatch,
+):
+    from src.web_api.services import reference_asset_service
+
+    resolve = AsyncMock(return_value="web_uploads/7/voice.m4a")
+    monkeypatch.setattr(
+        reference_asset_service, "resolve_h3_reference_audio_ref", resolve
+    )
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="the character speaks softly",
+        inputs={
+            "images": ["web_uploads/7/subject.png"],
+            "reference_audio_ref": {
+                "source": "upload",
+                "object_key": "web_uploads/7/voice.m4a",
+            },
+        },
+    )
+
+    prepared = await prepare_web_submission_request(
+        req,
+        internal_user_id=7,
+        operator_canary_authorized=True,
+        env_enabled=lambda _name: True,
+        advanced_video_profile_loader=AsyncMock(
+            return_value={"main_model": "10eros", "addon_items": []}
+        ),
+    )
+
+    assert prepared.inputs["prompt"] == "the character speaks softly"
+    assert prepared.inputs["reference_audio"] == "web_uploads/7/voice.m4a"
+    assert "reference_audio_ref" not in prepared.inputs
+    resolve.assert_awaited_once_with(
+        user_id=7,
+        reference_audio_ref={
+            "source": "upload",
+            "object_key": "web_uploads/7/voice.m4a",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_rejects_audio_ref_outside_ref2v():
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_t2v",
+        prompt="scene",
+        inputs={
+            "reference_audio_ref": {
+                "source": "upload",
+                "object_key": "web_uploads/7/voice.m4a",
+            }
+        },
+    )
+
+    with pytest.raises(CoreDomainError, match="参考图生视频"):
+        await prepare_web_submission_request(
+            req,
+            internal_user_id=7,
+            operator_canary_authorized=True,
+            env_enabled=lambda _name: True,
+            advanced_video_profile_loader=AsyncMock(
+                return_value={"main_model": "10eros", "addon_items": []}
+            ),
+        )

@@ -132,8 +132,7 @@ async def _resolve_h3_reference_inputs(
     if inputs.get("reference_descriptions") not in (None, [], ()):
         raise CoreDomainError("人物参考说明只能由服务端生成。")
     uses_character_assets = any(
-        isinstance(item, dict)
-        and item.get("source") == "private_character_view"
+        isinstance(item, dict) and item.get("source") == "private_character_view"
         for item in reference_refs
     )
     if uses_character_assets and not env_enabled("CHARACTER_ASSETS_ENABLED"):
@@ -149,9 +148,7 @@ async def _resolve_h3_reference_inputs(
             db=character_db,
             user_id=internal_user_id,
             reference_refs=reference_refs,
-            explicit_views_enabled=env_enabled(
-                "CHARACTER_EXPLICIT_VIEWS_ENABLED"
-            ),
+            explicit_views_enabled=env_enabled("CHARACTER_EXPLICIT_VIEWS_ENABLED"),
         )
     inputs.pop("reference_refs", None)
     inputs["images"] = list(resolved.images)
@@ -191,6 +188,21 @@ async def prepare_web_submission_request(
             inputs.pop(key, None)
         inputs["main_model"] = profile["main_model"]
         inputs["lora_items"] = list(profile["addon_items"])
+        if inputs.get("reference_audio") is not None:
+            raise CoreDomainError("不得直接指定主角参考语音存储路径。")
+        reference_audio_ref = inputs.get("reference_audio_ref")
+        if reference_audio_ref is not None:
+            if req.task_type != "minimax_h3_ref2v":
+                raise CoreDomainError("主角参考语音仅支持参考图生视频。")
+            from src.web_api.services.reference_asset_service import (
+                resolve_h3_reference_audio_ref,
+            )
+
+            inputs["reference_audio"] = await resolve_h3_reference_audio_ref(
+                user_id=internal_user_id,
+                reference_audio_ref=reference_audio_ref,
+            )
+            inputs.pop("reference_audio_ref", None)
     h3_character_binding = ""
     if req.negative_prompt:
         inputs["negative_prompt"] = req.negative_prompt

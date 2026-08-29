@@ -69,9 +69,10 @@ def test_small_resolution_uses_new_price():
 
 
 def test_build_plan_preserves_selected_addons_and_defaults_to_none():
-    assert build_advanced_video_pro_submission_plan(
-        mode="t2v", prompt="scene"
-    ).addon_items == ()
+    assert (
+        build_advanced_video_pro_submission_plan(mode="t2v", prompt="scene").addon_items
+        == ()
+    )
     plan = build_advanced_video_pro_submission_plan(
         mode="t2v",
         prompt="scene",
@@ -144,6 +145,31 @@ async def test_submit_uses_public_bot_generation_seam():
     assert kwargs["resolution_preset"] == "standard"
     assert kwargs["aspect_ratio"] == "source"
     assert kwargs["lora_items"] is None
+
+
+@pytest.mark.asyncio
+async def test_ref2v_submit_forwards_single_reference_audio_without_rewriting_prompt():
+    process = AsyncMock(return_value=(b"video", "output.mp4"))
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="the character speaks softly",
+        images=["subject.png"],
+        reference_audio="voice.ogg",
+    )
+
+    assert plan.reference_audio == "voice.ogg"
+    await submit_advanced_video_pro_plan(
+        plan,
+        context=object(),
+        chat_id=1,
+        user_id=2,
+        username="alice",
+        process_task_func=process,
+    )
+
+    kwargs = process.await_args.kwargs
+    assert kwargs["prompt"] == "the character speaks softly"
+    assert kwargs["reference_audio"] == "voice.ogg"
 
 
 @pytest.mark.asyncio

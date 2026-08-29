@@ -48,6 +48,7 @@ class AdvancedVideoProSubmissionPlan:
     prompt: str
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
+    reference_audio: str | None
     duration: int
     resolution_preset: str
     aspect_ratio: str
@@ -62,6 +63,7 @@ def build_advanced_video_pro_submission_plan(
     prompt: str,
     images: list[str] | tuple[str, ...] = (),
     reference_descriptions: list[str] | tuple[str, ...] = (),
+    reference_audio: str | None = None,
     duration: int | str = 5,
     resolution_preset: str = "preview",
     aspect_ratio: str = "16:9",
@@ -86,6 +88,7 @@ def build_advanced_video_pro_submission_plan(
         "prompt": normalized_prompt,
         "images": list(images),
         "reference_descriptions": list(reference_descriptions),
+        "reference_audio": reference_audio,
         "duration": duration,
         "resolution_preset": resolution_preset,
         "aspect_ratio": normalized_aspect_ratio,
@@ -106,14 +109,14 @@ def build_advanced_video_pro_submission_plan(
         prompt=normalized_prompt,
         images=spec.images,
         reference_descriptions=spec.reference_descriptions,
+        reference_audio=spec.reference_audio,
         duration=spec.duration_seconds,
         resolution_preset=spec.resolution_preset,
         aspect_ratio=spec.aspect_ratio,
         main_model=spec.main_model,
         cost=spec.cost,
         addon_items=tuple(
-            {"name": item.name, "strength": item.strength}
-            for item in spec.addon_items
+            {"name": item.name, "strength": item.strength} for item in spec.addon_items
         ),
     )
 
@@ -155,6 +158,7 @@ async def submit_advanced_video_pro_plan(
         prompt=plan.prompt,
         images=list(plan.images),
         reference_descriptions=list(plan.reference_descriptions),
+        reference_audio=plan.reference_audio,
         is_video=True,
         task_type=plan.task_type,
         duration=plan.duration,

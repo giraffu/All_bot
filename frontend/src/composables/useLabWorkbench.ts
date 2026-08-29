@@ -58,6 +58,7 @@ import { useWan22ChainEditor } from './lab-workbench/useWan22ChainEditor'
 import { useLtxChainEditor } from './lab-workbench/useLtxChainEditor'
 import { useLabTemplateHydration } from './lab-workbench/useLabTemplateHydration'
 import { useLabSubmitPayload } from './lab-workbench/useLabSubmitPayload'
+import { useH3ReferenceAudio } from './lab-workbench/useH3ReferenceAudio'
 import { usePromptOptimizer } from './lab-workbench/usePromptOptimizer'
 import { getMinimaxH3Cost } from '@/utils/minimaxH3Template'
 
@@ -121,6 +122,7 @@ export function useLabWorkbench() {
     uploadFile,
     t,
   })
+  const h3ReferenceAudio = useH3ReferenceAudio({ uploadFile, t })
 
   const capturePromptOptimizationDraft = (): PromptOptimizationOriginDraft => ({
     modeId: currentModeId.value,
@@ -196,6 +198,7 @@ export function useLabWorkbench() {
       : []
     await nextTick()
     references.clearReferences()
+    h3ReferenceAudio.clearReferenceAudio()
     references.uploadedReferences.value = restoredReferences
   }
   const promptOptimizer = usePromptOptimizer({
@@ -215,6 +218,7 @@ export function useLabWorkbench() {
   function resetFormState(options?: { preserveMode?: boolean }) {
     references.clearReferences()
     slots.clearSlotAssets()
+    h3ReferenceAudio.clearReferenceAudio()
     prompt.value = ''
     audioPrompt.value = ''
     selectedEditLora.value = ''
@@ -362,7 +366,9 @@ export function useLabWorkbench() {
   })
 
   const pendingUploads = computed(() => (
-    references.pendingReferenceUploadCount.value + slots.pendingSlotUploadCount.value
+    references.pendingReferenceUploadCount.value
+    + slots.pendingSlotUploadCount.value
+    + (h3ReferenceAudio.referenceAudioUploading.value ? 1 : 0)
   ))
   const canSubmit = computed(() => {
     const hasPrompt = !currentMode.value.promptRequired || template.isTemplatePromptLocked.value || prompt.value.trim().length > 0
@@ -392,6 +398,7 @@ export function useLabWorkbench() {
     prompt.value.trim().length > 0
     || audioPrompt.value.trim().length > 0
     || references.uploadedReferences.value.length > 0
+    || h3ReferenceAudio.referenceAudio.value !== null
     || Object.keys(slots.uploadedSlotAssets.value).length > 0
     || selectedEditLora.value !== ''
     || selectedVideoLora.value !== getDefaultVideoLoraSelection()
@@ -465,6 +472,7 @@ export function useLabWorkbench() {
     if (nextMode !== previousMode && currentMode.value.id === 'minimax_h3') {
       references.clearReferences()
     }
+    if (nextMode !== 'ref2v') h3ReferenceAudio.clearReferenceAudio()
   })
 
   const hydrateLabRoute = () => {
@@ -584,6 +592,7 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3AddonItems,
+    minimaxH3ReferenceAudio: h3ReferenceAudio.referenceAudio,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -603,6 +612,7 @@ export function useLabWorkbench() {
   onBeforeUnmount(() => {
     references.clearReferences()
     slots.clearSlotAssets()
+    h3ReferenceAudio.clearReferenceAudio()
   })
 
   return {
@@ -667,6 +677,10 @@ export function useLabWorkbench() {
     minimaxH3AddonOptions,
     minimaxH3AddonNames,
     minimaxH3AddonItems,
+    minimaxH3ReferenceAudio: h3ReferenceAudio.referenceAudio,
+    minimaxH3ReferenceAudioUploading: h3ReferenceAudio.referenceAudioUploading,
+    beforeUploadMinimaxH3ReferenceAudio: h3ReferenceAudio.beforeUploadReferenceAudio,
+    clearMinimaxH3ReferenceAudio: h3ReferenceAudio.clearReferenceAudio,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

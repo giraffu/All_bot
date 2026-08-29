@@ -123,6 +123,9 @@ def build(task_type: str) -> dict:
             lora_name=LIGHTX2V_LORA,
             strength_model=1.0,
         )
+    else:
+        workflow["25"] = _node("LoadAudio", audio="minimax_h3_reference_audio.m4a")
+        workflow["30"]["inputs"]["ref_audios.ref_audio_0"] = ["25", 0]
     count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2, "minimax_h3_ref2v": 5}[
         task_type
     ]

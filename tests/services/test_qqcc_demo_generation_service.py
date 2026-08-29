@@ -20,7 +20,9 @@ class FakeStorage:
 
     def __init__(self):
         self.r2_client = Mock()
-        self.r2_client.get_object.return_value = {"Body": Mock(read=Mock(return_value=b"\x89PNG\r\n\x1a\ninput"))}
+        self.r2_client.get_object.return_value = {
+            "Body": Mock(read=Mock(return_value=b"\x89PNG\r\n\x1a\ninput"))
+        }
         self.client = Mock()
         self.upload_bytes = Mock(return_value="qqcc/demo-generation/task-1/input.png")
 
@@ -47,7 +49,9 @@ def _png_bytes(size=(400, 300)):
 
 
 @pytest.mark.asyncio
-async def test_video_demo_generation_advances_and_stitches_full_scene_chain(monkeypatch):
+async def test_video_demo_generation_advances_and_stitches_full_scene_chain(
+    monkeypatch,
+):
     storage = FakeStorage()
     redis = FakeRedis()
     image = Mock()
@@ -55,36 +59,74 @@ async def test_video_demo_generation_advances_and_stitches_full_scene_chain(monk
         side_effect=["chain-demo-0", "chain-demo-1"]
     )
     image.get_task_status = AsyncMock(return_value={"status": "done"})
-    image.download_video_result = AsyncMock(side_effect=[b"....ftyp-one", b"....ftyp-two"])
-    monkeypatch.setattr(demo_service, "extract_qqcc_video_last_frame", AsyncMock(return_value=_png_bytes()))
+    image.download_video_result = AsyncMock(
+        side_effect=[b"....ftyp-one", b"....ftyp-two"]
+    )
+    monkeypatch.setattr(
+        demo_service,
+        "extract_qqcc_video_last_frame",
+        AsyncMock(return_value=_png_bytes()),
+    )
     monkeypatch.setattr(demo_service, "_read_minio_bytes", lambda *_args: b"segment")
     stitch = AsyncMock(return_value=b"....ftyp-stitched")
     monkeypatch.setattr(demo_service, "stitch_qqcc_video_segments", stitch)
-    upload = AsyncMock(return_value={"object_key": "qqcc/demo/video/first/generated/chain-demo/output"})
+    upload = AsyncMock(
+        return_value={"object_key": "qqcc/demo/video/first/generated/chain-demo/output"}
+    )
     config = {
         "video_scenes": [
-            {"id": "first", "name": "First", "prompt": "one", "duration": "5s", "engine": "image_to_video", "next_scene_id": "second"},
-            {"id": "second", "name": "Second", "prompt": "two", "duration": "5s", "engine": "image_to_video"},
+            {
+                "id": "first",
+                "name": "First",
+                "prompt": "one",
+                "duration": "5s",
+                "engine": "image_to_video",
+                "next_scene_id": "second",
+            },
+            {
+                "id": "second",
+                "name": "Second",
+                "prompt": "two",
+                "duration": "5s",
+                "engine": "image_to_video",
+            },
         ]
     }
     root = {
         **config["video_scenes"][0],
-        "demo_input_media": {"object_key": "qqcc/demo/video/first/input", "mime_type": "image/png"},
+        "demo_input_media": {
+            "object_key": "qqcc/demo/video/first/input",
+            "mime_type": "image/png",
+        },
     }
 
     submitted = await submit_qqcc_demo_generation(
-        scene_kind="video", scene=root, config=config, task_id="chain-demo",
-        storage_service=storage, image_service_instance=image, redis_instance=redis,
+        scene_kind="video",
+        scene=root,
+        config=config,
+        task_id="chain-demo",
+        storage_service=storage,
+        image_service_instance=image,
+        redis_instance=redis,
     )
     first_poll = await get_qqcc_demo_generation(
-        generation_id="chain-demo", scene_kind="video", scene_id="first",
-        storage_service=storage, image_service_instance=image, redis_instance=redis,
+        generation_id="chain-demo",
+        scene_kind="video",
+        scene_id="first",
+        storage_service=storage,
+        image_service_instance=image,
+        redis_instance=redis,
         upload_demo_media_func=upload,
     )
     second_poll = await get_qqcc_demo_generation(
-        generation_id="chain-demo", scene_kind="video", scene_id="first",
-        storage_service=storage, image_service_instance=image, redis_instance=redis,
-        upload_demo_media_func=upload, preview_url_builder=lambda _media: "preview",
+        generation_id="chain-demo",
+        scene_kind="video",
+        scene_id="first",
+        storage_service=storage,
+        image_service_instance=image,
+        redis_instance=redis,
+        upload_demo_media_func=upload,
+        preview_url_builder=lambda _media: "preview",
     )
 
     assert submitted["status"] == "pending"
@@ -326,6 +368,7 @@ async def test_submit_legacy_video_demo_forwards_ordered_lora_items_and_strength
         ],
     )
 
+
 @pytest.mark.asyncio
 async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
     storage = FakeStorage()
@@ -340,9 +383,7 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
             "negative_prompt": "blur",
             "duration": 15,
             "end_frame_draw_scene_id": "tail_scene",
-            "lora_items": [
-                {"name": "deepthroat", "strength": 0.75}
-            ],
+            "lora_items": [{"name": "deepthroat", "strength": 0.75}],
             "demo_input_media": {
                 "object_key": "qqcc/demo/ai_video/cinema/input",
                 "mime_type": "image/png",
@@ -360,6 +401,7 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
         prompt="camera orbit",
         images=("qqcc/demo-generation/task-ltx/input.png",),
         reference_descriptions=(),
+        reference_audio=None,
         duration=15,
         resolution_preset="preview",
         aspect_ratio="source",
@@ -405,22 +447,30 @@ async def test_submit_ref2v_demo_copies_latest_references_after_subject_in_order
     )
 
     assert result["status"] == "pending"
-    assert image.submit_minimax_h3_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
+    assert (
+        image.submit_minimax_h3_task.await_args.kwargs["task_type"]
+        == "minimax_h3_ref2v"
+    )
     assert image.submit_minimax_h3_task.await_args.kwargs["images"] == (
         "qqcc/demo-generation/task-ref/input.png",
         "qqcc/demo-generation/task-ref/reference_1.png",
         "qqcc/demo-generation/task-ref/reference_2.png",
     )
-    assert [call.kwargs["Key"] for call in storage.r2_client.get_object.call_args_list] == [
+    assert [
+        call.kwargs["Key"] for call in storage.r2_client.get_object.call_args_list
+    ] == [
         "qqcc/demo/ai_video/ref/input",
         *references,
     ]
+
 
 @pytest.mark.asyncio
 async def test_failed_generation_reports_terminal_error_and_cleans_input():
     storage = FakeStorage()
     image = Mock()
-    image.get_task_status = AsyncMock(return_value={"status": "error", "error": "worker failed"})
+    image.get_task_status = AsyncMock(
+        return_value={"status": "error", "error": "worker failed"}
+    )
 
     result = await get_qqcc_demo_generation(
         generation_id="task-1",

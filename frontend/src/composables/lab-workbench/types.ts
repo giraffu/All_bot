@@ -17,6 +17,12 @@ export type UploadedReference = {
   referenceRef?: H3ReferenceRef
 }
 
+export type UploadedReferenceAudio = {
+  key: string
+  preview: string
+  name: string
+}
+
 export type PendingReferenceUpload = UploadedReference & {
   uploading: true
 }

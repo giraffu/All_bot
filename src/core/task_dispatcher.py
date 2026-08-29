@@ -53,8 +53,6 @@ from src.domain_config.ltx_t2v import (
     build_ltx_t2v_spec,
 )
 from src.domain_config.minimax_h3 import (
-    MINIMAX_H3_FLF2V,
-    MINIMAX_H3_I2V,
     MINIMAX_H3_MAX_SEED,
     MINIMAX_H3_TASK_TYPES,
     MiniMaxH3ValidationError,
@@ -1049,7 +1047,16 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
         return self._spec(inputs).cost
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
-        return list(self._spec(inputs).images)
+        spec = self._spec(inputs)
+        return [*spec.images, *([spec.reference_audio] if spec.reference_audio else [])]
+
+    def apply_processed_input_refs(
+        self, inputs: Dict[str, Any], processed_refs: list[str]
+    ) -> None:
+        image_count = len(processed_refs) - (1 if inputs.get("reference_audio") else 0)
+        inputs["saved_input_images"] = processed_refs[:image_count]
+        if len(processed_refs) > image_count:
+            inputs["reference_audio"] = processed_refs[image_count]
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         spec = self._spec(inputs)
@@ -1092,6 +1099,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             prompt=prompt,
             images=spec.images,
             reference_descriptions=spec.reference_descriptions,
+            reference_audio=spec.reference_audio,
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,
             aspect_ratio=spec.aspect_ratio,
@@ -1262,7 +1270,9 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     MODE_PROMPT_OPTIMIZE: lambda _task_type, _feature_flags: PromptOptimizeStrategy(),
     "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
     MODE_LTX_VIDEO_V2: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
-    MODE_LTX_VIDEO_V2_FLF2V: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
+    MODE_LTX_VIDEO_V2_FLF2V: lambda task_type, _feature_flags: LtxVideoV2Strategy(
+        task_type
+    ),
     LTX_T2V_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
     LTX_T2V_IC_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
     **dict.fromkeys(

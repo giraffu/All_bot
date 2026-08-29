@@ -13,8 +13,9 @@ Web 和主 Bot 的新提交都由服务端读取并覆盖客户端模型字段�
 VBVR H3 v1 只允许 T2V/I2V。
 QQCC 配置 Web 同样从这一领域目录下发 18 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
-REF2V 只接受有序参考图片，不接受参考视频或参考音频。测试 Web/主 Bot 限制 1–4 张；
-官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图；Worker 防御上限为 5 张。私有
+REF2V 接受有序参考图片及至多一个可选的主角参考语音，不接受参考视频。测试 Web/主 Bot
+限制 1–4 张图和一个语音；官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图且暂不
+开放语音；Worker 防御上限为 5 张图、一个语音。私有
 QQCC Bot 过滤 REF2V 场景并拒绝已失效 callback。
 
 Bot/Web 的终端用户界面只展示“效果增强”和用途标签，不展示 MiniMax H3、基础链、
@@ -60,6 +61,14 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   `17/24/37/50`、`26/38/64/91`。上一版矩阵来自 5 秒 GPU/灵石基准的整数价格，
   普通模式应用 `1.05`、REF2V 应用 `1.15` 系数后向上取整；当前公开价格再统一
   应用 `1.1` 系数并向上取整。
+- REF2V 的可选主角语音使用高层标量 `reference_audio`，只允许一个。Web 公共请求只接收
+  `reference_audio_ref={"source":"upload","object_key":"..."}`，在扣费前校验当前用户
+  owner、允许的音频扩展名、对象存在性和 20 MB 上限，再与图片一次批量提升到任务目录；
+  客户端不能直接指定内部 `reference_audio` object key。主 Bot 接收 Telegram voice、
+  audio 或音频 document，经 FSM 临时文件服务下载，并和图片一起经过 Task Core 上传。
+  Web/Bot 上传或选择成功后仅非阻塞提示用户可在提示词中写 `<Audio 1>`；该标记不是提交
+  条件，服务端和 Worker 都不得检查、补写或改写用户提示词。带语音时 Web 不展示 Prompt
+  Optimizer，避免不理解音频占位符的优化链改写用户语义。
 - Web REF2V 使用有序 `reference_refs`。当前用户从私人人物中逐张选择 ready 子图，
   同一人物可选择多个不同视图，也可与临时上传混排：
 
@@ -88,7 +97,8 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   目录的事实源。服务端预设生成最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
-  管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径或参考音视频。
+  管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径、参考视频或底层
+  `ref_audios` 数组；参考语音只能走上述单值高层契约。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
@@ -270,8 +280,10 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 实际速度必须通过后续四模式 GPU canary 才能定论。
 
 四份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
-`workers/comfy_agent/workflows/` 与 LAN GPU runtime。REF2V 模板预建 5 个稳定图片槽，
-patcher 删除未使用节点和连接并保持剩余图片顺序。
+`workers/comfy_agent/workflows/` 与 LAN GPU runtime。REF2V 模板预建 5 个稳定图片槽和
+一个 `LoadAudio` 槽；patcher 删除未使用节点和连接并保持剩余图片顺序。输入准备器把
+单值 `reference_audio` 下载并上传到 Comfy input，patcher 只连接
+`ref_audios.ref_audio_0`，不把音频语义注入 prompt。
 
 ## 模型包与镜像
 
@@ -360,6 +372,7 @@ agent 在线或提交测试任务就 drain 正式 Worker，也不得在测试结
 LAN slot takeover/rollback 仍需独立维护窗口，并按单槽 operator 的 drain 规则执行；只有
 显式独占 benchmark 或已证实共享队列争用影响诊断时，才临时暂停其中一侧 intake。
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，并覆盖 REF2V 1/4/5 图、
+REF2V 无语音/单语音（提示词分别不含/包含 `<Audio 1>`）、
 单个 addon 和 13 addon 有序组合，逐条检查：Central task type、Worker agent、MP4、
 24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
 黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。

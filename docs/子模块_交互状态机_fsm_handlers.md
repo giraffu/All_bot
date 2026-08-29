@@ -8,7 +8,10 @@
 callback。隐藏入口不会改变 Web/API、任务执行面或 `/advanced_video_pro` 兼容命令。
 H3 入口选择四个公开模式、时长、画质档位与比例；主模型和附加模型从 Dashboard
 运行时配置按模式载入，不进入终端设置面板。图生视频模式选择后保持在设置态接收图片，
-用户无需点击“确认设置”；T2V 同态直接接收提示词。再按模式收集 0/1/2 或 1–4 张图片；提交计划由
+用户无需点击“确认设置”；T2V 同态直接接收提示词。再按模式收集 0/1/2 或 1–4 张图片；
+REF2V 图片完成后进入 `WAIT_REFERENCE_AUDIO`，可上传一个 Telegram voice/audio/音频
+document 或点击跳过。上传成功后提示可在提示词中包含 `<Audio 1>`，但不校验、不注入，
+跳过和缺少标记都能继续提交。提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后立即提交生成；新会话不再进入 `WAIT_CONFIRMATION`，不创建
 Prompt Optimizer draft，也不发送“直接生成/优化后再生成”按钮。已提交的历史 H3

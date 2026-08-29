@@ -15,7 +15,7 @@ import {
   type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
 } from '@/features/generation/labModeConfig'
-import type { LabAssetUploadSlot, UploadedReference, UploadedSlotAsset } from './types'
+import type { LabAssetUploadSlot, UploadedReference, UploadedReferenceAudio, UploadedSlotAsset } from './types'
 import { useLabSubmitPayload } from './useLabSubmitPayload'
 
 const messageMock = vi.hoisted(() => ({
@@ -49,6 +49,7 @@ type SubmitHarness = {
   minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions: Ref<string[]>
   minimaxH3AddonItems: Ref<MiniMaxH3AddonItem[]>
+  minimaxH3ReferenceAudio: Ref<UploadedReferenceAudio | null>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -102,6 +103,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
   const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
+  const minimaxH3ReferenceAudio = ref<UploadedReferenceAudio | null>(null)
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -135,6 +137,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3AddonItems,
+    minimaxH3ReferenceAudio,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -168,6 +171,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
     minimaxH3AddonItems,
+    minimaxH3ReferenceAudio,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -271,7 +275,7 @@ describe('useLabSubmitPayload', () => {
 
   it('submits ordered mixed typed references for H3 REF2V', async () => {
     const harness = createHarness('minimax_h3')
-    harness.prompt.value = 'Picture 1 and Picture 2 walk together'
+    harness.prompt.value = 'the two characters speak softly'
     harness.minimaxH3Mode.value = 'ref2v'
     harness.uploadedReferences.value = [
       {
@@ -286,6 +290,11 @@ describe('useLabSubmitPayload', () => {
       },
       refImage('web_uploads/7/scene.png'),
     ]
+    harness.minimaxH3ReferenceAudio.value = {
+      key: 'web_uploads/7/voice.m4a',
+      preview: 'blob:voice',
+      name: 'voice.m4a',
+    }
 
     await harness.handleSubmit()
 
@@ -301,6 +310,11 @@ describe('useLabSubmitPayload', () => {
           },
           { source: 'upload', object_key: 'web_uploads/7/scene.png' },
         ],
+        reference_audio_ref: {
+          source: 'upload',
+          object_key: 'web_uploads/7/voice.m4a',
+        },
+        prompt: 'the two characters speak softly',
       }),
     }), 'lab.cards.minimax_h3_title')
     expect(harness.submitTask.mock.calls[0][0].inputs).not.toHaveProperty('reference_descriptions')

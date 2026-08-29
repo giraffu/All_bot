@@ -75,6 +75,7 @@ async def process_standard_generation_task(
     result_meta: dict[str, Any] | None = None,
     runtime_state: BotTaskRuntimeState | None = None,
     reference_descriptions: list[str] | None = None,
+    reference_audio: str | None = None,
     resolution_preset: str | None = None,
     aspect_ratio: str | None = None,
     main_model: str | None = None,
@@ -171,8 +172,10 @@ async def process_standard_generation_task(
     extra_inputs: dict[str, Any] = {}
     if is_minimax_h3:
         local_source_dimensions: tuple[tuple[int, int], ...] = ()
-        if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V} and images and all(
-            Path(path).is_file() for path in images
+        if (
+            task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}
+            and images
+            and all(Path(path).is_file() for path in images)
         ):
             local_source_dimensions = validate_video_frame_aspects(images)
         extra_inputs.update(
@@ -183,6 +186,7 @@ async def process_standard_generation_task(
                 else aspect_ratio or "16:9"
             ),
             reference_descriptions=reference_descriptions or [],
+            reference_audio=reference_audio,
             main_model=main_model or "10eros",
             seed=seed,
         )
@@ -238,7 +242,11 @@ async def process_standard_generation_task(
         resolution=resolution,
         task_type=task_type,
         duration=duration,
-        allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO, *MINIMAX_H3_TASK_TYPES),
+        allowed_task_types=(
+            MODE_CUSTOM_VIDEO,
+            MODE_IMAGE_TO_VIDEO,
+            *MINIMAX_H3_TASK_TYPES,
+        ),
     )
 
     return await run_bot_task_application(
@@ -279,7 +287,7 @@ async def process_standard_generation_task(
             result_input_image_indices=result_input_image_indices,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
-            images=images,
+            images=[*images, *([reference_audio] if reference_audio else [])],
             cleanup=cleanup,
             entrypoint_name="process_generation_task",
             runtime_state=runtime_state,

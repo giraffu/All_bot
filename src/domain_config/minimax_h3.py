@@ -77,9 +77,7 @@ MINIMAX_H3_ASPECT_RATIOS = {
     "3:4": 3 / 4,
 }
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
-MINIMAX_H3_MODEL_FL = (
-    "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
-)
+MINIMAX_H3_MODEL_FL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
 MINIMAX_H3_MODEL_REF = MINIMAX_H3_MODEL_FL
 MINIMAX_H3_MAIN_MODEL_10EROS = "10eros"
 MINIMAX_H3_MAIN_MODEL_OFFICIAL = "official"
@@ -288,6 +286,7 @@ class MiniMaxH3Spec:
     cost: int
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
+    reference_audio: str | None
     main_model: str
     model_name: str
     addon_items: tuple[MiniMaxH3AddonSelection, ...]
@@ -372,7 +371,9 @@ def normalize_minimax_h3_duration_seconds(value: Any) -> int:
     try:
         duration = int(str(value if value is not None else 5).removesuffix("s"))
     except (TypeError, ValueError) as exc:
-        raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}时长必须为 5、10 或 15 秒。") from exc
+        raise MiniMaxH3ValidationError(
+            f"{PRODUCT_NAME}时长必须为 5、10 或 15 秒。"
+        ) from exc
     if duration not in MINIMAX_H3_ALLOWED_DURATIONS:
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}时长必须为 5、10 或 15 秒。")
     return duration
@@ -430,9 +431,18 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if task_type not in MINIMAX_H3_PUBLIC_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     forbidden = (
-        "model_name", "checkpoint", "timeline_data",
-        "local_path", "ref_videos", "ref_video_audios", "ref_audios",
-        "sampler_name", "scheduler", "steps", "sigmas", "ref_image_size",
+        "model_name",
+        "checkpoint",
+        "timeline_data",
+        "local_path",
+        "ref_videos",
+        "ref_video_audios",
+        "ref_audios",
+        "sampler_name",
+        "scheduler",
+        "steps",
+        "sigmas",
+        "ref_image_size",
     )
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
@@ -441,9 +451,9 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         inputs,
         mode=task_type.removeprefix("minimax_h3_"),
     )
-    main_model = str(
-        inputs.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
-    ).strip().lower()
+    main_model = (
+        str(inputs.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL).strip().lower()
+    )
     if main_model not in MINIMAX_H3_MAIN_MODELS:
         raise MiniMaxH3ValidationError("不支持该 MiniMax H3 主模型。")
     if (
@@ -462,6 +472,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         )
 
     images = _images(inputs)
+    reference_audio = str(inputs.get("reference_audio") or "").strip() or None
     descriptions = _string_tuple(
         inputs.get("reference_descriptions"), field="reference_descriptions"
     )
@@ -487,6 +498,8 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
             raise MiniMaxH3ValidationError("参考说明必须与参考图片一一对应。")
     elif descriptions:
         raise MiniMaxH3ValidationError("当前模式不支持角色参考说明。")
+    if reference_audio is not None and task_type != MINIMAX_H3_REF2V:
+        raise MiniMaxH3ValidationError("主角参考语音仅支持参考图生视频。")
 
     raw_aspect = str(inputs.get("aspect_ratio") or "").strip()
     if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}:
@@ -518,6 +531,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         ),
         images=images,
         reference_descriptions=descriptions,
+        reference_audio=reference_audio,
         main_model=main_model,
         model_name=(
             MINIMAX_H3_OFFICIAL_MODEL_REF

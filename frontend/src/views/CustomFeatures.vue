@@ -17,6 +17,7 @@ import LabAdvancedOptionsPanel from '@/components/lab/LabAdvancedOptionsPanel.vu
 import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
 import H3CharacterViewPicker from '@/components/lab/H3CharacterViewPicker.vue'
+import H3ReferenceAudioUpload from '@/components/lab/H3ReferenceAudioUpload.vue'
 import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
 import {
@@ -83,6 +84,10 @@ const {
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
+  minimaxH3ReferenceAudio,
+  minimaxH3ReferenceAudioUploading,
+  beforeUploadMinimaxH3ReferenceAudio,
+  clearMinimaxH3ReferenceAudio,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -120,6 +125,9 @@ const promptLockedHint = computed(() => (
   currentMode.value.id === 'custom_video'
     ? t('template_apply.common.prompt_locked_video_hint')
     : t('template_apply.common.prompt_locked_image_hint')
+))
+const showPromptOptimizer = computed(() => (
+  isPromptOptimizerAvailable.value && !minimaxH3ReferenceAudio.value
 ))
 
 </script>
@@ -160,7 +168,7 @@ const promptLockedHint = computed(() => (
         :has-advanced-options="hasAdvancedOptions"
         :notice="composerNotice || templateNotice"
         :warning="composerWarning || templateWarning"
-        :show-prompt-optimizer="isPromptOptimizerAvailable"
+        :show-prompt-optimizer="showPromptOptimizer"
         :optimize-prompt-disabled="!canOptimizePrompt"
         :optimize-prompt-loading="isOptimizingPrompt"
         :can-restore-original-prompt="canRestoreOriginalPrompt"
@@ -226,6 +234,13 @@ const promptLockedHint = computed(() => (
               :references="uploadedReferences"
               :max-items="4"
               @select="addReference"
+            />
+            <H3ReferenceAudioUpload
+              v-if="minimaxH3Mode === 'ref2v'"
+              :item="minimaxH3ReferenceAudio"
+              :uploading="minimaxH3ReferenceAudioUploading"
+              :before-upload="beforeUploadMinimaxH3ReferenceAudio"
+              @remove="clearMinimaxH3ReferenceAudio"
             />
           </div>
         </template>

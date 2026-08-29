@@ -96,9 +96,7 @@ def _apply_runtime_profile(data: dict) -> None:
     profile = data.get("runtime_profiles", {}).get(data.get("mode"), {})
     data["main_model"] = str(profile.get("main_model") or "10eros")
     data["addon_items"] = [
-        dict(item)
-        for item in profile.get("addon_items", [])
-        if isinstance(item, dict)
+        dict(item) for item in profile.get("addon_items", []) if isinstance(item, dict)
     ]
 
 
@@ -202,6 +200,45 @@ def _extract_image(update: Update) -> tuple[str | None, str]:
     return None, ".jpg"
 
 
+def _extract_audio(update: Update) -> tuple[str | None, str]:
+    message = update.message
+    voice = getattr(message, "voice", None)
+    if voice:
+        return voice.file_id, ".ogg"
+    audio = getattr(message, "audio", None)
+    if audio:
+        return audio.file_id, Path(audio.file_name or "voice.m4a").suffix or ".m4a"
+    document = getattr(message, "document", None)
+    if document and str(document.mime_type or "").startswith("audio/"):
+        return document.file_id, Path(
+            document.file_name or "voice.m4a"
+        ).suffix or ".m4a"
+    return None, ".m4a"
+
+
+def _reference_audio_request(context) -> tuple[str, InlineKeyboardMarkup]:
+    return (
+        _with_cancel_hint(
+            context,
+            _text(
+                context,
+                "可选：上传一段主角参考语音（仅 1 个文件），或点击跳过。",
+                "Optional: upload one main-character voice reference, or skip.",
+            ),
+        ),
+        InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        _text(context, "跳过参考语音", "Skip voice reference"),
+                        callback_data="avp_audio_skip",
+                    )
+                ]
+            ]
+        ),
+    )
+
+
 def _clear(context, *, preserve_paths: bool = False) -> None:
     if preserve_paths:
         context.user_data.pop(DATA_KEY, None)
@@ -244,6 +281,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
+        "reference_audio": None,
         "runtime_profiles": runtime_profiles,
     }
     await robust_reply_text(
@@ -379,20 +417,23 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if mode == "ref2v":
         count = len(data["images"])
         if count >= 4:
-            await robust_reply_text(
-                update.message, _prompt_request_text(context, data, media_received=True)
-            )
-            return AdvancedVideoProState.WAIT_PROMPT
+            text, keyboard = _reference_audio_request(context)
+            await robust_reply_text(update.message, text, reply_markup=keyboard)
+            return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
         keyboard = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton(
-                    _text(context, "继续添加参考图", "Add another reference"),
-                    callback_data="avp_refs_more",
-                )],
-                [InlineKeyboardButton(
-                    _text(context, "完成并填写提示词", "Finish and enter prompt"),
-                    callback_data="avp_refs_done",
-                )],
+                [
+                    InlineKeyboardButton(
+                        _text(context, "继续添加参考图", "Add another reference"),
+                        callback_data="avp_refs_more",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        _text(context, "完成并填写提示词", "Finish and enter prompt"),
+                        callback_data="avp_refs_done",
+                    )
+                ],
             ]
         )
         await robust_reply_text(
@@ -476,7 +517,60 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ),
         )
         return AdvancedVideoProState.WAIT_MEDIA
+    text, keyboard = _reference_audio_request(context)
+    await robust_edit_text(query.message, text, reply_markup=keyboard)
+    return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
+
+
+async def reference_audio_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = context.user_data.get(DATA_KEY)
+    if not data:
+        return ConversationHandler.END
     await robust_edit_text(query.message, _prompt_request_text(context, data))
+    return AdvancedVideoProState.WAIT_PROMPT
+
+
+async def receive_reference_audio(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    data = context.user_data.get(DATA_KEY)
+    if not data or data.get("mode") != "ref2v":
+        return ConversationHandler.END
+    file_id, suffix = _extract_audio(update)
+    if not file_id:
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "请上传有效音频，或点击跳过。",
+                    "Upload valid audio, or skip.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
+    telegram_file = await context.bot.get_file(file_id)
+    data["reference_audio"] = await download_telegram_file_to_fsm_temp(
+        telegram_file=telegram_file,
+        suffix=suffix,
+        name_hint="advanced_video_pro_voice",
+    )
+    await robust_reply_text(
+        update.message,
+        _with_cancel_hint(
+            context,
+            _text(
+                context,
+                "主角参考语音已添加。建议在提示词中包含 <Audio 1> 来说明该语音的用途（可选，不影响提交）。\n\n请输入视频提示词。",
+                "Main-character voice reference added. Consider including <Audio 1> in the prompt to describe its role (optional; submission is not blocked).\n\nSend the video prompt.",
+            ),
+        ),
+    )
     return AdvancedVideoProState.WAIT_PROMPT
 
 
@@ -491,6 +585,7 @@ async def _submit_generation(
             prompt=prompt,
             images=data["images"],
             reference_descriptions=data["reference_descriptions"],
+            reference_audio=data.get("reference_audio"),
             duration=data["duration"],
             resolution_preset=data["preset"],
             aspect_ratio=(
@@ -652,6 +747,15 @@ def get_advanced_video_pro_fsm_handler(
             ],
             AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION: [
                 CallbackQueryHandler(reference_callback, pattern=r"^avp_refs_"),
+            ],
+            AdvancedVideoProState.WAIT_REFERENCE_AUDIO: [
+                CallbackQueryHandler(
+                    reference_audio_callback, pattern=r"^avp_audio_skip$"
+                ),
+                MessageHandler(
+                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
+                    receive_reference_audio,
+                ),
             ],
             AdvancedVideoProState.WAIT_PROMPT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)

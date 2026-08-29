@@ -724,7 +724,9 @@ def _patch_ltx_t2v_msr_workflow(
     sheets = [str(value or "").strip() for value in sheets]
     descriptions = [str(value or "").strip() for value in descriptions]
     if not all(sheets) or not all(descriptions) or not background:
-        raise ValueError("Runexx MSR character panels, descriptions and background are required")
+        raise ValueError(
+            "Runexx MSR character panels, descriptions and background are required"
+        )
     if params.get("sulphur_strength") is not None:
         raise ValueError("Runexx 10Eros v1.4 path does not accept Sulphur")
 
@@ -1473,7 +1475,9 @@ def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
             return frames
     raw_duration = params.get("duration")
     try:
-        duration = int(str(raw_duration if raw_duration not in (None, "") else 5).removesuffix("s"))
+        duration = int(
+            str(raw_duration if raw_duration not in (None, "") else 5).removesuffix("s")
+        )
         return _MINIMAX_H3_FRAME_COUNT_BY_DURATION[duration]
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("invalid MiniMax H3 duration") from exc
@@ -1557,9 +1561,17 @@ def patch_minimax_h3_workflow(
     if any(
         params.get(key) not in (None, "", [], ())
         for key in (
-            "model_name", "checkpoint", "timeline_data", "sampler_name",
-            "scheduler", "steps", "sigmas", "ref_image_size", "ref_videos",
-            "ref_video_audios", "ref_audios",
+            "model_name",
+            "checkpoint",
+            "timeline_data",
+            "sampler_name",
+            "scheduler",
+            "steps",
+            "sigmas",
+            "ref_image_size",
+            "ref_videos",
+            "ref_video_audios",
+            "ref_audios",
         )
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
@@ -1594,9 +1606,10 @@ def patch_minimax_h3_workflow(
         "on",
     }:
         attention_node = workflow.get("2")
-        if not isinstance(attention_node, dict) or attention_node.get(
-            "class_type"
-        ) != "ModelAttentionBackend":
+        if (
+            not isinstance(attention_node, dict)
+            or attention_node.get("class_type") != "ModelAttentionBackend"
+        ):
             raise ValueError("MiniMax H3 attention backend node is missing")
         attention_node.setdefault("inputs", {})["attention"] = "pytorch attention"
     model_input = _apply_minimax_h3_execution_profile(
@@ -1627,7 +1640,9 @@ def patch_minimax_h3_workflow(
     ]
     count = sum(bool(name) for name in names)
     minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
-    if not minimum <= count <= maximum or any(not names[index] for index in range(count)):
+    if not minimum <= count <= maximum or any(
+        not names[index] for index in range(count)
+    ):
         raise ValueError(f"invalid ordered image count for {task_type}")
     descriptions = params.get("reference_descriptions") or []
     if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
@@ -1653,9 +1668,22 @@ def patch_minimax_h3_workflow(
     )
     guide_inputs["length"] = _minimax_h3_frame_count(params)
     if task_type == "minimax_h3_ref2v":
+        reference_audio = str(params.get("reference_audio") or "").strip()
+        if reference_audio:
+            workflow["25"] = {
+                "inputs": {"audio": reference_audio},
+                "class_type": "LoadAudio",
+            }
+            guide_inputs["ref_audios.ref_audio_0"] = ["25", 0]
+        else:
+            workflow.pop("25", None)
+            guide_inputs.pop("ref_audios.ref_audio_0", None)
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")
-        if descriptions and (len(descriptions) != count or any(not str(item).strip() for item in descriptions)):
+        if descriptions and (
+            len(descriptions) != count
+            or any(not str(item).strip() for item in descriptions)
+        ):
             raise ValueError("reference descriptions must match reference images")
         if descriptions:
             prefix = "\n".join(
@@ -1675,8 +1703,12 @@ def patch_minimax_h3_workflow(
         else:
             workflow.pop(node_id, None)
             guide_inputs.pop(f"ref_images.ref_image_{index - 1}", None)
-    safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip("_")
-    output_prefix = f"{task_type}_{safe_execution_id}" if safe_execution_id else task_type
+    safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip(
+        "_"
+    )
+    output_prefix = (
+        f"{task_type}_{safe_execution_id}" if safe_execution_id else task_type
+    )
     workflow["38"]["inputs"]["filename_prefix"] = output_prefix
     workflow["40"]["inputs"]["filename_prefix"] = f"{output_prefix}_last_frame"
 
