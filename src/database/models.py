@@ -185,6 +185,99 @@ class SupportNotificationRecipient(Base):
     )
 
 
+class SupportNotificationOutbox(Base):
+    __tablename__ = "support_notification_outbox"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id",
+            "recipient_telegram_user_id",
+            name="uq_support_notification_outbox_ticket_recipient",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'processing', 'retry', 'sent', 'failed')",
+            name="ck_support_notification_outbox_status",
+        ),
+        Index(
+            "ix_support_notification_outbox_claim",
+            "status",
+            "next_attempt_at",
+            "id",
+        ),
+        Index(
+            "ix_support_notification_outbox_recipient_created",
+            "recipient_telegram_user_id",
+            "created_at",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id = Column(
+        BigInteger,
+        ForeignKey("support_tickets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    recipient_telegram_user_id = Column(BigInteger, nullable=False)
+    payload_text = Column(Text, nullable=False)
+    status = Column(
+        String(24), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    attempt_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    next_attempt_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    lease_token = Column(String(64), nullable=True)
+    lease_owner = Column(String(128), nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    last_error_type = Column(String(100), nullable=True)
+    last_error_message = Column(String(500), nullable=True)
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+    sent_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+
+
+class SupportNotificationAttempt(Base):
+    __tablename__ = "support_notification_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "outbox_id",
+            "attempt_number",
+            name="uq_support_notification_attempt_number",
+        ),
+        CheckConstraint(
+            "status in ('processing', 'retry', 'sent', 'failed', 'abandoned')",
+            name="ck_support_notification_attempt_status",
+        ),
+        Index("ix_support_notification_attempts_created", "created_at", "id"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    outbox_id = Column(
+        BigInteger,
+        ForeignKey("support_notification_outbox.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attempt_number = Column(Integer, nullable=False)
+    status = Column(String(24), nullable=False)
+    worker_id = Column(String(128), nullable=False)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    error_type = Column(String(100), nullable=True)
+    error_message = Column(String(500), nullable=True)
+    retry_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    finished_at = Column(DateTime, nullable=True)
+
+
 class PrivateQqccBot(Base):
     __tablename__ = "private_qqcc_bots"
     __table_args__ = (

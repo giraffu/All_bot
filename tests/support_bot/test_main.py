@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -12,6 +12,8 @@ from support_bot.main import (
     SUBMISSION_TIMEOUT_SECONDS,
     WELCOME,
     _store_attachment,
+    _validate_notification_bot_identity,
+    _validate_notification_bot_tokens,
 )
 
 
@@ -47,6 +49,67 @@ def test_each_support_category_prompts_user_to_send_details():
 def test_submission_timeout_and_finish_callback_contract():
     assert SUBMISSION_TIMEOUT_SECONDS == 300
     assert FINISH_CALLBACK_PREFIX == "support_finish:"
+
+
+def test_support_and_notification_bot_tokens_must_be_distinct():
+    with pytest.raises(RuntimeError, match="must be different"):
+        _validate_notification_bot_tokens(
+            support_token="same-token",
+            notification_token="same-token",
+        )
+
+
+def test_notification_sender_identity_is_pinned_to_qq_notification_bot():
+    _validate_notification_bot_identity(
+        SimpleNamespace(username="qq_notification_bot")
+    )
+
+    with pytest.raises(RuntimeError, match="expected bot"):
+        _validate_notification_bot_identity(SimpleNamespace(username="other_bot"))
+
+
+@pytest.mark.asyncio
+async def test_support_runtime_initializes_outbound_notification_bot_and_dispatcher(
+    monkeypatch,
+):
+    from support_bot import main as support_main
+
+    notification_bot = SimpleNamespace(
+        username="qq_notification_bot",
+        initialize=AsyncMock(),
+        shutdown=AsyncMock(),
+        send_message=AsyncMock(),
+    )
+    job_queue = SimpleNamespace(run_repeating=Mock())
+    application = SimpleNamespace(
+        bot_data={support_main.NOTIFICATION_BOT_DATA_KEY: notification_bot},
+        job_queue=job_queue,
+    )
+    dispatcher = SimpleNamespace()
+    dispatcher_factory = Mock(return_value=dispatcher)
+    monkeypatch.setattr(support_main, "init_db", AsyncMock())
+    monkeypatch.setattr(
+        support_main,
+        "SupportNotificationDispatcher",
+        dispatcher_factory,
+    )
+
+    await support_main._post_init(application)
+
+    notification_bot.initialize.assert_awaited_once()
+    dispatcher_factory.assert_called_once()
+    assert (
+        dispatcher_factory.call_args.kwargs["send_message"]
+        == notification_bot.send_message
+    )
+    assert (
+        application.bot_data[support_main.NOTIFICATION_DISPATCHER_DATA_KEY]
+        is dispatcher
+    )
+    job_queue.run_repeating.assert_called_once()
+
+    await support_main._post_shutdown(application)
+    notification_bot.shutdown.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -498,7 +561,7 @@ async def test_database_failure_preserves_active_draft(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_persisted_submission_notifies_recipients_before_clearing_draft(
+async def test_persisted_submission_returns_without_synchronous_telegram_delivery(
     monkeypatch,
 ):
     from support_bot import main as support_main
@@ -532,68 +595,13 @@ async def test_persisted_submission_notifies_recipients_before_clearing_draft(
     )
     ticket = SimpleNamespace(id=96)
     finalize = AsyncMock(return_value=ticket)
-    notify = AsyncMock()
     monkeypatch.setattr(support_main, "AsyncSessionLocal", SessionContext)
     monkeypatch.setattr(support_main, "finalize_ticket_submission", finalize)
-    monkeypatch.setattr(support_main, "notify_support_ticket_submission", notify)
 
     result = await support_main._persist_active_submission(context)
 
     assert result is ticket
-    notify.assert_awaited_once_with(
-        session,
-        ticket=ticket,
-        messages=draft["messages"],
-        send_message=context.bot.send_message,
-    )
-    assert "support_submission" not in context.user_data
-
-
-@pytest.mark.asyncio
-async def test_notification_failure_does_not_fail_persisted_submission(monkeypatch):
-    from support_bot import main as support_main
-
-    class SessionContext:
-        async def __aenter__(self):
-            return SimpleNamespace()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    draft = {
-        "id": "notify-failure-draft",
-        "category": "suggestion",
-        "messages": [{"body": "建议内容", "attachments": []}],
-        "user": {
-            "id": 123,
-            "username": None,
-            "full_name": None,
-            "language_code": None,
-        },
-        "chat_id": 123,
-        "finalizing": False,
-    }
-    context = SimpleNamespace(
-        user_data={"support_submission": draft},
-        job_queue=None,
-        bot=SimpleNamespace(send_message=AsyncMock()),
-    )
-    ticket = SimpleNamespace(id=97)
-    monkeypatch.setattr(support_main, "AsyncSessionLocal", SessionContext)
-    monkeypatch.setattr(
-        support_main,
-        "finalize_ticket_submission",
-        AsyncMock(return_value=ticket),
-    )
-    monkeypatch.setattr(
-        support_main,
-        "notify_support_ticket_submission",
-        AsyncMock(side_effect=RuntimeError("notification database unavailable")),
-    )
-
-    result = await support_main._persist_active_submission(context)
-
-    assert result is ticket
+    context.bot.send_message.assert_not_awaited()
     assert "support_submission" not in context.user_data
 
 

@@ -134,7 +134,7 @@
     "support-bot": {
       "environments": ["prod"],
       "enabled_if": {"key": "SUPPORT_BOT_TOKEN", "nonempty": true},
-      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "OBSERVER_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
       "patterns": ["SUPPORT_BOT_*", "TELEGRAM_*", "DATABASE_*", "R2_*"]
     },
     "observer-bot": {

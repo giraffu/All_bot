@@ -92,6 +92,9 @@ def _environment(environment: str) -> dict[str, str]:
         "PAID_GROUP_BOT_TOKEN": f"{suffix}-paid-token",
         "PAID_GROUP_CHAT_ID": "-1000000000000",
         "SUPPORT_BOT_TOKEN": f"{suffix}-support-token",
+        "OBSERVER_BOT_TOKEN": f"{suffix}-observer-token",
+        "OBSERVER_DATABASE_URL": f"postgresql+asyncpg://{suffix}-observer-db",
+        "OBSERVER_LM_STUDIO_BASE_URL": f"http://{suffix}-lm-studio:1234/v1",
         "HUANYUY_NOTIFY_URL": f"https://pay-{suffix}.example.com/notify",
         "HUANYUY_RETURN_URL": f"https://pay-{suffix}.example.com/return",
         "HUANYUY_PID": f"{suffix}-merchant",
@@ -171,6 +174,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert "UNRELATED_OPERATOR_SECRET" not in bot
     assert dashboard_backend["SUPPORT_BOT_TOKEN"] == "prod-support-token"
     assert support_bot["SUPPORT_BOT_TOKEN"] == "prod-support-token"
+    assert support_bot["OBSERVER_BOT_TOKEN"] == "prod-observer-token"
     for service, projection in snapshot.projections.items():
         if service not in {"dashboard-backend", "support-bot"}:
             assert "SUPPORT_BOT_TOKEN" not in projection

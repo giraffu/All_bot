@@ -3,7 +3,10 @@
 ## 定位与 V1 范围
 
 `observer_bot/` 是独立 Telegram 管理员通知与群聊报告进程。它和现有客服 Bot
-部署在同一套云控制面资源上，但不共享 token、handler、进程或业务数据库。
+部署在同一套云控制面资源上，不共享 handler、进程或业务数据库。Observer 是
+`OBSERVER_BOT_TOKEN` 唯一的 polling owner；客服 Bot 仅复用该 token 的 outbound
+`sendMessage` 能力，把工单管理员通知也统一显示为 `@qq_notification_bot`，不读取
+`observer_prod`、不导入 Observer handler，也不调用 `getUpdates`。
 
 V1 只包含：
 
@@ -14,7 +17,7 @@ V1 只包含：
 - 通过 OpenAI-compatible HTTP 直接调用本地 LM Studio。
 
 V1 不包含网站抓取、平台关键词监听、Civitai/Hugging Face、外部 AI 群 userbot，
-也不修改现有客服 Bot 的工单收集、通知和回复链路。
+也不承载客服工单、回复或主库 outbox；这些仍由客服域负责。
 
 ## 架构
 
@@ -30,7 +33,7 @@ Telegram 管理员 / 授权群
                                                    （Tailscale 私网）
 ```
 
-只有一个 `observer-bot` 进程；PTB JobQueue 承载轮询和报告 tick，不增加 Redis、
+只有一个 `observer-bot` polling 进程；PTB JobQueue 承载轮询和报告 tick，不增加 Redis、
 Celery、消息总线或第二个 worker。PostgreSQL `observer_report_runs` 是报告去重和
 有限重试的持久事实源。
 
@@ -146,6 +149,10 @@ Dashboard 独立导航页“通知中心”通过已认证接口
 短缓存读取，最多约 15 秒生效，不需要重启。两个数量阈值均为 `1..100000` 的整数，
 默认分别为 20 和 10；schema 使用 `ADD COLUMN IF NOT EXISTS` 升级已有数据库，
 不会覆盖既有收件人、授权群或开关设置。
+
+`OBSERVER_BOT_TOKEN` 也由配置契约最小投影到 `support-bot`，但只用于 outbound
+工单通知。改变该 token 时必须把 `observer-bot` 和 `support-bot` 都视为受影响
+消费者并分别按精确 digest 重部署；任何时刻仍只能有一个 polling 实例。
 
 ## 发布与验证
 

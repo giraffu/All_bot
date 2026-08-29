@@ -68,7 +68,8 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 ## 5. Bot 隔离
 
-- 各 Bot 隔离 token、进程、handler、配置和日志；同一 token 不得双 polling。
+- 各 Bot 隔离进程、handler、配置和日志；同 token 不得双 polling。通知 token
+  仅允许客服 outbound，polling 仍归 Observer，并由客服文档、配置和身份测试约束。
 - QQCC handler/webhook、付费群 join request、普通群 `message`、客服工单和
   Observer 采集边界分别以专项 Skill/文档为准，不互相导入入口。
 - token 不回显、不记录；旧入口只安全跳转/拒绝，兼容由所属 Skill 管理。
