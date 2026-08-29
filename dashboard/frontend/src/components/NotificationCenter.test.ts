@@ -61,6 +61,7 @@ describe('NotificationCenter', () => {
     const wrapper = mount(NotificationCenter, { global: { stubs: { 'a-switch': true } } })
     await flushPromises()
 
+    expect(wrapper.text()).toContain('超过任一数量设置值时通知管理员')
     expect(wrapper.get('[data-testid="queue-total-threshold"]').element).toHaveProperty('value', '20')
     expect(wrapper.get('[data-testid="queue-type-threshold"]').element).toHaveProperty('value', '10')
     await wrapper.get('[data-testid="queue-total-threshold"]').setValue('30')

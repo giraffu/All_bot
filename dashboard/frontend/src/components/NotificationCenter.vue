@@ -219,9 +219,9 @@ onMounted(loadSettings)
 
       <article class="card switches-card">
         <div class="card-heading"><div><h2>功能开关</h2><p>各功能相互独立，关闭报告不会影响队列告警。</p></div></div>
-        <div class="switch-row"><div><b>AllBot 队列告警</b><span>拥堵、无可接单 Worker、监控恢复</span></div><a-switch v-model:checked="flags.queue_alerts_enabled" /></div>
+        <div class="switch-row"><div><b>AllBot 队列告警</b><span>仅按总排队或单类型排队数量告警</span></div><a-switch v-model:checked="flags.queue_alerts_enabled" /></div>
         <div class="threshold-panel">
-          <div class="threshold-heading"><b>拥堵阈值</b><span>达到阈值时通知管理员，保存后约 15 秒生效。</span></div>
+          <div class="threshold-heading"><b>拥堵阈值</b><span>超过任一数量设置值时通知管理员，保存后约 15 秒生效。</span></div>
           <div class="threshold-grid">
             <label>
               总排队数量
@@ -231,7 +231,7 @@ onMounted(loadSettings)
             <label>
               单个类型排队数量
               <input data-testid="queue-type-threshold" v-model.number="queueThresholds.queue_type_pending_threshold" type="number" min="1" max="100000" step="1" />
-              <small>任一任务类型达到此数量即告警。</small>
+              <small>任一任务类型超过此数量即告警。</small>
             </label>
           </div>
         </div>

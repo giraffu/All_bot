@@ -73,6 +73,7 @@ def _parse_time(raw: Any) -> datetime | None:
 
 class QueueMonitor:
     _STATE_KEY = "queue_monitor"
+    _CONGESTION_POLICY = "count_thresholds_v1"
 
     def __init__(
         self,
@@ -80,14 +81,12 @@ class QueueMonitor:
         client,
         state_repository: StateRepository,
         notifier: AdminNotifier,
-        wait_threshold_seconds: int,
         cooldown_seconds: int,
         failure_threshold: int,
     ):
         self._client = client
         self._repository = state_repository
         self._notifier = notifier
-        self._wait_threshold_seconds = wait_threshold_seconds
         self._cooldown_seconds = cooldown_seconds
         self._failure_threshold = failure_threshold
 
@@ -140,7 +139,7 @@ class QueueMonitor:
         type_pending_threshold: int,
     ) -> None:
         reasons: list[str] = []
-        if snapshot.queue_size >= total_pending_threshold:
+        if snapshot.queue_size > total_pending_threshold:
             reasons.append(
                 f"待处理 {snapshot.queue_size}（总量阈值 {total_pending_threshold}）"
             )
@@ -148,7 +147,7 @@ class QueueMonitor:
             (
                 (task_type, pending_count)
                 for task_type, pending_count in snapshot.pending_by_type.items()
-                if pending_count >= type_pending_threshold
+                if pending_count > type_pending_threshold
             ),
             key=lambda item: (-item[1], item[0]),
         )
@@ -156,14 +155,10 @@ class QueueMonitor:
             f"{task_type} 待处理 {pending_count}（单类型阈值 {type_pending_threshold}）"
             for task_type, pending_count in congested_types
         )
-        if snapshot.max_wait_seconds >= self._wait_threshold_seconds:
-            reasons.append(
-                f"最长等待 {snapshot.max_wait_seconds} 秒（阈值 {self._wait_threshold_seconds} 秒）"
-            )
-        if snapshot.queue_size > 0 and snapshot.accepting_workers == 0:
-            reasons.append("有排队任务但没有可接单 Worker")
-
-        was_congested = bool(state.get("congested"))
+        was_congested = bool(
+            state.get("congestion_policy") == self._CONGESTION_POLICY
+            and state.get("congested")
+        )
         is_congested = bool(reasons)
         last_notification = _parse_time(state.get("last_notification_at"))
         reminder_due = bool(
@@ -190,6 +185,7 @@ class QueueMonitor:
             state["last_notification_at"] = now.isoformat()
 
         state["congested"] = is_congested
+        state["congestion_policy"] = self._CONGESTION_POLICY
         state["last_queue_size"] = snapshot.queue_size
         state["last_accepting_workers"] = snapshot.accepting_workers
         state["last_max_wait_seconds"] = snapshot.max_wait_seconds

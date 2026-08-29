@@ -80,7 +80,6 @@ def build_application(
             client=queue_client,
             state_repository=repository,
             notifier=notifier,
-            wait_threshold_seconds=settings.queue_wait_threshold_seconds,
             cooldown_seconds=settings.queue_alert_cooldown_seconds,
             failure_threshold=settings.queue_failure_threshold,
         )
