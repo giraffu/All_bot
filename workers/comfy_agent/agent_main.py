@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
     TransferConfig = None
     BotoConfig = None
 from agent_input_preparation import (
+    prepare_h3_reference_video_tail,
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
 )
@@ -898,6 +899,7 @@ class ComfyAgent:
             download_input_func=self.download_input_from_minio,
             should_normalize_image_input_func=self._should_normalize_image_input,
             normalize_input_image_func=self._normalize_input_image_for_comfy,
+            prepare_input_file_func=prepare_h3_reference_video_tail,
             upload_prepared_input_func=self._upload_prepared_input,
             logger=logger,
             download_timeout_seconds=MINIO_DOWNLOAD_TIMEOUT_SECONDS,

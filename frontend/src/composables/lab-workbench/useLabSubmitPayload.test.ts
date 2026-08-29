@@ -283,7 +283,6 @@ describe('useLabSubmitPayload', () => {
     harness.minimaxH3Mode.value = 'flf2v'
     harness.h3PrevTaskId.value = 'h3-parent'
     harness.uploadedReferences.value = [
-      { ...refImage('trusted-tail.png'), locked: true, width: 1280, height: 720 },
       { ...refImage('new-end.png'), width: 1280, height: 720 },
     ]
 
@@ -296,6 +295,24 @@ describe('useLabSubmitPayload', () => {
         minimax_h3_prev_task_id: 'h3-parent',
       }),
     }), 'lab.cards.minimax_h3_title')
+  })
+
+  it('submits direct H3 continuation as a server-owned video reference', async () => {
+    const harness = createHarness('minimax_h3')
+    harness.prompt.value = 'continue the same movement'
+    harness.minimaxH3Mode.value = 'ref2v'
+    harness.h3PrevTaskId.value = 'h3-parent'
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_ref2v',
+      inputs: expect.objectContaining({
+        images: [],
+        minimax_h3_prev_task_id: 'h3-parent',
+      }),
+    }), 'lab.cards.minimax_h3_title')
+    expect(harness.submitTask.mock.calls[0][0].inputs).not.toHaveProperty('reference_refs')
   })
 
   it('submits ordered mixed typed references for H3 REF2V', async () => {

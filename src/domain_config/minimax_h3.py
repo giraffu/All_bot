@@ -286,6 +286,7 @@ class MiniMaxH3Spec:
     cost: int
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
+    reference_video: str | None
     reference_audio: str | None
     main_model: str
     model_name: str
@@ -472,6 +473,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         )
 
     images = _images(inputs)
+    reference_video = str(inputs.get("reference_video") or "").strip() or None
     reference_audio = str(inputs.get("reference_audio") or "").strip() or None
     descriptions = _string_tuple(
         inputs.get("reference_descriptions"), field="reference_descriptions"
@@ -480,7 +482,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         MINIMAX_H3_T2V: (0, 0, "t2v"),
         MINIMAX_H3_I2V: (1, 1, "i2v"),
         MINIMAX_H3_FLF2V: (2, 2, "flf2v"),
-        MINIMAX_H3_REF2V: (1, 5, "ref2v"),
+        MINIMAX_H3_REF2V: (0, 5, "ref2v"),
     }[task_type]
     minimum, maximum, mode = expected
     if not minimum <= len(images) <= maximum:
@@ -492,12 +494,16 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if any(not item for item in images):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}图片不得为空。")
     if task_type == MINIMAX_H3_REF2V:
+        if not images and reference_video is None:
+            raise MiniMaxH3ValidationError("ref2v 必须提供参考图片或参考视频。")
         if descriptions and (
             len(descriptions) != len(images) or any(not item for item in descriptions)
         ):
             raise MiniMaxH3ValidationError("参考说明必须与参考图片一一对应。")
     elif descriptions:
         raise MiniMaxH3ValidationError("当前模式不支持角色参考说明。")
+    if reference_video is not None and task_type != MINIMAX_H3_REF2V:
+        raise MiniMaxH3ValidationError("参考视频仅支持参考生视频。")
     if reference_audio is not None and task_type != MINIMAX_H3_REF2V:
         raise MiniMaxH3ValidationError("主角参考语音仅支持参考图生视频。")
 
@@ -531,6 +537,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         ),
         images=images,
         reference_descriptions=descriptions,
+        reference_video=reference_video,
         reference_audio=reference_audio,
         main_model=main_model,
         model_name=(

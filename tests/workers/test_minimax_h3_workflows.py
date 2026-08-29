@@ -55,6 +55,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
             }
             assert workflow["30"]["class_type"] == "MiniMaxH3ReferenceToVideo"
             assert workflow["30"]["inputs"]["ref_image_size"] == "match"
+            assert workflow["26"]["class_type"] == "VHS_LoadVideo"
             assert workflow["33"]["inputs"]["sampler_name"] == "er_sde"
             assert workflow["34"] == {
                 "inputs": {"sigmas": REF2V_SIGMAS},
@@ -292,6 +293,36 @@ def test_minimax_h3_ref2v_without_reference_audio_prunes_audio_input_node():
 
     assert "25" not in patched
     assert "ref_audios.ref_audio_0" not in patched["30"]["inputs"]
+
+
+def test_minimax_h3_ref2v_maps_tail_video_frames_and_paired_audio():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+
+    patched = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {
+            "prompt": "continue the movement",
+            "reference_video": "previous-tail.mp4",
+        },
+    )
+
+    assert patched["26"]["inputs"] == {
+        "video": "previous-tail.mp4",
+        "force_rate": 24,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 120,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "None",
+    }
+    assert patched["30"]["inputs"]["ref_videos.ref_video_0"] == ["26", 0]
+    assert patched["30"]["inputs"]["ref_video_audios.ref_video_audio_0"] == ["26", 2]
+    assert patched["30"]["inputs"]["prompt"].startswith(
+        "<Video 1> is the final five seconds of the previous segment."
+    )
 
 
 def test_minimax_h3_patcher_uses_dedicated_ref2v_four_step_turbo_lora():

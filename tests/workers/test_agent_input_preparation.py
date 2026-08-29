@@ -1,12 +1,57 @@
 import logging
+from pathlib import Path
 import time
 
 import pytest
 
 from workers.comfy_agent.agent_input_preparation import (
+    prepare_h3_reference_video_tail,
     prepare_task_inputs,
     process_single_input_asset,
 )
+
+
+def test_prepare_h3_reference_video_tail_uses_last_five_seconds(tmp_path, monkeypatch):
+    source = tmp_path / "previous.mp4"
+    source.write_bytes(b"source-video")
+
+    def run(command, **kwargs):
+        assert command[command.index("-sseof") + 1] == "-5"
+        assert command[command.index("-t") + 1] == "5"
+        assert kwargs["timeout"] == 120
+        Path(command[-1]).write_bytes(b"tail-video")
+        return type("Result", (), {"returncode": 0, "stderr": b""})()
+
+    monkeypatch.setattr(
+        "workers.comfy_agent.agent_input_preparation.subprocess.run",
+        run,
+    )
+
+    result = prepare_h3_reference_video_tail("reference_video", str(source))
+
+    assert result.endswith("__tail5s.mp4")
+    assert Path(result).read_bytes() == b"tail-video"
+
+
+def test_prepare_h3_reference_video_tail_leaves_other_inputs_unchanged(tmp_path):
+    source = tmp_path / "voice.m4a"
+    assert prepare_h3_reference_video_tail("reference_audio", str(source)) == str(source)
+
+
+def test_prepare_h3_reference_video_tail_fails_closed(tmp_path, monkeypatch):
+    source = tmp_path / "previous.mp4"
+    source.write_bytes(b"source-video")
+    monkeypatch.setattr(
+        "workers.comfy_agent.agent_input_preparation.subprocess.run",
+        lambda *_args, **_kwargs: type(
+            "Result", (), {"returncode": 1, "stderr": b"invalid video"}
+        )(),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid video"):
+        prepare_h3_reference_video_tail("reference_video", str(source))
+
+    assert not (tmp_path / "previous__tail5s.mp4").exists()
 
 
 async def _noop_upload(**_kwargs):
@@ -128,6 +173,27 @@ async def test_prepare_task_inputs_downloads_single_reference_audio():
 
     assert calls == [("reference_audio", "web_uploads/user/voice.m4a")]
     assert params["reference_audio"] == "prepared-voice.m4a"
+
+
+@pytest.mark.asyncio
+async def test_prepare_task_inputs_downloads_extension_reference_video():
+    calls = []
+    params = {"reference_video": "task-inputs/extension/previous.mp4"}
+
+    async def process(**kwargs):
+        calls.append((kwargs["param_key"], kwargs["img_filename"]))
+        kwargs["params"][kwargs["param_key"]] = "prepared-tail.mp4"
+
+    await prepare_task_inputs(
+        params=params,
+        downloaded_input_paths=[],
+        process_single_input_asset_func=process,
+    )
+
+    assert calls == [
+        ("reference_video", "task-inputs/extension/previous.mp4"),
+    ]
+    assert params["reference_video"] == "prepared-tail.mp4"
 
 
 @pytest.mark.asyncio

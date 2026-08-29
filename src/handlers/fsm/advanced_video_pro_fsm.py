@@ -353,7 +353,7 @@ async def start_extension(
         logger.exception("Failed to prepare H3 extension")
         await robust_reply_text(
             query.message,
-            _text(context, "尾帧加载失败，请稍后重试。", "Failed to load the last frame. Try again later."),
+            _text(context, "扩展参考加载失败，请稍后重试。", "Failed to load the extension reference. Try again later."),
         )
         return ConversationHandler.END
     data = seed.fsm_data
@@ -366,13 +366,13 @@ async def start_extension(
             context,
             _text(
                 context,
-                "已锁定上一段尾帧。请选择直接续写，或上传一张新的终止帧。",
-                "The previous last frame is locked. Continue directly or add a new end frame.",
+                "已载入上一段末尾约 5 秒作为视频参考。请选择视频续写，或使用尾帧并上传一张新的终止帧。",
+                "The final five seconds of the previous segment are loaded as a video reference. Continue from the video or use its last frame with a new end frame.",
             ),
         ),
         reply_markup=InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton(_text(context, "直接续写", "Continue"), callback_data="h3ext_mode_i2v")],
+                [InlineKeyboardButton(_text(context, "视频参考续写", "Continue from video"), callback_data="h3ext_mode_ref2v")],
                 [InlineKeyboardButton(_text(context, "添加终止帧", "Add end frame"), callback_data="h3ext_mode_flf2v")],
             ]
         ),
@@ -389,14 +389,17 @@ async def extension_mode_callback(
     if not data or not data.get("is_extension"):
         return ConversationHandler.END
     mode = str(query.data or "").removeprefix("h3ext_mode_")
-    if mode not in {"i2v", "flf2v"}:
+    if mode not in {"ref2v", "flf2v"}:
         return AdvancedVideoProState.WAIT_SETTINGS
     data["mode"] = mode
+    data["images"] = (
+        [data["extension_start_frame"]] if mode == "flf2v" else []
+    )
     _apply_runtime_profile(data)
     guidance = _text(
         context,
-        "可调整时长和画质，然后直接发送新提示词。" if mode == "i2v" else "可调整时长和画质，然后上传一张新的终止帧。",
-        "Adjust duration and quality, then send a new prompt." if mode == "i2v" else "Adjust duration and quality, then upload a new end frame.",
+        "可调整时长和画质，然后直接发送新提示词。" if mode == "ref2v" else "可调整时长和画质，然后上传一张新的终止帧。",
+        "Adjust duration and quality, then send a new prompt." if mode == "ref2v" else "Adjust duration and quality, then upload a new end frame.",
     )
     await robust_edit_text(
         query.message,
@@ -441,7 +444,7 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             data["aspect"] = aspect
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
-        if mode == "t2v":
+        if mode == "t2v" or (data.get("is_extension") and mode == "ref2v"):
             await robust_edit_text(query.message, _prompt_request_text(context, data))
             return AdvancedVideoProState.WAIT_PROMPT
         await robust_edit_text(
@@ -482,12 +485,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
-    if data.get("is_extension") and data.get("mode") == "i2v":
+    if data.get("is_extension") and data.get("mode") == "ref2v":
         await robust_reply_text(
             update.message,
             _with_cancel_hint(
                 context,
-                _text(context, "上一段尾帧已锁定，请直接发送新提示词。", "The previous last frame is locked. Send a new prompt."),
+                _text(context, "上一段末尾视频已作为参考，请直接发送新提示词。", "The previous segment tail is loaded as a video reference. Send a new prompt."),
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
@@ -709,6 +712,7 @@ async def _submit_generation(
             prompt=prompt,
             images=data["images"],
             reference_descriptions=data["reference_descriptions"],
+            reference_video=data.get("reference_video"),
             reference_audio=data.get("reference_audio"),
             duration=data["duration"],
             resolution_preset=data["preset"],
@@ -796,7 +800,7 @@ async def receive_settings_prompt(
     data = context.user_data.get(DATA_KEY)
     if not data or (
         data.get("mode") != "t2v"
-        and not (data.get("is_extension") and data.get("mode") == "i2v")
+        and not (data.get("is_extension") and data.get("mode") == "ref2v")
     ):
         await robust_reply_text(
             update.effective_message,

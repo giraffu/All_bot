@@ -537,6 +537,7 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         prompt="scene",
         images=(),
         reference_descriptions=(),
+        reference_video="previous-tail.mp4",
         reference_audio="voice.m4a",
         duration=5,
         resolution_preset="preview",
@@ -564,6 +565,7 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
     ]
     assert request.await_args.kwargs["json"]["main_model"] == "10eros"
     assert request.await_args.kwargs["json"]["reference_audio"] == "voice.m4a"
+    assert request.await_args.kwargs["json"]["reference_video"] == "previous-tail.mp4"
 
 
 @pytest.mark.asyncio

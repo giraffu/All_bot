@@ -13,9 +13,11 @@ Web 和主 Bot 的新提交都由服务端读取并覆盖客户端模型字段�
 VBVR H3 v1 只允许 T2V/I2V。
 QQCC 配置 Web 同样从这一领域目录下发 18 项及其模式范围，场景保存最多 13 个有序 `lora_items`；官方懒人
 Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
-REF2V 接受有序参考图片及至多一个可选的主角参考语音，不接受参考视频。测试 Web/主 Bot
-限制 1–4 张图和一个语音；官方 QQCC 固定 1 张用户主体图加 1–4 张管理员参考图且暂不
-开放语音；Worker 防御上限为 5 张图、一个语音。私有
+REF2V 底层接受有序参考图片、参考视频和参考音频。普通测试 Web/主 Bot 入口仍只开放
+1–4 张图和一个可选主角参考语音；H3 扩展的“视频参考续写”由服务端按本人父 History
+注入一个可信参考视频，客户端不能提交任意视频 object key。官方 QQCC 固定 1 张用户
+主体图加 1–4 张管理员参考图且暂不开放语音或视频；Worker 防御上限为 5 张图、一个
+内部参考视频和一个语音。私有
 QQCC Bot 过滤 REF2V 场景并拒绝已失效 callback。
 
 Bot/Web 的终端用户界面只展示“效果增强”和用途标签，不展示 MiniMax H3、基础链、
@@ -56,7 +58,8 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   `official_ref2v_turbo` 用于其它模式时在领域层和 Worker 层都 fail closed；未知值
   同样拒绝。
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
-- REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排。
+- REF2V 使用固定画幅。`<Picture N>` 永远按图片数组顺序编号，Worker 不重排；内部扩展
+  参考视频固定使用 `<Video 1>`，其配对原音轨进入同编号 video-audio conditioning。
   REF2V 按 `5/10/15` 秒分别使用完整四档价格矩阵：`11/13/17/22`、
   `17/24/37/50`、`26/38/64/91`。上一版矩阵来自 5 秒 GPU/灵石基准的整数价格，
   普通模式应用 `1.05`、REF2V 应用 `1.15` 系数后向上取整；当前公开价格再统一
@@ -97,8 +100,9 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   目录的事实源。服务端预设生成最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
-  管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径、参考视频或底层
-  `ref_audios` 数组；参考语音只能走上述单值高层契约。用户提示词不强制包含
+  管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径、客户端参考视频
+  或底层 `ref_audios` 数组；参考语音只能走上述单值高层契约。扩展服务可在验证父记录
+  owner 和链路后写入内部单值 `reference_video`。用户提示词不强制包含
   `<Audio 1>`，服务端不得替用户注入；Web/Bot 只在选择音频后给出非阻断提醒。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
@@ -106,17 +110,21 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
 
 ## 扩展生成与整链拼接
 
-- 扩展来源只允许本人成功的 I2V、FLF2V 或 REF2V History；T2V、拼接记录、缺少
-  `last_frame`、上下文断裂或非本人记录都由服务端明确拒绝。下一段只允许 I2V
-  直接续写或 FLF2V 添加终止帧，起始帧始终由服务端从父段尾帧注入；REF2V 的原参考图
-  不向后携带。
+- 扩展来源只允许本人成功的 I2V、FLF2V 或 REF2V History；T2V、拼接记录、缺少父视频、
+  上下文断裂或非本人记录都由服务端明确拒绝。默认“视频参考续写”提交 REF2V：服务端
+  只信任父 History 的 `output_file`，Worker 下载后用 FFmpeg 截取末尾 5 秒、统一为
+  24fps，再通过 `VHS_LoadVideo` 把帧序列和原音轨分别连接到
+  `ref_videos.ref_video_0` / `ref_video_audios.ref_video_audio_0`。它用于继承人物、场景、
+  运动、镜头和声音上下文，但不是首帧锚定，不能宣称段间像素级无缝。用户仍可切换
+  FLF2V 添加终止帧，此时继续由服务端注入父段尾帧。父 REF2V 原参考图不向后携带。
 - `_minimax_h3_context` 当前版本为 2，继续严格读取版本 1。v2 在原模式、时长、档位、
   比例和附加模型快照之外保存 `prev_task_id` 与有序 `chain_task_ids`；入口只接受
   `minimax_h3_prev_task_id`，链数组由服务端按本人 History 重建，不能信任客户端。
   History/result API 只通过 `result_meta.minimax_h3_*` 暴露父任务、链、段号和拼接状态，
   内部上下文不进入 `extra_outputs` 公共响应。
-- Web 和主 Bot 每个续段都按提交时最新 Dashboard Pro 模型预设与当前所选时长/画质
-  正常计费；父段只提供尾帧、链路和投稿权限。主 Bot 结果 callback 为
+- Web 和主 Bot 每个续段都按实际目标模式（视频参考续写为 REF2V、终止帧续写为 FLF2V）
+  使用提交时最新 Dashboard Pro 模型预设与当前所选时长/画质正常计费；父段只提供
+  可信视频/尾帧、链路和投稿权限。主 Bot 结果 callback 为
   `h3_extend:<task_id>`，第二段起另提供 `h3_stitch:<task_id>`。
 - Web 使用 `GET /api/users/history/{task_id}/minimax-h3-chain` 查询本人链，使用
   `POST /api/users/history/{task_id}/minimax-h3-chain/stitch` 免费拼接。拼接先按首段
@@ -312,10 +320,12 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 实际速度必须通过后续四模式 GPU canary 才能定论。
 
 四份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
-`workers/comfy_agent/workflows/` 与 LAN GPU runtime。REF2V 模板预建 5 个稳定图片槽和
-一个 `LoadAudio` 槽；patcher 删除未使用节点和连接并保持剩余图片顺序。输入准备器把
-单值 `reference_audio` 下载并上传到 Comfy input，patcher 只连接
-`ref_audios.ref_audio_0`，不把音频语义注入 prompt。
+`workers/comfy_agent/workflows/` 与 LAN GPU runtime。REF2V 模板预建 5 个稳定图片槽、
+一个 `LoadAudio` 槽和一个 `VHS_LoadVideo` 槽；patcher 删除未使用节点和连接并保持剩余
+图片顺序。输入准备器把单值 `reference_audio` 下载并上传到 Comfy input，patcher 只连接
+`ref_audios.ref_audio_0`，不把音频语义注入 prompt。内部 `reference_video` 在 Worker
+上传 Comfy 前裁成末尾 5 秒；patcher 同时连接帧与配对音轨，并添加稳定的 `<Video 1>`
+续写约束。普通客户端仍不能设置该字段。
 
 ## 模型包与镜像
 
@@ -405,6 +415,7 @@ LAN slot takeover/rollback 仍需独立维护窗口，并按单槽 operator 的 
 显式独占 benchmark 或已证实共享队列争用影响诊断时，才临时暂停其中一侧 intake。
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，并覆盖 REF2V 1/4/5 图、
 REF2V 无语音/单语音（提示词分别不含/包含 `<Audio 1>`）、
+扩展 REF2V 单个末尾 5 秒参考视频（帧与配对音轨均实际接入）、
 单个 addon 和 13 addon 有序组合，逐条检查：Central task type、Worker agent、MP4、
 24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
 黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。

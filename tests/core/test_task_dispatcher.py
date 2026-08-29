@@ -133,7 +133,8 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
         "task-h3",
         {
             "prompt": "walks through a city",
-            "saved_input_images": ["ref/a.png"],
+            "saved_input_images": [],
+            "reference_video": "ref/previous.mp4",
             "reference_audio": "ref/voice.m4a",
             "aspect_ratio": "16:9",
         },
@@ -142,17 +143,20 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
     assert result == "backend-h3"
     submit.assert_awaited_once()
     assert submit.await_args.kwargs["reference_audio"] == "ref/voice.m4a"
+    assert submit.await_args.kwargs["reference_video"] == "ref/previous.mp4"
     assert strategy.get_file_paths_to_upload(
         {
-            "saved_input_images": ["ref/a.png"],
+            "saved_input_images": [],
+            "reference_video": "ref/previous.mp4",
             "reference_audio": "ref/voice.m4a",
         }
-    ) == ["ref/a.png", "ref/voice.m4a"]
+    ) == ["ref/previous.mp4", "ref/voice.m4a"]
     assert (
         strategy.get_metadata(
             {
                 "prompt": "walks through a city",
-                "saved_input_images": ["task-inputs/task-h3/0.png"],
+                "saved_input_images": [],
+                "reference_video": "task-inputs/task-h3/0.mp4",
                 "reference_audio": "task-inputs/task-h3/1.m4a",
                 "aspect_ratio": "16:9",
             }

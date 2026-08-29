@@ -84,6 +84,14 @@
         "25",
         0
       ],
+      "ref_videos.ref_video_0": [
+        "26",
+        0
+      ],
+      "ref_video_audios.ref_video_audio_0": [
+        "26",
+        2
+      ],
       "ref_images.ref_image_0": [
         "20",
         0
@@ -238,6 +246,19 @@
       "audio": "minimax_h3_reference_audio.m4a"
     },
     "class_type": "LoadAudio"
+  },
+  "26": {
+    "inputs": {
+      "video": "minimax_h3_reference_video.mp4",
+      "force_rate": 24,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 120,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "None"
+    },
+    "class_type": "VHS_LoadVideo"
   },
   "20": {
     "inputs": {

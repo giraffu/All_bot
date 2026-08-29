@@ -75,6 +75,7 @@ async def process_standard_generation_task(
     result_meta: dict[str, Any] | None = None,
     runtime_state: BotTaskRuntimeState | None = None,
     reference_descriptions: list[str] | None = None,
+    reference_video: str | None = None,
     reference_audio: str | None = None,
     resolution_preset: str | None = None,
     aspect_ratio: str | None = None,
@@ -186,6 +187,7 @@ async def process_standard_generation_task(
                 else aspect_ratio or "16:9"
             ),
             reference_descriptions=reference_descriptions or [],
+            reference_video=reference_video,
             reference_audio=reference_audio,
             main_model=main_model or "10eros",
             seed=seed,
@@ -287,7 +289,11 @@ async def process_standard_generation_task(
             result_input_image_indices=result_input_image_indices,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
-            images=[*images, *([reference_audio] if reference_audio else [])],
+            images=[
+                *images,
+                *([reference_video] if reference_video else []),
+                *([reference_audio] if reference_audio else []),
+            ],
             cleanup=cleanup,
             entrypoint_name="process_generation_task",
             runtime_state=runtime_state,

@@ -491,13 +491,7 @@ export function useLabWorkbench() {
   })
   watch(minimaxH3Mode, (nextMode, previousMode) => {
     if (nextMode !== previousMode && currentMode.value.id === 'minimax_h3') {
-      if (h3.h3IsExtension.value && ['i2v', 'flf2v'].includes(nextMode)) {
-        references.uploadedReferences.value = references.uploadedReferences.value.filter(
-          item => item.locked,
-        )
-      } else {
-        references.clearReferences()
-      }
+      references.clearReferences()
     }
     if (nextMode !== 'ref2v') h3ReferenceAudio.clearReferenceAudio()
   })
@@ -512,13 +506,8 @@ export function useLabWorkbench() {
       minimaxH3Mode.value = routeMode as 't2v' | 'i2v' | 'flf2v' | 'ref2v'
     }
     const h3ExtensionTaskId = String(route.query.minimax_h3_extend_task_id || '').trim()
-    const h3ExtensionKey = String(route.query.minimax_h3_extend_key || '').trim()
-    if (h3ExtensionTaskId && h3ExtensionKey) {
-      h3.applyH3ExtensionPrefill(
-        h3ExtensionKey,
-        String(route.query.minimax_h3_extend_url || '').trim(),
-        h3ExtensionTaskId,
-      )
+    if (h3ExtensionTaskId) {
+      h3.applyH3ExtensionPrefill(h3ExtensionTaskId)
     }
   }
 
@@ -533,8 +522,6 @@ export function useLabWorkbench() {
       route.query.ltx_extend_task_id,
       route.query.ltx_chain_task_ids,
       route.query.minimax_h3_extend_task_id,
-      route.query.minimax_h3_extend_key,
-      route.query.minimax_h3_extend_url,
     ],
     hydrateLabRoute,
     { immediate: true },

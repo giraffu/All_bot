@@ -44,6 +44,17 @@ def test_ref2v_accepts_one_to_four_ordered_images(image_count):
     assert plan.cost == 11
 
 
+def test_ref2v_extension_accepts_server_reference_video_without_images():
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="continue after the previous segment",
+        reference_video="/tmp/previous-tail.mp4",
+    )
+
+    assert plan.images == ()
+    assert plan.reference_video == "/tmp/previous-tail.mp4"
+
+
 @pytest.mark.parametrize("image_count", [0, 5])
 def test_ref2v_rejects_zero_or_five_images(image_count):
     with pytest.raises(AdvancedVideoProSubmissionError, match="1 至 4"):
@@ -170,6 +181,27 @@ async def test_ref2v_submit_forwards_single_reference_audio_without_rewriting_pr
     kwargs = process.await_args.kwargs
     assert kwargs["prompt"] == "the character speaks softly"
     assert kwargs["reference_audio"] == "voice.ogg"
+
+
+@pytest.mark.asyncio
+async def test_ref2v_submit_forwards_extension_reference_video():
+    process = AsyncMock(return_value=(b"video", "output.mp4"))
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="continue",
+        reference_video="/tmp/previous-tail.mp4",
+    )
+
+    await submit_advanced_video_pro_plan(
+        plan,
+        context=object(),
+        chat_id=1,
+        user_id=2,
+        username="alice",
+        process_task_func=process,
+    )
+
+    assert process.await_args.kwargs["reference_video"] == "/tmp/previous-tail.mp4"
 
 
 @pytest.mark.asyncio

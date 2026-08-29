@@ -84,7 +84,7 @@ const h3SegmentIndex = computed(() => (
 const canExtendH3Record = computed(() => (
   isH3ImageRecord.value
   && !isH3StitchedRecord.value
-  && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
+  && Boolean(currentRecord.value?.task_id && currentRecord.value?.output_file)
 ))
 const canStitchH3Chain = computed(() => (
   isH3ImageRecord.value
@@ -178,19 +178,16 @@ const handleLtxChainStitch = async () => {
 
 const openH3Editor = async () => {
   const record = currentRecord.value as HistoryItem | null
-  const lastFrame = record?.extra_outputs?.last_frame
-  if (!record?.task_id || !lastFrame?.path) {
-    message.warning(t('lab.workbench.minimax_h3_extend_missing_last_frame'))
+  if (!record?.task_id || !record.output_file) {
+    message.warning(t('lab.workbench.minimax_h3_extend_missing_video'))
     return
   }
   detailVisible.value = false
   await router.push({
     name: 'CustomFeatures',
     query: {
-      type: 'minimax_h3_i2v',
+      type: 'minimax_h3_ref2v',
       minimax_h3_extend_task_id: record.task_id,
-      minimax_h3_extend_key: lastFrame.path,
-      ...(lastFrame.url ? { minimax_h3_extend_url: lastFrame.url } : {}),
     },
   })
 }
@@ -467,7 +464,7 @@ const handleWan22ChainStitch = async () => {
                 </a-button>
               </div>
               <div class="task-detail-chain-tip text-[11px] lg:text-xs">
-                {{ canExtendH3Record ? $t('lab.workbench.minimax_h3_locked_start_frame') : $t('lab.workbench.minimax_h3_extend_missing_last_frame') }}
+                {{ canExtendH3Record ? $t('lab.workbench.minimax_h3_video_reference_ready') : $t('lab.workbench.minimax_h3_extend_missing_video') }}
               </div>
             </div>
 
