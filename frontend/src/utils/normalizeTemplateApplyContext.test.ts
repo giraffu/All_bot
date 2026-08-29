@@ -232,6 +232,8 @@ describe('normalizeTemplateApplyContext', () => {
           { name: 'naughty_times', strength: 1.2 },
           { name: 'ltx2.3/not-allowed.safetensors', strength: 1 },
         ],
+        reference_audio_ref: { source: 'gallery_post', post_id: '31' },
+        reference_audio_url: 'https://example.com/voice.m4a',
       },
       { source: 'gallery', entryEntityId: 31 }
     )
@@ -248,6 +250,8 @@ describe('normalizeTemplateApplyContext', () => {
         { name: 'sex_pose', strength: 0.5 },
         { name: 'naughty_times', strength: 1.2 },
       ],
+      referenceAudioRef: { source: 'gallery_post', post_id: 31 },
+      referenceAudioUrl: 'https://example.com/voice.m4a',
     })
   })
 })

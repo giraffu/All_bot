@@ -127,6 +127,49 @@ async def test_minimax_h3_ref2v_resolves_single_audio_ref_without_rewriting_prom
             "source": "upload",
             "object_key": "web_uploads/7/voice.m4a",
         },
+        source_post_id=None,
+        is_template=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_template_can_reuse_gallery_reference_audio(monkeypatch):
+    from src.web_api.services import reference_asset_service
+
+    resolve = AsyncMock(return_value="task-inputs/source-task/3.m4a")
+    monkeypatch.setattr(
+        reference_asset_service, "resolve_h3_reference_audio_ref", resolve
+    )
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="the character speaks softly",
+        inputs={
+            "images": ["web_uploads/7/new-subject.png"],
+            "reference_audio_ref": {
+                "source": "gallery_post",
+                "post_id": 29,
+            },
+        },
+        is_template=True,
+        source_post_id=29,
+    )
+
+    prepared = await prepare_web_submission_request(
+        req,
+        internal_user_id=7,
+        operator_canary_authorized=True,
+        env_enabled=lambda _name: True,
+        advanced_video_profile_loader=AsyncMock(
+            return_value={"main_model": "10eros", "addon_items": []}
+        ),
+    )
+
+    assert prepared.inputs["reference_audio"] == "task-inputs/source-task/3.m4a"
+    resolve.assert_awaited_once_with(
+        user_id=7,
+        reference_audio_ref={"source": "gallery_post", "post_id": 29},
+        source_post_id=29,
+        is_template=True,
     )
 
 

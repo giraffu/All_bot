@@ -25,6 +25,9 @@ from src.services.task_recovery_contract import (
     build_bot_task_recovery_contract,
     normalize_bot_task_recovery_contract,
 )
+from src.services.minimax_h3_history_context_service import (
+    merge_minimax_h3_input_assets_into_metadata,
+)
 from src.services.task_registry import TaskRegistry
 from src.services.scail2_face_swap_pipeline_service import (
     BOT_SCAIL2_FACE_SWAP_CONTINUATION_KEY,
@@ -273,7 +276,9 @@ async def _resume_recovered_bot_scail2_face_swap(
     return updated
 
 
-async def run_recovered_task(*, registry_task_id: str, task_data: dict, application) -> bool:
+async def run_recovered_task(
+    *, registry_task_id: str, task_data: dict, application
+) -> bool:
     bot = application.bot
     user_id = task_data.get("user_id")
     username = task_data.get("username")
@@ -325,9 +330,7 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
     if not final_info:
         return False
 
-    scail2_continuation = _get_bot_scail2_face_swap_continuation(
-        recovery_contract
-    )
+    scail2_continuation = _get_bot_scail2_face_swap_continuation(recovery_contract)
     if scail2_continuation is not None:
         resumed_task_data = await _resume_recovered_bot_scail2_face_swap(
             registry_task_id=registry_task_id,
@@ -374,8 +377,7 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
             selected_inputs = [
                 recovered_saved_inputs[index]
                 for index in input_indices
-                if isinstance(index, int)
-                and 0 <= index < len(recovered_saved_inputs)
+                if isinstance(index, int) and 0 <= index < len(recovered_saved_inputs)
             ]
             if selected_inputs:
                 recovered_saved_inputs = selected_inputs
@@ -387,6 +389,17 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
         record_history = recovery_contract.get("record_history") is not False
         result_meta = recovery_contract.get("result_meta")
         caption = recovery_contract.get("completion_caption")
+
+    task_metadata = task_data.get("metadata")
+    result_meta = merge_minimax_h3_input_assets_into_metadata(
+        task_type=recovered_task_type,
+        metadata=result_meta if isinstance(result_meta, dict) else None,
+        inputs=(
+            {"reference_audio": task_metadata.get("reference_audio")}
+            if isinstance(task_metadata, dict)
+            else None
+        ),
+    )
 
     completion = _build_recovered_completion_context(
         context=runtime_context,

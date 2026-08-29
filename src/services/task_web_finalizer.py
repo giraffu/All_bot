@@ -103,7 +103,7 @@ def _serialize_submission_context(
         "task_type": submission_context.task_type,
         "is_video_task": submission_context.is_video_task,
         "prompt": submission_context.prompt,
-        "saved_inputs": list(submission_context.saved_inputs),
+        "saved_inputs": list(submission_context.registry_saved_inputs()),
         "metadata": dict(submission_context.metadata),
         "allow_contribute": submission_context.allow_contribute,
         "final_priority": submission_context.final_priority,
@@ -641,8 +641,7 @@ async def _record_authoritative_not_found(record: dict[str, Any]) -> bool:
     )
     return bool(
         next_record["not_found_count"] >= WEB_SUBMISSION_NOT_FOUND_THRESHOLD
-        and now - float(first_not_found_at)
-        >= WEB_SUBMISSION_NOT_FOUND_MIN_SPAN_SECONDS
+        and now - float(first_not_found_at) >= WEB_SUBMISSION_NOT_FOUND_MIN_SPAN_SECONDS
     )
 
 
@@ -840,12 +839,13 @@ async def process_all_pending_web_finalizers(
 
     now = _now_timestamp()
     if index_legacy_records and now >= _legacy_index_next_scan_at:
-        _legacy_index_cursor, indexed_count = (
-            await redis_client.index_legacy_pending_web_finalizers(
-                cursor=_legacy_index_cursor,
-                due_at=now,
-                count=WEB_FINALIZER_LEGACY_INDEX_BATCH_SIZE,
-            )
+        (
+            _legacy_index_cursor,
+            indexed_count,
+        ) = await redis_client.index_legacy_pending_web_finalizers(
+            cursor=_legacy_index_cursor,
+            due_at=now,
+            count=WEB_FINALIZER_LEGACY_INDEX_BATCH_SIZE,
         )
         if indexed_count:
             await redis_client.increment_task_submission_metric(

@@ -19,13 +19,14 @@ TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
     "missing_scail2_motion_video"
 )
 TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = "i2i_draw_disabled"
-TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING = (
-    "minimax_h3_context_missing"
-)
+TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING = "minimax_h3_context_missing"
 TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED = (
     "minimax_h3_mode_not_supported"
 )
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
+_H3_REFERENCE_AUDIO_EXTENSIONS = frozenset(
+    {"mp3", "wav", "m4a", "mp4", "ogg", "oga", "opus"}
+)
 
 
 class GalleryApplyContextError(Exception):
@@ -39,9 +40,7 @@ def split_history_input_files(input_file: str | None) -> list[str]:
     if not input_file:
         return []
     return [
-        item.strip()
-        for item in str(input_file).split("|")
-        if item and item.strip()
+        item.strip() for item in str(input_file).split("|") if item and item.strip()
     ]
 
 
@@ -51,10 +50,36 @@ def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
 
     input_files = split_history_input_files(getattr(history, "input_file", None))
     if getattr(history, "type", None) == MINIMAX_H3_REF2V:
-        return input_files[1:]
+        visual_inputs = (
+            input_files[:-1]
+            if input_files and _is_h3_reference_audio_key(input_files[-1])
+            else input_files
+        )
+        return visual_inputs[1:]
     if is_scail2_task_type(getattr(history, "type", None)):
         return input_files[1:2]
     return input_files
+
+
+def _is_h3_reference_audio_key(value: str) -> bool:
+    extension = value.rsplit(".", 1)[-1].lower() if "." in value else ""
+    return extension in _H3_REFERENCE_AUDIO_EXTENSIONS
+
+
+def resolve_history_reference_audio(history: History | None) -> str | None:
+    if history is None or getattr(history, "type", None) != MINIMAX_H3_REF2V:
+        return None
+    context = resolve_valid_minimax_h3_history_context(
+        task_type=history.type,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    reference_audio = str(context.get("reference_audio") or "").strip()
+    if reference_audio:
+        return reference_audio
+    input_files = split_history_input_files(getattr(history, "input_file", None))
+    if input_files and _is_h3_reference_audio_key(input_files[-1]):
+        return input_files[-1]
+    return None
 
 
 def resolve_history_template_apply_disabled_reason(
@@ -106,8 +131,10 @@ async def fetch_gallery_apply_context_entities(*, db, post_id: int):
         return None, None
 
     history = (
-        await db.execute(select(History).where(History.task_id == post.task_id))
-    ).scalars().first()
+        (await db.execute(select(History).where(History.task_id == post.task_id)))
+        .scalars()
+        .first()
+    )
     return post, history
 
 
@@ -124,7 +151,9 @@ async def build_gallery_apply_context_payload(
     history: History | None = None,
 ) -> object:
     if post is None and history is None:
-        post, history = await fetch_gallery_apply_context_entities(db=db, post_id=post_id)
+        post, history = await fetch_gallery_apply_context_entities(
+            db=db, post_id=post_id
+        )
 
     if not post or post.is_active is False:
         raise GalleryApplyContextError(status_code=404, detail="帖子不存在或已失效")

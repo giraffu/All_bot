@@ -58,6 +58,12 @@ const FooterStub = defineComponent({
   props: ['taskCost', 'isSubmitting', 'hasPendingUploads', 'hasObjectKey'],
   template: '<button class="generate" @click="$emit(\'generate\')">generate</button>'
 })
+const AudioStub = defineComponent({
+  name: 'H3ReferenceAudioUpload',
+  props: ['item', 'uploading', 'beforeUpload'],
+  emits: ['remove'],
+  template: '<button class="audio-stub" @click="$emit(\'remove\')">audio</button>'
+})
 
 const context = {
   raw: { task_type: 'minimax_h3_flf2v', post_id: 44 },
@@ -80,6 +86,7 @@ const mountPanel = (panelContext = context) => mount(TemplateAdvancedVideoProPan
       TemplateApplyUploadSection: UploadStub,
       TemplateApplyActionFooter: FooterStub,
       TemplateApplyResultSection: true,
+      H3ReferenceAudioUpload: AudioStub,
     }
   }
 })
@@ -165,6 +172,8 @@ describe('TemplateAdvancedVideoProPanel', () => {
       inputFileUrl: 'https://example.com/pose.png',
       inputFiles: ['task-inputs/source/1.png', 'task-inputs/source/2.png'],
       inputFileUrls: ['https://example.com/pose.png', 'https://example.com/style.png'],
+      referenceAudioRef: { source: 'gallery_post', post_id: 45 },
+      referenceAudioUrl: 'https://example.com/voice.m4a',
     } as any
 
     const wrapper = mountPanel(ref2vContext)
@@ -194,10 +203,50 @@ describe('TemplateAdvancedVideoProPanel', () => {
         resolution_preset: 'preview',
         aspect_ratio: '16:9',
         reference_descriptions: [],
+        reference_audio_ref: { source: 'gallery_post', post_id: 45 },
       },
       priority: 0,
       is_template: true,
       source_post_id: 45,
     }, expect.any(String))
+  })
+
+  it('lets the user replace the contributed reference audio with a new upload', async () => {
+    mocks.uploadFile.mockReset()
+    mocks.uploadFile
+      .mockResolvedValueOnce({ uploadId: '1', objectKey: 'uploads/new-person.png' })
+      .mockResolvedValueOnce({ uploadId: '2', objectKey: 'uploads/new-voice.m4a' })
+    mocks.readImageDimensions.mockReset().mockResolvedValueOnce({ width: 900, height: 1600 })
+    const ref2vContext = {
+      ...context,
+      rawTaskType: 'minimax_h3_ref2v',
+      taskType: 'minimax_h3_ref2v',
+      sourcePostId: 45,
+      requiredImageCount: 1,
+      requestedDuration: 5,
+      resolutionPreset: 'preview',
+      aspectRatio: '16:9',
+      inputFiles: [],
+      inputFileUrls: [],
+      referenceAudioRef: { source: 'gallery_post', post_id: 45 },
+      referenceAudioUrl: 'https://example.com/voice.m4a',
+    } as any
+    const wrapper = mountPanel(ref2vContext)
+    const imageUpload = wrapper.findComponent(UploadStub)
+    const audioUpload = wrapper.findComponent(AudioStub)
+
+    await imageUpload.props('beforeUpload')(new File(['person'], 'person.png', { type: 'image/png' }))
+    await audioUpload.props('beforeUpload')(new File(['voice'], 'voice.m4a', { type: 'audio/mp4' }))
+    await wrapper.find('button.generate').trigger('click')
+    await flushPromises()
+
+    expect(mocks.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      inputs: expect.objectContaining({
+        reference_audio_ref: {
+          source: 'upload',
+          object_key: 'uploads/new-voice.m4a',
+        },
+      }),
+    }), expect.any(String))
   })
 })

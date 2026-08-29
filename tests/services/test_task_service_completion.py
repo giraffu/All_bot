@@ -501,13 +501,20 @@ async def test_handle_task_completion_merges_qqcc_regenerate_meta_into_extra_out
 async def test_handle_task_completion_persists_minimax_h3_context(monkeypatch):
     download_output = AsyncMock(
         return_value=TaskSuccessPersistenceResult(
-            media_bytes=b"video", output_file="result.mp4", width=640, height=960,
+            media_bytes=b"video",
+            output_file="result.mp4",
+            width=640,
+            height=960,
             duration=10,
         )
     )
-    monkeypatch.setattr(completion_helpers, "download_and_log_task_output", download_output)
+    monkeypatch.setattr(
+        completion_helpers, "download_and_log_task_output", download_output
+    )
     monkeypatch.setattr(completion_helpers, "send_result_media", AsyncMock())
-    monkeypatch.setattr(completion_helpers, "cleanup_completion_status_message", AsyncMock())
+    monkeypatch.setattr(
+        completion_helpers, "cleanup_completion_status_message", AsyncMock()
+    )
 
     await completion_helpers.handle_task_completion(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
@@ -616,7 +623,7 @@ def test_build_result_reply_markup_injects_gallery_button_when_missing():
         (MODE_MINIMAX_H3_I2V, True),
         (MODE_MINIMAX_H3_FLF2V, True),
         (MODE_MINIMAX_H3_T2V, False),
-        ("minimax_h3_ref2v", False),
+        ("minimax_h3_ref2v", True),
     ],
 )
 def test_build_result_reply_markup_limits_minimax_h3_gallery_button(

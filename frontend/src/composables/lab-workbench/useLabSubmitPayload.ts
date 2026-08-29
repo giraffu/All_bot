@@ -196,7 +196,7 @@ export function useLabSubmitPayload({
                 })),
                 ...(minimaxH3ReferenceAudio?.value
                   ? {
-                      reference_audio_ref: {
+                      reference_audio_ref: minimaxH3ReferenceAudio.value.referenceRef ?? {
                         source: 'upload' as const,
                         object_key: minimaxH3ReferenceAudio.value.key,
                       },

@@ -1,30 +1,13 @@
 from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
-    MODE_CUSTOM_VIDEO,
-    MODE_EDIT,
-    MODE_FREE_EDIT_V2_5,
     MODE_FACESWAP_STEP1,
-    MODE_I2I_PRO,
-    MODE_IMAGE_TO_VIDEO,
-    MODE_IMG2IMG_LORA,
     MODE_LTX_VIDEO,
-    MODE_MINIMAX_H3_FLF2V,
-    MODE_MINIMAX_H3_I2V,
     MODE_MASTURBATION,
     MODE_NAME_MAP,
     MODE_PENETRATION_STEP1,
-    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
-    MODE_PORNMASTER_FLUX2_EDIT_BF16,
-    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_UNDRESS,
-    MODE_WAN22_VIDEO_V2,
 )
-from src.domain_config.scail2_video import (
-    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
-    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-)
+from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_CALLBACK_PREFIX,
@@ -77,26 +60,7 @@ def resolve_task_id_from_reply_markup(reply_markup: InlineKeyboardMarkup | None)
 
 
 def _supports_gallery_submission(task_type: str, allow_contribute: bool) -> bool:
-    allowed_gallery_types = {
-        MODE_I2I_PRO,
-        MODE_EDIT,
-        MODE_CUSTOM_VIDEO,
-        MODE_IMAGE_TO_VIDEO,
-        MODE_LTX_VIDEO,
-        MODE_MINIMAX_H3_I2V,
-        MODE_MINIMAX_H3_FLF2V,
-        MODE_WAN22_VIDEO_V2,
-        MODE_IMG2IMG_LORA,
-        MODE_FREE_EDIT_V2_5,
-        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
-        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
-        MODE_PORNMASTER_FLUX2_EDIT_BF16,
-        SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-        SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
-        SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-        SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-    }
-    return allow_contribute and task_type in allowed_gallery_types
+    return allow_contribute and is_gallery_supported_task_type(task_type)
 
 
 def _build_gallery_button_row(task_id: str) -> list[InlineKeyboardButton]:
@@ -204,9 +168,18 @@ def _build_qqcc_regenerate_button(task_id: str) -> InlineKeyboardButton:
 
 def _build_qqcc_draw_followup_row(task_id: str) -> list[InlineKeyboardButton]:
     return [
-        InlineKeyboardButton("🎨 换个主题", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:t:{task_id}"),
-        InlineKeyboardButton("🎬 生成动图", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:m:{task_id}"),
-        InlineKeyboardButton("🎥 生成视频", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:v:{task_id}"),
+        InlineKeyboardButton(
+            "🎨 换个主题",
+            callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:t:{task_id}",
+        ),
+        InlineKeyboardButton(
+            "🎬 生成动图",
+            callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:m:{task_id}",
+        ),
+        InlineKeyboardButton(
+            "🎥 生成视频",
+            callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:v:{task_id}",
+        ),
     ]
 
 

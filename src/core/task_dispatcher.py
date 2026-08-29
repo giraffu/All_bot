@@ -1078,6 +1078,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "minimax_h3_end_source_width": inputs.get("end_source_width"),
             "minimax_h3_end_source_height": inputs.get("end_source_height"),
             "reference_descriptions": list(spec.reference_descriptions),
+            "reference_audio": spec.reference_audio,
             "lora_items": [
                 {"name": item.name, "strength": item.strength}
                 for item in spec.addon_items

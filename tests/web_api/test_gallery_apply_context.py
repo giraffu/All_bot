@@ -284,6 +284,7 @@ async def test_minimax_h3_ref2v_apply_context_replaces_first_image_and_reuses_la
                 "requested_duration": 5,
                 "resolution_preset": "preview",
                 "aspect_ratio": "16:9",
+                "reference_audio": "task-inputs/task-ref2v/3.m4a",
                 "lora_items": [],
             }
         },
@@ -298,7 +299,11 @@ async def test_minimax_h3_ref2v_apply_context_replaces_first_image_and_reuses_la
     )
     session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
 
-    response = await get_gallery_apply_context_payload(post_id=29, db=session)
+    response = await get_gallery_apply_context_payload(
+        post_id=29,
+        db=session,
+        build_input_file_url=lambda key: f"https://signed.example/{key}",
+    )
 
     assert response.required_image_count == 1
     assert response.requested_duration == 5
@@ -306,6 +311,57 @@ async def test_minimax_h3_ref2v_apply_context_replaces_first_image_and_reuses_la
     assert response.aspect_ratio == "16:9"
     assert response.input_files == ["uploads/pose.png", "uploads/style.png"]
     assert len(response.input_file_urls) == 2
+    assert response.reference_audio_ref == {
+        "source": "gallery_post",
+        "post_id": 29,
+    }
+    assert response.reference_audio_url == (
+        "https://signed.example/task-inputs/task-ref2v/3.m4a"
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_ref2v_apply_context_recovers_legacy_trailing_audio_input():
+    history = History(
+        id=13,
+        user_id=123,
+        task_id="task-ref2v-legacy-audio",
+        type="minimax_h3_ref2v",
+        prompt="locked character motion",
+        input_file="uploads/person.png|uploads/pose.png|task-inputs/legacy/voice.ogg",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 1,
+                "mode": "ref2v",
+                "requested_duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "16:9",
+                "lora_items": [],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=30,
+        task_id="task-ref2v-legacy-audio",
+        media_type="video",
+        width=896,
+        height=512,
+        duration=5,
+    )
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    response = await get_gallery_apply_context_payload(
+        post_id=30,
+        db=session,
+        build_input_file_url=lambda key: f"https://signed.example/{key}",
+    )
+
+    assert response.input_files == ["uploads/pose.png"]
+    assert response.reference_audio_ref == {
+        "source": "gallery_post",
+        "post_id": 30,
+    }
+    assert response.reference_audio_url.endswith("/task-inputs/legacy/voice.ogg")
 
 
 @pytest.mark.asyncio
@@ -319,8 +375,12 @@ async def test_minimax_h3_ref2v_apply_context_replaces_first_image_and_reuses_la
 )
 async def test_minimax_h3_apply_context_fails_closed(task_type, extra_outputs, reason):
     history = History(
-        id=11, user_id=123, task_id="task-old-h3", type=task_type,
-        prompt="legacy", extra_outputs=extra_outputs,
+        id=11,
+        user_id=123,
+        task_id="task-old-h3",
+        type=task_type,
+        prompt="legacy",
+        extra_outputs=extra_outputs,
     )
     post = GalleryPost(id=27, task_id="task-old-h3", media_type="video")
     session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
@@ -335,13 +395,25 @@ async def test_minimax_h3_apply_context_fails_closed(task_type, extra_outputs, r
 @pytest.mark.asyncio
 async def test_minimax_h3_legacy_post_stays_interactive_but_marks_apply_disabled():
     history = History(
-        id=11, user_id=123, task_id="task-old-h3", type="minimax_h3_i2v",
-        prompt="legacy", output_file="history/result.mp4", extra_outputs={},
+        id=11,
+        user_id=123,
+        task_id="task-old-h3",
+        type="minimax_h3_i2v",
+        prompt="legacy",
+        output_file="history/result.mp4",
+        extra_outputs={},
     )
     post = GalleryPost(
-        id=28, task_id="task-old-h3", user_id=None, media_type="video",
-        tags="[]", likes_count=3, dislikes_count=1, applied_count=2,
-        is_active=True, created_at=datetime.now(),
+        id=28,
+        task_id="task-old-h3",
+        user_id=None,
+        media_type="video",
+        tags="[]",
+        likes_count=3,
+        dislikes_count=1,
+        applied_count=2,
+        is_active=True,
+        created_at=datetime.now(),
     )
     session = _FakeSession([_FakeResult(many=[history])])
 
@@ -487,7 +559,9 @@ async def test_build_post_responses_marks_i2i_draw_template_apply_disabled():
 
 
 @pytest.mark.asyncio
-async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(monkeypatch):
+async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(
+    monkeypatch,
+):
     history = History(
         id=11,
         user_id=123,
@@ -1332,7 +1406,9 @@ async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
             "history/task-1/thumb.webp",
         }
     )
-    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        storage_module.storage, "async_r2_object_exists", async_exists_mock
+    )
     monkeypatch.setattr(
         gallery_media_resolver,
         "build_r2_presigned_url",
@@ -1365,7 +1441,9 @@ async def test_pick_gallery_media_urls_falls_back_to_original_object_keys_when_h
             "123/output_images/task-1_thumb.webp",
         }
     )
-    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        storage_module.storage, "async_r2_object_exists", async_exists_mock
+    )
     monkeypatch.setattr(
         gallery_media_resolver,
         "build_r2_presigned_url",
@@ -1398,7 +1476,9 @@ async def test_pick_gallery_media_urls_can_use_raw_bot_data_r2_prefix(
             "bot-data/history/task-1/output_thumb.webp",
         }
     )
-    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        storage_module.storage, "async_r2_object_exists", async_exists_mock
+    )
     monkeypatch.setattr(
         gallery_media_resolver,
         "build_r2_presigned_url",
@@ -1412,7 +1492,10 @@ async def test_pick_gallery_media_urls_can_use_raw_bot_data_r2_prefix(
     )
 
     assert media_url == "https://r2-s3.example/bot-data/history/task-1/output.png"
-    assert thumbnail_url == "https://r2-s3.example/bot-data/history/task-1/output_thumb.webp"
+    assert (
+        thumbnail_url
+        == "https://r2-s3.example/bot-data/history/task-1/output_thumb.webp"
+    )
     assert async_exists_mock.await_count == 6
 
 
@@ -1431,7 +1514,9 @@ async def test_pick_gallery_media_urls_returns_public_url_when_presign_unavailab
             "history/task-1/thumb.webp",
         }
     )
-    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        storage_module.storage, "async_r2_object_exists", async_exists_mock
+    )
     monkeypatch.setattr(
         gallery_media_resolver,
         "build_r2_presigned_url",
@@ -1459,7 +1544,9 @@ async def test_pick_gallery_media_urls_falls_back_to_media_storage_but_skips_slo
         lambda key: f"https://cdn.example/{key}",
     )
     async_exists_mock = AsyncMock(return_value=False)
-    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        storage_module.storage, "async_r2_object_exists", async_exists_mock
+    )
     monkeypatch.setattr(
         storage_module.storage,
         "async_object_exists",
@@ -1575,8 +1662,13 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     )
 
     assert len(responses) == 1
-    assert responses[0].media_url == "https://r2-s3.example/123/output_images/task-1.png"
-    assert responses[0].thumbnail_url == "https://r2-s3.example/123/output_images/task-1_thumb.webp"
+    assert (
+        responses[0].media_url == "https://r2-s3.example/123/output_images/task-1.png"
+    )
+    assert (
+        responses[0].thumbnail_url
+        == "https://r2-s3.example/123/output_images/task-1_thumb.webp"
+    )
 
 
 @pytest.mark.asyncio
@@ -1879,7 +1971,11 @@ def test_build_gallery_submit_side_effects_returns_copy_and_thumbnail_jobs():
 
     thumb_func, thumb_args = side_effects[1]
     assert thumb_func is thumbnail_job
-    assert thumb_args == ("123/output_images/task-1.png", "image", "history/task-1/thumb.webp")
+    assert thumb_args == (
+        "123/output_images/task-1.png",
+        "image",
+        "history/task-1/thumb.webp",
+    )
 
 
 def test_gallery_submit_reuses_canonical_result_and_only_builds_thumbnail():

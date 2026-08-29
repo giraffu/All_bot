@@ -12,9 +12,13 @@ from src.core.task_core_types import CoreDomainError
 from src.database.models import (
     CharacterReference,
     CharacterReferenceView,
+    GalleryPost,
+    History,
     OfficialCharacterAsset,
     OfficialEnvironmentAsset,
 )
+from src.database.core import AsyncSessionLocal
+from src.services.gallery_apply_context_service import resolve_history_reference_audio
 from src.services.storage import storage
 from src.web_api.services.prompt_optimization_service import (
     PROMPT_MEDIA_MAX_BYTES,
@@ -43,33 +47,70 @@ async def resolve_h3_reference_audio_ref(
     *,
     user_id: int,
     reference_audio_ref: dict,
+    source_post_id: int | None = None,
+    is_template: bool = False,
     object_size: Callable[
         [str, str], Awaitable[int | None]
     ] = storage.async_object_size,
+    gallery_reference_loader: Callable[[int], Awaitable[str | None]] | None = None,
 ) -> str:
-    if not isinstance(reference_audio_ref, dict) or set(reference_audio_ref) != {
-        "source",
-        "object_key",
-    }:
+    if not isinstance(reference_audio_ref, dict):
         raise CoreDomainError("主角参考语音引用格式无效。")
-    if reference_audio_ref.get("source") != "upload":
-        raise CoreDomainError("主角参考语音仅支持当前用户上传的文件。")
-    try:
-        object_key = normalize_owned_user_upload_key(
-            str(reference_audio_ref.get("object_key") or ""),
-            user_id=user_id,
-            allowed_extensions=_H3_REFERENCE_AUDIO_EXTENSIONS,
-        )
-    except ValueError as exc:
-        if str(exc) == "object key extension is not allowed":
-            raise CoreDomainError("主角参考语音仅支持 MP3/WAV/M4A/OGG/OPUS。") from exc
-        raise CoreDomainError("主角参考语音必须属于当前用户。") from exc
+    source = reference_audio_ref.get("source")
+    if source == "upload":
+        if set(reference_audio_ref) != {"source", "object_key"}:
+            raise CoreDomainError("主角参考语音引用格式无效。")
+        try:
+            object_key = normalize_owned_user_upload_key(
+                str(reference_audio_ref.get("object_key") or ""),
+                user_id=user_id,
+                allowed_extensions=_H3_REFERENCE_AUDIO_EXTENSIONS,
+            )
+        except ValueError as exc:
+            if str(exc) == "object key extension is not allowed":
+                raise CoreDomainError(
+                    "主角参考语音仅支持 MP3/WAV/M4A/OGG/OPUS。"
+                ) from exc
+            raise CoreDomainError("主角参考语音必须属于当前用户。") from exc
+    elif source == "gallery_post":
+        if set(reference_audio_ref) != {"source", "post_id"}:
+            raise CoreDomainError("主角参考语音引用格式无效。")
+        try:
+            post_id = int(reference_audio_ref.get("post_id"))
+        except (TypeError, ValueError) as exc:
+            raise CoreDomainError("主角参考语音投稿来源无效。") from exc
+        if not is_template or source_post_id != post_id:
+            raise CoreDomainError("主角参考语音必须来自当前一键应用投稿。")
+        if gallery_reference_loader is None:
+            gallery_reference_loader = _load_gallery_reference_audio
+        object_key = str(await gallery_reference_loader(post_id) or "").strip()
+        if not object_key:
+            raise CoreDomainError("该投稿没有可复用的主角参考语音。")
+    else:
+        raise CoreDomainError("主角参考语音来源无效。")
     size = await object_size(MINIO_BUCKET, object_key)
     if size is None:
         raise CoreDomainError("主角参考语音不存在或暂不可读取。")
     if size > PROMPT_MEDIA_MAX_BYTES:
         raise CoreDomainError("主角参考语音不能超过 20 MB。")
     return object_key
+
+
+async def _load_gallery_reference_audio(post_id: int) -> str | None:
+    async with AsyncSessionLocal() as db:
+        post = (
+            await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
+        ).scalar_one_or_none()
+        if post is None or post.is_active is False:
+            return None
+        history = (
+            (await db.execute(select(History).where(History.task_id == post.task_id)))
+            .scalars()
+            .first()
+        )
+        if history is None:
+            return None
+        return resolve_history_reference_audio(history)
 
 
 _H3_CHARACTER_VIEW_DESCRIPTIONS = {

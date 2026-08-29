@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+
 class CommentCreate(BaseModel):
     content: str = Field(max_length=500, min_length=1)
 
@@ -26,9 +27,11 @@ class GalleryReportSubmitResponse(BaseModel):
     status: str
     report_id: int
 
+
 class CommentUserResponse(BaseModel):
     id: int
     author_name: str
+
 
 class GalleryCommentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -38,6 +41,7 @@ class GalleryCommentResponse(BaseModel):
     created_at: datetime
     user: CommentUserResponse
 
+
 class PaginatedCommentResponse(BaseModel):
     items: List[GalleryCommentResponse]
     total: int
@@ -45,10 +49,12 @@ class PaginatedCommentResponse(BaseModel):
     size: int
     pages: int
 
+
 class GallerySubmitRequest(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[int] = None
+
 
 class GalleryPostResponse(BaseModel):
     id: int
@@ -127,6 +133,8 @@ class ApplyContextResponse(BaseModel):
     lora_name: Optional[str] = None
     lora_strength: Optional[float] = None
     lora_items: Optional[list[dict]] = None
+    reference_audio_ref: Optional[Dict[str, Any]] = None
+    reference_audio_url: Optional[str] = None
     input_file: Optional[str]
     input_file_url: Optional[str]
     input_files: List[str] = Field(default_factory=list)

@@ -45,6 +45,8 @@ export interface RawApplyContextResponse {
   lora_name?: unknown
   lora_strength?: unknown
   lora_items?: unknown
+  reference_audio_ref?: unknown
+  reference_audio_url?: unknown
   input_file?: unknown
   input_file_url?: unknown
   input_files?: unknown
@@ -73,6 +75,8 @@ export interface TemplateApplyContext {
   loraName: string | null
   loraStrength: number | null
   loraItems: Array<{ name: string; strength: number }>
+  referenceAudioRef?: { source: 'gallery_post'; post_id: number } | null
+  referenceAudioUrl?: string | null
   inputFile: string | null
   inputFileUrl: string | null
   inputFiles?: string[]

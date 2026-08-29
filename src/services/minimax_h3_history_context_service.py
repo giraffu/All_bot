@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import Any
 
 from src.domain_config.minimax_h3 import (
@@ -24,6 +25,24 @@ _MODE_BY_TASK_TYPE = {
     MINIMAX_H3_FLF2V: "flf2v",
     MINIMAX_H3_REF2V: "ref2v",
 }
+_REFERENCE_AUDIO_EXTENSIONS = frozenset(
+    {"mp3", "wav", "m4a", "mp4", "ogg", "oga", "opus"}
+)
+
+
+def _normalize_durable_reference_audio(value: object) -> str | None:
+    reference = str(value or "").strip()
+    if not reference:
+        return None
+    path = PurePosixPath(reference)
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or "://" in reference
+        or path.suffix.lower().removeprefix(".") not in _REFERENCE_AUDIO_EXTENSIONS
+    ):
+        raise ValueError("reference audio must be a durable storage object key")
+    return reference
 
 
 def is_minimax_h3_gallery_task_type(task_type: str | None) -> bool:
@@ -41,9 +60,7 @@ def build_minimax_h3_history_context(
         return {}
     metadata = metadata or {}
     mode = str(metadata.get("minimax_h3_mode") or "").strip()
-    resolution_preset = str(
-        metadata.get("minimax_h3_resolution_preset") or ""
-    ).strip()
+    resolution_preset = str(metadata.get("minimax_h3_resolution_preset") or "").strip()
     aspect_ratio = str(metadata.get("minimax_h3_aspect_ratio") or "").strip()
     try:
         requested_duration = int(metadata.get("requested_duration"))
@@ -67,7 +84,15 @@ def build_minimax_h3_history_context(
         )
     except MiniMaxH3ValidationError:
         return {}
-    return {
+    try:
+        reference_audio = _normalize_durable_reference_audio(
+            metadata.get("reference_audio")
+        )
+    except ValueError:
+        return {}
+    if reference_audio is not None and expected_mode != "ref2v":
+        return {}
+    context = {
         "version": MINIMAX_H3_HISTORY_CONTEXT_VERSION,
         "mode": mode,
         "requested_duration": requested_duration,
@@ -77,6 +102,9 @@ def build_minimax_h3_history_context(
             {"name": item.name, "strength": item.strength} for item in addon_items
         ],
     }
+    if reference_audio is not None:
+        context["reference_audio"] = reference_audio
+    return context
 
 
 def extract_minimax_h3_history_context(
@@ -105,6 +133,7 @@ def resolve_valid_minimax_h3_history_context(
             "requested_duration": context.get("requested_duration"),
             "minimax_h3_resolution_preset": context.get("resolution_preset"),
             "minimax_h3_aspect_ratio": context.get("aspect_ratio"),
+            "reference_audio": context.get("reference_audio"),
             "lora_items": context.get("lora_items"),
         },
     )
@@ -127,4 +156,20 @@ def merge_minimax_h3_history_context_into_extra_outputs(
         return extra_outputs
     merged = dict(extra_outputs or {})
     merged[MINIMAX_H3_HISTORY_CONTEXT_KEY] = context
+    return merged
+
+
+def merge_minimax_h3_input_assets_into_metadata(
+    *,
+    task_type: str | None,
+    metadata: dict[str, Any] | None,
+    inputs: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if task_type != MINIMAX_H3_REF2V:
+        return metadata
+    reference_audio = str((inputs or {}).get("reference_audio") or "").strip()
+    if not reference_audio:
+        return metadata
+    merged = dict(metadata or {})
+    merged["reference_audio"] = reference_audio
     return merged

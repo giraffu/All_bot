@@ -21,6 +21,9 @@ export type UploadedReferenceAudio = {
   key: string
   preview: string
   name: string
+  referenceRef?:
+    | { source: 'upload'; object_key: string }
+    | { source: 'gallery_post'; post_id: number }
 }
 
 export type PendingReferenceUpload = UploadedReference & {

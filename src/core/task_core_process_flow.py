@@ -246,7 +246,7 @@ def build_successful_submission_response(
         "registry_task_id": execution_result.registry_task_id,
         "backend_task_id": execution_result.backend_task_id,
         "cost": cost,
-        "saved_inputs": execution_result.submission_context.saved_inputs,
+        "saved_inputs": execution_result.submission_context.registry_saved_inputs(),
     }
 
 

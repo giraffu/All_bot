@@ -98,18 +98,19 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
   管理端预设的主模型、附加模型、采样器、steps、timeline、本地路径、参考视频或底层
-  `ref_audios` 数组；参考语音只能走上述单值高层契约。
+  `ref_audios` 数组；参考语音只能走上述单值高层契约。用户提示词不强制包含
+  `<Audio 1>`，服务端不得替用户注入；Web/Bot 只在选择音频后给出非阻断提醒。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
 ## Gallery 与模板应用
 
-- 只有 `minimax_h3_i2v` 与 `minimax_h3_flf2v` 可投稿；T2V、REF2V 和
-  QQCC 自生成结果不开放投稿。Web 与主 Bot 新生成的 I2V/FLF2V 都写入
+- `minimax_h3_i2v`、`minimax_h3_flf2v` 与 `minimax_h3_ref2v` 可投稿；T2V 和
+  QQCC 自生成结果不开放投稿。Web 与主 Bot 新生成的三种可投稿模式都写入
   `allow_contribute=true`，模板派生结果固定为 `false`。
-- 两种可投稿类型在 Gallery 统一显示为“高级图生视频pro”，筛选值
-  `minimax_h3` 同时查询两类 History。点赞、点踩、收藏、评论、举报、关注、排行和
+- 三种可投稿类型在 Gallery 统一显示为“高级图生视频pro”，筛选值
+  `minimax_h3` 同时查询三类 History。点赞、点踩、收藏、评论、举报、关注、排行和
   提示词解锁继续复用 Gallery 通用能力。
 - Web finalizer 与主 Bot 完成链路把模式、时长、`resolution_preset`、
   `aspect_ratio` 和有序 `lora_items` 写入版本 1 的 `_minimax_h3_context`。
@@ -118,11 +119,17 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
 - Dashboard 历史生成筛选把 H3 归为两个入口：普通链的 T2V/I2V/FLF2V 合并为
   “高级图生视频pro · 图生视频”，REF2V 独立为“高级图生视频pro · 参考图生视频”；
   列表行仍按四个真实 `History.type` 显示具体子模式，筛选不得改写持久类型。
-- 一键应用不返回或复用原始 `input_file/input_files`。I2V 要求重新上传 1 张首帧，
+- I2V/FLF2V 一键应用不返回或复用原始 `input_file/input_files`。I2V 要求重新上传 1 张首帧，
   FLF2V 要求重新上传有序的 2 张首尾帧并在提交前校验比例差不超过 1%。原提示词、
   时长、档位和 `source` 比例继续锁定；历史上下文中的附加模型只用于记录与展示兼容，
   新模板任务同样使用当前 Dashboard 系统模型预设。成功提交携带
   `is_template=true` 与 `source_post_id` 后立即关闭模板会话。
+- REF2V 要求重新上传第 1 张主图，默认复用投稿第 2 张起的参考图；若原任务使用主角
+  参考语音，版本化 `_minimax_h3_context` 保存其持久对象 key，apply-context 只返回
+  `{source: gallery_post, post_id}` 受控引用和短期试听 URL。应用面板可直接沿用、删除或
+  替换成当前用户上传的音频；生成提交时服务端再次校验引用确实属于当前模板投稿。
+  兼容期内，旧记录若把音频作为 `History.input_file` 最后一项保存，会按扩展名拆出，
+  不得当作 REF2V 参考图。
 
 ## 提示词优化契约
 

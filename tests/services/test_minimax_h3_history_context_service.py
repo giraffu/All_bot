@@ -42,6 +42,7 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
             "requested_duration": 5,
             "minimax_h3_resolution_preset": "preview",
             "minimax_h3_aspect_ratio": "16:9",
+            "reference_audio": "task-inputs/task-ref2v/1.m4a",
             "lora_items": [],
         },
     )
@@ -52,8 +53,26 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
         "requested_duration": 5,
         "resolution_preset": "preview",
         "aspect_ratio": "16:9",
+        "reference_audio": "task-inputs/task-ref2v/1.m4a",
         "lora_items": [],
     }
+
+
+def test_minimax_h3_context_rejects_local_reference_audio_paths():
+    assert (
+        build_minimax_h3_history_context(
+            task_type="minimax_h3_ref2v",
+            metadata={
+                "minimax_h3_mode": "ref2v",
+                "requested_duration": 5,
+                "minimax_h3_resolution_preset": "preview",
+                "minimax_h3_aspect_ratio": "16:9",
+                "reference_audio": "/tmp/telegram-voice.ogg",
+                "lora_items": [],
+            },
+        )
+        == {}
+    )
 
 
 def test_minimax_h3_context_rejects_non_gallery_t2v():
@@ -63,9 +82,10 @@ def test_minimax_h3_context_rejects_non_gallery_t2v():
         "minimax_h3_resolution_preset": "preview",
         "minimax_h3_aspect_ratio": "16:9",
     }
-    assert build_minimax_h3_history_context(
-        task_type="minimax_h3_t2v", metadata=metadata
-    ) == {}
+    assert (
+        build_minimax_h3_history_context(task_type="minimax_h3_t2v", metadata=metadata)
+        == {}
+    )
     assert merge_minimax_h3_history_context_into_extra_outputs(
         task_type="minimax_h3_t2v", extra_outputs={"last_frame": {}}, metadata=metadata
     ) == {"last_frame": {}}
@@ -73,6 +93,9 @@ def test_minimax_h3_context_rejects_non_gallery_t2v():
 
 def test_extract_minimax_h3_context_rejects_missing_or_unknown_versions():
     assert extract_minimax_h3_history_context({}) == {}
-    assert extract_minimax_h3_history_context(
-        {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 2, "mode": "i2v"}}
-    ) == {}
+    assert (
+        extract_minimax_h3_history_context(
+            {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 2, "mode": "i2v"}}
+        )
+        == {}
+    )
