@@ -6,6 +6,9 @@ from typing import Any
 from sqlalchemy import func, select
 
 from src.database.models import SupportMessage, SupportTicket, User
+from src.services.support_ticket_notification_service import (
+    enqueue_support_ticket_notifications,
+)
 
 CATEGORIES = {"recharge", "bug", "suggestion", "business", "uncategorized"}
 STATUSES = {"open", "processing", "resolved", "closed"}
@@ -52,6 +55,11 @@ async def finalize_ticket_submission(
                 created_at=message["created_at"],
             )
         )
+    await enqueue_support_ticket_notifications(
+        session,
+        ticket=ticket,
+        messages=messages,
+    )
     await session.commit()
     return ticket
 

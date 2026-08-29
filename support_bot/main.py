@@ -2,11 +2,13 @@ import asyncio
 import logging
 import os
 import signal
+import socket
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 from telegram import (
+    Bot,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
@@ -24,7 +26,7 @@ from src.database.core import AsyncSessionLocal, init_db
 from src.services.storage import storage
 from src.services.support_ticket_service import finalize_ticket_submission
 from src.services.support_ticket_notification_service import (
-    notify_support_ticket_submission,
+    SupportNotificationDispatcher,
 )
 from src.services.telegram_runtime_bootstrap import (
     build_telegram_bot_base_url,
@@ -58,6 +60,11 @@ TIMEOUT_JOB_PREFIX = "support_submission_timeout:"
 RECORDED_MESSAGE = (
     "已记录这条内容。你可以继续发送文字、图片或文件；全部发送完毕后，请点击“结束提交”。"
 )
+EXPECTED_NOTIFICATION_BOT_USERNAME = "qq_notification_bot"
+NOTIFICATION_DISPATCH_INTERVAL_SECONDS = 5
+NOTIFICATION_BOT_DATA_KEY = "support_notification_bot"
+NOTIFICATION_DISPATCHER_DATA_KEY = "support_notification_dispatcher"
+NOTIFICATION_BOT_INITIALIZED_DATA_KEY = "support_notification_bot_initialized"
 
 
 async def start(update: Update, _context):
@@ -203,18 +210,6 @@ async def _persist_active_submission(context):
                 category=draft["category"],
                 messages=list(draft["messages"]),
             )
-            try:
-                await notify_support_ticket_submission(
-                    session,
-                    ticket=ticket,
-                    messages=draft["messages"],
-                    send_message=context.bot.send_message,
-                )
-            except Exception:
-                logger.exception(
-                    "support ticket persisted but notification setup failed: ticket_id=%s",
-                    ticket.id,
-                )
     except Exception:
         draft["finalizing"] = False
         raise
@@ -377,20 +372,106 @@ async def _timeout_submission(context):
     )
 
 
+def _validate_notification_bot_tokens(
+    *, support_token: str, notification_token: str
+) -> None:
+    if not notification_token:
+        raise RuntimeError("OBSERVER_BOT_TOKEN is required")
+    if support_token == notification_token:
+        raise RuntimeError("support and notification bot tokens must be different")
+
+
+def _validate_notification_bot_identity(bot: Bot) -> None:
+    username = str(bot.username or "").lstrip("@").lower()
+    if username != EXPECTED_NOTIFICATION_BOT_USERNAME:
+        raise RuntimeError("notification bot identity does not match the expected bot")
+
+
+async def _dispatch_support_notifications(context) -> None:
+    dispatcher = context.application.bot_data[NOTIFICATION_DISPATCHER_DATA_KEY]
+    if dispatcher.busy:
+        return
+    try:
+        delivered = await dispatcher.run_once()
+        if delivered:
+            logger.info("support notification batch processed count=%s", delivered)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("support notification dispatcher cycle failed")
+
+
+async def _post_init(application) -> None:
+    await init_db()
+    notification_bot = application.bot_data[NOTIFICATION_BOT_DATA_KEY]
+    await notification_bot.initialize()
+    application.bot_data[NOTIFICATION_BOT_INITIALIZED_DATA_KEY] = True
+    try:
+        _validate_notification_bot_identity(notification_bot)
+    except Exception:
+        await notification_bot.shutdown()
+        application.bot_data[NOTIFICATION_BOT_INITIALIZED_DATA_KEY] = False
+        raise
+    worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:12]}"
+    application.bot_data[NOTIFICATION_DISPATCHER_DATA_KEY] = (
+        SupportNotificationDispatcher(
+            send_message=notification_bot.send_message,
+            worker_id=worker_id,
+        )
+    )
+    if application.job_queue is None:
+        await notification_bot.shutdown()
+        application.bot_data[NOTIFICATION_BOT_INITIALIZED_DATA_KEY] = False
+        raise RuntimeError("support notification dispatcher requires JobQueue")
+    application.job_queue.run_repeating(
+        _dispatch_support_notifications,
+        interval=NOTIFICATION_DISPATCH_INTERVAL_SECONDS,
+        first=1,
+        name="support-notification-outbox-dispatcher",
+    )
+    logger.info(
+        "support notification dispatcher started sender=@%s interval_seconds=%s",
+        notification_bot.username,
+        NOTIFICATION_DISPATCH_INTERVAL_SECONDS,
+    )
+
+
+async def _post_shutdown(application) -> None:
+    notification_bot = application.bot_data.get(NOTIFICATION_BOT_DATA_KEY)
+    if notification_bot is not None and application.bot_data.get(
+        NOTIFICATION_BOT_INITIALIZED_DATA_KEY
+    ):
+        await notification_bot.shutdown()
+        application.bot_data[NOTIFICATION_BOT_INITIALIZED_DATA_KEY] = False
+
+
 def main():
-    token = os.getenv("SUPPORT_BOT_TOKEN")
-    if not token:
+    support_token = os.getenv("SUPPORT_BOT_TOKEN", "").strip()
+    if not support_token:
         raise SystemExit("SUPPORT_BOT_TOKEN is required")
+    notification_token = os.getenv("OBSERVER_BOT_TOKEN", "").strip()
+    _validate_notification_bot_tokens(
+        support_token=support_token,
+        notification_token=notification_token,
+    )
+    notification_bot = Bot(
+        token=notification_token,
+        base_url=build_telegram_bot_base_url(),
+        base_file_url=resolve_telegram_file_base_url(),
+        request=build_telegram_httpx_request(),
+    )
     app = (
         ApplicationBuilder()
-        .token(token)
+        .token(support_token)
         .base_url(build_telegram_bot_base_url())
         .base_file_url(resolve_telegram_file_base_url())
         .request(build_telegram_httpx_request())
         .get_updates_request(build_telegram_httpx_request())
-        .post_init(lambda _: init_db())
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
         .build()
     )
+    app.bot_data[NOTIFICATION_BOT_DATA_KEY] = notification_bot
     app.add_handler(CommandHandler("start", start))
     app.add_handler(
         CallbackQueryHandler(

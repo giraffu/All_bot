@@ -3,7 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.database.models import SupportMessage, SupportTicket
+from src.database.models import (
+    SupportMessage,
+    SupportNotificationOutbox,
+    SupportNotificationRecipient,
+    SupportTicket,
+)
 from src.services.support_ticket_service import finalize_ticket_submission
 
 
@@ -13,13 +18,25 @@ class FakeSession:
         self.commits = 0
         self.flushes = 0
 
-    async def execute(self, _query):
+    async def execute(self, query):
+        entity = query.column_descriptions[0].get("entity")
+        if entity is SupportNotificationRecipient:
+            recipients = [
+                SupportNotificationRecipient(telegram_user_id=111),
+                SupportNotificationRecipient(telegram_user_id=222),
+            ]
+            return SimpleNamespace(
+                scalars=lambda: SimpleNamespace(all=lambda: recipients)
+            )
         return SimpleNamespace(scalar_one_or_none=lambda: None)
 
     def add(self, value):
         self.added.append(value)
         if isinstance(value, SupportTicket):
             value.id = 77
+
+    def add_all(self, values):
+        self.added.extend(values)
 
     async def flush(self):
         self.flushes += 1
@@ -80,6 +97,15 @@ async def test_finalize_submission_creates_one_new_ticket_with_ordered_messages(
         second_at,
     ]
     assert persisted_messages[1].attachments[0]["object_key"].endswith("screenshot.jpg")
+    deliveries = [
+        value for value in session.added if isinstance(value, SupportNotificationOutbox)
+    ]
+    assert [delivery.recipient_telegram_user_id for delivery in deliveries] == [
+        111,
+        222,
+    ]
+    assert all(delivery.ticket_id == ticket.id for delivery in deliveries)
+    assert all("第一段" in delivery.payload_text for delivery in deliveries)
 
 
 @pytest.mark.asyncio
