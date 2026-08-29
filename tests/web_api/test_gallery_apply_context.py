@@ -523,6 +523,56 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
 
 
 @pytest.mark.asyncio
+async def test_build_post_responses_allows_h3_stitched_post_but_disables_apply():
+    history = History(
+        id=12,
+        user_id=123,
+        task_id="h3-stitched",
+        type="minimax_h3_i2v",
+        prompt="two linked H3 segments",
+        output_file="task-results/h3-stitched/primary.mp4",
+        allow_contribute=True,
+        extra_outputs={
+            "_minimax_h3_chain_stitch": {
+                "version": 1,
+                "segment_count": 2,
+                "chain_task_ids": ["h3-a", "h3-b"],
+                "source_task_id": "h3-b",
+            }
+        },
+    )
+    post = GalleryPost(
+        id=3,
+        task_id="h3-stitched",
+        media_type="video",
+        width=1280,
+        height=720,
+        duration=10,
+        tags="[]",
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        is_active=True,
+        created_at=datetime.now(),
+    )
+    session = _FakeSession([_FakeResult(many=[history])])
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].result_meta == {
+        "minimax_h3_chain_task_ids": ["h3-a", "h3-b"],
+        "minimax_h3_is_stitched": True,
+    }
+    assert responses[0].template_apply_supported is False
+    assert responses[0].template_apply_disabled_reason == "minimax_h3_stitched"
+
+
+@pytest.mark.asyncio
 async def test_build_post_responses_marks_i2i_draw_template_apply_disabled():
     history = History(
         id=11,

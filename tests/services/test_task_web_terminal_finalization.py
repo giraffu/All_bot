@@ -107,7 +107,7 @@ async def test_web_success_persists_versioned_minimax_h3_context():
     )
 
     assert persist_mock.await_args.kwargs["extra_outputs"]["_minimax_h3_context"] == {
-        "version": 1,
+        "version": 2,
         "mode": "i2v",
         "requested_duration": 15,
         "resolution_preset": "hd",

@@ -104,6 +104,26 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
+## 扩展生成与整链拼接
+
+- 扩展来源只允许本人成功的 I2V、FLF2V 或 REF2V History；T2V、拼接记录、缺少
+  `last_frame`、上下文断裂或非本人记录都由服务端明确拒绝。下一段只允许 I2V
+  直接续写或 FLF2V 添加终止帧，起始帧始终由服务端从父段尾帧注入；REF2V 的原参考图
+  不向后携带。
+- `_minimax_h3_context` 当前版本为 2，继续严格读取版本 1。v2 在原模式、时长、档位、
+  比例和附加模型快照之外保存 `prev_task_id` 与有序 `chain_task_ids`；入口只接受
+  `minimax_h3_prev_task_id`，链数组由服务端按本人 History 重建，不能信任客户端。
+  History/result API 只通过 `result_meta.minimax_h3_*` 暴露父任务、链、段号和拼接状态，
+  内部上下文不进入 `extra_outputs` 公共响应。
+- Web 和主 Bot 每个续段都按提交时最新 Dashboard Pro 模型预设与当前所选时长/画质
+  正常计费；父段只提供尾帧、链路和投稿权限。主 Bot 结果 callback 为
+  `h3_extend:<task_id>`，第二段起另提供 `h3_stitch:<task_id>`。
+- Web 使用 `GET /api/users/history/{task_id}/minimax-h3-chain` 查询本人链，使用
+  `POST /api/users/history/{task_id}/minimax-h3-chain/stitch` 免费拼接。拼接先按首段
+  画布、帧率和音轨归一全部片段，确定性 task ID 保证重复请求返回同一闪回瓶记录；
+  原段不修改、不退款、不重复扣费。拼接记录用独立 `_minimax_h3_chain_stitch` 标记，
+  不再允许继续扩展。
+
 ## Gallery 与模板应用
 
 - `minimax_h3_i2v`、`minimax_h3_flf2v` 与 `minimax_h3_ref2v` 可投稿；T2V 和
@@ -113,7 +133,8 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   `minimax_h3` 同时查询三类 History。点赞、点踩、收藏、评论、举报、关注、排行和
   提示词解锁继续复用 Gallery 通用能力。
 - Web finalizer 与主 Bot 完成链路把模式、时长、`resolution_preset`、
-  `aspect_ratio` 和有序 `lora_items` 写入版本 1 的 `_minimax_h3_context`。
+  `aspect_ratio`、有序 `lora_items` 和可信链路字段写入版本 2 的
+  `_minimax_h3_context`，并继续读取版本 1。
   不迁移旧记录；缺少完整上下文的历史投稿仍可互动，但
   `template_apply_disabled_reason=minimax_h3_context_missing`。
 - Dashboard 历史生成筛选把 H3 归为两个入口：普通链的 T2V/I2V/FLF2V 合并为
@@ -130,6 +151,10 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   替换成当前用户上传的音频；生成提交时服务端再次校验引用确实属于当前模板投稿。
   兼容期内，旧记录若把音频作为 `History.input_file` 最后一项保存，会按扩展名拆出，
   不得当作 REF2V 参考图。
+- 普通扩展段沿用父记录 `allow_contribute`：普通 I2V/FLF2V/REF2V 链可投稿，模板
+  派生或其它禁止投稿的父链后续段继续禁止。拼接记录仅当全部源段都允许时可投稿，
+  但以 `template_apply_disabled_reason=minimax_h3_stitched` 禁止一键应用；普通扩展段
+  的一键应用只复用该段提示词和设置，使用者仍需重新提供首帧或首尾帧。
 
 ## 提示词优化契约
 

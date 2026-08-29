@@ -74,6 +74,13 @@ async def submit_generation_task(
         inputs = prepared.inputs
         images = prepared.images
         is_template = prepared.is_template
+        if prepared.registry_metadata:
+            registry_metadata_extra = {
+                **dict(registry_metadata_extra or {}),
+                **prepared.registry_metadata,
+            }
+        if prepared.allow_contribute_override is not None:
+            allow_contribute_override = prepared.allow_contribute_override
 
         task_id = task_id_override or str(uuid.uuid4())
         correlation_id.set(task_id)

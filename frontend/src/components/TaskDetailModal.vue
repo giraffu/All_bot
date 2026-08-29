@@ -11,7 +11,11 @@ import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import OriginalInputsPanel from '@/components/OriginalInputsPanel.vue'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
-import { stitchLtxHistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
+import {
+  stitchLtxHistoryChain,
+  stitchMiniMaxH3HistoryChain,
+  stitchWan22HistoryChain,
+} from '@/api/gallery'
 import type { HistoryItem, TaskRecord } from '@/types/gallery'
 import { isGallerySubmissionEligible } from '@/utils/gallerySubmissionEligibility'
 
@@ -38,7 +42,7 @@ const promptModelLabel = computed(() => {
   const key = currentRecord.value?.prompt_model?.display_key
   return key && te(key) ? t(key) : t('generation_models.additional')
 })
-const wan22ActionLoading = ref<'stitch' | 'ltx-stitch' | null>(null)
+const wan22ActionLoading = ref<'stitch' | 'ltx-stitch' | 'h3-stitch' | null>(null)
 
 const isWan22Record = computed(() => (
   currentRecord.value?.type === 'wan22_video_v2'
@@ -66,6 +70,27 @@ const canStitchLtxChain = computed(
     && !currentRecord.value?.result_meta?.ltx_is_stitched
     && Boolean(currentRecord.value?.result_meta?.ltx_prev_task_id)
 )
+const isH3ImageRecord = computed(() => [
+  'minimax_h3_i2v',
+  'minimax_h3_flf2v',
+  'minimax_h3_ref2v',
+].includes(currentRecord.value?.type || ''))
+const isH3StitchedRecord = computed(() => Boolean(
+  currentRecord.value?.result_meta?.minimax_h3_is_stitched
+))
+const h3SegmentIndex = computed(() => (
+  currentRecord.value?.result_meta?.minimax_h3_segment_index ?? null
+))
+const canExtendH3Record = computed(() => (
+  isH3ImageRecord.value
+  && !isH3StitchedRecord.value
+  && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
+))
+const canStitchH3Chain = computed(() => (
+  isH3ImageRecord.value
+  && !isH3StitchedRecord.value
+  && Boolean(currentRecord.value?.result_meta?.minimax_h3_prev_task_id)
+))
 
 const {
   submittingTasks,
@@ -146,6 +171,46 @@ const handleLtxChainStitch = async () => {
     console.error(error)
     hide()
     message.error(error?.response?.data?.detail || '拼接失败，请稍后再试')
+  } finally {
+    wan22ActionLoading.value = null
+  }
+}
+
+const openH3Editor = async () => {
+  const record = currentRecord.value as HistoryItem | null
+  const lastFrame = record?.extra_outputs?.last_frame
+  if (!record?.task_id || !lastFrame?.path) {
+    message.warning(t('lab.workbench.minimax_h3_extend_missing_last_frame'))
+    return
+  }
+  detailVisible.value = false
+  await router.push({
+    name: 'CustomFeatures',
+    query: {
+      type: 'minimax_h3_i2v',
+      minimax_h3_extend_task_id: record.task_id,
+      minimax_h3_extend_key: lastFrame.path,
+      ...(lastFrame.url ? { minimax_h3_extend_url: lastFrame.url } : {}),
+    },
+  })
+}
+
+const handleH3ChainStitch = async () => {
+  const record = currentRecord.value as HistoryItem | null
+  if (!record?.task_id) return
+  wan22ActionLoading.value = 'h3-stitch'
+  const hide = message.loading(t('lab.workbench.minimax_h3_stitching'), 0)
+  try {
+    const stitchedRecord = await stitchMiniMaxH3HistoryChain(record.task_id)
+    if (stitchedRecord.task_id && stitchedRecord.type) {
+      tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+    }
+    hide()
+    message.success(t('lab.workbench.minimax_h3_stitch_success'))
+  } catch (error: any) {
+    console.error(error)
+    hide()
+    message.error(error?.response?.data?.detail || t('lab.workbench.minimax_h3_stitch_failed'))
   } finally {
     wan22ActionLoading.value = null
   }
@@ -238,6 +303,18 @@ const handleWan22ChainStitch = async () => {
                   class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border is-web"
                 >
                   {{ $t('task.wan22_segment', { count: wan22SegmentIndex }) }}
+                </span>
+                <span
+                  v-if="isH3ImageRecord && !isH3StitchedRecord && h3SegmentIndex"
+                  class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border is-web"
+                >
+                  {{ $t('task.minimax_h3_segment', { count: h3SegmentIndex }) }}
+                </span>
+                <span
+                  v-if="isH3StitchedRecord"
+                  class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border is-web"
+                >
+                  {{ $t('task.minimax_h3_stitched_video', { count: currentRecord.result_meta?.minimax_h3_chain_task_ids?.length || 0 }) }}
                 </span>
               </div>
             </div>
@@ -353,6 +430,44 @@ const handleWan22ChainStitch = async () => {
               </a-button>
               <div class="task-detail-chain-tip text-[11px] lg:text-xs">
                 {{ canExtendLtxRecord ? '已检测到可复用尾帧。' : '当前记录缺少可用尾帧，暂时不能继续扩展。' }}
+              </div>
+            </div>
+
+            <div
+              v-if="isH3ImageRecord && !isH3StitchedRecord"
+              class="task-detail-chain-card rounded-2xl border p-4 space-y-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="task-detail-section-label text-[10px] lg:text-xs uppercase tracking-wider">
+                    {{ $t('lab.workbench.minimax_h3_chain_title') }}
+                  </div>
+                  <div class="task-detail-chain-desc text-xs lg:text-sm mt-1">
+                    {{ $t('lab.workbench.minimax_h3_chain_desc') }}
+                  </div>
+                </div>
+                <a-tag color="purple" class="self-start">H3 Pro</a-tag>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a-button
+                  type="primary"
+                  class="task-detail-primary-btn border-none rounded-xl"
+                  :disabled="!canExtendH3Record"
+                  @click="openH3Editor"
+                >
+                  {{ $t('lab.workbench.minimax_h3_extend_generation') }}
+                </a-button>
+                <a-button
+                  class="task-detail-secondary-btn rounded-xl"
+                  :disabled="!canStitchH3Chain"
+                  :loading="wan22ActionLoading === 'h3-stitch'"
+                  @click="handleH3ChainStitch"
+                >
+                  {{ $t('lab.workbench.minimax_h3_stitch_chain') }}
+                </a-button>
+              </div>
+              <div class="task-detail-chain-tip text-[11px] lg:text-xs">
+                {{ canExtendH3Record ? $t('lab.workbench.minimax_h3_locked_start_frame') : $t('lab.workbench.minimax_h3_extend_missing_last_frame') }}
               </div>
             </div>
 

@@ -7,6 +7,7 @@ import type {
   PaginatedGalleryResponse,
   RecentHistoryResponse,
   Wan22HistoryChainResponse,
+  MiniMaxH3HistoryChainResponse,
 } from '@/types/gallery'
 import type { RawApplyContextResponse } from '@/types/templateApply'
 
@@ -61,6 +62,16 @@ export async function stitchWan22HistoryChain(taskId: string): Promise<HistoryIt
 
 export async function stitchLtxHistoryChain(taskId: string): Promise<HistoryItem> {
   const response = await api.post<HistoryItem>(`/users/history/${taskId}/ltx-chain/stitch`)
+  return response.data
+}
+
+export async function getMiniMaxH3HistoryChain(taskId: string): Promise<MiniMaxH3HistoryChainResponse> {
+  const response = await api.get<MiniMaxH3HistoryChainResponse>(`/users/history/${taskId}/minimax-h3-chain`)
+  return response.data
+}
+
+export async function stitchMiniMaxH3HistoryChain(taskId: string): Promise<HistoryItem> {
+  const response = await api.post<HistoryItem>(`/users/history/${taskId}/minimax-h3-chain/stitch`)
   return response.data
 }
 

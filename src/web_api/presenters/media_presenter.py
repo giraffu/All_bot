@@ -21,6 +21,14 @@ from src.services.ltx_video_extension_service import (
     resolve_ltx_segment_index,
 )
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
+from src.services.minimax_h3_history_context_service import (
+    extract_minimax_h3_history_context,
+)
+from src.services.minimax_h3_extension_service import (
+    is_minimax_h3_stitched_result,
+    resolve_minimax_h3_segment_index,
+)
 
 
 HISTORY_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
@@ -355,7 +363,7 @@ def filter_user_visible_extra_outputs(
 ) -> dict[str, dict[str, Any]]:
     if not isinstance(extra_outputs, dict):
         return {}
-    if is_wan22_chain_history_task_type(task_type):
+    if is_wan22_chain_history_task_type(task_type) or task_type in MINIMAX_H3_TASK_TYPES:
         last_frame = extra_outputs.get("last_frame")
         return {"last_frame": last_frame} if isinstance(last_frame, dict) else {}
     return extra_outputs
@@ -383,5 +391,25 @@ def extract_history_result_meta(
             segment_index = resolve_ltx_segment_index(extra_outputs)
             if segment_index:
                 result_meta["ltx_segment_index"] = segment_index
+        return result_meta
+    if task_type in MINIMAX_H3_TASK_TYPES:
+        context = extract_minimax_h3_history_context(extra_outputs)
+        result_meta: dict[str, Any] = {}
+        prev_task_id = str(context.get("prev_task_id") or "").strip()
+        chain_task_ids = context.get("chain_task_ids")
+        if prev_task_id:
+            result_meta["minimax_h3_prev_task_id"] = prev_task_id
+        if isinstance(chain_task_ids, list) and chain_task_ids:
+            result_meta["minimax_h3_chain_task_ids"] = list(chain_task_ids)
+        if is_minimax_h3_stitched_result(extra_outputs):
+            result_meta["minimax_h3_is_stitched"] = True
+            stitch = extra_outputs.get("_minimax_h3_chain_stitch") or {}
+            stitched_chain = stitch.get("chain_task_ids")
+            if isinstance(stitched_chain, list):
+                result_meta["minimax_h3_chain_task_ids"] = list(stitched_chain)
+        else:
+            segment_index = resolve_minimax_h3_segment_index(extra_outputs)
+            if segment_index:
+                result_meta["minimax_h3_segment_index"] = segment_index
         return result_meta
     return {}

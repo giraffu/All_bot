@@ -65,6 +65,7 @@ vi.mock('@/composables/usePostPromptCopy', () => ({
 
 vi.mock('@/api/gallery', () => ({
   stitchLtxHistoryChain: vi.fn(),
+  stitchMiniMaxH3HistoryChain: vi.fn(),
   stitchWan22HistoryChain: vi.fn(),
 }))
 
@@ -185,5 +186,38 @@ describe('TaskDetailModal Wan22 editor links', () => {
     currentDetailRecord = { ...currentDetailRecord, type: 'minimax_h3_t2v' }
     const unsupported = mountModal()
     expect(unsupported.text()).toContain('history.cannot_post')
+  })
+
+  it('routes H3 extension with a locked server-owned tail-frame reference', async () => {
+    currentDetailRecord = {
+      ...currentDetailRecord,
+      task_id: 'h3-task-2',
+      type: 'minimax_h3_ref2v',
+      extra_outputs: {
+        last_frame: {
+          path: 'history/h3-task-2/last_frame.png',
+          media_type: 'image',
+          url: 'https://cdn/h3-tail.png',
+        },
+      },
+      result_meta: {
+        minimax_h3_prev_task_id: 'h3-task-1',
+        minimax_h3_segment_index: 2,
+      },
+    }
+    const wrapper = mountModal()
+    await wrapper.findAll('button')
+      .find(button => button.text().includes('lab.workbench.minimax_h3_extend_generation'))
+      ?.trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'CustomFeatures',
+      query: {
+        type: 'minimax_h3_i2v',
+        minimax_h3_extend_task_id: 'h3-task-2',
+        minimax_h3_extend_key: 'history/h3-task-2/last_frame.png',
+        minimax_h3_extend_url: 'https://cdn/h3-tail.png',
+      },
+    })
   })
 })

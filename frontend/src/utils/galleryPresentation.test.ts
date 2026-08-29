@@ -126,4 +126,10 @@ describe('formatGalleryTag', () => {
     expect(formatGalleryTag('task.ltx_segment:2', t)).toBe('LTX 第2段')
     expect(formatGalleryTag('task.ltx_stitched_video:3', t)).toBe('LTX 拼接-3')
   })
+
+  it('formats H3 segment and stitched-chain tags', () => {
+    const t = (key: string, params?: Record<string, unknown>) => `${key}:${params?.count}`
+    expect(formatGalleryTag('task.minimax_h3_segment:2', t)).toBe('task.minimax_h3_segment:2')
+    expect(formatGalleryTag('task.minimax_h3_stitched_video:4', t)).toBe('task.minimax_h3_stitched_video:4')
+  })
 })

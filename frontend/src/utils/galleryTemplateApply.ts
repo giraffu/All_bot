@@ -2,6 +2,7 @@ import type { GalleryPost } from '@/types/gallery'
 import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
 
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
+export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_STITCHED = 'minimax_h3_stitched'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = 'i2i_draw_disabled'
 
@@ -31,6 +32,10 @@ export const resolveGalleryTemplateApplyDisabledReason = (
     return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
   }
 
+  if (post.result_meta?.minimax_h3_is_stitched) {
+    return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_STITCHED
+  }
+
   if (post.template_apply_supported === true) {
     return null
   }
@@ -50,6 +55,9 @@ export const resolveGalleryTemplateApplyDisabledMessage = (
 ): string => {
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED) {
     return t('template_apply.disabled.wan22_stitched')
+  }
+  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_STITCHED) {
+    return t('template_apply.disabled.minimax_h3_stitched')
   }
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO) {
     return t('template_apply.disabled.missing_scail2_motion_video')

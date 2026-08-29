@@ -56,6 +56,7 @@ import {
 } from './lab-workbench/useLabSlotUploads'
 import { useWan22ChainEditor } from './lab-workbench/useWan22ChainEditor'
 import { useLtxChainEditor } from './lab-workbench/useLtxChainEditor'
+import { useH3ChainEditor } from './lab-workbench/useH3ChainEditor'
 import { useLabTemplateHydration } from './lab-workbench/useLabTemplateHydration'
 import { useLabSubmitPayload } from './lab-workbench/useLabSubmitPayload'
 import { useH3ReferenceAudio } from './lab-workbench/useH3ReferenceAudio'
@@ -239,6 +240,7 @@ export function useLabWorkbench() {
     template.resetTemplateState()
     wan22.resetWan22ChainState()
     ltx.resetLtxExtensionState()
+    h3.resetH3ExtensionState()
 
     if (!options?.preserveMode) {
       currentModeId.value = DEFAULT_VISIBLE_LAB_MODE_ID
@@ -297,6 +299,22 @@ export function useLabWorkbench() {
     t,
   })
 
+  const h3 = useH3ChainEditor({
+    currentModeId,
+    currentTask,
+    minimaxH3Mode,
+    uploadedReferences: references.uploadedReferences,
+    prompt,
+    clearReferences: references.clearReferences,
+    clearSlotAssets: slots.clearSlotAssets,
+    resetTemplateState: template.resetTemplateState,
+    resetWan22ChainState: wan22.resetWan22ChainState,
+    resetLtxExtensionState: ltx.resetLtxExtensionState,
+    setSubmittedTaskId,
+    showDetailRecord: tasksStore.showDetailRecord,
+    t,
+  })
+
   const hasReferences = computed(() => references.uploadedReferences.value.length > 0)
   const hasAdvancedOptions = computed(() => currentMode.value.supportsAdvancedOptions)
   const hasStructuredUploadSlots = computed(() => (currentMode.value.uploadSlots?.length ?? 0) > 0)
@@ -308,7 +326,10 @@ export function useLabWorkbench() {
     isScail2ModeId(currentMode.value.id)
   ))
   const composerNotice = computed(() => (
-    wan22.wan22ChainBanner.value || ltx.ltxExtensionNotice.value || template.templateNotice.value
+    wan22.wan22ChainBanner.value
+    || ltx.ltxExtensionNotice.value
+    || h3.h3ExtensionNotice.value
+    || template.templateNotice.value
   ))
   const composerWarning = computed(() => template.templateWarning.value)
 
@@ -470,7 +491,13 @@ export function useLabWorkbench() {
   })
   watch(minimaxH3Mode, (nextMode, previousMode) => {
     if (nextMode !== previousMode && currentMode.value.id === 'minimax_h3') {
-      references.clearReferences()
+      if (h3.h3IsExtension.value && ['i2v', 'flf2v'].includes(nextMode)) {
+        references.uploadedReferences.value = references.uploadedReferences.value.filter(
+          item => item.locked,
+        )
+      } else {
+        references.clearReferences()
+      }
     }
     if (nextMode !== 'ref2v') h3ReferenceAudio.clearReferenceAudio()
   })
@@ -484,6 +511,15 @@ export function useLabWorkbench() {
     if (['t2v', 'i2v', 'flf2v', 'ref2v'].includes(routeMode)) {
       minimaxH3Mode.value = routeMode as 't2v' | 'i2v' | 'flf2v' | 'ref2v'
     }
+    const h3ExtensionTaskId = String(route.query.minimax_h3_extend_task_id || '').trim()
+    const h3ExtensionKey = String(route.query.minimax_h3_extend_key || '').trim()
+    if (h3ExtensionTaskId && h3ExtensionKey) {
+      h3.applyH3ExtensionPrefill(
+        h3ExtensionKey,
+        String(route.query.minimax_h3_extend_url || '').trim(),
+        h3ExtensionTaskId,
+      )
+    }
   }
 
   watch(
@@ -496,6 +532,9 @@ export function useLabWorkbench() {
       route.query.ltx_extend_url,
       route.query.ltx_extend_task_id,
       route.query.ltx_chain_task_ids,
+      route.query.minimax_h3_extend_task_id,
+      route.query.minimax_h3_extend_key,
+      route.query.minimax_h3_extend_url,
     ],
     hydrateLabRoute,
     { immediate: true },
@@ -600,6 +639,7 @@ export function useLabWorkbench() {
     wan22ChainTaskIds: wan22.wan22ChainTaskIds,
     ltxPrevTaskId: ltx.ltxPrevTaskId,
     ltxChainTaskIds: ltx.ltxChainTaskIds,
+    h3PrevTaskId: h3.h3PrevTaskId,
     submitTask,
     setSubmittedTaskId,
     t,
@@ -698,10 +738,17 @@ export function useLabWorkbench() {
     wan22ChainLoading: wan22.wan22ChainLoading,
     wan22ChainStitching: wan22.wan22ChainStitching,
     ltxChainStitching: ltx.ltxChainStitching,
+    h3ChainStitching: h3.h3ChainStitching,
+    h3IsExtension: h3.h3IsExtension,
+    currentTaskIsH3ImageVideo: h3.currentTaskIsH3ImageVideo,
+    h3CurrentTaskCanExtend: h3.h3CurrentTaskCanExtend,
+    h3CurrentTaskCanStitch: h3.h3CurrentTaskCanStitch,
     ...promptOptimizer,
     openWan22CurrentTaskEditor: wan22.openWan22CurrentTaskEditor,
     openLtxCurrentTaskEditor: ltx.openLtxCurrentTaskEditor,
     stitchCurrentWan22Chain: wan22.stitchCurrentWan22Chain,
     stitchCurrentLtxChain: ltx.stitchCurrentLtxChain,
+    openH3CurrentTaskEditor: h3.openH3CurrentTaskEditor,
+    stitchCurrentH3Chain: h3.stitchCurrentH3Chain,
   }
 }

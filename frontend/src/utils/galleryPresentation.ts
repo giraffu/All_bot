@@ -2,13 +2,13 @@ export function formatGalleryTag(
   tag: string,
   t: (key: string, params?: Record<string, unknown>) => string
 ) {
-  const stitchedMatch = tag.match(/^task\.(wan22|ltx)_stitched_video:(\d+)$/)
+  const stitchedMatch = tag.match(/^task\.(wan22|ltx|minimax_h3)_stitched_video:(\d+)$/)
   if (stitchedMatch) {
     return t(`task.${stitchedMatch[1]}_stitched_video`, {
       count: Number.parseInt(stitchedMatch[2], 10),
     })
   }
-  const segmentMatch = tag.match(/^task\.(wan22|ltx)_segment:(\d+)$/)
+  const segmentMatch = tag.match(/^task\.(wan22|ltx|minimax_h3)_segment:(\d+)$/)
   if (segmentMatch) {
     return t(`task.${segmentMatch[1]}_segment`, {
       count: Number.parseInt(segmentMatch[2], 10),

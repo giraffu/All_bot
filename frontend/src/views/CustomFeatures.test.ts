@@ -19,6 +19,8 @@ const labels: Record<string, string> = {
   'lab.workbench.wan22_stitch_chain': '拼接',
   'lab.workbench.ltx_extend_generation': '扩展生成',
   'lab.workbench.ltx_stitch_chain': '拼接',
+  'lab.workbench.minimax_h3_extend_generation': 'H3 扩展生成',
+  'lab.workbench.minimax_h3_stitch_chain': 'H3 免费拼接',
   'lab.workbench.continue_generation': '继续生成',
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
@@ -150,10 +152,17 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   wan22ChainLoading: ref(false),
   wan22ChainStitching: ref(false),
   ltxChainStitching: ref(false),
+  h3ChainStitching: ref(false),
+  h3IsExtension: ref(false),
+  currentTaskIsH3ImageVideo: ref(false),
+  h3CurrentTaskCanExtend: ref(false),
+  h3CurrentTaskCanStitch: ref(false),
   openWan22CurrentTaskEditor: vi.fn(),
   openLtxCurrentTaskEditor: vi.fn(),
   stitchCurrentWan22Chain: vi.fn(),
   stitchCurrentLtxChain: vi.fn(),
+  openH3CurrentTaskEditor: vi.fn(),
+  stitchCurrentH3Chain: vi.fn(),
 })
 
 const createLtxWorkbench = (options?: { hasLastFrame?: boolean; canStitch?: boolean }) => ({
@@ -219,6 +228,25 @@ const createMinimaxWorkbench = () => ({
     { name: 'naughty_times', strength: 0.7 },
     { name: 'sex_pose', strength: 0.5 },
   ]),
+})
+
+const createH3ResultWorkbench = (canStitch = false) => ({
+  ...createMinimaxWorkbench(),
+  currentTask: ref({
+    id: 'h3-task-2',
+    type: 'minimax_h3_i2v',
+    title: '高级图生视频 Pro',
+    status: 'success',
+    resultUrl: 'https://cdn/h3-result.mp4',
+    extraOutputs: {
+      last_frame: { path: 'history/h3-task-2/last.png', url: 'https://cdn/h3-tail.png' },
+    },
+    resultMeta: canStitch ? { minimax_h3_prev_task_id: 'h3-task-1' } : {},
+  }),
+  currentTaskIsWan22VideoV2: ref(false),
+  currentTaskIsH3ImageVideo: ref(true),
+  h3CurrentTaskCanExtend: ref(true),
+  h3CurrentTaskCanStitch: ref(canStitch),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -365,6 +393,22 @@ describe('CustomFeatures advanced video effects', () => {
 
     expect(wrapper.find('.h3-audio-stub').exists()).toBe(true)
     expect(wrapper.text()).toContain('<Audio 1>')
+  })
+})
+
+describe('CustomFeatures H3 result actions', () => {
+  it('offers extension and only exposes free stitch from the second segment', async () => {
+    workbench = createH3ResultWorkbench(false)
+    const first = mountView()
+    expect(first.text()).toContain('H3 扩展生成')
+    expect(first.text()).not.toContain('H3 免费拼接')
+
+    workbench = createH3ResultWorkbench(true)
+    const chained = mountView()
+    const stitch = chained.findAll('button')
+      .find(button => button.text().includes('H3 免费拼接'))
+    await stitch?.trigger('click')
+    expect(workbench.stitchCurrentH3Chain).toHaveBeenCalledTimes(1)
   })
 })
 

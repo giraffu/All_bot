@@ -62,4 +62,18 @@ describe('galleryTemplateApply', () => {
       } as any)).toBeNull()
     }
   })
+
+  it('uses the dedicated disabled reason for stitched H3 chains', () => {
+    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
+    const reason = resolveGalleryTemplateApplyDisabledReason({
+      task_type: 'minimax_h3_i2v',
+      template_apply_supported: false,
+      template_apply_disabled_reason: 'minimax_h3_stitched',
+      result_meta: { minimax_h3_is_stitched: true },
+    } as any)
+
+    expect(reason).toBe('minimax_h3_stitched')
+    expect(resolveGalleryTemplateApplyDisabledMessage(key => key, reason))
+      .toBe('template_apply.disabled.minimax_h3_stitched')
+  })
 })

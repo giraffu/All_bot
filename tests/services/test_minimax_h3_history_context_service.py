@@ -22,7 +22,7 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
     )
 
     assert context == {
-        "version": 1,
+        "version": 2,
         "mode": "flf2v",
         "requested_duration": 10,
         "resolution_preset": "standard",
@@ -48,7 +48,7 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
     )
 
     assert context == {
-        "version": 1,
+        "version": 2,
         "mode": "ref2v",
         "requested_duration": 5,
         "resolution_preset": "preview",
@@ -91,11 +91,33 @@ def test_minimax_h3_context_rejects_non_gallery_t2v():
     ) == {"last_frame": {}}
 
 
-def test_extract_minimax_h3_context_rejects_missing_or_unknown_versions():
+def test_extract_minimax_h3_context_accepts_v1_and_rejects_unknown_versions():
     assert extract_minimax_h3_history_context({}) == {}
+    assert extract_minimax_h3_history_context(
+        {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 1, "mode": "i2v"}}
+    ) == {"version": 1, "mode": "i2v"}
     assert (
         extract_minimax_h3_history_context(
-            {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 2, "mode": "i2v"}}
+            {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 3, "mode": "i2v"}}
         )
         == {}
     )
+
+
+def test_build_minimax_h3_v2_context_keeps_verified_parent_chain():
+    context = build_minimax_h3_history_context(
+        task_type="minimax_h3_i2v",
+        metadata={
+            "minimax_h3_mode": "i2v",
+            "requested_duration": 5,
+            "minimax_h3_resolution_preset": "preview",
+            "minimax_h3_aspect_ratio": "source",
+            "lora_items": [],
+            "minimax_h3_prev_task_id": "segment-2",
+            "minimax_h3_chain_task_ids": ["segment-1", "segment-2"],
+        },
+    )
+
+    assert context["version"] == 2
+    assert context["prev_task_id"] == "segment-2"
+    assert context["chain_task_ids"] == ["segment-1", "segment-2"]

@@ -9,6 +9,11 @@ from src.constants import (
 )
 from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
+)
 from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_CALLBACK_PREFIX,
     has_qqcc_regenerate_context,
@@ -23,6 +28,8 @@ WAN22_REGENERATE_CALLBACK_PREFIX = "wan22v2_regenerate"
 WAN22_STITCH_CALLBACK_PREFIX = "wan22v2_stitch_chain"
 LTX_EXTEND_CALLBACK_PREFIX = "ltx_extend"
 LTX_STITCH_CALLBACK_PREFIX = "ltx_stitch_chain"
+H3_EXTEND_CALLBACK_PREFIX = "h3_extend"
+H3_STITCH_CALLBACK_PREFIX = "h3_stitch"
 GALLERY_SUBMIT_CALLBACK_PREFIX = "submit_gallery_"
 PUBLIC_SHARE_CALLBACK_PREFIX = "public_share"
 PUBLISH_CALLBACK_PREFIXES = (
@@ -108,6 +115,22 @@ def _supports_ltx_stitch(task_type: str, result_meta: dict | None) -> bool:
     )
 
 
+def _supports_h3_extension(task_type: str, result_meta: dict | None) -> bool:
+    return task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V, MINIMAX_H3_REF2V} and not bool(
+        isinstance(result_meta, dict)
+        and (
+            result_meta.get("minimax_h3_is_stitched")
+            or isinstance(result_meta.get("_minimax_h3_chain_stitch"), dict)
+        )
+    )
+
+
+def _supports_h3_stitch(task_type: str, result_meta: dict | None) -> bool:
+    return _supports_h3_extension(task_type, result_meta) and bool(
+        isinstance(result_meta, dict) and result_meta.get("minimax_h3_prev_task_id")
+    )
+
+
 def _build_wan22_extension_button(
     task_id: str,
     result_meta: dict | None,
@@ -143,6 +166,20 @@ def _build_ltx_stitch_button(task_id: str) -> InlineKeyboardButton:
             LTX_STITCH_CALLBACK_PREFIX,
             task_id,
         ),
+    )
+
+
+def _build_h3_extension_button(task_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "✨ 扩展生成",
+        callback_data=build_task_bound_callback_data(H3_EXTEND_CALLBACK_PREFIX, task_id),
+    )
+
+
+def _build_h3_stitch_button(task_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "🔗 免费拼接整链",
+        callback_data=build_task_bound_callback_data(H3_STITCH_CALLBACK_PREFIX, task_id),
     )
 
 
@@ -217,6 +254,8 @@ def _build_result_action_rows(
             primary_row.append(extension_button)
     if _supports_ltx_extension(task_type, result_meta):
         primary_row.append(_build_ltx_extension_button(task_id))
+    if _supports_h3_extension(task_type, result_meta):
+        primary_row.append(_build_h3_extension_button(task_id))
     if primary_row:
         rows.append(primary_row)
     if supports_qqcc_draw_result_followups(result_meta):
@@ -225,6 +264,8 @@ def _build_result_action_rows(
         rows.append([_build_wan22_stitch_button(task_id)])
     if _supports_ltx_stitch(task_type, result_meta):
         rows.append([_build_ltx_stitch_button(task_id)])
+    if _supports_h3_stitch(task_type, result_meta):
+        rows.append([_build_h3_stitch_button(task_id)])
     return rows
 
 

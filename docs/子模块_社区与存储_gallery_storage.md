@@ -197,7 +197,7 @@ sequenceDiagram
 - `ltx_video` 单首帧/首尾帧投稿支持一键应用，保留两张原始输入图顺序，并从 `_ltx_context` 回填 `lora_items`、`ltx_width`、`ltx_height`、`ltx_duration_seconds`；执行别名 `ltx_video_flf2v` 仍按 `ltx_video` 模板入口处理。
 - 高级图生视频pro 开放 `minimax_h3_i2v`、`minimax_h3_flf2v` 与
   `minimax_h3_ref2v` 投稿，并在 `minimax_h3` 页签合并展示。apply-context 从
-  版本 1 `_minimax_h3_context` 精确返回提示词、时长、`resolution_preset`、
+  版本 1/2 `_minimax_h3_context` 精确返回提示词、时长、`resolution_preset`、
   `aspect_ratio` 和有序 `lora_items`。I2V/FLF2V 分别要求重新上传 1/2 张图且
   不复用原图；REF2V 返回 `required_image_count=1`，原任务第 1 张主图不继承，
   第 2 张起通过 `input_files/input_file_urls` 按原顺序默认带入，前端必须展示并
@@ -207,6 +207,12 @@ sequenceDiagram
   `allow_contribute=false`。缺少完整上下文的
   旧投稿继续支持社区互动，但禁用一键应用并返回
   `minimax_h3_context_missing`；T2V 返回 `minimax_h3_mode_not_supported`。
+- H3 普通扩展段按自身 I2V/FLF2V 上下文支持一键应用，只复用该段提示词和设置，
+  使用者仍需重新上传 1 张首帧或 2 张首尾帧。父段的 `allow_contribute` 向后传播，
+  因而模板派生和 QQCC 链不会在续段重新获得投稿权限。H3 免费拼接记录仅当全部源段
+  可投稿时允许投稿，但列表/详情必须返回
+  `template_apply_supported=false`、`template_apply_disabled_reason="minimax_h3_stitched"`，
+  apply-context 入口返回 400；拼接结果不能作为新的扩展父段。
 - Web 的 H3 Pro 能力还必须受 `enable_minimax_h3` 约束；Dashboard“入口控制”的
   修仙市集横向子页为当前十二个市集类型族分别保存开关：文生图、幻想换脸、自由P图、
   自由P图 v2.5、自由P图 v3、图生视频、高级图生视频、高级图生视频 Pro、图生视频 v2、
@@ -215,7 +221,7 @@ sequenceDiagram
   任一能力 gate 关闭时都隐藏 H3 Gallery 页签；既有帖子仍可在“全部”中展示和互动，
   详情、模板深链和后端历史兼容不受影响。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
-- 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
+- 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）以及 H3 Pro stitched 拼接记录都不支持一键应用：列表/详情应返回对应的 `wan22_stitched` / `minimax_h3_stitched` 禁用原因，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 - Web workbench 成功提交模板任务后必须立即清理并关闭当前模板会话，只保留全局
   悬浮任务进度；用户收起悬浮任务时不得重新露出已提交的模板面板。关闭动作以

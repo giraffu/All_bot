@@ -87,6 +87,132 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypatch):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "load_advanced_video_pro_profiles",
+        AsyncMock(return_value={
+            "i2v": {"main_model": "official", "addon_items": []},
+            "flf2v": {"main_model": "10eros", "addon_items": []},
+        }),
+    )
+    seed_data = {
+        "mode": "i2v",
+        "duration": 10,
+        "preset": "standard",
+        "aspect": "source",
+        "images": ["/tmp/owned-tail.png"],
+        "reference_descriptions": [],
+        "is_extension": True,
+        "extension_prev_task_id": "h3-parent",
+        "minimax_h3_chain_task_ids": ["h3-parent"],
+        "extension_allow_contribute": True,
+    }
+    monkeypatch.setattr(
+        fsm,
+        "prepare_minimax_h3_extension_fsm_data",
+        AsyncMock(return_value=SimpleNamespace(fsm_data=seed_data)),
+    )
+    query = SimpleNamespace(
+        data="h3_extend:h3-parent",
+        answer=AsyncMock(),
+        message=object(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=7, username="alice"),
+    )
+    context = SimpleNamespace(user_data={}, lang="zh")
+
+    state = await fsm.start_extension(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_SETTINGS
+    assert query.answer.await_count == 1
+    assert context.user_data[fsm.DATA_KEY]["images"] == ["/tmp/owned-tail.png"]
+    callbacks = [
+        button.callback_data
+        for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == ["h3ext_mode_i2v", "h3ext_mode_flf2v"]
+
+
+@pytest.mark.asyncio
+async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeypatch):
+    submit = Mock(return_value=object())
+    create_background = Mock()
+    monkeypatch.setattr(fsm, "submit_advanced_video_pro_plan", submit)
+    monkeypatch.setattr(fsm, "create_background_task", create_background)
+    monkeypatch.setattr(fsm, "robust_reply_text", AsyncMock())
+    monkeypatch.setattr(fsm.permission_service, "check_quota", AsyncMock())
+    context = SimpleNamespace(user_data={}, lang="zh")
+    update = SimpleNamespace(
+        effective_message=object(),
+        effective_user=SimpleNamespace(id=7, username="alice", full_name="Alice"),
+        effective_chat=SimpleNamespace(id=99),
+    )
+    data = {
+        "mode": "i2v",
+        "prompt": "continue forward",
+        "images": ["/tmp/owned-tail.png"],
+        "reference_descriptions": [],
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "source",
+        "addon_items": [],
+        "is_extension": True,
+        "extension_prev_task_id": "h3-parent",
+        "minimax_h3_chain_task_ids": ["h3-root", "h3-parent"],
+        "extension_allow_contribute": False,
+    }
+
+    state = await fsm._submit_generation(update, context, data)
+
+    assert state == ConversationHandler.END
+    assert submit.call_args.kwargs["allow_contribute"] is False
+    assert submit.call_args.kwargs["result_meta"] == {
+        "minimax_h3_prev_task_id": "h3-parent",
+        "minimax_h3_chain_task_ids": ["h3-root", "h3-parent"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_h3_extension_flf2v_accepts_only_the_new_end_frame(monkeypatch):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/new-end.png"),
+    )
+    monkeypatch.setattr(fsm, "validate_advanced_video_pro_frame_aspects", Mock())
+    data = {
+        "mode": "flf2v",
+        "images": ["/tmp/owned-tail.png"],
+        "is_extension": True,
+    }
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: data},
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=object())),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            photo=[SimpleNamespace(file_id="end-frame")],
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_image(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert data["images"] == ["/tmp/owned-tail.png", "/tmp/new-end.png"]
+    assert "请输入视频提示词" in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
 async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)

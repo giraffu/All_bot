@@ -57,6 +57,7 @@ type SubmitHarness = {
   wan22ChainTaskIds: Ref<string[]>
   ltxPrevTaskId: Ref<string | null>
   ltxChainTaskIds: Ref<string[]>
+  h3PrevTaskId: Ref<string | null>
   submitTask: ReturnType<typeof vi.fn>
   setSubmittedTaskId: ReturnType<typeof vi.fn>
   handleSubmit: () => Promise<void>
@@ -111,6 +112,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const wan22ChainTaskIds = ref<string[]>([])
   const ltxPrevTaskId = ref<string | null>(null)
   const ltxChainTaskIds = ref<string[]>([])
+  const h3PrevTaskId = ref<string | null>(null)
   const submitTask = vi.fn(async () => 'submitted-1')
   const setSubmittedTaskId = vi.fn()
   const assetUploadSlots = buildAssetSlots(currentMode, uploadedSlotAssets)
@@ -145,6 +147,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ChainTaskIds,
     ltxPrevTaskId,
     ltxChainTaskIds,
+    h3PrevTaskId,
     submitTask,
     setSubmittedTaskId,
     t,
@@ -179,6 +182,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ChainTaskIds,
     ltxPrevTaskId,
     ltxChainTaskIds,
+    h3PrevTaskId,
     submitTask,
     setSubmittedTaskId,
     handleSubmit,
@@ -271,6 +275,27 @@ describe('useLabSubmitPayload', () => {
     ]
     await harness.handleSubmit()
     expect(harness.submitTask.mock.calls.at(-1)?.[0].inputs).not.toHaveProperty('lora_items')
+  })
+
+  it('submits H3 continuation with only the new client end frame', async () => {
+    const harness = createHarness('minimax_h3')
+    harness.prompt.value = 'continue into a quiet close-up'
+    harness.minimaxH3Mode.value = 'flf2v'
+    harness.h3PrevTaskId.value = 'h3-parent'
+    harness.uploadedReferences.value = [
+      { ...refImage('trusted-tail.png'), locked: true, width: 1280, height: 720 },
+      { ...refImage('new-end.png'), width: 1280, height: 720 },
+    ]
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_flf2v',
+      inputs: expect.objectContaining({
+        images: ['new-end.png'],
+        minimax_h3_prev_task_id: 'h3-parent',
+      }),
+    }), 'lab.cards.minimax_h3_title')
   })
 
   it('submits ordered mixed typed references for H3 REF2V', async () => {

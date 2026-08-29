@@ -34,6 +34,10 @@ export interface Wan22ResultMeta {
   ltx_height?: number
   ltx_duration_seconds?: number
   lora_items?: Array<{ name: string; strength?: number }>
+  minimax_h3_prev_task_id?: string
+  minimax_h3_chain_task_ids?: string[]
+  minimax_h3_segment_index?: number
+  minimax_h3_is_stitched?: boolean
 }
 
 export interface GalleryPost {
@@ -130,6 +134,11 @@ export interface Wan22HistoryChainResponse {
 }
 
 export interface LtxHistoryChainResponse {
+  current_task_id: string
+  items: HistoryItem[]
+}
+
+export interface MiniMaxH3HistoryChainResponse {
   current_task_id: string
   items: HistoryItem[]
 }

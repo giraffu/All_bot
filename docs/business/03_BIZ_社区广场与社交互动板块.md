@@ -86,6 +86,9 @@ sequenceDiagram
   一键应用也默认带入该语音并允许使用者删除或换成自己的上传；客户端只持有投稿级
   受控引用和短期试听地址，不获得作者私有上传路径。缺少完整 Pro 上下文的旧投稿仍
   可点赞、收藏、评论和举报，但不能一键应用；模板衍生结果不能再次投稿。
+- H3 普通续段继承父作品的投稿权限，并可按该段 I2V/FLF2V 设置一键应用，但新用户
+  必须重新提供自己的首帧或首尾帧。整链免费拼接作品在所有源段都可投稿时允许投稿；
+  拼接作品本身禁止一键应用，也不能继续作为扩展父段。
 - reaction 以 `(user_id, post_id)` advisory transaction lock 串行切换，
   reaction/apply partial unique index 防重；投稿以 `(task_id, user_id)` unique
   和显式 conflict target 保证只有一个事实结果。

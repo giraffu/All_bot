@@ -13,6 +13,7 @@ from src.services.minimax_h3_history_context_service import (
     resolve_valid_minimax_h3_history_context,
 )
 from src.services.wan22_video_v2_extension_service import is_wan22_stitched_result
+from src.services.minimax_h3_extension_service import is_minimax_h3_stitched_result
 
 TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
 TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
@@ -23,6 +24,7 @@ TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING = "minimax_h3_context_
 TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED = (
     "minimax_h3_mode_not_supported"
 )
+TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_STITCHED = "minimax_h3_stitched"
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
 _H3_REFERENCE_AUDIO_EXTENSIONS = frozenset(
     {"mp3", "wav", "m4a", "mp4", "ogg", "oga", "opus"}
@@ -87,6 +89,10 @@ def resolve_history_template_apply_disabled_reason(
 ) -> str | None:
     task_type = str(getattr(history, "type", None) or "") if history else ""
     if task_type in MINIMAX_H3_TASK_TYPES:
+        if history and is_minimax_h3_stitched_result(
+            getattr(history, "extra_outputs", None)
+        ):
+            return TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_STITCHED
         if not is_minimax_h3_gallery_task_type(task_type):
             return TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED
         if not resolve_valid_minimax_h3_history_context(

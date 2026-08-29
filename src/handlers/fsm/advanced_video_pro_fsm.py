@@ -41,6 +41,14 @@ from src.services.fsm_temp_file_service import (
     download_telegram_file_to_fsm_temp,
 )
 from src.services.permission_service import permission_service
+from src.services.minimax_h3_extension_service import (
+    MiniMaxH3ExtensionError,
+    prepare_minimax_h3_extension_fsm_data,
+)
+from src.services.tg_task_result_presentation import (
+    H3_EXTEND_CALLBACK_PREFIX,
+    resolve_task_id_from_callback_data,
+)
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 
 DATA_KEY = "advanced_video_pro_data"
@@ -310,6 +318,95 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return AdvancedVideoProState.WAIT_SETTINGS
 
 
+async def start_extension(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer()
+    if context.user_data.get("in_conversation"):
+        await robust_reply_text(
+            query.message,
+            _text(context, "请先结束当前操作。", "Finish the current action first."),
+        )
+        return ConversationHandler.END
+    task_id = resolve_task_id_from_callback_data(
+        query.data,
+        H3_EXTEND_CALLBACK_PREFIX,
+    )
+    if not task_id:
+        await robust_reply_text(
+            query.message,
+            _text(context, "记录已失效，请重新生成后再试。", "This record expired. Generate it again."),
+        )
+        return ConversationHandler.END
+    try:
+        runtime_profiles = await load_advanced_video_pro_profiles()
+        seed = await prepare_minimax_h3_extension_fsm_data(
+            prev_task_id=task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+    except MiniMaxH3ExtensionError as exc:
+        await robust_reply_text(query.message, f"❌ {exc}")
+        return ConversationHandler.END
+    except Exception:
+        logger.exception("Failed to prepare H3 extension")
+        await robust_reply_text(
+            query.message,
+            _text(context, "尾帧加载失败，请稍后重试。", "Failed to load the last frame. Try again later."),
+        )
+        return ConversationHandler.END
+    data = seed.fsm_data
+    data["runtime_profiles"] = runtime_profiles
+    context.user_data["in_conversation"] = TAG
+    context.user_data[DATA_KEY] = data
+    await robust_reply_text(
+        query.message,
+        _with_cancel_hint(
+            context,
+            _text(
+                context,
+                "已锁定上一段尾帧。请选择直接续写，或上传一张新的终止帧。",
+                "The previous last frame is locked. Continue directly or add a new end frame.",
+            ),
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(_text(context, "直接续写", "Continue"), callback_data="h3ext_mode_i2v")],
+                [InlineKeyboardButton(_text(context, "添加终止帧", "Add end frame"), callback_data="h3ext_mode_flf2v")],
+            ]
+        ),
+    )
+    return AdvancedVideoProState.WAIT_SETTINGS
+
+
+async def extension_mode_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = context.user_data.get(DATA_KEY)
+    if not data or not data.get("is_extension"):
+        return ConversationHandler.END
+    mode = str(query.data or "").removeprefix("h3ext_mode_")
+    if mode not in {"i2v", "flf2v"}:
+        return AdvancedVideoProState.WAIT_SETTINGS
+    data["mode"] = mode
+    _apply_runtime_profile(data)
+    guidance = _text(
+        context,
+        "可调整时长和画质，然后直接发送新提示词。" if mode == "i2v" else "可调整时长和画质，然后上传一张新的终止帧。",
+        "Adjust duration and quality, then send a new prompt." if mode == "i2v" else "Adjust duration and quality, then upload a new end frame.",
+    )
+    await robust_edit_text(
+        query.message,
+        f"{_settings_text(context, data)}\n\n🔒 {guidance}",
+        reply_markup=_settings_keyboard(context, data),
+        parse_mode="Markdown",
+    )
+    return AdvancedVideoProState.WAIT_SETTINGS
+
+
 async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -382,6 +479,15 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                     "请先选择图生视频模式。",
                     "Choose an image-to-video mode first.",
                 ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_SETTINGS
+    if data.get("is_extension") and data.get("mode") == "i2v":
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(context, "上一段尾帧已锁定，请直接发送新提示词。", "The previous last frame is locked. Send a new prompt."),
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
@@ -652,7 +758,21 @@ async def _submit_generation(
             user_id=user.id,
             username=user.username,
             cleanup=True,
-            allow_contribute=is_gallery_supported_task_type(plan.task_type),
+            allow_contribute=(
+                bool(data.get("extension_allow_contribute"))
+                if data.get("is_extension")
+                else is_gallery_supported_task_type(plan.task_type)
+            ),
+            result_meta=(
+                {
+                    "minimax_h3_prev_task_id": data.get("extension_prev_task_id"),
+                    "minimax_h3_chain_task_ids": list(
+                        data.get("minimax_h3_chain_task_ids") or []
+                    ),
+                }
+                if data.get("is_extension")
+                else None
+            ),
         ),
     )
     _clear(context, preserve_paths=True)
@@ -674,7 +794,10 @@ async def receive_settings_prompt(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     data = context.user_data.get(DATA_KEY)
-    if not data or data.get("mode") != "t2v":
+    if not data or (
+        data.get("mode") != "t2v"
+        and not (data.get("is_extension") and data.get("mode") == "i2v")
+    ):
         await robust_reply_text(
             update.effective_message,
             _with_cancel_hint(
@@ -737,6 +860,10 @@ def get_advanced_video_pro_fsm_handler(
         CommandHandler("advanced_video_pro", start),
         MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
         CallbackQueryHandler(legacy_callback, pattern=r"^avp_prompt_"),
+        CallbackQueryHandler(
+            start_extension,
+            pattern=rf"^{H3_EXTEND_CALLBACK_PREFIX}(?::.+)?$",
+        ),
     ]
     if include_ltx_compatibility_routes:
         entry_points.extend(
@@ -750,6 +877,7 @@ def get_advanced_video_pro_fsm_handler(
         entry_points=entry_points,
         states={
             AdvancedVideoProState.WAIT_SETTINGS: [
+                CallbackQueryHandler(extension_mode_callback, pattern=r"^h3ext_mode_"),
                 CallbackQueryHandler(settings_callback, pattern=r"^avp_"),
                 MessageHandler(
                     filters.PHOTO | filters.Document.IMAGE,
