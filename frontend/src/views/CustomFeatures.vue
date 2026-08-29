@@ -104,10 +104,17 @@ const {
   wan22ChainLoading,
   wan22ChainStitching,
   ltxChainStitching,
+  h3ChainStitching,
+  h3IsExtension,
+  currentTaskIsH3ImageVideo,
+  h3CurrentTaskCanExtend,
+  h3CurrentTaskCanStitch,
   openWan22CurrentTaskEditor,
   openLtxCurrentTaskEditor,
   stitchCurrentWan22Chain,
   stitchCurrentLtxChain,
+  openH3CurrentTaskEditor,
+  stitchCurrentH3Chain,
   isPromptOptimizerAvailable,
   canOptimizePrompt,
   canRestoreOriginalPrompt,
@@ -207,7 +214,10 @@ const showPromptOptimizer = computed(() => (
             <a-segmented
               v-model:value="minimaxH3Mode"
               block
-              :options="[
+              :options="h3IsExtension ? [
+                { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
+                { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
+              ] : [
                 { label: t('lab.workbench.minimax_h3_modes.t2v'), value: 't2v' },
                 { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
                 { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
@@ -382,6 +392,39 @@ const showPromptOptimizer = computed(() => (
                 @click="resetAfterResult"
               >
                 {{ $t('lab.workbench.continue_generation') }}
+              </a-button>
+            </div>
+            <div
+              v-else-if="currentTaskIsH3ImageVideo"
+              class="lab-workbench__result-actions flex w-full flex-wrap items-center justify-center gap-2"
+            >
+              <a-button
+                type="primary"
+                size="large"
+                class="min-w-[94px] max-w-[132px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                @click="downloadResult(task.resultUrl, task.title)"
+              >
+                <template #icon><DownloadOutlined /></template>
+                {{ $t('template_apply.common.download_result') }}
+              </a-button>
+              <a-button
+                size="large"
+                class="min-w-[94px] max-w-[132px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                :disabled="!h3CurrentTaskCanExtend"
+                @click="openH3CurrentTaskEditor"
+              >
+                <template #icon><BranchesOutlined /></template>
+                {{ $t('lab.workbench.minimax_h3_extend_generation') }}
+              </a-button>
+              <a-button
+                v-if="h3CurrentTaskCanStitch"
+                size="large"
+                class="min-w-[94px] max-w-[132px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                :loading="h3ChainStitching"
+                @click="stitchCurrentH3Chain"
+              >
+                <template #icon><LinkOutlined /></template>
+                {{ $t('lab.workbench.minimax_h3_stitch_chain') }}
               </a-button>
             </div>
             <div v-else class="flex gap-4">

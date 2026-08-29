@@ -58,6 +58,7 @@ type UseLabSubmitPayloadOptions = {
   wan22ChainTaskIds: Ref<string[]>
   ltxPrevTaskId: Ref<string | null>
   ltxChainTaskIds: Ref<string[]>
+  h3PrevTaskId?: Ref<string | null>
   submitTask: SubmitTaskFn
   setSubmittedTaskId: (taskId: string | null) => void
   t: TranslateFn
@@ -95,6 +96,7 @@ export function useLabSubmitPayload({
   wan22ChainTaskIds,
   ltxPrevTaskId,
   ltxChainTaskIds,
+  h3PrevTaskId,
   submitTask,
   setSubmittedTaskId,
   t,
@@ -146,6 +148,9 @@ export function useLabSubmitPayload({
     if (currentMode.value.id === 'minimax_h3') {
       const mode = minimaxH3Mode?.value ?? 't2v'
       const images = uploadedReferences.value.map(item => item.key)
+      const clientImages = h3PrevTaskId?.value
+        ? uploadedReferences.value.filter(item => !item.locked).map(item => item.key)
+        : images
       const expected = mode === 't2v'
         ? [0, 0]
         : mode === 'i2v'
@@ -173,13 +178,16 @@ export function useLabSubmitPayload({
       }
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: `minimax_h3_${mode}`,
-        images: mode === 'ref2v' ? [] : images,
+        images: mode === 'ref2v' ? [] : clientImages,
         duration: Number(duration.value),
         prompt: prompt.value,
         promptTarget: 'inputs',
         extraInputs: {
           resolution_preset: minimaxH3ResolutionPreset?.value ?? 'preview',
           aspect_ratio: aspectRatio,
+          ...(h3PrevTaskId?.value
+            ? { minimax_h3_prev_task_id: h3PrevTaskId.value }
+            : {}),
           ...(mode === 'i2v' || mode === 'flf2v'
             ? {
                 source_width: uploadedReferences.value[0]?.width,

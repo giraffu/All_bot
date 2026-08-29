@@ -15,6 +15,12 @@ from src.services.ltx_video_extension_service import (
     resolve_ltx_stitched_segment_count,
 )
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
+from src.services.minimax_h3_extension_service import (
+    is_minimax_h3_stitched_result,
+    resolve_minimax_h3_segment_index,
+    resolve_minimax_h3_stitched_segment_count,
+)
 from src.web_api.common.utils import (
     build_storage_input_file_url,
     resolve_history_billing_resolution,
@@ -77,6 +83,15 @@ def extract_history_tags(
         segment_index = resolve_ltx_segment_index(extra_outputs)
         if segment_index:
             tags.append(f"task.ltx_segment:{segment_index}")
+    if task_type in MINIMAX_H3_TASK_TYPES:
+        if is_minimax_h3_stitched_result(extra_outputs):
+            segment_count = resolve_minimax_h3_stitched_segment_count(extra_outputs)
+            if segment_count:
+                tags.append(f"task.minimax_h3_stitched_video:{segment_count}")
+            return tags
+        segment_index = resolve_minimax_h3_segment_index(extra_outputs)
+        if segment_index:
+            tags.append(f"task.minimax_h3_segment:{segment_index}")
     return tags
 
 

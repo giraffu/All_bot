@@ -48,6 +48,11 @@ class LtxHistoryChainResponse(BaseModel):
     items: List[HistoryItem]
 
 
+class MiniMaxH3HistoryChainResponse(BaseModel):
+    current_task_id: str
+    items: List[HistoryItem]
+
+
 class CheckinResponse(BaseModel):
     success: bool
     current_credits: int

@@ -12,6 +12,7 @@ import src.handlers.callbacks.billing_callbacks  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks_browse  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks_interactions  # noqa: F401
 import src.handlers.callbacks.ltx_video_callbacks  # noqa: F401
+import src.handlers.callbacks.minimax_h3_video_callbacks  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401
 import src.handlers.callbacks.task_callbacks  # noqa: F401
 import src.handlers.callbacks.wan22_video_v2_callbacks  # noqa: F401
@@ -30,6 +31,7 @@ MAIN_BOT_REQUIRED_CALLBACK_PREFIXES = (
     "cancel_task_",
     "ltx_stitch_chain",
     "wan22v2_stitch_chain",
+    "h3_stitch",
     "avpopt_prepare:",
     "avpopt_confirm:",
 )

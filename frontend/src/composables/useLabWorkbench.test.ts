@@ -99,6 +99,7 @@ vi.mock('@/stores/tasks', () => ({
 vi.mock('@/api/gallery', () => ({
   getWan22HistoryChain: vi.fn(),
   stitchLtxHistoryChain: vi.fn(),
+  stitchMiniMaxH3HistoryChain: vi.fn(),
   stitchWan22HistoryChain: vi.fn(),
 }))
 
@@ -216,6 +217,31 @@ describe('useLabWorkbench LTX payloads', () => {
     }])
     expect(workbench.uploadButtonLabel.value).toBe('lab.workbench.add_end_frame')
     expect(workbench.composerNotice.value).toBe('lab.workbench.ltx_extension_notice')
+  })
+
+  it('restores an H3 extension route and keeps its tail frame across I2V/FLF2V', async () => {
+    const workbench = createWorkbench('minimax_h3_i2v', {
+      minimax_h3_extend_task_id: 'h3-task-1',
+      minimax_h3_extend_key: 'history/h3-task-1/last_frame.png',
+      minimax_h3_extend_url: 'https://cdn/h3-tail.png',
+    })
+
+    expect(workbench.currentMode.value.id).toBe('minimax_h3')
+    expect(workbench.h3IsExtension.value).toBe(true)
+    expect(workbench.uploadedReferences.value[0]).toMatchObject({
+      key: 'history/h3-task-1/last_frame.png',
+      locked: true,
+    })
+
+    workbench.minimaxH3Mode.value = 'flf2v'
+    await Promise.resolve()
+    expect(workbench.uploadedReferences.value).toHaveLength(1)
+    expect(workbench.uploadedReferences.value[0]?.locked).toBe(true)
+
+    workbench.minimaxH3Mode.value = 'i2v'
+    await Promise.resolve()
+    expect(workbench.uploadedReferences.value[0]?.key)
+      .toBe('history/h3-task-1/last_frame.png')
   })
 
   it('loads current LTX result tail frames as locked start frames', () => {

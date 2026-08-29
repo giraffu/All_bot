@@ -87,6 +87,49 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
 
 
 @pytest.mark.asyncio
+async def test_minimax_h3_extension_uses_server_tail_and_inherits_contribution():
+    prepare_extension = AsyncMock(
+        return_value=SimpleNamespace(
+            images=("task-results/parent/last.png",),
+            metadata={
+                "minimax_h3_prev_task_id": "parent",
+                "minimax_h3_chain_task_ids": ["root", "parent"],
+            },
+            allow_contribute=False,
+        )
+    )
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_i2v",
+        prompt="continue walking",
+        inputs={"minimax_h3_prev_task_id": "parent", "duration": 10},
+    )
+
+    prepared = await prepare_web_submission_request(
+        req,
+        internal_user_id=7,
+        operator_canary_authorized=True,
+        env_enabled=lambda _name: True,
+        advanced_video_profile_loader=AsyncMock(
+            return_value={"main_model": "official", "addon_items": []}
+        ),
+        prepare_h3_extension_func=prepare_extension,
+    )
+
+    assert prepared.images == ["task-results/parent/last.png"]
+    assert prepared.registry_metadata == {
+        "minimax_h3_prev_task_id": "parent",
+        "minimax_h3_chain_task_ids": ["root", "parent"],
+    }
+    assert prepared.allow_contribute_override is False
+    prepare_extension.assert_awaited_once_with(
+        prev_task_id="parent",
+        internal_user_id=7,
+        target_task_type="minimax_h3_i2v",
+        client_images=[],
+    )
+
+
+@pytest.mark.asyncio
 async def test_minimax_h3_ref2v_resolves_single_audio_ref_without_rewriting_prompt(
     monkeypatch,
 ):

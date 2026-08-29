@@ -36,6 +36,13 @@ Dashboard 独立“Pro 模型预设”子页已校验的主模型与附加模型
 Pro 会话中凡是继续等待用户选择模式、上传图片或输入提示词的提示，都同时说明可发送
 `/cancel` 取消当前流程并切换功能；终态成功、余额不足和配置不可用提示不重复追加。
 
+H3 I2V/FLF2V/REF2V 成功结果通过稳定 `h3_extend:<task_id>` 进入扩展态。FSM 先校验
+History 归属和 v1/v2 上下文，再把上一段尾帧下载到统一临时目录并锁定为第一张图；
+用户只能选择直接发送新提示词，或新增一张终止帧。扩展态不携带 REF2V 原参考图，
+继承投稿权限，时长和画质可调，模型预设在进入时重新读取 Dashboard 当前配置。取消、
+超时、比例校验失败和提交异常都沿用统一临时文件清理。第二段起结果键盘展示
+`h3_stitch:<task_id>`，拼接 callback 必须应答并将幂等闪回瓶结果发回用户。
+
 ## 1. 目标与范围
 
 本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑，以及基于装饰器注册的 callback 路由体系。
@@ -122,6 +129,11 @@ FSM 入口与过程中，当前推荐组合为：
 旧 `快速脱衣`、`快速自慰`、`menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本入口和主 Bot 上的 `qvid_*` callback 必须回复前往 QQCC 懒人 Bot 的 inline URL 按钮或入口未配置提示，不得进入任务提交。QQCC Bot 仍保留 `AI绘图` / `AI滤镜` / `AI动图` 动态场景入口、`qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 与旧 `qvid_mode:*` 已发按钮兼容。
 
 主 Bot `src/bot_main.py` 与 QQCC Bot `qqcc_bot/main.py` 共享 `src/services/telegram_runtime_bootstrap.py`，统一 Local Bot API URL、HTTPXRequest、Telegram File/Poll patch 和语言/i18n middleware。共享 bootstrap 不改变注册边界：主 Bot仍注册完整 FSM/支付/恢复；QQCC 注册 quick image/video、QQCC market、最小 callback，以及结果消息已经公开的 Wan22 扩展/重生成 ConversationHandler 入口，并继续用 `bot:qqcc` 过滤恢复任务。`wan22v2_extend:*` 不能只出现在结果键盘中，官方/私有 QQCC Application 都必须在全局 callback fallback 之前注册该 FSM，否则按钮会被记为 unmatched callback。
+
+QQCC 不注册主 Bot H3 高级 FSM，但共享 quick video handler 接管 `h3_extend:<task_id>`：
+只列出当前配置中有效的 H3 `mode=i2v` AI 视频场景，选择 callback 使用有长度门禁的
+`h3xs:<index>`，选择时再次读取配置，场景被删除/停用则 fail closed。官方与私有
+Application factory 共用该注册，提交仍分别写精确 client type。
 
 主 Bot 和 QQCC Bot 都注册 PTB `ConversationHandler`，入口构建不得开启无键全局并发 `concurrent_updates(True)`。主 Bot 使用 `src/services/telegram_update_processor.py` 的 `PerUserUpdateProcessor`：以 `effective_user.id` 为串行键，同一用户的 Update 严格按顺序执行，不同用户最多并发处理 `MAIN_BOT_MAX_CONCURRENT_UPDATES` 个（默认 32，上限 256）；无用户 Update 回退到 chat 键，无 user/chat 的系统 Update 共用保守串行键。处理器为每个 Update 记录 `telegram_update_timing`，包含 `queue_wait_ms` 与 `handler_duration_ms`，用于日志侧计算排队和执行耗时分位数。主 Bot long polling 的 `poll_interval` 为 0，避免原先额外 0～2 秒轮询抖动。QQCC 官方 Bot 当前仍保持单通道；`paid_group_guard_bot` 不注册生成 FSM，仍允许保持全局并发处理群审核与消息删除。
 

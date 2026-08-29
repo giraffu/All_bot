@@ -187,6 +187,15 @@ AI动图模型配置中，每个已选 Wan22 附加模型的强度行提供说�
 
 AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 MiniMax H3 I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 H3 FLF2V。额度预检为尾帧链费用加 H3 档位与时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `generation` executor 保存原图、当前尾帧、H3 `lora_items` 和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。H3 附加模型实际生效依赖目标 Worker 镜像、workflow 与 13 模型 bundle 同一轮发布和 canary。
 
+QQCC 的 H3 结果还可通过共享 `h3_extend:<task_id>` 进入场景选择器。选择器只展示
+当前有效的 `engine=minimax_h3, mode=i2v` 场景，排除 REF2V；紧凑 callback 为
+`h3xs:<index>`，点击时再次读取配置，场景被删除、停用或 AI视频主开关关闭即拒绝。
+扩展用本人父段尾帧作输入，按所选场景当前快照与既有固定价/动态价规则提交，结果固定
+`allow_contribute=false`。场景包含 `next_scene_id` 时继续走既有多段 continuation 和
+免费自动拼接；最终可见 History 作为一个扩展块保存，并复制最终尾帧与 H3 父链上下文，
+因此还能再次扩展或与父段整链拼接。官方写 `bot:qqcc`，私有实例仍写
+`bot:qqcc-private:<private_bot_id>`，不得互相恢复。
+
 QQCC Config 的“可配置”和 H3 Worker 的“运行时可加载”是两个门禁。控制面合入后，认证后台会显示领域目录并允许保存稳定 `{name,strength}`；目标 H3 Worker 只有在同一版本的 13 模型 bundle 已进入 ComfyUI 模型目录、workflow 动态链可解析对应 ID 且 GPU canary 通过后才能正式执行。完整物理路径、触发词、默认强度、大小与 SHA-256 由 MiniMax H3 文档、领域目录和 model bundle manifest 共同约束，QQCC 配置不得复制这些物理事实。
 
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。

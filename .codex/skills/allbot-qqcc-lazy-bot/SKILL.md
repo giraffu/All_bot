@@ -56,7 +56,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
 - 只有链路第一个真实任务按普通规则排队并允许取消；后续 stage 是
   continuation，必须高优先级、隐藏排队/取消，并由 core runtime 权威拒绝
   旧取消入口。
-- QQCC 自生成结果不允许投稿或公开。最终文案、History 和重生成 metadata
+- QQCC 自生成结果及 H3 扩展块不允许投稿或公开。最终文案、History 和重生成 metadata
   必须保持根功能/场景语义，不暴露内部绘图、换脸或尾帧 stage。
 - QQCC 市集只原生应用安全单图模板；复杂多图、多视频、SCAIL-2、LTX 和
   拼接模板只能 Web handoff。原生提交必须带 `source_post_id`、

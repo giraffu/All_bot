@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -47,6 +48,7 @@ from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
+    AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
     get_qqcc_copywriting_override,
@@ -59,6 +61,7 @@ from src.services.qqcc_config_service import (
     load_runtime_qqcc_config,
     project_qqcc_config_for_scene_version,
     render_qqcc_copywriting,
+    get_enabled_qqcc_ai_video_scenes,
 )
 from src.services.qqcc_demo_media_service import (
     send_qqcc_ref2v_reference_templates,
@@ -94,6 +97,14 @@ from src.services.wan22_video_v2_extension_service import (
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
+)
+from src.services.minimax_h3_extension_service import (
+    MiniMaxH3ExtensionError,
+    prepare_minimax_h3_extension_fsm_data,
+)
+from src.services.tg_task_result_presentation import (
+    H3_EXTEND_CALLBACK_PREFIX,
+    resolve_task_id_from_callback_data,
 )
 from src.utils import (
     create_background_task,
@@ -135,6 +146,7 @@ QUICK_VIDEO_MODE_CONFIG_KEYS = {
 }
 
 _t = translate_fsm_text
+H3_EXTENSION_SCENE_CALLBACK_PREFIX = "h3xs:"
 
 
 def _quick_video_temp_paths(fsm_data: dict) -> list[str]:
@@ -764,6 +776,110 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return QuickVideoState.WAIT_IMAGE
 
 
+def _enabled_h3_extension_scenes(config: dict) -> list[dict]:
+    return [
+        scene
+        for scene in get_enabled_qqcc_ai_video_scenes(config)
+        if str(scene.get("engine") or "") == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
+        and str(scene.get("mode") or "") == "i2v"
+    ]
+
+
+async def start_h3_extension_scene_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await safe_answer_query(query)
+    if context.user_data.get("in_conversation"):
+        await safe_answer_query(query, text=_t(context, "fsm.common.conflict"), show_alert=True)
+        return ConversationHandler.END
+    task_id = resolve_task_id_from_callback_data(
+        query.data,
+        H3_EXTEND_CALLBACK_PREFIX,
+    )
+    config = await _load_qqcc_config_for_context(context)
+    scenes = _enabled_h3_extension_scenes(config or {})
+    if not task_id or not scenes or not is_qqcc_main_button_enabled(config or {}, "ai_video"):
+        await safe_answer_query(query, text="当前没有可用的 H3 扩展场景", show_alert=True)
+        return ConversationHandler.END
+    try:
+        seed = await prepare_minimax_h3_extension_fsm_data(
+            prev_task_id=task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+    except MiniMaxH3ExtensionError as exc:
+        await safe_answer_query(query, text=str(exc), show_alert=True)
+        return ConversationHandler.END
+    except Exception:
+        logger.exception("Failed to prepare QQCC H3 extension")
+        await safe_answer_query(query, text="尾帧加载失败，请稍后重试", show_alert=True)
+        return ConversationHandler.END
+    fsm_data = {
+        "mode": MODE_LTX_VIDEO,
+        "resolution": "preview",
+        "duration": "5s",
+        "image_path": seed.fsm_data["images"][0],
+        "is_h3_extension": True,
+        "extension_prev_task_id": task_id,
+        "minimax_h3_chain_task_ids": list(
+            seed.fsm_data["minimax_h3_chain_task_ids"]
+        ),
+        "h3_extension_scene_ids": [str(scene["id"]) for scene in scenes],
+    }
+    context.user_data["in_conversation"] = "QUICK_VIDEO_H3_EXTENSION"
+    context.user_data["quick_video_data"] = fsm_data
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    str(scene.get("name") or f"场景 {index + 1}"),
+                    callback_data=f"{H3_EXTENSION_SCENE_CALLBACK_PREFIX}{index}",
+                )
+            ]
+            for index, scene in enumerate(scenes)
+        ]
+    )
+    await robust_edit_text(
+        query.message,
+        "已锁定上一段尾帧。请选择一个后台 H3 图生视频场景继续生成：",
+        reply_markup=keyboard,
+    )
+    return QuickVideoState.WAIT_IMAGE
+
+
+async def select_h3_extension_scene(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await safe_answer_query(query)
+    fsm_data = context.user_data.get("quick_video_data")
+    if not isinstance(fsm_data, dict) or not fsm_data.get("is_h3_extension"):
+        await safe_answer_query(query, text="扩展选择已失效", show_alert=True)
+        return ConversationHandler.END
+    try:
+        index = int(str(query.data or "").removeprefix(H3_EXTENSION_SCENE_CALLBACK_PREFIX))
+        scene_id = list(fsm_data.get("h3_extension_scene_ids") or [])[index]
+    except (ValueError, IndexError, TypeError):
+        await safe_answer_query(query, text="扩展场景已更新，请重新选择", show_alert=True)
+        return QuickVideoState.WAIT_IMAGE
+    config = await _load_qqcc_config_for_context(context)
+    scenes = _enabled_h3_extension_scenes(config or {})
+    scene = next((item for item in scenes if str(item.get("id")) == scene_id), None)
+    if scene is None or not is_qqcc_main_button_enabled(config or {}, "ai_video"):
+        await safe_answer_query(query, text="该场景已删除或停用", show_alert=True)
+        _cleanup_context(context, update.effective_user.id)
+        return ConversationHandler.END
+    _sync_qqcc_scene_to_quick_video_data(
+        fsm_data,
+        scene,
+        include_scene_id=True,
+        include_prompt_details=True,
+        scene_kind="ai_video",
+    )
+    return await start_generation(update, context)
+
+
 async def select_ref2v_template(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1216,6 +1332,20 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         qqcc_config=qqcc_config,
         allowed_resolutions=None,
     )
+    if not isinstance(plan, QuickVideoSubmissionReject) and fsm_data.get(
+        "is_h3_extension"
+    ):
+        plan = replace(
+            plan,
+            allow_contribute=False,
+            result_meta={
+                **dict(plan.result_meta or {}),
+                "minimax_h3_prev_task_id": fsm_data.get("extension_prev_task_id"),
+                "minimax_h3_chain_task_ids": list(
+                    fsm_data.get("minimax_h3_chain_task_ids") or []
+                ),
+            },
+        )
     selected_reference_image_path = fsm_data.pop(
         "selected_reference_image_path", None
     )
@@ -1381,6 +1511,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
                 start_quick_video,
                 pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
             ),
+            CallbackQueryHandler(
+                start_h3_extension_scene_selection,
+                pattern=rf"^{H3_EXTEND_CALLBACK_PREFIX}(?::.+)?$",
+            ),
         ],
         states={
             QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD: [
@@ -1401,6 +1535,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
                 ),
             ],
             QuickVideoState.WAIT_IMAGE: [
+                CallbackQueryHandler(
+                    select_h3_extension_scene,
+                    pattern=rf"^{H3_EXTENSION_SCENE_CALLBACK_PREFIX}\d+$",
+                ),
                 CallbackQueryHandler(
                     start_quick_video,
                     pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,

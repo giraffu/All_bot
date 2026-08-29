@@ -16,7 +16,8 @@ from src.domain_config.minimax_h3 import (
 
 
 MINIMAX_H3_HISTORY_CONTEXT_KEY = "_minimax_h3_context"
-MINIMAX_H3_HISTORY_CONTEXT_VERSION = 1
+MINIMAX_H3_HISTORY_CONTEXT_VERSION = 2
+MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION = 1
 MINIMAX_H3_GALLERY_TASK_TYPES = frozenset(
     {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V, MINIMAX_H3_REF2V}
 )
@@ -104,7 +105,32 @@ def build_minimax_h3_history_context(
     }
     if reference_audio is not None:
         context["reference_audio"] = reference_audio
+    prev_task_id = str(metadata.get("minimax_h3_prev_task_id") or "").strip()
+    chain_task_ids = normalize_minimax_h3_chain_task_ids(
+        metadata.get("minimax_h3_chain_task_ids")
+    )
+    if prev_task_id:
+        if not chain_task_ids or chain_task_ids[-1] != prev_task_id:
+            return {}
+        context["prev_task_id"] = prev_task_id
+    if chain_task_ids:
+        context["chain_task_ids"] = chain_task_ids
     return context
+
+
+def normalize_minimax_h3_chain_task_ids(value: object) -> list[str]:
+    if isinstance(value, str):
+        raw_items = value.split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = []
+    ordered: list[str] = []
+    for item in raw_items:
+        normalized = str(item or "").strip()
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return ordered
 
 
 def extract_minimax_h3_history_context(
@@ -115,7 +141,10 @@ def extract_minimax_h3_history_context(
     context = extra_outputs.get(MINIMAX_H3_HISTORY_CONTEXT_KEY)
     if not isinstance(context, dict):
         return {}
-    if context.get("version") != MINIMAX_H3_HISTORY_CONTEXT_VERSION:
+    if context.get("version") not in {
+        MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION,
+        MINIMAX_H3_HISTORY_CONTEXT_VERSION,
+    }:
         return {}
     return dict(context)
 
@@ -135,8 +164,16 @@ def resolve_valid_minimax_h3_history_context(
             "minimax_h3_aspect_ratio": context.get("aspect_ratio"),
             "reference_audio": context.get("reference_audio"),
             "lora_items": context.get("lora_items"),
+            "minimax_h3_prev_task_id": context.get("prev_task_id"),
+            "minimax_h3_chain_task_ids": context.get("chain_task_ids"),
         },
     )
+    if not rebuilt:
+        return {}
+    if context.get("version") == MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION:
+        legacy_rebuilt = dict(rebuilt)
+        legacy_rebuilt["version"] = MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION
+        return rebuilt if legacy_rebuilt == context else {}
     return rebuilt if rebuilt == context else {}
 
 

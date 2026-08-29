@@ -68,6 +68,12 @@ worker 通过 consumer group 消费 stream，按私有 Bot ID 装配共享 QQCC 
 
 私有 QQCC 多阶段链由 `src/services/private_qqcc_continuation_service.py` 使用 Redis durable checkpoint 编排，已覆盖多步 `draw -> draw/filter`、`original_face_swap_enabled` 内部换脸和 AI动图/AI视频尾帧及串联链。新建原脸恢复 stage 固定写 `task_type=face_swap_v2`；恢复升级前 checkpoint 时，仅在该 continuation 内把原脸恢复 stage 的旧 `face_swap` 归一为 V2，不能改变官方/私有快速换脸的 V1 路由。用户原始图片必须先上传持久存储，再创建包含完整 JSON stage plan、租户/update、确定性 submission sequence/registry ID、当前输入输出和 `ready|running|delivery_pending|completed|failed` 状态的 checkpoint。固定总价场景还必须保存 `billing_id`、根 registry ID、实际扣费额和退款完成标志；首阶段以 `cost_override` 扣一次，后续阶段 `deduct_quota=false`，恢复不得重复扣费。任务结果必须先 CAS 写入 checkpoint，中间阶段才能清理 registry 并进入下一步；checkpoint 写入失败时保留 active registry 与用户锁等待恢复。阶段失败只能在 checkpoint 仍是同一 stage/registry/executor token 的 `running` 状态时 CAS 写入；最终投递失败可由同一 fence 从 delivery 状态收口为 failed。任一后续阶段或投递失败按根任务实际扣费使用稳定 `qqcc_scene_refund:<billing_id>` 全额退款，退款完成标志 CAS 持久化，重复恢复不得重退。最终可见阶段先进入 `delivery_pending`，由持有续跑租约的 owner 发送 Telegram 媒体，成功后再 CAS 标记 delivered；Telegram 没有投递幂等键，仅保留 send 成功到 delivered CAS 之间的最小重复窗口。
 
+H3 结果扩展同样复用该租户 Application 的 quick video handler：场景选择只接受租户
+当前启用的 H3 I2V 配置，callback 选择时再次校验；提交和 continuation 始终保持
+`client_type=bot:qqcc-private:<private_bot_id>`、租户 ledger/checkpoint 与
+`allow_contribute=false`。多场景最终拼接块必须保存最终尾帧和 H3 父链上下文，不能因
+合并展示而丢失后续扩展能力，也不能落入官方 `bot:qqcc` 恢复器。
+
 当前 worker 为每个 `private_bot_id` 建一个有界 `asyncio.Queue` 并串行消费，通过全局 semaphore 控制 Bot 间并发。默认全局最多保留 64 个 inflight update、每个 Bot 最多预取 8 个 update、内存只额外保存最多 1024 个 deferred stream message ID；update body 继续留在 Redis stream/PEL，需要恢复时按 ID 用 `XRANGE` 取回。单 Bot 队列已满后，其后续 ID 必须按原顺序进入该 Bot 的 deferred deque，不能让较新的 `>` update 越过旧 pending；到达全局或 deferred 上限时停止继续 `XREADGROUP`，由 Redis 承担持久背压，不能扩张无界内存队列。
 
 worker 启动先用持久 cursor `XAUTOCLAIM(min_idle_time=0)` 完整追平前任 consumer 的 PEL；在 startup catch-up barrier 完成前不得读取新的 `>` 消息，容量不足时保留 cursor 等待释放后继续。inflight message ID 去重还必须防止长处理 update 被周期 `XAUTOCLAIM` 重复排入同一 Bot。Application 懒加载后缓存；token 指纹变化时先关闭旧实例再重建，进程优雅退出时关闭全部实例。pending sweeper 周期扫描 webhook pending、active registry 和 continuation checkpoint，即使 TaskRegistry 为空也会续跑 ready/delivery 阶段；租约丢失会取消旧执行 owner，running orphan 只在旧续跑锁失效后 rewind。暂停/管理员禁用阻止新 update，但 recovery Application 可为已扣费链路继续后续阶段和结果投递；inactive update 遇到仍有付费 monitor/continuation 的 `bg_tasks` 时不得 stop/shutdown Application，必须等后台任务结束后再由 idle eviction 回收。永久解绑后停止。

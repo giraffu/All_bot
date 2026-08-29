@@ -37,6 +37,9 @@ async def persist_and_send_qqcc_video_chain_result(
     from src.services.qqcc_regenerate_metadata import (
         merge_qqcc_regenerate_context_into_extra_outputs,
     )
+    from src.services.minimax_h3_history_context_service import (
+        merge_minimax_h3_history_context_into_extra_outputs,
+    )
 
     internal_user_id = await resolve_internal_user_id(telegram_user_id, username)
     delivery_key = str(getattr(plan, "delivery_key", "") or "").strip()
@@ -54,6 +57,15 @@ async def persist_and_send_qqcc_video_chain_result(
     )
     if not output_file:
         raise QqccVideoChainStitchError("拼接视频上传失败，请稍后重试")
+    last_frame_bytes = await extract_qqcc_video_last_frame(video_bytes)
+    last_frame_output = await asyncio.to_thread(
+        storage.upload_bytes,
+        last_frame_bytes,
+        f"task-results/{task_id}/last_frame.png",
+        content_type="image/png",
+    )
+    if not last_frame_output:
+        raise QqccVideoChainStitchError("拼接视频尾帧上传失败，请稍后重试")
 
     async with AsyncSessionLocal() as session:
         existing_result = await session.execute(
@@ -97,8 +109,31 @@ async def persist_and_send_qqcc_video_chain_result(
             for segment in completed_segments
         )
         history_extra_outputs = merge_qqcc_regenerate_context_into_extra_outputs(
-            extra_outputs={"_qqcc_video_scene_chain": metadata},
+            extra_outputs={
+                "_qqcc_video_scene_chain": metadata,
+                "last_frame": {
+                    "path": str(last_frame_output),
+                    "media_type": "image",
+                },
+            },
             metadata=getattr(plan, "result_meta", None),
+        )
+        raw_duration = str(getattr(plan, "duration", "5") or "5").removesuffix("s")
+        try:
+            context_duration = int(raw_duration)
+        except ValueError:
+            context_duration = 5
+        history_extra_outputs = merge_minimax_h3_history_context_into_extra_outputs(
+            task_type=str(getattr(plan, "mode", "") or ""),
+            extra_outputs=history_extra_outputs,
+            metadata={
+                **dict(getattr(plan, "result_meta", None) or {}),
+                "minimax_h3_mode": str(getattr(plan, "mode", "") or "").removeprefix("minimax_h3_"),
+                "requested_duration": context_duration,
+                "minimax_h3_resolution_preset": str(getattr(plan, "resolution", "preview") or "preview"),
+                "minimax_h3_aspect_ratio": "source",
+                "lora_items": list(getattr(plan, "lora_items", None) or []),
+            },
         )
         history = History(
             user_id=internal_user_id,

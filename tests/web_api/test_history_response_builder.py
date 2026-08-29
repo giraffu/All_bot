@@ -265,6 +265,49 @@ def test_extract_history_result_meta_marks_stitched_ltx_record():
     assert result_meta == {"ltx_is_stitched": True}
 
 
+def test_extract_history_result_meta_exposes_public_h3_chain_fields_only():
+    result_meta = extract_history_result_meta(
+        task_type="minimax_h3_i2v",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 2,
+                "mode": "i2v",
+                "requested_duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "source",
+                "lora_items": [],
+                "prev_task_id": "h3-1",
+                "chain_task_ids": ["h3-1"],
+            }
+        },
+    )
+
+    assert result_meta == {
+        "minimax_h3_prev_task_id": "h3-1",
+        "minimax_h3_chain_task_ids": ["h3-1"],
+        "minimax_h3_segment_index": 2,
+    }
+
+
+def test_extract_history_result_meta_marks_h3_stitched_record():
+    result_meta = extract_history_result_meta(
+        task_type="minimax_h3_i2v",
+        extra_outputs={
+            "_minimax_h3_chain_stitch": {
+                "version": 1,
+                "segment_count": 2,
+                "chain_task_ids": ["h3-1", "h3-2"],
+                "source_task_id": "h3-2",
+            }
+        },
+    )
+
+    assert result_meta == {
+        "minimax_h3_chain_task_ids": ["h3-1", "h3-2"],
+        "minimax_h3_is_stitched": True,
+    }
+
+
 def test_build_wan22_chain_prompt_summary_splits_segments_cleanly():
     summary = build_wan22_chain_prompt_summary(
         [

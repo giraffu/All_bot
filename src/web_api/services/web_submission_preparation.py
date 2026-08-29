@@ -24,6 +24,8 @@ class PreparedWebSubmission:
     inputs: dict[str, Any]
     images: list[str]
     is_template: bool
+    registry_metadata: dict[str, Any] | None = None
+    allow_contribute_override: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,7 @@ async def prepare_web_submission_request(
     operator_canary_authorized: bool,
     env_enabled: Callable[[str], bool],
     advanced_video_profile_loader=None,
+    prepare_h3_extension_func=None,
 ) -> PreparedWebSubmission:
     _assert_task_access(
         req.task_type,
@@ -205,6 +208,31 @@ async def prepare_web_submission_request(
                 is_template=req.is_template,
             )
             inputs.pop("reference_audio_ref", None)
+    h3_extension_metadata: dict[str, Any] | None = None
+    h3_allow_contribute: bool | None = None
+    h3_prev_task_id = str(inputs.pop("minimax_h3_prev_task_id", "") or "").strip()
+    if h3_prev_task_id:
+        if not req.task_type.startswith("minimax_h3_"):
+            raise CoreDomainError("扩展父任务仅支持 H3 视频生成。")
+        if prepare_h3_extension_func is None:
+            from src.services.minimax_h3_extension_service import (
+                prepare_minimax_h3_web_extension,
+            )
+
+            prepare_h3_extension_func = prepare_minimax_h3_web_extension
+        try:
+            extension = await prepare_h3_extension_func(
+                prev_task_id=h3_prev_task_id,
+                internal_user_id=internal_user_id,
+                target_task_type=req.task_type,
+                client_images=list(inputs.get("images") or []),
+            )
+        except ValueError as exc:
+            raise CoreDomainError(str(exc)) from exc
+        inputs["images"] = list(extension.images)
+        h3_extension_metadata = dict(extension.metadata)
+        h3_allow_contribute = bool(extension.allow_contribute)
+
     h3_character_binding = ""
     if req.negative_prompt:
         inputs["negative_prompt"] = req.negative_prompt
@@ -257,6 +285,8 @@ async def prepare_web_submission_request(
         inputs=inputs,
         images=images,
         is_template=bool(getattr(req, "is_template", False)),
+        registry_metadata=h3_extension_metadata,
+        allow_contribute_override=h3_allow_contribute,
     )
 
 
