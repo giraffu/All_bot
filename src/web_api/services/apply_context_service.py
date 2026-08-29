@@ -30,6 +30,7 @@ from src.services.gallery_apply_context_service import (
     is_history_template_apply_supported,
     resolve_history_template_apply_disabled_reason,
     resolve_reusable_apply_input_files,
+    resolve_history_reference_audio,
     split_history_input_files,
 )
 from src.services.wan22_video_v2_extension_service import (
@@ -150,14 +151,17 @@ def resolve_ltx_apply_lora_items(
 
     context_lora_name = str(context.get("lora_name") or "").strip()
     if context_lora_name:
-        return normalize_ltx_video_lora_items(
-            [
-                {
-                    "name": context_lora_name,
-                    "strength": context.get("lora_strength"),
-                }
-            ]
-        ) or None
+        return (
+            normalize_ltx_video_lora_items(
+                [
+                    {
+                        "name": context_lora_name,
+                        "strength": context.get("lora_strength"),
+                    }
+                ]
+            )
+            or None
+        )
 
     if prompt_lora_name:
         return [
@@ -185,6 +189,8 @@ def build_apply_context_response(
     lora_name: str | None,
     lora_strength: float | None,
     lora_items: list[dict] | None,
+    reference_audio_ref: dict | None = None,
+    reference_audio_url: str | None = None,
     prompt_model: dict | None = None,
     input_file: str | None,
     input_file_url: str | None,
@@ -211,6 +217,8 @@ def build_apply_context_response(
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,
+        reference_audio_ref=reference_audio_ref,
+        reference_audio_url=reference_audio_url,
         input_file=input_file,
         input_file_url=input_file_url,
         input_files=input_files or [],
@@ -303,7 +311,9 @@ async def build_history_apply_context_response(
     | None = None,
     logger: Logger | None = None,
 ) -> ApplyContextResponse:
-    input_files = resolve_reusable_apply_input_files(history) if include_input_file else []
+    input_files = (
+        resolve_reusable_apply_input_files(history) if include_input_file else []
+    )
     input_file = input_files[0] if input_files else None
     input_file_urls = [
         build_input_file_url(input_file_item) or input_file_item
@@ -326,10 +336,9 @@ async def build_history_apply_context_response(
         extra_outputs=getattr(history, "extra_outputs", None),
     )
     prompt_model = presented_prompt.prompt_model
-    negative_prompt = (
-        resolve_wan22_apply_negative_prompt(history)
-        or resolve_scail2_apply_negative_prompt(history)
-    )
+    negative_prompt = resolve_wan22_apply_negative_prompt(
+        history
+    ) or resolve_scail2_apply_negative_prompt(history)
     lora_items = resolve_ltx_apply_lora_items(
         history=history,
         prompt_lora_name=lora_name,
@@ -342,6 +351,17 @@ async def build_history_apply_context_response(
     if minimax_h3_context:
         requested_duration = int(minimax_h3_context["requested_duration"])
         lora_items = list(minimax_h3_context.get("lora_items") or [])
+    reference_audio = resolve_history_reference_audio(history) or ""
+    reference_audio_ref = (
+        {"source": "gallery_post", "post_id": source_post_id}
+        if reference_audio and source_post_id is not None
+        else None
+    )
+    reference_audio_url = (
+        build_input_file_url(reference_audio)
+        if reference_audio and build_input_file_url is not None
+        else None
+    )
 
     media_type, width, height, duration = resolve_apply_context_media_metadata(
         task_type=history.type,
@@ -355,8 +375,12 @@ async def build_history_apply_context_response(
     )
     ltx_context = resolve_ltx_apply_context_metadata(history)
     if ltx_context:
-        width = _pick_first_non_none(width, _coerce_positive_int(ltx_context.get("ltx_width")))
-        height = _pick_first_non_none(height, _coerce_positive_int(ltx_context.get("ltx_height")))
+        width = _pick_first_non_none(
+            width, _coerce_positive_int(ltx_context.get("ltx_width"))
+        )
+        height = _pick_first_non_none(
+            height, _coerce_positive_int(ltx_context.get("ltx_height"))
+        )
     billing_resolution = resolve_history_billing_resolution(
         history,
         width=width,
@@ -365,19 +389,22 @@ async def build_history_apply_context_response(
     )
 
     if probe_media_metadata is not None:
-        width, height, duration, billing_resolution = (
-            await probe_apply_context_media_metadata(
-                output_file=probe_output_file,
-                media_type=media_type,
-                width=width,
-                height=height,
-                duration=duration,
-                billing_resolution=billing_resolution,
-                task_type=history.type,
-                task_id=history.task_id,
-                probe_media_metadata=probe_media_metadata,
-                logger=logger,
-            )
+        (
+            width,
+            height,
+            duration,
+            billing_resolution,
+        ) = await probe_apply_context_media_metadata(
+            output_file=probe_output_file,
+            media_type=media_type,
+            width=width,
+            height=height,
+            duration=duration,
+            billing_resolution=billing_resolution,
+            task_type=history.type,
+            task_id=history.task_id,
+            probe_media_metadata=probe_media_metadata,
+            logger=logger,
         )
 
     requested_duration = resolve_legacy_requested_duration(
@@ -397,9 +424,7 @@ async def build_history_apply_context_response(
             2 if len(split_history_input_files(history.input_file)) >= 2 else 1
         )
     if minimax_h3_context:
-        required_image_count = (
-            2 if history.type == "minimax_h3_flf2v" else 1
-        )
+        required_image_count = 2 if history.type == "minimax_h3_flf2v" else 1
 
     return build_apply_context_response(
         post_id=post_id,
@@ -409,11 +434,11 @@ async def build_history_apply_context_response(
         required_image_count=required_image_count,
         resolution_preset=(
             str(minimax_h3_context.get("resolution_preset"))
-            if minimax_h3_context else None
+            if minimax_h3_context
+            else None
         ),
         aspect_ratio=(
-            str(minimax_h3_context.get("aspect_ratio"))
-            if minimax_h3_context else None
+            str(minimax_h3_context.get("aspect_ratio")) if minimax_h3_context else None
         ),
         task_id=history.task_id,
         media_type=media_type,
@@ -422,6 +447,8 @@ async def build_history_apply_context_response(
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,
+        reference_audio_ref=reference_audio_ref,
+        reference_audio_url=reference_audio_url,
         prompt_model=prompt_model,
         input_file=input_file,
         input_file_url=input_file_url,

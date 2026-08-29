@@ -61,6 +61,17 @@ const normalizeMinimaxH3LoraItems = (value: unknown) => {
   })
 }
 
+const normalizeGalleryReferenceAudioRef = (
+  value: unknown,
+): { source: 'gallery_post'; post_id: number } | null => {
+  if (!value || typeof value !== 'object') return null
+  const source = (value as { source?: unknown }).source
+  const postId = asPositiveInteger((value as { post_id?: unknown }).post_id)
+  return source === 'gallery_post' && postId !== null
+    ? { source: 'gallery_post', post_id: postId }
+    : null
+}
+
 export const normalizeTemplateApplyContext = (
   rawContext: RawApplyContextResponse | null | undefined,
   options: NormalizeContextOptions
@@ -93,6 +104,8 @@ export const normalizeTemplateApplyContext = (
     lora_name: rawContext.lora_name ?? null,
     lora_strength: rawContext.lora_strength ?? null,
     lora_items: rawContext.lora_items ?? null,
+    reference_audio_ref: rawContext.reference_audio_ref ?? null,
+    reference_audio_url: rawContext.reference_audio_url ?? null,
     input_file: rawContext.input_file ?? null,
     input_file_url: rawContext.input_file_url ?? null,
     input_files: rawContext.input_files ?? null,
@@ -120,6 +133,8 @@ export const normalizeTemplateApplyContext = (
       : normalizeLtxVideoLoraItems(
           Array.isArray(rawContext.lora_items) ? rawContext.lora_items as Array<{ name?: string; strength?: number }> : [],
         ),
+    referenceAudioRef: normalizeGalleryReferenceAudioRef(rawContext.reference_audio_ref),
+    referenceAudioUrl: asNonEmptyString(rawContext.reference_audio_url),
     inputFile: asNonEmptyString(rawContext.input_file) ?? inputFiles[0] ?? null,
     inputFileUrl: asNonEmptyString(rawContext.input_file_url) ?? inputFileUrls[0] ?? null,
     inputFiles,

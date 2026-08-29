@@ -148,6 +148,17 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
             "reference_audio": "ref/voice.m4a",
         }
     ) == ["ref/a.png", "ref/voice.m4a"]
+    assert (
+        strategy.get_metadata(
+            {
+                "prompt": "walks through a city",
+                "saved_input_images": ["task-inputs/task-h3/0.png"],
+                "reference_audio": "task-inputs/task-h3/1.m4a",
+                "aspect_ratio": "16:9",
+            }
+        )["reference_audio"]
+        == "task-inputs/task-h3/1.m4a"
+    )
 
 
 def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():

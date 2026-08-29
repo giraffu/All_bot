@@ -11,9 +11,42 @@ from src.web_api.services.prompt_optimizer_config_service import (
 from src.web_api.services.reference_asset_service import (
     build_h3_character_reference_binding,
     normalize_reference_inputs,
+    resolve_h3_reference_audio_ref,
     resolve_h3_reference_refs,
     resolve_reference_set,
 )
+
+
+@pytest.mark.asyncio
+async def test_h3_gallery_reference_audio_is_scoped_to_current_template_post():
+    loader = AsyncMock(return_value="task-inputs/source-task/3.m4a")
+    object_size = AsyncMock(return_value=1024)
+
+    result = await resolve_h3_reference_audio_ref(
+        user_id=7,
+        reference_audio_ref={"source": "gallery_post", "post_id": 29},
+        source_post_id=29,
+        is_template=True,
+        gallery_reference_loader=loader,
+        object_size=object_size,
+    )
+
+    assert result == "task-inputs/source-task/3.m4a"
+    loader.assert_awaited_once_with(29)
+    object_size.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_h3_gallery_reference_audio_rejects_cross_post_reuse():
+    with pytest.raises(CoreDomainError, match="当前一键应用投稿"):
+        await resolve_h3_reference_audio_ref(
+            user_id=7,
+            reference_audio_ref={"source": "gallery_post", "post_id": 29},
+            source_post_id=30,
+            is_template=True,
+            gallery_reference_loader=AsyncMock(return_value="task-inputs/source/3.m4a"),
+            object_size=AsyncMock(return_value=1024),
+        )
 
 
 def test_h3_character_binding_groups_multiple_views_of_the_same_identity():
@@ -205,8 +238,9 @@ async def test_h3_character_view_descriptions_do_not_bind_output_composition():
     assert "do not copy this close-up crop" in result.descriptions[0]
     assert "do not copy the reference pose" in result.descriptions[1]
     assert "Localized anatomy evidence only" in result.descriptions[2]
-    assert "never create an inset, overlay, split screen, or collage" in (
-        result.descriptions[2]
+    assert (
+        "never create an inset, overlay, split screen, or collage"
+        in (result.descriptions[2])
     )
 
 

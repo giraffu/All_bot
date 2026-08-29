@@ -50,6 +50,9 @@ from src.services import private_bot_submission_ledger
 from src.services.private_bot_submission_journal import PrivateBotSubmissionJournal
 from src.services.task_registry import TaskRegistry
 from src.services.task_recovery_contract import build_bot_task_recovery_contract
+from src.services.minimax_h3_history_context_service import (
+    merge_minimax_h3_input_assets_into_metadata,
+)
 from src.services.task_bot_submission_journal import BotRecoverySubmissionJournal
 from src.task_application_runtime import get_task_application
 from src.services.private_bot_task_monitor_lease import (
@@ -78,7 +81,9 @@ def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
     runtime_state.task_submitted = True
     runtime_state.actual_cost = result["cost"]
     runtime_state.registry_task_id = result["registry_task_id"]
-    runtime_state.backend_task_id = result.get("backend_task_id") or result["registry_task_id"]
+    runtime_state.backend_task_id = (
+        result.get("backend_task_id") or result["registry_task_id"]
+    )
     return result["saved_inputs"]
 
 
@@ -116,8 +121,10 @@ async def compensate_failed_private_bot_submission(
         return False
 
     try:
-        if ledger_request.deduct_quota and actual_cost and (
-            debit_confirmed or lease_token is not None
+        if (
+            ledger_request.deduct_quota
+            and actual_cost
+            and (debit_confirmed or lease_token is not None)
         ):
             await refund_credits(
                 submission.internal_user_id,
@@ -244,9 +251,7 @@ async def submit_bot_task(
     private_bot_id = parse_private_bot_client_type(submission.client_type)
     if private_bot_id is None:
         result = await submit_once(
-            journal=BotRecoverySubmissionJournal(
-                expected_registry_task_id=task_id
-            )
+            journal=BotRecoverySubmissionJournal(expected_registry_task_id=task_id)
         )
     else:
         # This lock is shared with pause/disable/unlink. The state recheck and
@@ -302,7 +307,10 @@ async def submit_bot_task(
                     registry_lookup=TaskRegistry.get_task_strict,
                     backend_lookup=image_service.get_task_status,
                 )
-                if not reconciliation.confirmed and not reconciliation.definitively_missing:
+                if (
+                    not reconciliation.confirmed
+                    and not reconciliation.definitively_missing
+                ):
                     raise CoreDomainError(
                         "任务派发状态仍在确认中；为避免重复扣费或派发，本次不会重试提交"
                     )
@@ -329,9 +337,11 @@ async def submit_bot_task(
                     "backend_task_id": reconciliation.backend_task_id,
                     "saved_inputs": list(ledger_snapshot.saved_inputs),
                 }
-                await private_bot_submission_ledger.mark_private_bot_submission_submitted(
-                    request=ledger_request,
-                    result=result,
+                await (
+                    private_bot_submission_ledger.mark_private_bot_submission_submitted(
+                        request=ledger_request,
+                        result=result,
+                    )
                 )
                 mark_private_bot_task_durable()
                 raise private_bot_submission_ledger.PrivateBotSubmissionReplayHandled(
@@ -373,7 +383,9 @@ async def submit_bot_task(
                         owner_deadline_at=journal.owner_deadline_at,
                         reconcile_not_before_at=journal.reconcile_not_before_at,
                     )
-                except private_bot_submission_ledger.PrivateBotSubmissionLedgerError as exc:
+                except (
+                    private_bot_submission_ledger.PrivateBotSubmissionLedgerError
+                ) as exc:
                     raise CoreDomainError(str(exc)) from exc
 
                 try:
@@ -381,10 +393,12 @@ async def submit_bot_task(
                 except Exception:
                     await journal.compensate_if_requested()
                     raise
-                await private_bot_submission_ledger.mark_private_bot_submission_submitted(
-                    request=ledger_request,
-                    result=result,
-                    owner_token=dispatch_owner_token,
+                await (
+                    private_bot_submission_ledger.mark_private_bot_submission_submitted(
+                        request=ledger_request,
+                        result=result,
+                        owner_token=dispatch_owner_token,
+                    )
                 )
     mark_private_bot_task_durable()
     saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
@@ -729,6 +743,11 @@ async def execute_bot_task_stages(
     )
 
     async def monitor_and_complete():
+        completion_result_meta = merge_minimax_h3_input_assets_into_metadata(
+            task_type=request.task_type,
+            metadata=presentation.result_meta,
+            inputs=submission.inputs,
+        )
         return await run_monitored_task_lifecycle(
             monitor_stage_func=lambda: run_bot_task_monitor_stage(
                 backend_task_id=execution.backend_task_id,
@@ -748,8 +767,7 @@ async def execute_bot_task_stages(
                 username=request.username,
                 prompt=getattr(presentation, "result_prompt", None) or request.prompt,
                 task_type=(
-                    getattr(presentation, "result_task_type", None)
-                    or request.task_type
+                    getattr(presentation, "result_task_type", None) or request.task_type
                 ),
                 registry_task_id=execution.registry_task_id,
                 backend_task_id=execution.backend_task_id,
@@ -762,7 +780,7 @@ async def execute_bot_task_stages(
                 message_spec=execution.message_spec or presentation.message_spec,
                 send_result=presentation.send_result,
                 reply_markup=presentation.reply_markup,
-                result_meta=presentation.result_meta,
+                result_meta=completion_result_meta,
                 delete_status=presentation.delete_status,
                 allow_contribute=presentation.allow_contribute,
                 record_history=getattr(presentation, "record_history", True),
@@ -828,10 +846,14 @@ async def run_bot_task_application(
             submission=submission,
         )
     except ConcurrencyLimitError as e:
-        await task_service_finalize_helpers.send_bot_warning(request.context, request.chat_id, e)
+        await task_service_finalize_helpers.send_bot_warning(
+            request.context, request.chat_id, e
+        )
         return None, None
     except InsufficientCreditsError as e:
-        await task_service_finalize_helpers.send_bot_warning(request.context, request.chat_id, e)
+        await task_service_finalize_helpers.send_bot_warning(
+            request.context, request.chat_id, e
+        )
         return None, None
     except BotTaskCancelled:
         return await task_service_finalize_helpers.handle_bot_cancelled_exception(
@@ -861,9 +883,7 @@ async def run_bot_task_application(
         if (
             parse_private_bot_client_type(client_type) is not None
             and bool(getattr(flow.runtime_state, "task_submitted", False))
-            and not bool(
-                getattr(flow.runtime_state, "terminal_state_finalized", False)
-            )
+            and not bool(getattr(flow.runtime_state, "terminal_state_finalized", False))
         ):
             execution.preserve_runtime_state = True
         raise
@@ -876,7 +896,9 @@ async def run_bot_task_application(
         return await task_service_finalize_helpers.handle_bot_unexpected_exception(
             context=request.context,
             chat_id=request.chat_id,
-            status_msg=(execution.status_msg if presentation.prefer_edit_status else None),
+            status_msg=(
+                execution.status_msg if presentation.prefer_edit_status else None
+            ),
             runtime_state=flow.runtime_state,
             internal_user_id=request.internal_user_id,
             username=request.username,

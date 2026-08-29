@@ -201,6 +201,8 @@ async def prepare_web_submission_request(
             inputs["reference_audio"] = await resolve_h3_reference_audio_ref(
                 user_id=internal_user_id,
                 reference_audio_ref=reference_audio_ref,
+                source_post_id=req.source_post_id,
+                is_template=req.is_template,
             )
             inputs.pop("reference_audio_ref", None)
     h3_character_binding = ""

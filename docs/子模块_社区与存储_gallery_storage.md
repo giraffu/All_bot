@@ -201,7 +201,10 @@ sequenceDiagram
   `aspect_ratio` 和有序 `lora_items`。I2V/FLF2V 分别要求重新上传 1/2 张图且
   不复用原图；REF2V 返回 `required_image_count=1`，原任务第 1 张主图不继承，
   第 2 张起通过 `input_files/input_file_urls` 按原顺序默认带入，前端必须展示并
-  允许逐张替换。模板衍生结果统一 `allow_contribute=false`。缺少完整上下文的
+  允许逐张替换。若投稿任务带一个主角参考语音，apply-context 另外返回受控的
+  `reference_audio_ref={source: gallery_post, post_id}` 与短期试听 URL；前端默认带入，
+  同时允许删除或替换为当前用户上传的音频。模板衍生结果统一
+  `allow_contribute=false`。缺少完整上下文的
   旧投稿继续支持社区互动，但禁用一键应用并返回
   `minimax_h3_context_missing`；T2V 返回 `minimax_h3_mode_not_supported`。
 - Web 的 H3 Pro 能力还必须受 `enable_minimax_h3` 约束；Dashboard“入口控制”的
@@ -299,6 +302,9 @@ JSON/Markdown 汇总，检查 revision、索引/约束、重复投稿/apply、�
 - 高级图生视频pro apply-context 必须要求版本化完整上下文；I2V/FLF2V 禁止输入
   复用，REF2V 只复用原输入第 2 张起的模板参考图且保持顺序，第 1 张必须由应用者
   重新选择。前端 FLF2V 比例校验不能替代后端/任务域复验。
+- Gallery 音频复用不得把作者上传路径直接交给任务接口；提交只接受当前用户上传引用，
+  或与当前 `source_post_id` 一致的 `gallery_post` 引用，并在服务端从 History 上下文
+  解析持久对象。旧 REF2V History 尾项音频必须从视觉参考数组剥离。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 - 广场列表热路径不得恢复为“每条媒体公网 HEAD 探测 + 持有 DB 只读事务等待对象存储”的模式。
 
