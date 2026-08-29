@@ -14,6 +14,7 @@ FSM_TEMP_PATH_KEYS = {
     "motion_video_path",
     "start_image_path",
     "end_frame_path",
+    "reference_audio",
 }
 FSM_TEMP_PATH_LIST_KEYS = {
     "images",
@@ -98,7 +99,9 @@ def cleanup_fsm_user_data(user_data: MutableMapping | None) -> list[str]:
     if user_data is None:
         return []
 
-    fsm_data_keys = [key for key in list(user_data.keys()) if str(key).endswith("_data")]
+    fsm_data_keys = [
+        key for key in list(user_data.keys()) if str(key).endswith("_data")
+    ]
     temp_paths: list[str] = []
     for key in fsm_data_keys:
         temp_paths.extend(_collect_fsm_temp_paths(user_data.get(key)))

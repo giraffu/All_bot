@@ -537,6 +537,7 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         prompt="scene",
         images=(),
         reference_descriptions=(),
+        reference_audio="voice.m4a",
         duration=5,
         resolution_preset="preview",
         aspect_ratio="16:9",
@@ -562,6 +563,7 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         {"name": "sex_pose", "strength": 0.45},
     ]
     assert request.await_args.kwargs["json"]["main_model"] == "10eros"
+    assert request.await_args.kwargs["json"]["reference_audio"] == "voice.m4a"
 
 
 @pytest.mark.asyncio

@@ -6,15 +6,41 @@ from backend.app.models import MiniMaxH3Request
 
 def test_minimax_h3_request_accepts_five_ordered_references():
     request = MiniMaxH3Request(
-        task_id="h3-1", prompt="scene", images=["1", "2", "3", "4", "5"],
-        reference_descriptions=["a", "b", "c", "d", "e"], width=736, height=416, frame_count=124,
+        task_id="h3-1",
+        prompt="scene",
+        images=["1", "2", "3", "4", "5"],
+        reference_descriptions=["a", "b", "c", "d", "e"],
+        width=736,
+        height=416,
+        frame_count=124,
     )
     assert request.images == ["1", "2", "3", "4", "5"]
 
 
+def test_minimax_h3_request_accepts_one_reference_audio_object_key():
+    request = MiniMaxH3Request(
+        task_id="h3-audio",
+        prompt="scene",
+        images=["subject.png"],
+        reference_audio="tasks/h3-audio/voice.m4a",
+        width=736,
+        height=416,
+        frame_count=124,
+    )
+
+    assert request.reference_audio == "tasks/h3-audio/voice.m4a"
+
+
 def test_minimax_h3_request_rejects_more_than_five_references():
     with pytest.raises(ValidationError):
-        MiniMaxH3Request(task_id="h3-1", prompt="scene", images=["1", "2", "3", "4", "5", "6"], width=736, height=416, frame_count=124)
+        MiniMaxH3Request(
+            task_id="h3-1",
+            prompt="scene",
+            images=["1", "2", "3", "4", "5", "6"],
+            width=736,
+            height=416,
+            frame_count=124,
+        )
 
 
 def test_minimax_h3_request_accepts_thirteen_addons_with_strengths():

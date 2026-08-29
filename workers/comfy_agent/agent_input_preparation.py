@@ -218,6 +218,7 @@ async def prepare_task_inputs(
         "end_image",
         "character_sheet",
         "background_image",
+        "reference_audio",
     ]:
         if key in params and params[key]:
             other_tasks.append(

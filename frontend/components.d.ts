@@ -65,6 +65,7 @@ declare module 'vue' {
     GalleryWaterfallContainer: typeof import('./src/components/gallery/GalleryWaterfallContainer.vue')['default']
     GlobalSiteNotice: typeof import('./src/components/GlobalSiteNotice.vue')['default']
     H3CharacterViewPicker: typeof import('./src/components/lab/H3CharacterViewPicker.vue')['default']
+    H3ReferenceAudioUpload: typeof import('./src/components/lab/H3ReferenceAudioUpload.vue')['default']
     HeaderPaginationBar: typeof import('./src/components/HeaderPaginationBar.vue')['default']
     LabAdvancedOptionsPanel: typeof import('./src/components/lab/LabAdvancedOptionsPanel.vue')['default']
     LabModeRail: typeof import('./src/components/lab/LabModeRail.vue')['default']

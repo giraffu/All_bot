@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 
 from scripts.build_minimax_h3_api_workflows import build
-from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
+from src.workflow_mapping_validation import (
+    resolve_workflow_filename,
+    validate_workflow_directory,
+)
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 from workers.comfy_agent.workflow_task_patchers import (
     patch_minimax_h3_workflow,
@@ -58,8 +61,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
                 "class_type": "ManualSigmas",
             }
             assert not any(
-                node.get("class_type") == "BasicScheduler"
-                for node in workflow.values()
+                node.get("class_type") == "BasicScheduler" for node in workflow.values()
             )
             continue
         assert workflow["8"]["inputs"] == {
@@ -101,7 +103,8 @@ def test_minimax_h3_api_workflows_are_deterministic():
             "class_type": "KSamplerSelect",
         }
         assert not any(
-            node.get("class_type") in {
+            node.get("class_type")
+            in {
                 "MiniMaxH3MemoryEfficientSageAttentionPatch",
                 "MiniMaxH3TurboSampler",
                 "MiniMaxH3UnifiedToVideo",
@@ -131,17 +134,22 @@ def test_minimax_h3_api_workflows_are_deterministic():
             assert "41" not in workflow
 
 
-@pytest.mark.parametrize("params", [
-    {"lora_strength": 1.0},
-    {"lora_items": [{"name": "missing", "strength": 0.75}]},
-    {"lora_items": [{"name": "penis"}, {"name": "penis"}]},
-    {"addon_models": ["duplicate"]},
-])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"lora_strength": 1.0},
+        {"lora_items": [{"name": "missing", "strength": 0.75}]},
+        {"lora_items": [{"name": "penis"}, {"name": "penis"}]},
+        {"addon_models": ["duplicate"]},
+    ],
+)
 def test_minimax_h3_patcher_rejects_invalid_addon_overrides(params):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     with pytest.raises(ValueError, match="MiniMax H3 addon"):
-        patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", **params})
+        patcher.patch_workflow(
+            "minimax_h3_t2v", workflow, {"prompt": "scene", **params}
+        )
 
 
 def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
@@ -250,6 +258,42 @@ def test_minimax_h3_patcher_keeps_10eros_ref2v_turbo_profile():
     }
 
 
+def test_minimax_h3_ref2v_maps_single_reference_audio_without_prompt_injection():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+
+    patched = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {
+            "prompt": "the character speaks softly",
+            "image": "subject.png",
+            "reference_audio": "voice.m4a",
+        },
+    )
+
+    assert patched["25"] == {
+        "inputs": {"audio": "voice.m4a"},
+        "class_type": "LoadAudio",
+    }
+    assert patched["30"]["inputs"]["ref_audios.ref_audio_0"] == ["25", 0]
+    assert patched["30"]["inputs"]["prompt"] == "the character speaks softly"
+
+
+def test_minimax_h3_ref2v_without_reference_audio_prunes_audio_input_node():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_ref2v")
+
+    patched = patcher.patch_workflow(
+        "minimax_h3_ref2v",
+        workflow,
+        {"prompt": "scene", "image": "subject.png"},
+    )
+
+    assert "25" not in patched
+    assert "ref_audios.ref_audio_0" not in patched["30"]["inputs"]
+
+
 def test_minimax_h3_patcher_uses_dedicated_ref2v_four_step_turbo_lora():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_ref2v")
@@ -343,9 +387,7 @@ def test_minimax_h3_patcher_injects_selected_addons_after_v3_base_in_order():
         "strength_model": 0.3,
     }
     assert patched["2"]["inputs"]["model"] == ["102", 0]
-    assert patched["30"]["inputs"]["prompt"] == (
-        "Vagina, two adults move in a bedroom"
-    )
+    assert patched["30"]["inputs"]["prompt"] == ("Vagina, two adults move in a bedroom")
 
 
 def test_minimax_h3_worker_injects_addon_chain():
@@ -460,7 +502,9 @@ def test_minimax_h3_worker_chains_new_action_loras_and_injects_declared_triggers
         "MiniMaxH3/H3_Mis_Insrt_v07.safetensors",
         "MiniMaxH3/H3_Footjob_TypeB_v1.safetensors",
     ]
-    assert [workflow[str(node)]["inputs"]["strength_model"] for node in range(100, 105)] == [
+    assert [
+        workflow[str(node)]["inputs"]["strength_model"] for node in range(100, 105)
+    ] == [
         0.75,
         0.8,
         0.75,
@@ -601,9 +645,14 @@ def test_minimax_h3_output_prefix_is_unique_per_execution():
     )
 
     assert first["38"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one"
-    assert first["40"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one_last_frame"
+    assert (
+        first["40"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one_last_frame"
+    )
     assert second["38"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_two"
-    assert first["38"]["inputs"]["filename_prefix"] != second["38"]["inputs"]["filename_prefix"]
+    assert (
+        first["38"]["inputs"]["filename_prefix"]
+        != second["38"]["inputs"]["filename_prefix"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -638,9 +687,13 @@ def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision)
     assert result["30"]["inputs"]["length"] == 124
 
 
-@pytest.mark.parametrize("field", ["model_name", "timeline_data", "sampler_name", "scheduler", "steps"])
+@pytest.mark.parametrize(
+    "field", ["model_name", "timeline_data", "sampler_name", "scheduler", "steps"]
+)
 def test_minimax_h3_worker_rejects_execution_overrides(field):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     with pytest.raises(ValueError, match="rejects"):
-        patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", field: "override"})
+        patcher.patch_workflow(
+            "minimax_h3_t2v", workflow, {"prompt": "scene", field: "override"}
+        )

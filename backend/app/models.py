@@ -324,6 +324,7 @@ class MiniMaxH3Request(BaseModel):
     prompt: str
     images: list[str] = Field(default_factory=list, max_length=5)
     reference_descriptions: list[str] = Field(default_factory=list, max_length=5)
+    reference_audio: Optional[str] = None
     duration: int = Field(default=5)
     resolution_preset: str = "preview"
     aspect_ratio: str = "16:9"

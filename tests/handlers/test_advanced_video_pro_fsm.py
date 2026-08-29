@@ -34,12 +34,19 @@ async def test_pro_main_bot_allows_gallery_image_modes_to_contribute(
         effective_chat=SimpleNamespace(id=99),
     )
     data = {
-        "mode": mode, "prompt": "move", "images": images,
-        "reference_descriptions": [], "duration": 5, "preset": "preview",
-        "aspect": "16:9", "addon_models": [],
+        "mode": mode,
+        "prompt": "move",
+        "images": images,
+        "reference_descriptions": [],
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "addon_models": [],
     }
 
-    assert await fsm._submit_generation(update, context, data) == ConversationHandler.END
+    assert (
+        await fsm._submit_generation(update, context, data) == ConversationHandler.END
+    )
     assert submit.call_args.kwargs["allow_contribute"] is allow_contribute
 
 
@@ -50,10 +57,11 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     monkeypatch.setattr(
         fsm,
         "load_advanced_video_pro_profiles",
-        AsyncMock(return_value={
-            mode: {"main_model": "10eros", "addon_items": []}
-            for mode in fsm.MODES
-        }),
+        AsyncMock(
+            return_value={
+                mode: {"main_model": "10eros", "addon_items": []} for mode in fsm.MODES
+            }
+        ),
     )
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     context = SimpleNamespace(user_data={}, lang="zh")
@@ -70,7 +78,11 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     }
     assert "高级图生视频pro" in reply.await_args.args[1]
     assert "如果要切换功能，请发送 /cancel。" in reply.await_args.args[1]
-    mode_callbacks = [button.callback_data for row in reply.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
+    mode_callbacks = [
+        button.callback_data
+        for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
     assert "avp_mode_ref2v" in mode_callbacks
 
 
@@ -80,18 +92,35 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
     context = SimpleNamespace(
-        user_data={fsm.DATA_KEY: {"mode": None, "duration": 5, "preset": "preview", "aspect": "16:9", "images": [], "reference_descriptions": []}},
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": None,
+                "duration": 5,
+                "preset": "preview",
+                "aspect": "16:9",
+                "images": [],
+                "reference_descriptions": [],
+            }
+        },
         lang="zh",
     )
     update = SimpleNamespace(callback_query=query)
 
-    assert await fsm.settings_callback(update, context) == AdvancedVideoProState.WAIT_SETTINGS
+    assert (
+        await fsm.settings_callback(update, context)
+        == AdvancedVideoProState.WAIT_SETTINGS
+    )
     query.data = "avp_settings_done"
-    assert await fsm.settings_callback(update, context) == AdvancedVideoProState.WAIT_PROMPT
+    assert (
+        await fsm.settings_callback(update, context)
+        == AdvancedVideoProState.WAIT_PROMPT
+    )
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_mode(monkeypatch):
+async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_mode(
+    monkeypatch,
+):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
@@ -241,8 +270,12 @@ async def test_pro_prompt_submits_immediately_without_confirmation(monkeypatch):
     submit = AsyncMock(return_value=ConversationHandler.END)
     monkeypatch.setattr(fsm, "_submit_generation", submit)
     data = {
-        "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
-        "images": [], "reference_descriptions": [],
+        "mode": "t2v",
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "images": [],
+        "reference_descriptions": [],
     }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
     update = SimpleNamespace(
@@ -287,8 +320,7 @@ def test_pro_settings_show_current_credit_cost_and_option_prices(
 
     assert f"预计消耗：{expected_cost} 灵石" in text
     assert any(
-        str(expected_cost) in label and label.startswith("✅")
-        for label in button_text
+        str(expected_cost) in label and label.startswith("✅") for label in button_text
     )
 
 
@@ -333,3 +365,88 @@ def test_pro_handler_has_no_prompt_confirmation_state():
     handler = fsm.get_advanced_video_pro_fsm_handler()
 
     assert AdvancedVideoProState.WAIT_CONFIRMATION not in handler.states
+
+
+@pytest.mark.asyncio
+async def test_ref2v_finish_references_offers_optional_main_character_voice(
+    monkeypatch,
+):
+    edit = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    query = SimpleNamespace(data="avp_refs_done", answer=AsyncMock(), message=object())
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": ["subject.png"],
+                "reference_audio": None,
+            }
+        },
+        lang="zh",
+    )
+
+    state = await fsm.reference_callback(SimpleNamespace(callback_query=query), context)
+
+    assert state == AdvancedVideoProState.WAIT_REFERENCE_AUDIO
+    assert "主角参考语音" in edit.await_args.args[1]
+    callbacks = [
+        button.callback_data
+        for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == ["avp_audio_skip"]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_audio_upload_shows_nonblocking_audio_1_reminder(monkeypatch):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/voice.ogg"),
+    )
+    telegram_file = object()
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": ["subject.png"],
+                "reference_audio": None,
+            }
+        },
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=telegram_file)),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            voice=SimpleNamespace(file_id="voice-id"),
+            audio=None,
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_reference_audio(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert context.user_data[fsm.DATA_KEY]["reference_audio"] == "/tmp/voice.ogg"
+    assert "<Audio 1>" in reply.await_args.args[1]
+    assert "建议" in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_audio_skip_does_not_require_audio_tag(monkeypatch):
+    edit = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    query = SimpleNamespace(data="avp_audio_skip", answer=AsyncMock(), message=object())
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: {"mode": "ref2v", "reference_audio": None}},
+        lang="zh",
+    )
+
+    state = await fsm.reference_audio_callback(
+        SimpleNamespace(callback_query=query), context
+    )
+
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert "<Audio 1>" not in edit.await_args.args[1]

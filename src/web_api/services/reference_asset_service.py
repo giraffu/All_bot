@@ -7,6 +7,7 @@ from sqlalchemy import select
 from fastapi import HTTPException
 
 from config import MINIO_BUCKET
+from src.media_paths import normalize_owned_user_upload_key
 from src.core.task_core_types import CoreDomainError
 from src.database.models import (
     CharacterReference,
@@ -33,6 +34,42 @@ class ResolvedReferenceSet:
 class ResolvedH3ReferenceSet:
     images: tuple[str, ...]
     descriptions: tuple[str, ...]
+
+
+_H3_REFERENCE_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "mp4", "ogg", "oga", "opus"}
+
+
+async def resolve_h3_reference_audio_ref(
+    *,
+    user_id: int,
+    reference_audio_ref: dict,
+    object_size: Callable[
+        [str, str], Awaitable[int | None]
+    ] = storage.async_object_size,
+) -> str:
+    if not isinstance(reference_audio_ref, dict) or set(reference_audio_ref) != {
+        "source",
+        "object_key",
+    }:
+        raise CoreDomainError("主角参考语音引用格式无效。")
+    if reference_audio_ref.get("source") != "upload":
+        raise CoreDomainError("主角参考语音仅支持当前用户上传的文件。")
+    try:
+        object_key = normalize_owned_user_upload_key(
+            str(reference_audio_ref.get("object_key") or ""),
+            user_id=user_id,
+            allowed_extensions=_H3_REFERENCE_AUDIO_EXTENSIONS,
+        )
+    except ValueError as exc:
+        if str(exc) == "object key extension is not allowed":
+            raise CoreDomainError("主角参考语音仅支持 MP3/WAV/M4A/OGG/OPUS。") from exc
+        raise CoreDomainError("主角参考语音必须属于当前用户。") from exc
+    size = await object_size(MINIO_BUCKET, object_key)
+    if size is None:
+        raise CoreDomainError("主角参考语音不存在或暂不可读取。")
+    if size > PROMPT_MEDIA_MAX_BYTES:
+        raise CoreDomainError("主角参考语音不能超过 20 MB。")
+    return object_key
 
 
 _H3_CHARACTER_VIEW_DESCRIPTIONS = {
@@ -186,7 +223,10 @@ async def resolve_h3_reference_refs(
             view_type = str(raw.get("view_type") or "").strip()
             if not character_id or view_type not in _H3_CHARACTER_VIEW_DESCRIPTIONS:
                 raise CoreDomainError("人物参考图类型无效。")
-            if view_type in {"genitals_front", "pelvis_back"} and not explicit_views_enabled:
+            if (
+                view_type in {"genitals_front", "pelvis_back"}
+                and not explicit_views_enabled
+            ):
                 raise CoreDomainError("人物特写功能当前未开放。")
             character = (
                 await db.execute(

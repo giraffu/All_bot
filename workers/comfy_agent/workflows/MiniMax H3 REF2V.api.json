@@ -80,6 +80,10 @@
       "width": 736,
       "height": 416,
       "length": 124,
+      "ref_audios.ref_audio_0": [
+        "25",
+        0
+      ],
       "ref_images.ref_image_0": [
         "20",
         0
@@ -228,6 +232,12 @@
       ]
     },
     "class_type": "SaveImage"
+  },
+  "25": {
+    "inputs": {
+      "audio": "minimax_h3_reference_audio.m4a"
+    },
+    "class_type": "LoadAudio"
   },
   "20": {
     "inputs": {

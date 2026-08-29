@@ -128,7 +128,12 @@ def _detect_output_format(content: bytes, *, is_video: bool) -> tuple[str, str]:
 
 
 async def _submit_scene(
-    *, image_service_instance, scene_kind: str, scene: dict[str, Any], task_id: str, input_key: str
+    *,
+    image_service_instance,
+    scene_kind: str,
+    scene: dict[str, Any],
+    task_id: str,
+    input_key: str,
 ) -> str:
     prompt = str(scene["prompt"]).strip()
     negative = str(scene.get("negative_prompt") or "")
@@ -138,8 +143,12 @@ async def _submit_scene(
         if engine == DRAW_SCENE_ENGINE_FREE_EDIT:
             if lora_name:
                 return await image_service_instance.submit_img2img_lora_task(
-                    task_id, prompt, [input_key], lora_name,
-                    negative_prompt=negative, priority=0,
+                    task_id,
+                    prompt,
+                    [input_key],
+                    lora_name,
+                    negative_prompt=negative,
+                    priority=0,
                     lora_strength=get_lora_default_strength(lora_name),
                 )
             return await image_service_instance.submit_task(
@@ -188,6 +197,7 @@ async def _submit_scene(
             prompt=prompt,
             images=spec.images,
             reference_descriptions=(),
+            reference_audio=None,
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,
             aspect_ratio=spec.aspect_ratio,
@@ -212,14 +222,26 @@ async def _submit_scene(
     )
     if engine == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
         return await image_service_instance.submit_wan22_video_v2_task(
-            task_id, prompt, input_key, negative_prompt=negative,
-            resolution_preset="512p", length=duration, priority=0,
+            task_id,
+            prompt,
+            input_key,
+            negative_prompt=negative,
+            resolution_preset="512p",
+            length=duration,
+            priority=0,
             lora_items=video_lora_items or None,
         )
     return await image_service_instance.submit_image_to_video_task(
-        task_id, prompt, input_key, lora_name,
-        negative_prompt=negative, resolution_preset="512p",
-        width=512, height=512, length=duration, priority=0,
+        task_id,
+        prompt,
+        input_key,
+        lora_name,
+        negative_prompt=negative,
+        resolution_preset="512p",
+        width=512,
+        height=512,
+        length=duration,
+        priority=0,
         lora_items=video_lora_items or None,
     )
 
@@ -360,13 +382,22 @@ async def get_qqcc_demo_generation(
     object_prefix: str = "qqcc/demo",
     storage_service=storage,
     image_service_instance=image_service,
-    upload_demo_media_func: Callable[..., Awaitable[dict[str, Any]]] = upload_qqcc_demo_media,
+    upload_demo_media_func: Callable[
+        ..., Awaitable[dict[str, Any]]
+    ] = upload_qqcc_demo_media,
     preview_url_builder=build_qqcc_demo_preview_url,
     redis_instance=None,
 ) -> dict[str, Any]:
     if not _GENERATION_ID_PATTERN.fullmatch(generation_id):
         raise QqccDemoGenerationError("Invalid generation id")
-    if scene_kind not in {"draw", "draw_v1", "filter", "video", "video_v1", "ai_video"} or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
+    if scene_kind not in {
+        "draw",
+        "draw_v1",
+        "filter",
+        "video",
+        "video_v1",
+        "ai_video",
+    } or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
         raise QqccDemoGenerationError("Invalid scene")
     redis_conn = redis_instance or redis_client.redis
     try:
@@ -390,7 +421,11 @@ async def get_qqcc_demo_generation(
     state = str(status.get("status") or "pending")
     if state in {"error", "cancelled", "failed"}:
         _cleanup_generation_input(storage_service, generation_id)
-        return {"generation_id": generation_id, "status": "failed", "error": str(status.get("error") or "Generation failed")}
+        return {
+            "generation_id": generation_id,
+            "status": "failed",
+            "error": str(status.get("error") or "Generation failed"),
+        }
     if state != "done":
         return {"generation_id": generation_id, "status": state}
 
@@ -438,7 +473,10 @@ def _cleanup_generation_input(storage_service, generation_id: str) -> None:
 def _cleanup_demo_chain_objects(storage_service, state: dict[str, Any]) -> None:
     if not storage_service.client:
         return
-    for object_key in [*(state.get("input_keys") or []), *(state.get("segment_keys") or [])]:
+    for object_key in [
+        *(state.get("input_keys") or []),
+        *(state.get("segment_keys") or []),
+    ]:
         storage_service.client.remove_object(MINIO_BUCKET, str(object_key))
 
 

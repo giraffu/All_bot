@@ -129,6 +129,11 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   resolution: ref('512'),
   videoDurationOptions: [],
   duration: ref('5'),
+  minimaxH3ReferenceAudio: ref(null),
+  minimaxH3ReferenceAudioUploading: ref(false),
+  beforeUploadMinimaxH3ReferenceAudio: vi.fn(),
+  clearMinimaxH3ReferenceAudio: vi.fn(),
+  isPromptOptimizerAvailable: ref(false),
   templateNotice: ref(''),
   templateWarning: ref(''),
   composerNotice: ref(''),
@@ -227,6 +232,10 @@ const mountView = () => mount(CustomFeatures, {
         template: '<div class="composer-stub"><slot name="before-prompt" /><slot name="advanced-panel" :close="close" /></div>',
       },
       LabAdvancedOptionsPanel: true,
+      H3ReferenceAudioUpload: {
+        props: ['item'],
+        template: '<div class="h3-audio-stub"><span v-if="item">&lt;Audio 1&gt;</span></div>',
+      },
       LabModeRail: true,
       TaskResultPreviewPanel: {
         props: ['currentTask'],
@@ -341,6 +350,21 @@ describe('CustomFeatures advanced video effects', () => {
       expect(wrapper.text()).not.toContain(privateTerm)
     }
     expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(0)
+  })
+
+  it('shows the optional voice upload only in REF2V and reminds after selection', () => {
+    workbench = createMinimaxWorkbench()
+    workbench.minimaxH3Mode.value = 'ref2v'
+    workbench.minimaxH3ReferenceAudio.value = {
+      key: 'web_uploads/7/voice.m4a',
+      preview: 'blob:voice',
+      name: 'voice.m4a',
+    }
+
+    const wrapper = mountView()
+
+    expect(wrapper.find('.h3-audio-stub').exists()).toBe(true)
+    expect(wrapper.text()).toContain('<Audio 1>')
   })
 })
 

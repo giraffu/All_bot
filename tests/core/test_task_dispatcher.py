@@ -132,14 +132,22 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
     result = await strategy.submit_task(
         "task-h3",
         {
-            "prompt": "<Picture 1> walks through a city",
+            "prompt": "walks through a city",
             "saved_input_images": ["ref/a.png"],
+            "reference_audio": "ref/voice.m4a",
             "aspect_ratio": "16:9",
         },
         priority=6,
     )
     assert result == "backend-h3"
     submit.assert_awaited_once()
+    assert submit.await_args.kwargs["reference_audio"] == "ref/voice.m4a"
+    assert strategy.get_file_paths_to_upload(
+        {
+            "saved_input_images": ["ref/a.png"],
+            "reference_audio": "ref/voice.m4a",
+        }
+    ) == ["ref/a.png", "ref/voice.m4a"]
 
 
 def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():

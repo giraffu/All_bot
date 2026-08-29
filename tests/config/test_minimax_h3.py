@@ -26,11 +26,13 @@ def test_web_locales_hide_model_names():
             if language == "zh"
             else ("Adult action test 1", "Adult action test 2")
         )
-        assert workbench["minimax_h3_addon_options"]["naughty_times"] == (
-            expected_addon_labels[0]
+        assert (
+            workbench["minimax_h3_addon_options"]["naughty_times"]
+            == (expected_addon_labels[0])
         )
-        assert workbench["minimax_h3_addon_options"]["sex_pose"] == (
-            expected_addon_labels[1]
+        assert (
+            workbench["minimax_h3_addon_options"]["sex_pose"]
+            == (expected_addon_labels[1])
         )
         assert workbench["minimax_h3_addon_options"]["motion_booster"] == (
             "成人动作强化" if language == "zh" else "Adult motion boost"
@@ -188,18 +190,12 @@ def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
     assert MINIMAX_H3_ADDON_MODELS["naughty_times"].label_zh.endswith(
         "（成人动作测试一）"
     )
-    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].label_zh.endswith(
-        "（成人动作测试二）"
-    )
+    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].label_zh.endswith("（成人动作测试二）")
     assert MINIMAX_H3_ADDON_MODELS["motion_booster"].label_zh.endswith(
         "（成人动作强化）"
     )
-    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.endswith(
-        "（人体结构增强）"
-    )
-    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.startswith(
-        "Mystic XXX v4"
-    )
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.endswith("（人体结构增强）")
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.startswith("Mystic XXX v4")
     assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].model_path == (
         "MiniMaxH3/MysticXXX_MMH3-V4.safetensors"
     )
@@ -288,7 +284,10 @@ def test_minimax_h3_video_reasoning_is_restricted_to_trained_modes():
         ({"lora_name": "missing"}, "不支持"),
         ({"lora_items": [{"name": "penis"}, {"name": "penis"}]}, "不得重复"),
         ({"lora_items": [{"name": "penis", "strength": 0.0}]}, "0.1 至 2.0"),
-        ({"lora_items": [{"name": name} for name in MINIMAX_H3_ADDON_MODELS]}, "最多 13 项"),
+        (
+            {"lora_items": [{"name": name} for name in MINIMAX_H3_ADDON_MODELS]},
+            "最多 13 项",
+        ),
     ],
 )
 def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):
@@ -296,14 +295,45 @@ def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):
         build_minimax_h3_spec(MINIMAX_H3_T2V, inputs)
 
 
-@pytest.mark.parametrize("inputs", [
-    {"lora_name": ""},
-    {"lora_strength": None},
-    {"lora_items": []},
-    {"addon_models": []},
-])
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        {"lora_name": ""},
+        {"lora_strength": None},
+        {"lora_items": []},
+        {"addon_models": []},
+    ],
+)
 def test_minimax_h3_accepts_empty_legacy_addon_placeholders(inputs):
     assert build_minimax_h3_spec(MINIMAX_H3_T2V, inputs).mode == "t2v"
+
+
+def test_minimax_h3_ref2v_accepts_one_optional_reference_audio():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": ["subject.png"],
+            "reference_audio": "voice.m4a",
+        },
+    )
+
+    assert spec.reference_audio == "voice.m4a"
+
+
+@pytest.mark.parametrize(
+    ("task_type", "images"),
+    [
+        (MINIMAX_H3_T2V, []),
+        (MINIMAX_H3_I2V, ["first.png"]),
+        (MINIMAX_H3_FLF2V, ["first.png", "last.png"]),
+    ],
+)
+def test_minimax_h3_non_reference_modes_reject_reference_audio(task_type, images):
+    with pytest.raises(MiniMaxH3ValidationError, match="参考图生视频"):
+        build_minimax_h3_spec(
+            task_type,
+            {"images": images, "reference_audio": "voice.wav"},
+        )
 
 
 def test_minimax_h3_uses_fixed_10eros_v3_hybrid_model_for_all_public_modes():
@@ -376,7 +406,9 @@ def test_minimax_h3_rejects_ref2v_turbo_profile_outside_ref2v(
         ("hd", 15, 59, 362),
     ],
 )
-def test_minimax_h3_t2v_resolution_duration_cost_and_frame_grid(preset, duration, cost, frames):
+def test_minimax_h3_t2v_resolution_duration_cost_and_frame_grid(
+    preset, duration, cost, frames
+):
     spec = build_minimax_h3_spec(
         MINIMAX_H3_T2V, {"duration": duration, "resolution_preset": preset}
     )
@@ -457,10 +489,13 @@ def test_minimax_h3_ref2v_rejects_worker_image_count_outside_one_to_five(count):
 def test_minimax_h3_resolution_price_matrix_applies_public_1_1_multiplier(
     duration, preset, normal
 ):
-    assert build_minimax_h3_spec(
-        MINIMAX_H3_T2V,
-        {"duration": duration, "resolution_preset": preset},
-    ).cost == normal
+    assert (
+        build_minimax_h3_spec(
+            MINIMAX_H3_T2V,
+            {"duration": duration, "resolution_preset": preset},
+        ).cost
+        == normal
+    )
 
 
 @pytest.mark.parametrize(
@@ -520,7 +555,16 @@ def test_minimax_h3_rejects_wrong_image_count(task_type, images):
         build_minimax_h3_spec(task_type, {"images": images})
 
 
-@pytest.mark.parametrize("field,value", [("timeline_data", "{}"), ("model_name", "other"), ("sampler_name", "dpmpp_2m"), ("scheduler", "karras"), ("steps", 25)])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("timeline_data", "{}"),
+        ("model_name", "other"),
+        ("sampler_name", "dpmpp_2m"),
+        ("scheduler", "karras"),
+        ("steps", 25),
+    ],
+)
 def test_minimax_h3_rejects_execution_overrides(field, value):
     with pytest.raises(MiniMaxH3ValidationError, match="不允许覆盖"):
         build_minimax_h3_spec(MINIMAX_H3_T2V, {field: value})

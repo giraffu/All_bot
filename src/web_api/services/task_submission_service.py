@@ -29,6 +29,7 @@ from src.web_api.services.web_submission_preparation import (
     prepare_web_pipeline,
     prepare_web_submission_request,
 )
+
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -79,15 +80,20 @@ async def submit_generation_task(
         promote_staged_inputs_func = (
             promote_staged_inputs_func or promote_staged_user_inputs
         )
-        if images:
-            images = await promote_staged_inputs_func(
-                input_refs=images,
+        reference_audio = inputs.get("reference_audio")
+        staged_input_refs = [*images, *([reference_audio] if reference_audio else [])]
+        if staged_input_refs:
+            promoted_input_refs = await promote_staged_inputs_func(
+                input_refs=staged_input_refs,
                 task_id=task_id,
                 user_id=current_user.id,
                 bucket=MINIO_BUCKET,
                 client=storage.client,
             )
+            images = promoted_input_refs[: len(images)]
             inputs["images"] = images
+            if reference_audio:
+                inputs["reference_audio"] = promoted_input_refs[-1]
 
         pipeline = await prepare_web_pipeline(
             task_type=req.task_type,
@@ -137,9 +143,7 @@ async def submit_generation_task(
                     ),
                     user_cancel_allowed=True,
                     allow_contribute_override=allow_contribute_override,
-                    refund_idempotency_key=(
-                        submission_journal.refund_idempotency_key
-                    ),
+                    refund_idempotency_key=(submission_journal.refund_idempotency_key),
                 ),
                 submission_journal,
             )

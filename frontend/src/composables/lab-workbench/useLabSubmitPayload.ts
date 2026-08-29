@@ -22,6 +22,7 @@ import type {
   SubmitTaskFn,
   TranslateFn,
   UploadedReference,
+  UploadedReferenceAudio,
   UploadedSlotAsset,
 } from './types'
 
@@ -49,6 +50,7 @@ type UseLabSubmitPayloadOptions = {
   minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3AddonItems?: Ref<MiniMaxH3AddonItem[]>
+  minimaxH3ReferenceAudio?: Ref<UploadedReferenceAudio | null>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -85,6 +87,7 @@ export function useLabSubmitPayload({
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3AddonItems,
+  minimaxH3ReferenceAudio,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -191,6 +194,14 @@ export function useLabSubmitPayload({
                   source: 'upload' as const,
                   object_key: item.key,
                 })),
+                ...(minimaxH3ReferenceAudio?.value
+                  ? {
+                      reference_audio_ref: {
+                        source: 'upload' as const,
+                        object_key: minimaxH3ReferenceAudio.value.key,
+                      },
+                    }
+                  : {}),
               }
             : {}),
         },
