@@ -13,6 +13,8 @@ REF2V 图片完成后进入 `WAIT_REFERENCE_AUDIO`，可上传一个 Telegram vo
 document 或点击跳过。上传成功后提示可在提示词中包含 `<Audio 1>`，但不校验、不注入，
 跳过和缺少标记都能继续提交。提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
+REF2V 设置摘要必须提前说明图片完成后还有可选主角参考语音步骤；参考图完成按钮也必须
+明确标注“下一步添加语音”，避免用户把图片上传阶段误认为已经直接进入提示词提交。
 用户输入原始提示词后立即提交生成；新会话不再进入 `WAIT_CONFIRMATION`，不创建
 Prompt Optimizer draft，也不发送“直接生成/优化后再生成”按钮。已提交的历史 H3
 优化 draft 和已发出的 `avpopt_*` callback 仍按 owner fence、幂等扣费与 24 小时

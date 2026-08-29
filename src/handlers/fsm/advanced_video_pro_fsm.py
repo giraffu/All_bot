@@ -156,16 +156,26 @@ def _settings_text(context, data: dict) -> str:
         if data.get("mode") in {"i2v", "flf2v"}
         else data["aspect"]
     )
-    direct_action_zh = (
-        "直接发送提示词后立即生成，无需再次确认。"
-        if data.get("mode") == "t2v"
-        else "无需确认设置；发送图片并填写提示词后立即生成。"
-    )
-    direct_action_en = (
-        "Send the prompt to generate immediately; no confirmation is needed."
-        if data.get("mode") == "t2v"
-        else "No settings confirmation is needed. Send the image and prompt to generate immediately."
-    )
+    mode = data.get("mode")
+    if mode == "t2v":
+        direct_action_zh = "直接发送提示词后立即生成，无需再次确认。"
+        direct_action_en = (
+            "Send the prompt to generate immediately; no confirmation is needed."
+        )
+    elif mode == "ref2v":
+        direct_action_zh = (
+            "发送 1–4 张参考图；完成参考图后可上传 1 个主角参考语音，再填写提示词生成。"
+        )
+        direct_action_en = (
+            "Send 1–4 reference images. After finishing the images, you may upload "
+            "one main-character voice reference before entering the prompt."
+        )
+    else:
+        direct_action_zh = "无需确认设置；发送图片并填写提示词后立即生成。"
+        direct_action_en = (
+            "No settings confirmation is needed. Send the image and prompt to "
+            "generate immediately."
+        )
     cost = _settings_cost(data)
     return _with_cancel_hint(
         context,
@@ -430,7 +440,11 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 ],
                 [
                     InlineKeyboardButton(
-                        _text(context, "完成并填写提示词", "Finish and enter prompt"),
+                        _text(
+                            context,
+                            "完成参考图，下一步添加语音",
+                            "Finish images, add voice next",
+                        ),
                         callback_data="avp_refs_done",
                     )
                 ],
@@ -442,8 +456,8 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 context,
                 _text(
                     context,
-                    f"已收到 {count} 张参考图。可继续添加，最多 4 张。",
-                    f"Received {count} reference image(s). You may add up to 4.",
+                    f"已收到 {count} 张参考图。可继续添加，最多 4 张。完成选图后进入可选参考语音步骤。",
+                    f"Received {count} reference image(s). You may add up to 4. Finish the images to continue to the optional voice-reference step.",
                 ),
             ),
             reply_markup=keyboard,
@@ -467,7 +481,11 @@ async def receive_reference_description(
     rows = [
         [
             InlineKeyboardButton(
-                _text(context, "完成并填写提示词", "Finish and enter prompt"),
+                _text(
+                    context,
+                    "完成参考图，下一步添加语音",
+                    "Finish images, add voice next",
+                ),
                 callback_data="avp_refs_done",
             )
         ]
@@ -489,8 +507,8 @@ async def receive_reference_description(
             context,
             _text(
                 context,
-                f"已添加 {count} 个角色。",
-                f"{count} character(s) added.",
+                f"已添加 {count} 个角色。完成后进入可选参考语音步骤。",
+                f"{count} character(s) added. Finish to continue to the optional voice-reference step.",
             ),
         ),
         reply_markup=keyboard,
