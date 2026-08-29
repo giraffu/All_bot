@@ -243,7 +243,8 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 
 当本机到 R2 的正文流量不能使用本地代理或本地出口时，临时清理采用“云端完整协调器”
 模式，而不是把 R2 读取拆回本机。`database-migration` artifact 包含
-`scripts/r2_temp_cleanup.py`；操作者从受保护 main 的完整 SHA 构建精确 digest，随后只在
+`scripts/r2_temp_cleanup.py` 与
+`scripts/r2_temp_cleanup_cloud_coordinator.py`；操作者从受保护 main 的完整 SHA 构建精确 digest，随后只在
 正式 SGP1 控制主机以一次性容器运行该脚本。目标主机禁止 build、源码同步、bind mount
 源码或 mutable tag。artifact 同时包含
 `scripts/refresh_r2_temp_cleanup_inventory.py`；云端先在 0700 state 目录直接列举正式桶，
@@ -263,6 +264,17 @@ Redis active-task 快照，任一连接或解码失败仍 fail closed。
 `post_delete_verified_count`、plan SHA 和 inventory SHA 全部通过，才允许从本地 working
 inventory 移除已删除行。canary 验收前本机 supervisor 保持 disabled；后续批次不得因
 一次 canary 授权自动扩大。
+
+持续全桶清理使用云端协调器及
+`ops/r2_temp_cleanup/allbot-r2-temp-cleanup-cloud.service`。协调器只消费云端新鲜
+inventory，在 0600 state 中记录每份冻结计划、精确确认、执行回执和 working inventory
+身份；阶段按 100、1000、10000 收紧后保持单批最多 10000 个和 50 GiB。进程在
+`delete_started` 后退出时，重启只恢复同一计划：先重查生产 History、活跃任务与业务
+引用；已消失源仅在 durable twin 仍匹配冻结 SHA-256 时计为完成，仍存在源重做双对象
+SHA 后继续删除。安全引用或对象级探测失败的候选保留并让后续 frontier 继续；每轮有
+删除时重新从云端刷新全桶 inventory，直到一份新鲜完整 pass 的删除数为 0 才结束。
+宿主 systemd 只消费 digest-pinned migration image，清空大小写代理变量并挂载受限 state；
+本地旧 cleanup supervisor 必须保持 disabled，本地不得生成 inventory 或执行正文摘要。
 
 一次性全量临时治理使用独立入口
 `scripts/r2_temp_cleanup_campaign.py`，不改变每日 canary/cleanup 协议。`plan`
