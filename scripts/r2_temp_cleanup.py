@@ -439,6 +439,121 @@ async def _delete_and_verify_candidates(
     return len(objects)
 
 
+async def resume_delete_started(
+    *, client, plan: dict, receipt: dict, concurrency: int
+) -> dict:
+    """Finish one exact frozen batch after its process exited during deletion.
+
+    Already absent sources count as completed only after every production
+    reference is rechecked and the durable twin still has the frozen SHA-256.
+    Still-present sources must pass the normal dual-object verification before
+    the remaining delete path is entered.
+    """
+    actual_plan_sha = _json_sha256(plan)
+    if plan.get("plan_sha256") != actual_plan_sha:
+        raise RuntimeError("cleanup recovery plan is invalid or has been modified")
+    if receipt.get("status") != "delete_started":
+        raise RuntimeError("cleanup receipt is not in delete_started state")
+    if plan.get("mode") != "dry-run" or plan.get("bucket") != PRODUCTION_BUCKET:
+        raise RuntimeError("cleanup recovery plan is invalid")
+    objects = list(plan.get("objects") or [])
+    if receipt.get("objects") != objects:
+        raise RuntimeError("delete_started receipt differs from frozen plan")
+    if receipt.get("inventory", {}).get("sha256") != plan.get("inventory", {}).get(
+        "sha256"
+    ):
+        raise RuntimeError("delete_started inventory identity changed")
+    keys = [str(item["key"]) for item in objects]
+    history_refs, active_refs, business_refs = await asyncio.gather(
+        _history_references(keys),
+        _active_task_references(keys),
+        _business_references(keys),
+    )
+    business_keys = set().union(*business_refs.values()) if business_refs else set()
+    if history_refs or active_refs or business_keys:
+        raise RuntimeError("production references appeared after delete_started")
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def source_absent(item: dict) -> bool:
+        async with semaphore:
+            return await asyncio.to_thread(
+                _deleted_object_is_absent,
+                client,
+                PRODUCTION_BUCKET,
+                str(item["key"]),
+            )
+
+    absence = await asyncio.gather(*(source_absent(item) for item in objects))
+    absent = [item for item, is_absent in zip(objects, absence) if is_absent]
+    present = [item for item, is_absent in zip(objects, absence) if not is_absent]
+
+    async def durable_matches(item: dict) -> bool:
+        async with semaphore:
+            digest = await asyncio.to_thread(
+                _sha256_object,
+                client,
+                PRODUCTION_BUCKET,
+                str(item["durable_key"]),
+            )
+        return digest == str(item["sha256"])
+
+    if absent:
+        durable_results = await asyncio.gather(
+            *(durable_matches(item) for item in absent)
+        )
+        if not all(durable_results):
+            raise RuntimeError("durable twin changed after partial deletion")
+
+    if present:
+        candidates = [
+            Candidate(
+                key=str(item["key"]),
+                durable_key=str(item["durable_key"]),
+                byte_size=int(item["byte_size"]),
+                etag=str(item["etag"]),
+                last_modified=str(item["last_modified"]),
+            )
+            for item in present
+        ]
+        verified, failures = await _verify_candidates(
+            client,
+            PRODUCTION_BUCKET,
+            candidates,
+            concurrency=concurrency,
+        )
+        frozen = {str(item["key"]): str(item["sha256"]) for item in present}
+        if failures or len(verified) != len(present) or any(
+            str(item["sha256"]) != frozen[str(item["key"])] for item in verified
+        ):
+            raise RuntimeError("source or durable twin changed after delete_started")
+        deleted = await _delete_and_verify_candidates(
+            client,
+            PRODUCTION_BUCKET,
+            present,
+            concurrency=concurrency,
+        )
+    else:
+        deleted = 0
+
+    recovered = dict(receipt)
+    recovered.update(
+        {
+            "approved_plan_sha256": str(plan.get("plan_sha256") or ""),
+            "post_delete_verified_count": len(absent) + deleted,
+            "status": "completed",
+            "recovery": {
+                "schema": "allbot-r2-temp-cleanup-delete-recovery/v1",
+                "recovered_at": datetime.now(timezone.utc).isoformat(),
+                "absent_before_recovery": len(absent),
+                "present_before_recovery": len(present),
+                "post_delete_verified_count": len(absent) + deleted,
+            },
+        }
+    )
+    return recovered
+
+
 async def run(args) -> dict:
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")

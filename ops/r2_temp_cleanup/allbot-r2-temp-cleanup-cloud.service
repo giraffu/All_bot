@@ -1,0 +1,29 @@
+[Unit]
+Description=AllBot persistent cloud-only R2 duplicate cleanup
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/allbot/r2-temp-cleanup-cloud.env
+ExecStartPre=-/usr/bin/docker rm -f allbot-r2-full-cleanup-cloud
+ExecStart=/usr/bin/docker run --rm --name allbot-r2-full-cleanup-cloud \
+  --env-file /etc/allbot/prod.env \
+  -e R2_TEMP_CLEANUP_ENABLED=true \
+  -e R2_TEMP_CLEANUP_STATE_ROOT=/var/lib/allbot-r2-temp-cleanup \
+  -e R2_TEMP_CLEANUP_AUTHORIZATION=/var/lib/allbot-r2-temp-cleanup/authorization-receipt.json \
+  -e R2_TEMP_CLEANUP_VERIFICATION_CONCURRENCY=8 \
+  -e HTTP_PROXY= -e HTTPS_PROXY= -e ALL_PROXY= \
+  -e http_proxy= -e https_proxy= -e all_proxy= \
+  -v /var/lib/allbot/r2-temp-cleanup-cloud/current:/var/lib/allbot-r2-temp-cleanup \
+  --entrypoint python ${R2_TEMP_CLEANUP_CLOUD_IMAGE} \
+  -m scripts.r2_temp_cleanup_cloud_coordinator
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=300
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
