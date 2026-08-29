@@ -1410,7 +1410,7 @@ _MINIMAX_H3_COUNTS = {
     "minimax_h3_t2v": (0, 0),
     "minimax_h3_i2v": (1, 1),
     "minimax_h3_flf2v": (2, 2),
-    "minimax_h3_ref2v": (1, 5),
+    "minimax_h3_ref2v": (0, 5),
 }
 _MINIMAX_H3_PRECISION_PRESETS = {
     "preview": "0.26 MP - Preview",
@@ -1668,6 +1668,33 @@ def patch_minimax_h3_workflow(
     )
     guide_inputs["length"] = _minimax_h3_frame_count(params)
     if task_type == "minimax_h3_ref2v":
+        reference_video = str(params.get("reference_video") or "").strip()
+        if reference_video:
+            workflow["26"] = {
+                "inputs": {
+                    "video": reference_video,
+                    "force_rate": 24,
+                    "custom_width": 0,
+                    "custom_height": 0,
+                    "frame_load_cap": 120,
+                    "skip_first_frames": 0,
+                    "select_every_nth": 1,
+                    "format": "None",
+                },
+                "class_type": "VHS_LoadVideo",
+            }
+            guide_inputs["ref_videos.ref_video_0"] = ["26", 0]
+            guide_inputs["ref_video_audios.ref_video_audio_0"] = ["26", 2]
+            guide_inputs["prompt"] = (
+                "<Video 1> is the final five seconds of the previous segment. "
+                "Continue naturally after it while preserving the characters, scene, "
+                "motion direction, camera trajectory, and audio continuity.\n\n"
+                f"{guide_inputs['prompt']}"
+            )
+        else:
+            workflow.pop("26", None)
+            guide_inputs.pop("ref_videos.ref_video_0", None)
+            guide_inputs.pop("ref_video_audios.ref_video_audio_0", None)
         reference_audio = str(params.get("reference_audio") or "").strip()
         if reference_audio:
             workflow["25"] = {

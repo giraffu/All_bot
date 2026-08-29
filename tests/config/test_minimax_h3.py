@@ -320,6 +320,35 @@ def test_minimax_h3_ref2v_accepts_one_optional_reference_audio():
     assert spec.reference_audio == "voice.m4a"
 
 
+def test_minimax_h3_ref2v_accepts_reference_video_without_images():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "reference_video": "task-inputs/extension/previous-tail.mp4",
+            "aspect_ratio": "16:9",
+        },
+    )
+
+    assert spec.images == ()
+    assert spec.reference_video == "task-inputs/extension/previous-tail.mp4"
+
+
+def test_minimax_h3_ref2v_requires_an_image_or_reference_video():
+    with pytest.raises(MiniMaxH3ValidationError, match="参考图片或参考视频"):
+        build_minimax_h3_spec(MINIMAX_H3_REF2V, {})
+
+
+def test_minimax_h3_non_reference_modes_reject_reference_video():
+    with pytest.raises(MiniMaxH3ValidationError, match="参考视频仅支持"):
+        build_minimax_h3_spec(
+            MINIMAX_H3_I2V,
+            {
+                "images": ["first.png"],
+                "reference_video": "previous.mp4",
+            },
+        )
+
+
 @pytest.mark.parametrize(
     ("task_type", "images"),
     [
@@ -460,9 +489,9 @@ def test_minimax_h3_ref2v_accepts_ordered_reference_images(count):
     assert (spec.width, spec.height) != (0, 0)
 
 
-@pytest.mark.parametrize("count", [0, 6])
-def test_minimax_h3_ref2v_rejects_worker_image_count_outside_one_to_five(count):
-    with pytest.raises(MiniMaxH3ValidationError, match="1 至 5"):
+def test_minimax_h3_ref2v_rejects_more_than_five_worker_images():
+    count = 6
+    with pytest.raises(MiniMaxH3ValidationError, match="0 至 5"):
         build_minimax_h3_spec(
             MINIMAX_H3_REF2V,
             {"images": [f"ref-{index}.png" for index in range(count)]},

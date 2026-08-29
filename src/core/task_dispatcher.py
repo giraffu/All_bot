@@ -1048,15 +1048,24 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         spec = self._spec(inputs)
-        return [*spec.images, *([spec.reference_audio] if spec.reference_audio else [])]
+        return [
+            *spec.images,
+            *([spec.reference_video] if spec.reference_video else []),
+            *([spec.reference_audio] if spec.reference_audio else []),
+        ]
 
     def apply_processed_input_refs(
         self, inputs: Dict[str, Any], processed_refs: list[str]
     ) -> None:
-        image_count = len(processed_refs) - (1 if inputs.get("reference_audio") else 0)
+        spec = self._spec(inputs)
+        image_count = len(spec.images)
         inputs["saved_input_images"] = processed_refs[:image_count]
-        if len(processed_refs) > image_count:
-            inputs["reference_audio"] = processed_refs[image_count]
+        cursor = image_count
+        if spec.reference_video:
+            inputs["reference_video"] = processed_refs[cursor]
+            cursor += 1
+        if spec.reference_audio:
+            inputs["reference_audio"] = processed_refs[cursor]
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         spec = self._spec(inputs)
@@ -1078,6 +1087,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "minimax_h3_end_source_width": inputs.get("end_source_width"),
             "minimax_h3_end_source_height": inputs.get("end_source_height"),
             "reference_descriptions": list(spec.reference_descriptions),
+            "reference_video": spec.reference_video,
             "reference_audio": spec.reference_audio,
             "lora_items": [
                 {"name": item.name, "strength": item.strength}
@@ -1100,6 +1110,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             prompt=prompt,
             images=spec.images,
             reference_descriptions=spec.reference_descriptions,
+            reference_video=spec.reference_video,
             reference_audio=spec.reference_audio,
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,

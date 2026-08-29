@@ -173,6 +173,8 @@ async def prepare_web_submission_request(
     )
     inputs = dict(req.inputs)
     if req.task_type.startswith("minimax_h3_"):
+        if inputs.get("reference_video") is not None:
+            raise CoreDomainError("不得直接指定 H3 参考视频存储路径。")
         if advanced_video_profile_loader is None:
             from src.services.feature_entry_visibility_service import (
                 load_advanced_video_pro_profile,
@@ -230,6 +232,10 @@ async def prepare_web_submission_request(
         except ValueError as exc:
             raise CoreDomainError(str(exc)) from exc
         inputs["images"] = list(extension.images)
+        if extension.reference_video:
+            inputs["reference_video"] = extension.reference_video
+        if extension.aspect_ratio:
+            inputs["aspect_ratio"] = extension.aspect_ratio
         h3_extension_metadata = dict(extension.metadata)
         h3_allow_contribute = bool(extension.allow_contribute)
 

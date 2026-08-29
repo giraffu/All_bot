@@ -96,14 +96,17 @@ async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypa
         AsyncMock(return_value={
             "i2v": {"main_model": "official", "addon_items": []},
             "flf2v": {"main_model": "10eros", "addon_items": []},
+            "ref2v": {"main_model": "official", "addon_items": []},
         }),
     )
     seed_data = {
-        "mode": "i2v",
+        "mode": "ref2v",
         "duration": 10,
         "preset": "standard",
-        "aspect": "source",
-        "images": ["/tmp/owned-tail.png"],
+        "aspect": "16:9",
+        "images": [],
+        "reference_video": "/tmp/owned-tail.mp4",
+        "extension_start_frame": "/tmp/owned-tail.png",
         "reference_descriptions": [],
         "is_extension": True,
         "extension_prev_task_id": "h3-parent",
@@ -130,13 +133,14 @@ async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypa
 
     assert state == AdvancedVideoProState.WAIT_SETTINGS
     assert query.answer.await_count == 1
-    assert context.user_data[fsm.DATA_KEY]["images"] == ["/tmp/owned-tail.png"]
+    assert context.user_data[fsm.DATA_KEY]["images"] == []
+    assert context.user_data[fsm.DATA_KEY]["reference_video"] == "/tmp/owned-tail.mp4"
     callbacks = [
         button.callback_data
         for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert callbacks == ["h3ext_mode_i2v", "h3ext_mode_flf2v"]
+    assert callbacks == ["h3ext_mode_ref2v", "h3ext_mode_flf2v"]
 
 
 @pytest.mark.asyncio
@@ -154,13 +158,14 @@ async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeyp
         effective_chat=SimpleNamespace(id=99),
     )
     data = {
-        "mode": "i2v",
+        "mode": "ref2v",
         "prompt": "continue forward",
-        "images": ["/tmp/owned-tail.png"],
+        "images": [],
+        "reference_video": "/tmp/owned-tail.mp4",
         "reference_descriptions": [],
         "duration": 5,
         "preset": "preview",
-        "aspect": "source",
+        "aspect": "16:9",
         "addon_items": [],
         "is_extension": True,
         "extension_prev_task_id": "h3-parent",

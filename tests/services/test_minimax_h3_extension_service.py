@@ -13,6 +13,8 @@ def _history(
     context=None,
     last_frame="task-results/segment-1/last_frame.png",
     allow_contribute=True,
+    width=None,
+    height=None,
 ):
     return SimpleNamespace(
         task_id=task_id,
@@ -35,11 +37,13 @@ def _history(
         prompt=f"prompt {task_id}",
         duration=5,
         requested_duration=5,
+        width=width,
+        height=height,
     )
 
 
 @pytest.mark.asyncio
-async def test_web_extension_injects_owned_tail_and_builds_canonical_chain(monkeypatch):
+async def test_web_extension_injects_owned_video_reference_and_builds_canonical_chain(monkeypatch):
     parent = _history(allow_contribute=False)
     monkeypatch.setattr(
         service,
@@ -50,15 +54,13 @@ async def test_web_extension_injects_owned_tail_and_builds_canonical_chain(monke
     prepared = await service.prepare_minimax_h3_web_extension(
         prev_task_id="segment-1",
         internal_user_id=7,
-        target_task_type="minimax_h3_flf2v",
-        client_images=["web_uploads/7/end.png"],
-        frame_aspect_validator=AsyncMock(),
+        target_task_type="minimax_h3_ref2v",
+        client_images=[],
     )
 
-    assert prepared.images == (
-        "task-results/segment-1/last_frame.png",
-        "web_uploads/7/end.png",
-    )
+    assert prepared.images == ()
+    assert prepared.reference_video == "task-results/segment-1/primary.mp4"
+    assert prepared.aspect_ratio == "16:9"
     assert prepared.metadata == {
         "minimax_h3_prev_task_id": "segment-1",
         "minimax_h3_chain_task_ids": ["segment-1"],
@@ -72,9 +74,41 @@ async def test_web_extension_rejects_client_supplied_i2v_start_frame():
         await service.prepare_minimax_h3_web_extension(
             prev_task_id="segment-1",
             internal_user_id=7,
-            target_task_type="minimax_h3_i2v",
+            target_task_type="minimax_h3_ref2v",
             client_images=["forged.png"],
         )
+
+
+@pytest.mark.asyncio
+async def test_web_extension_keeps_tail_frame_path_for_optional_end_frame(monkeypatch):
+    parent = _history()
+    monkeypatch.setattr(
+        service,
+        "load_owned_minimax_h3_history_for_internal_user",
+        AsyncMock(return_value=parent),
+    )
+    validate = AsyncMock()
+
+    prepared = await service.prepare_minimax_h3_web_extension(
+        prev_task_id="segment-1",
+        internal_user_id=7,
+        target_task_type="minimax_h3_flf2v",
+        client_images=["web_uploads/7/end.png"],
+        frame_aspect_validator=validate,
+    )
+
+    assert prepared.images == (
+        "task-results/segment-1/last_frame.png",
+        "web_uploads/7/end.png",
+    )
+    assert prepared.reference_video is None
+    assert prepared.aspect_ratio is None
+
+
+def test_video_extension_uses_nearest_supported_parent_aspect():
+    history = _history(task_type="minimax_h3_i2v", width=720, height=1280)
+
+    assert service.resolve_minimax_h3_extension_aspect_ratio(history) == "9:16"
 
 
 def test_h3_stitched_record_has_no_segment_index_and_cannot_extend():

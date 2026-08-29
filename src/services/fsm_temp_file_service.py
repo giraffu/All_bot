@@ -15,6 +15,8 @@ FSM_TEMP_PATH_KEYS = {
     "start_image_path",
     "end_frame_path",
     "reference_audio",
+    "reference_video",
+    "extension_start_frame",
 }
 FSM_TEMP_PATH_LIST_KEYS = {
     "images",

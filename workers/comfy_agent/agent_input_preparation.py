@@ -1,7 +1,9 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 import glob
 import os
-from collections.abc import Awaitable, Callable
+from pathlib import Path
+import subprocess
 from typing import Any
 
 try:
@@ -22,6 +24,63 @@ def _cleanup_partial_downloads(local_path: str) -> None:
             os.remove(path)
         except FileNotFoundError:
             continue
+
+
+def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
+    """Normalize an internal H3 extension reference to its final five seconds."""
+    if param_key != "reference_video":
+        return local_path
+    source = Path(local_path)
+    output = source.with_name(f"{source.stem}__tail5s.mp4")
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-sseof",
+                "-5",
+                "-i",
+                str(source),
+                "-t",
+                "5",
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-vf",
+                "fps=24",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ar",
+                "32000",
+                "-ac",
+                "2",
+                str(output),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        output.unlink(missing_ok=True)
+        raise RuntimeError(f"Failed to trim H3 reference video: {exc}") from exc
+    if result.returncode != 0 or not output.is_file() or output.stat().st_size <= 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:]
+        output.unlink(missing_ok=True)
+        raise RuntimeError(f"Failed to trim H3 reference video: {detail or 'ffmpeg failed'}")
+    return str(output)
 
 
 async def _download_with_retries(
@@ -95,6 +154,7 @@ async def process_single_input_asset(
     download_input_func: Callable[[str, str], Any],
     should_normalize_image_input_func: Callable[[str, str], bool],
     normalize_input_image_func: Callable[[str], str],
+    prepare_input_file_func: Callable[[str, str], str] | None = None,
     upload_prepared_input_func: Callable[..., Awaitable[Any]],
     logger,
     download_timeout_seconds: float | None = None,
@@ -119,6 +179,15 @@ async def process_single_input_asset(
             downloaded_input_paths.append(local_img_path)
         upload_path = local_img_path
         upload_name = local_safe_filename
+        if prepare_input_file_func is not None:
+            upload_path = await asyncio.to_thread(
+                prepare_input_file_func,
+                param_key,
+                local_img_path,
+            )
+            upload_name = os.path.basename(upload_path)
+            if upload_path not in downloaded_input_paths:
+                downloaded_input_paths.append(upload_path)
         if should_normalize_image_input_func(param_key, img_filename):
             upload_path = await asyncio.to_thread(
                 normalize_input_image_func,
@@ -218,6 +287,7 @@ async def prepare_task_inputs(
         "end_image",
         "character_sheet",
         "background_image",
+        "reference_video",
         "reference_audio",
     ]:
         if key in params and params[key]:

@@ -188,7 +188,7 @@ describe('TaskDetailModal Wan22 editor links', () => {
     expect(unsupported.text()).toContain('history.cannot_post')
   })
 
-  it('routes H3 extension with a locked server-owned tail-frame reference', async () => {
+  it('routes H3 extension with only the server-owned parent task id', async () => {
     currentDetailRecord = {
       ...currentDetailRecord,
       task_id: 'h3-task-2',
@@ -213,10 +213,8 @@ describe('TaskDetailModal Wan22 editor links', () => {
     expect(routerPush).toHaveBeenCalledWith({
       name: 'CustomFeatures',
       query: {
-        type: 'minimax_h3_i2v',
+        type: 'minimax_h3_ref2v',
         minimax_h3_extend_task_id: 'h3-task-2',
-        minimax_h3_extend_key: 'history/h3-task-2/last_frame.png',
-        minimax_h3_extend_url: 'https://cdn/h3-tail.png',
       },
     })
   })

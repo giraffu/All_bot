@@ -4,7 +4,6 @@ import { message } from 'ant-design-vue'
 import { stitchMiniMaxH3HistoryChain } from '@/api/gallery'
 import type { UnifiedLabModeId } from '@/features/generation/labModeConfig'
 import type { TaskRecord } from '@/types/gallery'
-import { resolveMediaUrl } from '@/utils/mediaUrl'
 import type { TranslateFn, UploadedReference } from './types'
 
 const H3_IMAGE_TYPES = new Set([
@@ -40,7 +39,7 @@ export function useH3ChainEditor(options: UseH3ChainEditorOptions) {
   const h3CurrentTaskCanExtend = computed(() => (
     currentTaskIsH3ImageVideo.value
     && !options.currentTask.value?.resultMeta?.minimax_h3_is_stitched
-    && Boolean(options.currentTask.value?.id && options.currentTask.value?.extraOutputs?.last_frame?.path)
+    && Boolean(options.currentTask.value?.id)
   ))
   const h3CurrentTaskCanStitch = computed(() => (
     currentTaskIsH3ImageVideo.value
@@ -53,28 +52,17 @@ export function useH3ChainEditor(options: UseH3ChainEditorOptions) {
     h3ExtensionNotice.value = ''
   }
 
-  const applyH3ExtensionPrefill = (
-    path?: string | null,
-    url?: string | null,
-    previousTaskId?: string | null,
-  ) => {
-    const key = String(path || '').trim()
+  const applyH3ExtensionPrefill = (previousTaskId?: string | null) => {
     const taskId = String(previousTaskId || '').trim()
-    if (!key || !taskId) return false
+    if (!taskId) return false
     options.clearReferences()
     options.clearSlotAssets()
     options.resetTemplateState()
     options.resetWan22ChainState()
     options.resetLtxExtensionState()
     options.currentModeId.value = 'minimax_h3'
-    options.minimaxH3Mode.value = 'i2v'
-    options.uploadedReferences.value = [{
-      key,
-      preview: url || resolveMediaUrl(key),
-      name: options.t('lab.workbench.minimax_h3_extension_start_frame_name'),
-      locked: true,
-      lockedLabel: options.t('lab.workbench.minimax_h3_locked_start_frame'),
-    }]
+    options.minimaxH3Mode.value = 'ref2v'
+    options.uploadedReferences.value = []
     options.prompt.value = ''
     h3PrevTaskId.value = taskId
     h3ExtensionNotice.value = options.t('lab.workbench.minimax_h3_extension_notice')
@@ -83,13 +71,8 @@ export function useH3ChainEditor(options: UseH3ChainEditorOptions) {
   }
 
   const openH3CurrentTaskEditor = () => {
-    const lastFrame = options.currentTask.value?.extraOutputs?.last_frame
-    if (!applyH3ExtensionPrefill(
-      lastFrame?.path,
-      lastFrame?.url,
-      options.currentTask.value?.id,
-    )) {
-      message.warning(options.t('lab.workbench.minimax_h3_extend_missing_last_frame'))
+    if (!applyH3ExtensionPrefill(options.currentTask.value?.id)) {
+      message.warning(options.t('lab.workbench.minimax_h3_extend_missing_video'))
       return
     }
     message.success(options.t('lab.workbench.minimax_h3_extension_loaded'))

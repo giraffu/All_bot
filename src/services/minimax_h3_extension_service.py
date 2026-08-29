@@ -14,6 +14,7 @@ from PIL import Image, ImageOps
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_REF2V,
@@ -36,7 +37,7 @@ MINIMAX_H3_EXTENSION_SOURCE_TASK_TYPES = frozenset(
     {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V, MINIMAX_H3_REF2V}
 )
 MINIMAX_H3_EXTENSION_TARGET_TASK_TYPES = frozenset(
-    {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}
+    {MINIMAX_H3_REF2V, MINIMAX_H3_FLF2V}
 )
 
 
@@ -52,6 +53,8 @@ class MiniMaxH3PersistenceError(MiniMaxH3ExtensionError):
 class MiniMaxH3ExtensionPreparation:
     history: History
     images: tuple[str, ...]
+    reference_video: str | None
+    aspect_ratio: str | None
     metadata: dict[str, object]
     allow_contribute: bool
 
@@ -129,6 +132,28 @@ def build_minimax_h3_full_chain_task_ids(history: History) -> list[str]:
     ]
 
 
+def resolve_minimax_h3_extension_aspect_ratio(history: History) -> str:
+    context = resolve_valid_minimax_h3_history_context(
+        task_type=getattr(history, "type", None),
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    context_aspect = str((context or {}).get("aspect_ratio") or "").strip()
+    if context_aspect in MINIMAX_H3_ASPECT_RATIOS:
+        return context_aspect
+    try:
+        width = int(getattr(history, "width", 0) or 0)
+        height = int(getattr(history, "height", 0) or 0)
+    except (TypeError, ValueError):
+        width = height = 0
+    if width <= 0 or height <= 0:
+        return "16:9"
+    source_ratio = width / height
+    return min(
+        MINIMAX_H3_ASPECT_RATIOS,
+        key=lambda name: abs(MINIMAX_H3_ASPECT_RATIOS[name] - source_ratio),
+    )
+
+
 async def load_owned_minimax_h3_history_for_internal_user(
     *, task_id: str, internal_user_id: int, session=None
 ) -> History:
@@ -166,26 +191,43 @@ async def prepare_minimax_h3_web_extension(
 ) -> MiniMaxH3ExtensionPreparation:
     if target_task_type not in MINIMAX_H3_EXTENSION_TARGET_TASK_TYPES:
         raise MiniMaxH3ExtensionError("H3 扩展仅支持直接续写或添加终止帧。")
-    expected_client_images = 0 if target_task_type == MINIMAX_H3_I2V else 1
+    expected_client_images = 0 if target_task_type == MINIMAX_H3_REF2V else 1
     if len(client_images) != expected_client_images:
         raise MiniMaxH3ExtensionError(
-            "直接续写不能上传首帧。" if expected_client_images == 0 else "添加终止帧时只能上传一张终止帧。"
+            "视频参考续写不能上传首帧。" if expected_client_images == 0 else "添加终止帧时只能上传一张终止帧。"
         )
     history = await load_owned_minimax_h3_history_for_internal_user(
         task_id=prev_task_id,
         internal_user_id=internal_user_id,
         session=session,
     )
-    last_frame = resolve_minimax_h3_last_frame_output_file(history)
+    last_frame = (
+        resolve_minimax_h3_last_frame_output_file(history)
+        if target_task_type == MINIMAX_H3_FLF2V
+        else None
+    )
     if target_task_type == MINIMAX_H3_FLF2V:
         frame_aspect_validator = (
             frame_aspect_validator or validate_minimax_h3_storage_frame_aspects
         )
         await frame_aspect_validator([last_frame, client_images[0]])
     full_chain = build_minimax_h3_full_chain_task_ids(history)
+    reference_video = (
+        str(getattr(history, "output_file", "") or "").strip()
+        if target_task_type == MINIMAX_H3_REF2V
+        else None
+    )
+    if target_task_type == MINIMAX_H3_REF2V and not reference_video:
+        raise MiniMaxH3ExtensionError("这条记录没有可用的视频文件，无法扩展生成。")
     return MiniMaxH3ExtensionPreparation(
         history=history,
-        images=tuple([last_frame, *client_images]),
+        images=(tuple([last_frame, *client_images]) if last_frame else ()),
+        reference_video=reference_video,
+        aspect_ratio=(
+            resolve_minimax_h3_extension_aspect_ratio(history)
+            if reference_video
+            else None
+        ),
         metadata={
             "minimax_h3_prev_task_id": prev_task_id,
             "minimax_h3_chain_task_ids": full_chain,
@@ -257,24 +299,47 @@ async def prepare_minimax_h3_extension_fsm_data(
     if not context:
         raise MiniMaxH3ExtensionError("H3 记录缺少有效的生成上下文，无法扩展。")
     last_frame = resolve_minimax_h3_last_frame_output_file(history)
-    bucket_name, object_name = resolve_storage_object(last_frame)
-    suffix = Path(last_frame).suffix or ".png"
-    local_path = Path(FSM_TEMP_DIR) / f"{uuid.uuid4().hex}_h3_extension_start{suffix}"
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(
-        storage.download_file,
-        bucket_name,
-        object_name,
-        str(local_path),
+    video_file = str(getattr(history, "output_file", "") or "").strip()
+    if not video_file:
+        raise MiniMaxH3ExtensionError("这条记录没有可用的视频文件，无法扩展生成。")
+    frame_bucket, frame_object = resolve_storage_object(last_frame)
+    video_bucket, video_object = resolve_storage_object(video_file)
+    frame_suffix = Path(last_frame).suffix or ".png"
+    video_suffix = Path(video_file).suffix or ".mp4"
+    local_frame_path = Path(FSM_TEMP_DIR) / (
+        f"{uuid.uuid4().hex}_h3_extension_start{frame_suffix}"
     )
+    local_video_path = Path(FSM_TEMP_DIR) / (
+        f"{uuid.uuid4().hex}_h3_extension_reference{video_suffix}"
+    )
+    local_frame_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        await asyncio.to_thread(
+            storage.download_file,
+            frame_bucket,
+            frame_object,
+            str(local_frame_path),
+        )
+        await asyncio.to_thread(
+            storage.download_file,
+            video_bucket,
+            video_object,
+            str(local_video_path),
+        )
+    except BaseException:
+        local_frame_path.unlink(missing_ok=True)
+        local_video_path.unlink(missing_ok=True)
+        raise
     return MiniMaxH3ExtensionFsmSeed(
         history=history,
         fsm_data={
-            "mode": "i2v",
+            "mode": "ref2v",
             "duration": int(context["requested_duration"]),
             "preset": str(context["resolution_preset"]),
-            "aspect": "source",
-            "images": [str(local_path)],
+            "aspect": resolve_minimax_h3_extension_aspect_ratio(history),
+            "images": [],
+            "reference_video": str(local_video_path),
+            "extension_start_frame": str(local_frame_path),
             "reference_descriptions": [],
             "reference_audio": None,
             "is_extension": True,

@@ -197,6 +197,7 @@ async def _submit_scene(
             prompt=prompt,
             images=spec.images,
             reference_descriptions=(),
+            reference_video=None,
             reference_audio=None,
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,

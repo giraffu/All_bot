@@ -87,10 +87,12 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_extension_uses_server_tail_and_inherits_contribution():
+async def test_minimax_h3_extension_uses_server_video_reference_and_inherits_contribution():
     prepare_extension = AsyncMock(
         return_value=SimpleNamespace(
-            images=("task-results/parent/last.png",),
+            images=(),
+            reference_video="task-results/parent/primary.mp4",
+            aspect_ratio="16:9",
             metadata={
                 "minimax_h3_prev_task_id": "parent",
                 "minimax_h3_chain_task_ids": ["root", "parent"],
@@ -99,7 +101,7 @@ async def test_minimax_h3_extension_uses_server_tail_and_inherits_contribution()
         )
     )
     req = TaskGenerateRequest(
-        task_type="minimax_h3_i2v",
+        task_type="minimax_h3_ref2v",
         prompt="continue walking",
         inputs={"minimax_h3_prev_task_id": "parent", "duration": 10},
     )
@@ -115,7 +117,8 @@ async def test_minimax_h3_extension_uses_server_tail_and_inherits_contribution()
         prepare_h3_extension_func=prepare_extension,
     )
 
-    assert prepared.images == ["task-results/parent/last.png"]
+    assert prepared.images == []
+    assert prepared.inputs["reference_video"] == "task-results/parent/primary.mp4"
     assert prepared.registry_metadata == {
         "minimax_h3_prev_task_id": "parent",
         "minimax_h3_chain_task_ids": ["root", "parent"],
@@ -124,7 +127,7 @@ async def test_minimax_h3_extension_uses_server_tail_and_inherits_contribution()
     prepare_extension.assert_awaited_once_with(
         prev_task_id="parent",
         internal_user_id=7,
-        target_task_type="minimax_h3_i2v",
+        target_task_type="minimax_h3_ref2v",
         client_images=[],
     )
 
@@ -230,6 +233,26 @@ async def test_minimax_h3_rejects_audio_ref_outside_ref2v():
     )
 
     with pytest.raises(CoreDomainError, match="参考图生视频"):
+        await prepare_web_submission_request(
+            req,
+            internal_user_id=7,
+            operator_canary_authorized=True,
+            env_enabled=lambda _name: True,
+            advanced_video_profile_loader=AsyncMock(
+                return_value={"main_model": "10eros", "addon_items": []}
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_rejects_client_supplied_reference_video_key():
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="continue",
+        inputs={"reference_video": "task-results/other-user/primary.mp4"},
+    )
+
+    with pytest.raises(CoreDomainError, match="不得直接指定 H3 参考视频"):
         await prepare_web_submission_request(
             req,
             internal_user_id=7,

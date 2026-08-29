@@ -147,11 +147,18 @@ export function useLabSubmitPayload({
 
     if (currentMode.value.id === 'minimax_h3') {
       const mode = minimaxH3Mode?.value ?? 't2v'
+      const isH3Extension = Boolean(h3PrevTaskId?.value)
       const images = uploadedReferences.value.map(item => item.key)
       const clientImages = h3PrevTaskId?.value
         ? uploadedReferences.value.filter(item => !item.locked).map(item => item.key)
         : images
-      const expected = mode === 't2v'
+      const expected = isH3Extension
+        ? mode === 'ref2v'
+          ? [0, 0]
+          : mode === 'flf2v'
+            ? [1, 1]
+            : [-1, -1]
+        : mode === 't2v'
         ? [0, 0]
         : mode === 'i2v'
           ? [1, 1]
@@ -188,7 +195,7 @@ export function useLabSubmitPayload({
           ...(h3PrevTaskId?.value
             ? { minimax_h3_prev_task_id: h3PrevTaskId.value }
             : {}),
-          ...(mode === 'i2v' || mode === 'flf2v'
+          ...(!isH3Extension && (mode === 'i2v' || mode === 'flf2v')
             ? {
                 source_width: uploadedReferences.value[0]?.width,
                 source_height: uploadedReferences.value[0]?.height,
@@ -196,7 +203,7 @@ export function useLabSubmitPayload({
                 end_source_height: uploadedReferences.value[1]?.height,
               }
             : {}),
-          ...(mode === 'ref2v'
+          ...(mode === 'ref2v' && !isH3Extension
             ? {
                 reference_refs: uploadedReferences.value.map(item => item.referenceRef ?? ({
                   source: 'upload' as const,

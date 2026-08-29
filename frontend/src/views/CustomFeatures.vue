@@ -215,7 +215,7 @@ const showPromptOptimizer = computed(() => (
               v-model:value="minimaxH3Mode"
               block
               :options="h3IsExtension ? [
-                { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
+                { label: t('lab.workbench.minimax_h3_extension_video_mode'), value: 'ref2v' },
                 { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
               ] : [
                 { label: t('lab.workbench.minimax_h3_modes.t2v'), value: 't2v' },
@@ -240,13 +240,13 @@ const showPromptOptimizer = computed(() => (
               </div>
             </div>
             <H3CharacterViewPicker
-              v-if="minimaxH3Mode === 'ref2v' && WEB_CHARACTER_LIBRARY_PICKER_ENABLED"
+              v-if="minimaxH3Mode === 'ref2v' && !h3IsExtension && WEB_CHARACTER_LIBRARY_PICKER_ENABLED"
               :references="uploadedReferences"
               :max-items="4"
               @select="addReference"
             />
             <H3ReferenceAudioUpload
-              v-if="minimaxH3Mode === 'ref2v'"
+              v-if="minimaxH3Mode === 'ref2v' && !h3IsExtension"
               :item="minimaxH3ReferenceAudio"
               :uploading="minimaxH3ReferenceAudioUploading"
               :before-upload="beforeUploadMinimaxH3ReferenceAudio"

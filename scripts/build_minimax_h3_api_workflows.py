@@ -126,6 +126,19 @@ def build(task_type: str) -> dict:
     else:
         workflow["25"] = _node("LoadAudio", audio="minimax_h3_reference_audio.m4a")
         workflow["30"]["inputs"]["ref_audios.ref_audio_0"] = ["25", 0]
+        workflow["26"] = _node(
+            "VHS_LoadVideo",
+            video="minimax_h3_reference_video.mp4",
+            force_rate=24,
+            custom_width=0,
+            custom_height=0,
+            frame_load_cap=120,
+            skip_first_frames=0,
+            select_every_nth=1,
+            format="None",
+        )
+        workflow["30"]["inputs"]["ref_videos.ref_video_0"] = ["26", 0]
+        workflow["30"]["inputs"]["ref_video_audios.ref_video_audio_0"] = ["26", 2]
     count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2, "minimax_h3_ref2v": 5}[
         task_type
     ]
