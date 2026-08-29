@@ -324,6 +324,21 @@ def test_pro_settings_show_current_credit_cost_and_option_prices(
     )
 
 
+def test_ref2v_settings_make_optional_voice_step_discoverable():
+    text = fsm._settings_text(
+        SimpleNamespace(lang="zh"),
+        {
+            "mode": "ref2v",
+            "duration": 5,
+            "preset": "preview",
+            "aspect": "16:9",
+        },
+    )
+
+    assert "完成参考图后可上传 1 个主角参考语音" in text
+    assert "填写提示词后立即生成" not in text
+
+
 @pytest.mark.parametrize(
     ("media_received", "expected_action"),
     [
@@ -395,6 +410,45 @@ async def test_ref2v_finish_references_offers_optional_main_character_voice(
         for button in row
     ]
     assert callbacks == ["avp_audio_skip"]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_reference_picker_labels_voice_as_the_next_step(monkeypatch):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/subject.png"),
+    )
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": [],
+                "reference_audio": None,
+            }
+        },
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=object())),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            photo=[SimpleNamespace(file_id="photo-id")],
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_image(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
+    buttons = [
+        button.text
+        for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "完成参考图，下一步添加语音" in buttons
+    assert "完成选图后进入可选参考语音步骤" in reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
