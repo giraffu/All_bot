@@ -95,14 +95,6 @@ def _history_count_cache_key(
     return (type_key, rating, is_public, worker_key, source or "", username_key)
 
 
-def _escape_like_query(value: str) -> str:
-    return (
-        value.replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
-
-
 def _build_history_filters(
     *,
     type: str | None,
@@ -130,8 +122,7 @@ def _build_history_filters(
         )
     normalized_username = (username or "").strip().lstrip("@")
     if normalized_username:
-        username_pattern = f"%{_escape_like_query(normalized_username)}%"
-        filters.append(User.username.ilike(username_pattern, escape="\\"))
+        filters.append(func.lower(User.username) == normalized_username.lower())
     qqcc_history = History.extra_outputs[QQCC_REGENERATE_CONTEXT_KEY].is_not(None)
     private_submission_exists = (
         select(1)

@@ -224,7 +224,7 @@ onBeforeUnmount(() => {
                 v-model:value="usernameInput"
                 data-testid="history-username-filter"
                 style="width: 160px"
-                placeholder="搜索用户名"
+                placeholder="输入完整用户名"
                 size="small"
                 allow-clear
                 @change="handleUsernameInputChange"

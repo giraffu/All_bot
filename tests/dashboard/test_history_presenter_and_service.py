@@ -475,7 +475,7 @@ async def test_get_all_history_payload_worker_filter_uses_exists_without_duplica
 
 
 @pytest.mark.asyncio
-async def test_get_all_history_payload_filters_by_partial_username_case_insensitively():
+async def test_get_all_history_payload_filters_by_exact_username_case_insensitively():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         for model in (User, History, WorkerLog):
@@ -491,6 +491,7 @@ async def test_get_all_history_payload_filters_by_partial_username_case_insensit
             [
                 User(id=123, username="GrayArtist", full_name="Gray"),
                 User(id=456, username="someone_else", full_name="Someone"),
+                User(id=789, username="GrayArtistExtra", full_name="Gray Extra"),
                 History(
                     user_id=123,
                     task_id="task-gray",
@@ -505,13 +506,20 @@ async def test_get_all_history_payload_filters_by_partial_username_case_insensit
                     output_file="other.png",
                     source="web",
                 ),
+                History(
+                    user_id=789,
+                    task_id="task-gray-extra",
+                    type="img2img",
+                    output_file="gray-extra.png",
+                    source="web",
+                ),
             ]
         )
         await db.commit()
 
         result = await history_service.get_all_history_payload(
             db=db,
-            username="gray",
+            username="grayartist",
             storage_service=_FakeStorage(),
             resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
         )

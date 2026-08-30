@@ -88,7 +88,7 @@ sequenceDiagram
 - Dashboard 的灵石消耗统计以 `user_logs` 账本为准：生成任务负向流水计入消耗，`refund%` 退款流水抵扣消耗；`history` 仅用于成功生成量、类型分布与小时分布，不再用“视频 6 / 图片 2”硬编码反推灵石。
 - Dashboard 历史生成页通过既有数据推导展示来源，不给 `history` 新增列：`web` / `bot` 直接来自 `History.source`，官方懒人 Bot 由 `History.extra_outputs._qqcc_regenerate` 识别，用户私有懒人 Bot 再通过 `PrivateBotTaskSubmission.registry_task_id` 关联并显示精确 `bot:qqcc-private:<id>`。`GET /api/history/all` 的 `source` 支持 `web`、`bot`、`bot:qqcc`、`bot:qqcc-private` 和精确私有 Bot client type；私有账本已按保留策略清理的陈旧记录不能反推出租户 ID，应按剩余历史标记降级展示。
 - Dashboard 历史生成页的分页记录保持实时查询；高成本精确总数使用 5 分钟进程内短缓存与 single-flight，并由 Dashboard 后台每 4 分钟预热默认无筛选总数。筛选组合首次使用时按精确口径计算后短缓存，因此总数最多短暂滞后 5 分钟，但不能缓存或延迟当前页记录。
-- Dashboard 历史生成页的 `GET /api/history/all` 支持 `username` 部分匹配；服务端对 `User.username` 做大小写不敏感查询，并把用户名纳入精确总数缓存键。前端提交搜索或清空搜索时回到第一页，继续使用服务端分页，不能只过滤浏览器当前页。
+- Dashboard 历史生成页的 `GET /api/history/all` 支持 `username` 精确匹配；服务端去除首尾空白和可选前导 `@`，再通过 `lower(username)` 索引做大小写不敏感查询，并把归一后的用户名纳入精确总数缓存键。前端提交搜索或清空搜索时回到第一页，继续使用服务端分页，不能只过滤浏览器当前页。
 - History 的类型筛选计数由 `history(type)` 索引承载；前端切换筛选时取消上一条未完成请求，避免旧响应覆盖当前选择。H3 参考图生视频按 `History.input_file` 的实际顺序逐项展示，并明确标记为“参考图 1/2…”，即使某个派生 URL 缺失也不能吞掉后续参考图。
 - Dashboard 历史集合在完成 SQL 查询后先结束只读事务，再通过 R2 S3 existence cache/singleflight 并发解析输出原件与缩略图；响应使用 `output_file_url` / `output_file_preview_url`，输入同时返回原件 `input_file_url` 与不做公网 HEAD 的文件级缩略图候选 `input_file_preview_url`。列表图片优先加载缩略图，点击后才显示原图；列表不得挂载原视频 `<video>`，无视频缩略图时显示占位符，管理员点击后才在当前页面弹窗加载带 controls 的原视频。缩略图缺失或对象存储异常只降级到原图/占位符，不能阻断历史接口。
 - 用户列表的“历史记录”弹窗使用 `GET /api/history/{user_id}` 的真实总数分页，
@@ -178,7 +178,7 @@ sequenceDiagram
   和 legacy JavaScript SFC 只减不增门禁
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。
 - 覆盖历史输出缩略图解析在 SQL 只读事务结束后执行、R2 缩略图异常降级，以及图片缩略图打开原图、视频列表不加载原件且点击后使用当前页弹窗播放。
-- 覆盖历史生成用户名部分匹配、路由参数透传、筛选总数隔离，以及前端搜索/清空后回到第一页。
+- 覆盖历史生成用户名大小写不敏感精确匹配、路由参数透传、筛选总数隔离，以及前端搜索/清空后回到第一页。
 - 覆盖 Dashboard RunPod 管理入口的 profile 校验、精确 slot add、手动批次并发/连续追加、Redis slot 原子预留与 autoscaler 互斥、逐 Pod 终止清理、旧 `desired_count` 兼容、worker pause/delete slot 解析，以及弹窗保持打开、slot 展示、最近操作分页、前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
