@@ -49,8 +49,8 @@ def test_minimax_h3_api_workflows_are_deterministic():
             }
             assert workflow["3"]["inputs"] == {
                 "model": ["2", 0],
-                "shift_video": 11.0,
-                "shift_audio": 4.0,
+                "shift_video": 12.0,
+                "shift_audio": 7.0,
             }
             assert workflow["30"]["class_type"] == "MiniMaxH3ReferenceToVideo"
             assert workflow["30"]["inputs"]["ref_image_size"] == "match"
@@ -60,7 +60,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
                 "inputs": {
                     "model": ["7", 0],
                     "scheduler": "simple",
-                    "steps": 7,
+                    "steps": 8,
                     "denoise": 1.0,
                 },
                 "class_type": "BasicScheduler",
@@ -263,12 +263,14 @@ def test_minimax_h3_patcher_keeps_10eros_ref2v_turbo_profile():
 
     assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA4_MODEL
     assert patched["30"]["inputs"]["ref_image_size"] == "match"
+    assert patched["3"]["inputs"]["shift_video"] == 12.0
+    assert patched["3"]["inputs"]["shift_audio"] == 7.0
     assert patched["33"]["inputs"]["sampler_name"] == "euler"
     assert patched["34"] == {
         "inputs": {
             "model": ["7", 0],
             "scheduler": "simple",
-            "steps": 7,
+            "steps": 8,
             "denoise": 1.0,
         },
         "class_type": "BasicScheduler",
