@@ -175,6 +175,7 @@ LTX_VIDEO_FLF2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_flf2v"
 LTX_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2"
 LTX_VIDEO_V2_FLF2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2_flf2v"
 LTX_VIDEO_V2V_AUDIO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2v_audio"
+LTX25_VIDEO_UPSCALE_ENDPOINT = f"{API_BASE}/api/v1/ltx25_video_upscale"
 LTX_T2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v"
 LTX_T2V_IC_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v_ic"
 MINIMAX_H3_ENDPOINTS = {

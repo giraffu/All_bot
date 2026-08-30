@@ -71,6 +71,7 @@
     "video_to_video_replacement": "🪄 视频换人",
     "video_to_video_action_transfer": "🕺 动作迁移",
     "video_to_video_action_transfer_long": "🕺 动作迁移",
+    "video_upscale": "✨ 视频高清化",
     "txt2img": "✨ 文生图",
     "i2i_pro": "🌟 幻想换脸",
     "free_edit": "🎨 自由P图",
@@ -877,6 +878,8 @@
       "high_res_video_v2_desc": "使用 LTX 10Eros v1.4 DMD，支持首帧或首尾帧，并可用视觉模型优化视频提示词。",
       "ltx_t2v_title": "文生视频",
       "ltx_t2v_desc": "直接描述画面、镜头、对白和环境音；可选人物参考表保持角色一致。",
+      "ltx25_video_upscale_title": "LTX-2.5 视频高清化",
+      "ltx25_video_upscale_desc": "上传最长 5 秒的视频，以生成式 IC V2V 保持动作和构图并放大 2 倍。",
       "minimax_h3_title": "高级图生视频pro",
       "minimax_h3_desc": "支持文生、首帧、首尾帧和角色参考四种视频模式。",
       "character_reference_title": "人物角色图",
@@ -963,21 +966,24 @@
         "target_image": "身体图片",
         "target_video": "身体视频",
         "reference_image": "参考图片",
-        "motion_video": "驱动视频"
+        "motion_video": "驱动视频",
+        "upscale_video": "待高清化视频"
       },
       "upload_slot_hints": {
         "face_image": "上传五官清晰的脸部图",
         "target_image": "上传要替换到的身体图",
         "target_video": "上传要替换到的身体视频",
         "reference_image": "上传要迁移或替换成的角色图片",
-        "motion_video": "上传提供动作、镜头和构图的短视频"
+        "motion_video": "上传提供动作、镜头和构图的短视频",
+        "upscale_video": "MP4/MOV/WebM，最长 5 秒、最大 40MB；输出宽高放大 2 倍"
       },
       "upload_slot_buttons": {
         "face_image": "添加脸部图",
         "target_image": "添加身体图",
         "target_video": "添加身体视频",
         "reference_image": "添加参考图",
-        "motion_video": "添加驱动视频"
+        "motion_video": "添加驱动视频",
+        "upscale_video": "添加视频"
       },
       "submit_image": "生成图片",
       "submit_video": "生成视频",
@@ -1068,6 +1074,7 @@
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
         "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
         "ltx_t2v": "描述画面、人物动作、镜头运动、对白与环境音，例如：雨夜街头，镜头缓慢推近，人物低声说话，远处传来车辆声。",
+        "ltx25_video_upscale": "可留空以严格保持原片；也可补充要增强的纹理和细节，避免描述新的动作或构图。",
         "minimax_h3": "描述画面、角色、镜头运动、对白和环境音；角色参考模式可用 Picture n 指代参考图。",
         "scail2_action_transfer": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
         "scail2_action_transfer_long": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
@@ -1081,7 +1088,8 @@
         "ltx_lora_limit": "最多只能选择 3 个附加模型"
         ,"minimax_h3_images": "当前高级图生视频pro模式的参考图数量不正确"
         ,"minimax_h3_descriptions": "请为每张角色参考图填写身份与外观说明"
-        ,"minimax_h3_frame_ratio": "尾帧比例需与首帧一致，请重新上传尾帧。"
+        ,"minimax_h3_frame_ratio": "尾帧比例需与首帧一致，请重新上传尾帧。",
+        "ltx25_video_too_long": "视频高清化首版只支持最长 5 秒的视频。"
       },
       "mode_kinds": {
         "image": "图像",
@@ -1235,6 +1243,7 @@
     "mode_scail2_action_transfer_long": "动作迁移",
     "mode_scail2_video_replacement": "视频换人",
     "mode_scail2_face_swap_v2": "视频换脸",
+    "mode_ltx25_video_upscale": "LTX-2.5 视频高清化",
     "mode_video_lora": "图生视频",
     "mode_template_contribute": "模板共建",
     "mode_none": "无模式",
@@ -1375,6 +1384,13 @@
       "invalid_duration": "⚠️ 当前模式不支持该时长，请重新开始。",
       "video_too_large": "⚠️ 驱动视频不能超过 {max_mb}MB，请压缩或裁剪后重新发送。",
       "submitting": "🚀 正在提交【{mode_name}】任务，时长 {duration} 秒，预计消耗 {cost} 灵石，请耐心等待..."
+    },
+    "ltx25_upscale": {
+      "disabled": "⚠️ 视频高清化节点尚未完成模型校验，暂未开放。",
+      "start": "✨ **已进入 LTX-2.5 视频高清化**\n\n请发送最长 5 秒、最大 {max_mb}MB 的 MP4/MOV/WebM 视频。输出宽高放大 2 倍，保留原音轨，预计消耗 {cost} 灵石。\n\n随时发送 /cancel 退出。",
+      "too_large": "⚠️ 视频不能超过 40MB，请压缩后重试。",
+      "too_long": "⚠️ 首版只支持最长 5 秒的视频，请裁剪后重试。",
+      "submitting": "🚀 视频已收到，正在提交 2 倍高清化任务，请耐心等待..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **已进入【幻想换脸】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送 1 张您的参考图片。\n\n随时可以发送 /cancel 退出流程。",

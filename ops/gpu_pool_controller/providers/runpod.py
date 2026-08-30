@@ -35,6 +35,13 @@ from ..runpod_profile_catalog import (
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_T2V_VOLUME_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD,
+    RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB,
     RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
     RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
     RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
@@ -67,6 +74,8 @@ from ..runpod_profile_catalog import (
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
+    RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX,
+    RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
@@ -81,6 +90,7 @@ from ..runpod_profile_catalog import (
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
@@ -156,6 +166,14 @@ __all__ = (
     "RUNPOD_LTX_T2V_MODEL_PREFIX",
     "RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES",
     "RUNPOD_LTX_T2V_VOLUME_GB",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES",
+    "RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB",
+    "RUNPOD_MINIMAX_H3_VOLUME_GB",
     "RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB",
     "RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD",
     "RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS",
@@ -180,6 +198,10 @@ __all__ = (
     "RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX",
     "RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX",
     "RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX",
+    "RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX",
+    "RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX",
+    "RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX",
+    "RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX",
     "RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX",
     "RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX",
     "RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX",
@@ -194,6 +216,7 @@ __all__ = (
     "RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE",
     "RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX",
+    "RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE",
@@ -421,6 +444,7 @@ class RunPodSettings:
     projected_cost_per_hr_scail2: float = 0.0
     projected_cost_per_hr_ltx_video: float = 0.0
     projected_cost_per_hr_ltx_t2v: float = 0.0
+    projected_cost_per_hr_ltx25_video_upscale: float = 0.0
     projected_cost_per_hr_minimax_h3: float = 0.0
     projected_cost_per_hr_pornmaster_flux2_edit: float = 0.0
     cloud_type: str = "SECURE"
@@ -437,6 +461,7 @@ class RunPodSettings:
     gpu_type_ids_scail2: tuple[str, ...] = RUNPOD_SCAIL2_GPU_TYPE_IDS
     gpu_type_ids_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
     gpu_type_ids_ltx_t2v: tuple[str, ...] = RUNPOD_LTX_T2V_GPU_TYPE_IDS
+    gpu_type_ids_ltx25_video_upscale: tuple[str, ...] = RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS
     gpu_type_ids_minimax_h3: tuple[str, ...] = RUNPOD_MINIMAX_H3_GPU_TYPE_IDS
     gpu_type_ids_pornmaster_flux2_edit: tuple[
         str, ...
@@ -446,6 +471,7 @@ class RunPodSettings:
     container_disk_gb_image_to_video: int = RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_video: int = RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_t2v: int = RUNPOD_LTX_T2V_CONTAINER_DISK_GB
+    container_disk_gb_ltx25_video_upscale: int = RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB
     container_disk_gb_minimax_h3: int = RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB
     min_download_mbps_minimax_h3: int = 0
     min_ram_per_gpu_minimax_h3: int = 0
@@ -465,6 +491,7 @@ class RunPodSettings:
     use_template_scail2: bool = False
     use_template_ltx_video: bool = False
     use_template_ltx_t2v: bool = False
+    use_template_ltx25_video_upscale: bool = False
     use_template_minimax_h3: bool = False
     use_template_pornmaster_flux2_edit: bool = False
     docker_start_cmd_img2img_lora: tuple[
@@ -477,6 +504,7 @@ class RunPodSettings:
     docker_start_cmd_scail2: tuple[str, ...] = RUNPOD_SCAIL2_DOCKER_START_CMD
     docker_start_cmd_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_DOCKER_START_CMD
     docker_start_cmd_ltx_t2v: tuple[str, ...] = RUNPOD_LTX_T2V_DOCKER_START_CMD
+    docker_start_cmd_ltx25_video_upscale: tuple[str, ...] = RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD
     docker_start_cmd_minimax_h3: tuple[str, ...] = RUNPOD_MINIMAX_H3_DOCKER_START_CMD
     docker_start_cmd_pornmaster_flux2_edit: tuple[
         str, ...
@@ -489,6 +517,7 @@ class RunPodSettings:
     template_id_scail2: str = ""
     template_id_ltx_video: str = ""
     template_id_ltx_t2v: str = ""
+    template_id_ltx25_video_upscale: str = ""
     template_id_minimax_h3: str = ""
     template_id_pornmaster_flux2_edit: str = ""
     image_name_img2img_lora: str = ""
@@ -499,6 +528,7 @@ class RunPodSettings:
     image_name_scail2: str = ""
     image_name_ltx_video: str = ""
     image_name_ltx_t2v: str = ""
+    image_name_ltx25_video_upscale: str = ""
     image_name_minimax_h3: str = ""
     image_name_pornmaster_flux2_edit: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
@@ -546,6 +576,8 @@ class RunPodSettings:
     task_type_workflow_overrides_ltx_video: str = RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
     model_prefix_ltx_t2v: str = RUNPOD_LTX_T2V_MODEL_PREFIX
     model_manifest_key_ltx_t2v: str = RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+    model_prefix_ltx25_video_upscale: str = RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
+    model_manifest_key_ltx25_video_upscale: str = RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
     model_prefix_minimax_h3: str = RUNPOD_MINIMAX_H3_MODEL_PREFIX
     model_manifest_key_minimax_h3: str = RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
     model_prefix_pornmaster_flux2_edit: str = (
@@ -664,6 +696,10 @@ class RunPodSettings:
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_LTX_T2V"),
                 default=0.0,
             ),
+            projected_cost_per_hr_ltx25_video_upscale=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_LTX25_VIDEO_UPSCALE"),
+                default=0.0,
+            ),
             projected_cost_per_hr_minimax_h3=_float_env(
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3"),
                 default=0.0,
@@ -713,6 +749,11 @@ class RunPodSettings:
                 default=cls.gpu_type_ids_ltx_t2v,
             )
             or RUNPOD_LTX_T2V_GPU_TYPE_IDS,
+            gpu_type_ids_ltx25_video_upscale=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_LTX25_VIDEO_UPSCALE"),
+                default=cls.gpu_type_ids_ltx25_video_upscale,
+            )
+            or RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
             gpu_type_ids_minimax_h3=_csv(
                 os.getenv("RUNPOD_GPU_TYPE_IDS_MINIMAX_H3"),
                 default=cls.gpu_type_ids_minimax_h3,
@@ -739,6 +780,10 @@ class RunPodSettings:
             container_disk_gb_ltx_t2v=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_LTX_T2V"),
                 default=RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
+            ),
+            container_disk_gb_ltx25_video_upscale=_int_env(
+                os.getenv("RUNPOD_CONTAINER_DISK_GB_LTX25_VIDEO_UPSCALE"),
+                default=RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
             ),
             container_disk_gb_minimax_h3=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_MINIMAX_H3"),
@@ -793,6 +838,10 @@ class RunPodSettings:
             ),
             use_template_ltx_t2v=_bool_env(
                 os.getenv("RUNPOD_USE_TEMPLATE_LTX_T2V"),
+                default=False,
+            ),
+            use_template_ltx25_video_upscale=_bool_env(
+                os.getenv("RUNPOD_USE_TEMPLATE_LTX25_VIDEO_UPSCALE"),
                 default=False,
             ),
             use_template_pornmaster_flux2_edit=_bool_env(
@@ -857,6 +906,13 @@ class RunPodSettings:
                 json_env_name="RUNPOD_DOCKER_START_CMD_JSON_LTX_T2V",
             )
             or RUNPOD_LTX_T2V_DOCKER_START_CMD,
+            docker_start_cmd_ltx25_video_upscale=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_LTX25_VIDEO_UPSCALE"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_LTX25_VIDEO_UPSCALE"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_LTX25_VIDEO_UPSCALE"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_LTX25_VIDEO_UPSCALE",
+            )
+            or RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD,
             docker_start_cmd_pornmaster_flux2_edit=_docker_start_cmd_env(
                 os.getenv("RUNPOD_DOCKER_START_CMD_JSON_PORNMASTER_FLUX2_EDIT"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_PORNMASTER_FLUX2_EDIT"),
@@ -875,6 +931,7 @@ class RunPodSettings:
             template_id_scail2=os.getenv("RUNPOD_TEMPLATE_ID_SCAIL2", ""),
             template_id_ltx_video=os.getenv("RUNPOD_TEMPLATE_ID_LTX_VIDEO", ""),
             template_id_ltx_t2v=os.getenv("RUNPOD_TEMPLATE_ID_LTX_T2V", ""),
+            template_id_ltx25_video_upscale=os.getenv("RUNPOD_TEMPLATE_ID_LTX25_VIDEO_UPSCALE", ""),
             template_id_minimax_h3=os.getenv("RUNPOD_TEMPLATE_ID_MINIMAX_H3", ""),
             template_id_pornmaster_flux2_edit=os.getenv(
                 "RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
@@ -888,6 +945,7 @@ class RunPodSettings:
             image_name_scail2=os.getenv("RUNPOD_IMAGE_NAME_SCAIL2", ""),
             image_name_ltx_video=os.getenv("RUNPOD_IMAGE_NAME_LTX_VIDEO", ""),
             image_name_ltx_t2v=os.getenv("RUNPOD_IMAGE_NAME_LTX_T2V", ""),
+            image_name_ltx25_video_upscale=os.getenv("RUNPOD_IMAGE_NAME_LTX25_VIDEO_UPSCALE", ""),
             image_name_minimax_h3=os.getenv("RUNPOD_IMAGE_NAME_MINIMAX_H3", ""),
             image_name_pornmaster_flux2_edit=os.getenv(
                 "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
@@ -1046,6 +1104,14 @@ class RunPodSettings:
                 global_model_manifest_key
                 if global_model_manifest_key.startswith("ltx_t2v/")
                 else RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+            ),
+            model_prefix_ltx25_video_upscale=os.getenv(
+                "RUNPOD_MODEL_PREFIX_LTX25_VIDEO_UPSCALE",
+                RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+            ),
+            model_manifest_key_ltx25_video_upscale=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_LTX25_VIDEO_UPSCALE",
+                RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
             ),
             model_prefix_minimax_h3=os.getenv(
                 "RUNPOD_MODEL_PREFIX_MINIMAX_H3",

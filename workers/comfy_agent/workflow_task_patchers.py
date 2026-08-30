@@ -2,6 +2,11 @@ import os
 import re
 from typing import Any, Callable
 
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT,
+    normalize_ltx25_video_upscale_duration,
+    normalize_ltx25_video_upscale_prompt,
+)
 from src.domain_config.scail2_video import (
     SCAIL2_FIXED_HEIGHT,
     SCAIL2_FIXED_WIDTH,
@@ -492,6 +497,53 @@ def patch_ltx_video_v2v_audio_workflow(
         )
 
 
+def patch_ltx25_video_upscale_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    set_node_input: Callable[..., None],
+    execution_id: str | None = None,
+    **_: Any,
+) -> None:
+    """Lock the isolated LTX-2.5 IC V2V graph to its supported v1 contract."""
+    source_video = str(params.get("video") or "").strip()
+    if not source_video:
+        raise ValueError("LTX-2.5 视频高清化缺少输入视频。")
+    normalize_ltx25_video_upscale_duration(
+        params.get("length", params.get("duration"))
+    )
+    prompt = normalize_ltx25_video_upscale_prompt(params.get("prompt"))
+    negative_prompt = str(
+        params.get("negative_prompt") or LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT
+    ).strip()
+    seed = int(params.get("seed") or 1)
+
+    for node_id, input_name, value in (
+        ("5001", "file", source_video),
+        ("5508", "value", prompt),
+        ("5509", "value", negative_prompt),
+        ("5516:4832", "noise_seed", seed),
+        ("5004:5606", "strength_model", 1.0),
+    ):
+        set_node_input(
+            workflow,
+            node_id=node_id,
+            input_name=input_name,
+            value=value,
+        )
+
+    safe_execution_id = re.sub(
+        r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")
+    ).strip("_")
+    output_prefix = "ltx25_video_upscale"
+    if safe_execution_id:
+        output_prefix = f"{output_prefix}_{safe_execution_id}"
+    set_node_input(
+        workflow,
+        node_id="4852",
+        input_name="filename_prefix",
+        value=output_prefix,
+    )
 def _patch_ltx_t2v_workflow(
     workflow: dict[str, Any],
     *,
@@ -1753,6 +1805,7 @@ TASK_SPECIFIC_PATCHERS = {
     "ltx_video": patch_ltx_video_workflow,
     "ltx_video_flf2v": patch_ltx_video_flf2v_workflow,
     "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,
+    "ltx25_video_upscale": patch_ltx25_video_upscale_workflow,
     "ltx_t2v": patch_ltx_t2v_workflow,
     "ltx_t2v_ic": patch_ltx_t2v_ic_workflow,
     "minimax_h3_t2v": patch_minimax_h3_workflow,

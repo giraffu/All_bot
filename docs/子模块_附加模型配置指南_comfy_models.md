@@ -397,3 +397,11 @@ LTXVideo 与 custom-node revision，烘焙八类 profile 的 workflow/runtime，
 同路径 checksum 冲突、对象校验失败、LAN override 缺失或剩余磁盘不足时不写
 ready marker 并拒绝启动。`all`、`all_runtime_refresh` 与 `scail2_flex` 直接复制
 同一份公共实现，不再在镜像构建期应用 profile 私有补丁。
+
+### 6. LTX-2.5 IC V2V 视频高清化
+
+`ltx25_video_upscale` 使用独立 workflow、mapping、patcher、模型 bundle 和
+RunPod profile，禁止并入 H3 或既有 LTX profile。它固定官方 Pixel Spatial
+Upscaler x2 IC-LoRA 强度为 1.0，输入由 Worker 规范化为 24fps/121 帧/Div64，
+最终复用源音轨。完整契约和 gated 模型准备入口见
+`docs/子模块_LTX25视频高清化_ltx25_video_upscale.md`。

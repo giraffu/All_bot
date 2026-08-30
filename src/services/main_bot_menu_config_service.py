@@ -37,6 +37,7 @@ SUBMENU_KEYS = {
     "menu.video_to_video": (
         "menu.video_to_video_replacement",
         "menu.video_to_video_action_transfer",
+        "menu.video_upscale",
         "menu.face_video",
     ),
 }
@@ -53,7 +54,10 @@ DEFAULT_MAIN_BOT_MENU_CONFIG: dict[str, Any] = {
         ],
     },
     "submenus": {
-        parent_key: [{"key": key, "visible": True} for key in item_keys]
+        parent_key: [
+            {"key": key, "visible": key != "menu.video_upscale"}
+            for key in item_keys
+        ]
         for parent_key, item_keys in SUBMENU_KEYS.items()
     },
 }
@@ -81,14 +85,14 @@ def _normalize_items(raw: Any, allowed_keys: tuple[str, ...]) -> list[dict[str, 
                 "key": key,
                 "visible": item.get("visible")
                 if isinstance(item.get("visible"), bool)
-                else True,
+                else key != "menu.video_upscale",
             }
         )
 
     normalized.extend(
         {
             "key": key,
-            "visible": key != "menu.advanced_video_pro",
+            "visible": key not in {"menu.advanced_video_pro", "menu.video_upscale"},
         }
         for key in allowed_keys
         if key not in seen

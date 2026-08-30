@@ -24,6 +24,7 @@ from config import (
     LTX_VIDEO_V2_FLF2V_ENDPOINT,
     LTX_VIDEO_ENDPOINT,
     LTX_VIDEO_V2V_AUDIO_ENDPOINT,
+    LTX25_VIDEO_UPSCALE_ENDPOINT,
     LTX_T2V_ENDPOINT,
     LTX_T2V_IC_ENDPOINT,
     MINIMAX_H3_ENDPOINTS,
@@ -1004,6 +1005,30 @@ class APIClient:
             "POST",
             endpoint,
             json=data,
+            circuit_breaker_key="submit",
+        )
+        return response.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_ltx25_video_upscale(
+        self,
+        task_id: str,
+        *,
+        video_path: str,
+        prompt: str,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        response = await self._request(
+            "POST",
+            LTX25_VIDEO_UPSCALE_ENDPOINT,
+            json={
+                "task_id": task_id,
+                "video": video_path,
+                "prompt": prompt,
+                "length": length,
+                "priority": priority,
+            },
             circuit_breaker_key="submit",
         )
         return response.json()["task_id"]

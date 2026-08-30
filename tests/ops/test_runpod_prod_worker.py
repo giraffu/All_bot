@@ -24,11 +24,12 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
-    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
-    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
-    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
@@ -42,6 +43,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
@@ -73,6 +75,9 @@ PUBLIC_I2I_PRO_GHCR_IMAGE = (
 PUBLIC_SCAIL2_GHCR_IMAGE = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
 PUBLIC_LTX_VIDEO_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 PUBLIC_LTX_T2V_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX + "main-sha"
+PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE = (
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX + "main-sha"
+)
 PUBLIC_MINIMAX_H3_GHCR_IMAGE = (
     RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX.removesuffix(":") + "@sha256:" + "e" * 64
 )
@@ -371,6 +376,7 @@ def _settings(**overrides) -> RunPodSettings:
         "image_name_scail2": PUBLIC_SCAIL2_GHCR_IMAGE,
         "image_name_ltx_video": PUBLIC_LTX_VIDEO_GHCR_IMAGE,
         "image_name_ltx_t2v": PUBLIC_LTX_T2V_GHCR_IMAGE,
+        "image_name_ltx25_video_upscale": PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE,
         "image_name_minimax_h3": PUBLIC_MINIMAX_H3_GHCR_IMAGE,
         "image_name_pornmaster_flux2_edit": PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
@@ -846,6 +852,52 @@ def test_prod_worker_render_ltx_t2v_is_registered_but_disabled_by_default():
     assert payload["render"]["pool_runtime_profile"] == "ltx_t2v"
     assert payload["render"]["model_manifest_key"] == RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
     assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_T2V_CONTAINER_DISK_GB
+    assert provider.create_calls == 0
+
+
+def test_prod_worker_render_ltx25_upscale_is_isolated_and_disabled_by_default():
+    agent_id = prod_agent_id_from_slot("01", profile="ltx25_video_upscale")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_ltx25_video_upscale=PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_ltx25_video_upscale=RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+            model_manifest_key_ltx25_video_upscale=(
+                RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+            ),
+        )
+    )
+    payload = RunPodProdWorkerRunner(
+        provider,
+        RunPodProdWorkerOptions(
+            action="render",
+            profile="ltx25_video_upscale",
+            task_type="ltx25_video_upscale",
+            agent_id=agent_id,
+            quiet=True,
+        ),
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "ltx25_video_upscale"
+    assert (
+        payload["render"]["pod_name"]
+        == "allbot-runpod-prod-ltx25-video-upscale-manual-01"
+    )
+    assert payload["render"]["imageName"] == PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "ltx25_video_upscale"
+    assert (
+        payload["render"]["model_manifest_key"]
+        == RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+    )
+    assert (
+        payload["render"]["container_disk_gb"]
+        == RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB
+    )
     assert provider.create_calls == 0
 
 

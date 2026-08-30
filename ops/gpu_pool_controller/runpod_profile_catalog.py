@@ -19,6 +19,8 @@ RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX = "runpod_prod_ltx_video_manual_"
 RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-video-manual-"
 RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX = "runpod_prod_ltx_t2v_manual_"
 RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-t2v-manual-"
+RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX = "runpod_prod_ltx25_video_upscale_manual_"
+RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX = "allbot-runpod-prod-ltx25-video-upscale-manual-"
 RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX = "runpod_prod_minimax_h3_manual_"
 RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX = "allbot-runpod-prod-minimax-h3-manual-"
 RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX = (
@@ -64,6 +66,9 @@ RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:"
 )
 RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-ltx-t2v:"
+RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX = (
+    "ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:"
+)
 RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-minimax-h3:"
 RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:"
@@ -183,6 +188,18 @@ RUNPOD_LTX_T2V_CONTAINER_DISK_GB = 180
 RUNPOD_LTX_T2V_VOLUME_GB = 100
 RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES = ("ltx_t2v", "ltx_t2v_ic")
 RUNPOD_LTX_T2V_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
+RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS = (
+    "NVIDIA GeForce RTX 5090",
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+)
+RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX = "ltx25_video_upscale/2026-08-31-int8-ic-v1"
+RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY = (
+    "ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json"
+)
+RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB = 100
+RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB = 60
+RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES = ("ltx25_video_upscale",)
+RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 RUNPOD_MINIMAX_H3_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
 RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
@@ -335,6 +352,15 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_LTX_T2V",
         image_env_key="RUNPOD_IMAGE_NAME_LTX_T2V",
     ),
+    "ltx25_video_upscale": RunPodTaskProfile(
+        task_type="ltx25_video_upscale",
+        supported_task_types=RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
+        runtime_profile="ltx25_video_upscale",
+        agent_id_prefix="runpod_test_ltx25_video_upscale",
+        template_env_key="RUNPOD_TEMPLATE_ID_LTX25_VIDEO_UPSCALE",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_LTX25_VIDEO_UPSCALE",
+        image_env_key="RUNPOD_IMAGE_NAME_LTX25_VIDEO_UPSCALE",
+    ),
     "minimax_h3": RunPodTaskProfile(
         task_type="minimax_h3",
         supported_task_types=RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
@@ -405,6 +431,12 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
         "profile": "ltx_t2v",
         "label": "ltx_t2v / Sulphur + Ingredients",
         "supported_task_types": list(RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES),
+        "autoscaler_enabled": False,
+    },
+    {
+        "profile": "ltx25_video_upscale",
+        "label": "LTX-2.5 IC V2V / 视频高清化",
+        "supported_task_types": list(RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES),
         "autoscaler_enabled": False,
     },
     {
@@ -506,6 +538,8 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "ltx_video"
     if value == "ltx_t2v":
         return "ltx_t2v"
+    if value == "ltx25_video_upscale":
+        return "ltx25_video_upscale"
     if value == "minimax_h3":
         return "minimax_h3"
     if value == "pornmaster_flux2_edit_bf16":
@@ -533,6 +567,8 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "ltx_video"
     if value in RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES:
         return "ltx_t2v"
+    if value in RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES:
+        return "ltx25_video_upscale"
     if value == "minimax_h3":
         return "minimax_h3"
     if value in RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES:
@@ -566,6 +602,8 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         return "ltx_video"
     if raw.startswith(RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX):
         return "ltx_t2v"
+    if raw.startswith(RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX):
+        return "ltx25_video_upscale"
     if raw.startswith(RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX):
         return "minimax_h3"
     if raw.startswith(RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX):
@@ -601,6 +639,8 @@ def prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX
     if profile_key == "ltx_t2v":
         return RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX
+    if profile_key == "ltx25_video_upscale":
+        return RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX
     if profile_key == "minimax_h3":
         return RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX
     if profile_key == "pornmaster_flux2_edit_bf16":
@@ -622,6 +662,8 @@ def prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX
     if profile_key == "ltx_t2v":
         return RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX
+    if profile_key == "ltx25_video_upscale":
+        return RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX
     if profile_key == "minimax_h3":
         return RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX
     if profile_key == "pornmaster_flux2_edit_bf16":

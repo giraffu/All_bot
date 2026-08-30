@@ -578,6 +578,30 @@ describe('useLabSubmitPayload', () => {
     }, 'lab.cards.scail2_face_swap_v2_title')
   })
 
+  it('builds an isolated LTX-2.5 video upscale payload', async () => {
+    const harness = createHarness('ltx25_video_upscale')
+    harness.uploadedSlotAssets.value = {
+      target_video: {
+        ...slotAsset('h3.mp4', 'video'),
+        durationSeconds: 4.9,
+      },
+    }
+    harness.prompt.value = 'preserve exact identity and motion'
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith({
+      task_type: 'ltx25_video_upscale',
+      inputs: {
+        images: ['h3.mp4'],
+        duration: 5,
+        prompt: 'preserve exact identity and motion',
+      },
+      priority: 0,
+      is_template: false,
+    }, 'lab.cards.ltx25_video_upscale_title')
+  })
+
   it('builds merged long SCAIL-2 action transfer payloads from structured slots', async () => {
     const harness = createHarness('scail2_action_transfer')
     harness.uploadedSlotAssets.value = {

@@ -39,6 +39,33 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
     assert patcher.load_workflow("img2img") is not None
 
 
+def test_ltx25_video_upscale_patcher_locks_source_prompt_seed_and_output():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("ltx25_video_upscale")
+
+    patched = patcher.patch_workflow(
+        "ltx25_video_upscale",
+        workflow,
+        {
+            "video": "source-5s.mp4",
+            "prompt": "preserve the same adult subject and motion",
+            "seed": 20260831,
+        },
+        execution_id="backend-upscale-1",
+    )
+
+    assert patched["5001"]["inputs"]["file"] == "source-5s.mp4"
+    assert patched["5508"]["inputs"]["value"] == (
+        "preserve the same adult subject and motion"
+    )
+    assert patched["5516:4832"]["inputs"]["noise_seed"] == 20260831
+    assert patched["4852"]["inputs"]["filename_prefix"] == (
+        "ltx25_video_upscale_backend-upscale-1"
+    )
+    assert patched["5004:5606"]["inputs"]["strength_model"] == 1.0
+    assert patched["5516:4984"]["inputs"]["sigmas"].count(",") == 8
+
+
 def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     workflow = patcher.load_workflow("ltx_t2v")

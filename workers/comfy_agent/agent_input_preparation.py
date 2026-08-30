@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 import glob
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -80,6 +81,107 @@ def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
         detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:]
         output.unlink(missing_ok=True)
         raise RuntimeError(f"Failed to trim H3 reference video: {detail or 'ffmpeg failed'}")
+    return str(output)
+
+
+def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
+    """Create the fixed 5s/24fps/121-frame, Div64 input required by LTX-2.5."""
+    if param_key != "video":
+        return local_path
+    source = Path(local_path)
+    output = source.with_name(f"{source.stem}__ltx25_5s_24fps.mp4")
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type:format=duration",
+                "-of",
+                "json",
+                str(source),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+        )
+        if probe.returncode != 0:
+            raise RuntimeError(
+                probe.stderr.decode("utf-8", errors="replace").strip()
+                or "ffprobe failed"
+            )
+        probe_payload = json.loads(probe.stdout.decode("utf-8"))
+        streams = probe_payload.get("streams", [])
+        duration = float(probe_payload.get("format", {}).get("duration") or 0)
+        if duration > 5.1:
+            raise ValueError("source video exceeds the 5 second limit")
+        has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+        ]
+        if not has_audio:
+            command.extend(
+                ["-f", "lavfi", "-i", "anullsrc=r=32000:cl=stereo"]
+            )
+        command.extend(
+            [
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0" if has_audio else "1:a:0",
+                "-vf",
+                (
+                    "fps=24,"
+                    "scale='max(64,trunc(iw/64)*64)':'max(64,trunc(ih/64)*64)':"
+                    "flags=lanczos,setsar=1,"
+                    "tpad=stop_mode=clone:stop_duration=5.1"
+                ),
+                "-frames:v",
+                "121",
+                "-t",
+                "5.041667",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ar",
+                "32000",
+                "-ac",
+                "2",
+                "-shortest",
+                str(output),
+            ]
+        )
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=180,
+        )
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+        output.unlink(missing_ok=True)
+        raise RuntimeError(f"Failed to normalize LTX-2.5 upscale input: {exc}") from exc
+    if result.returncode != 0 or not output.is_file() or output.stat().st_size <= 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:]
+        output.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to normalize LTX-2.5 upscale input: {detail or 'ffmpeg failed'}"
+        )
     return str(output)
 
 

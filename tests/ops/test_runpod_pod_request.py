@@ -15,8 +15,6 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
-    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
-    RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -44,6 +42,7 @@ I2I_PRO_IMAGE = (
 SCAIL2_IMAGE = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
 LTX_VIDEO_IMAGE = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 LTX_T2V_IMAGE = "ghcr.io/giraffu/allbot-gpu-ltx-t2v:main-sha"
+LTX25_UPSCALE_IMAGE = "ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:main-sha"
 PORNMASTER_FLUX2_EDIT_IMAGE = (
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
     + "20260701-pornmaster-flux2-edit"
@@ -60,6 +59,7 @@ def _settings_for_profile(profile: str) -> RunPodSettings:
         image_name_scail2=SCAIL2_IMAGE,
         image_name_ltx_video=LTX_VIDEO_IMAGE,
         image_name_ltx_t2v=LTX_T2V_IMAGE,
+        image_name_ltx25_video_upscale=LTX25_UPSCALE_IMAGE,
         image_name_pornmaster_flux2_edit=PORNMASTER_FLUX2_EDIT_IMAGE,
         model_prefix_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
         model_manifest_key_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
@@ -89,6 +89,7 @@ def test_pod_request_builder_matches_provider_render_for_prod_profiles():
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
         ("ltx_t2v", "ltx_t2v"),
+        ("ltx25_video_upscale", "ltx25_video_upscale"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ]
     for task_type, profile in cases:
@@ -115,6 +116,7 @@ def test_future_runpod_requests_reserve_one_prefetched_task_for_every_profile():
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
         ("ltx_t2v", "ltx_t2v"),
+        ("ltx25_video_upscale", "ltx25_video_upscale"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ]
 

@@ -5,11 +5,18 @@ from telegram.ext import ContextTypes
 
 from src.constants import (
     MODE_FACE_VIDEO_STEP1,
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_NAME_MAP,
     MODE_SCAIL2_ACTION_TRANSFER,
     MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
+)
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_COST,
+    LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+    LTX25_VIDEO_UPSCALE_FACTOR,
+    normalize_ltx25_video_upscale_prompt,
 )
 from src.core.video_billing import normalize_requested_duration_seconds
 from src.domain_config.scail2_video import (
@@ -426,6 +433,104 @@ async def process_scail2_video_task(
                 unexpected_error_log_message=build_unexpected_error_log_message(
                     "scail2 video task",
                     verb="processing",
+                ),
+                unexpected_error_prefix="系统错误",
+            ),
+        )
+    )
+
+
+async def process_ltx25_video_upscale_task(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    video_path: str,
+    prompt: str = "",
+    message_id: int | None = None,
+    cleanup: bool = True,
+):
+    internal_user_id = await resolve_internal_user_id(user_id, username)
+    normalized_prompt = normalize_ltx25_video_upscale_prompt(prompt)
+    mode_name = translate_context_text(
+        context, MODE_NAME_MAP[MODE_LTX25_VIDEO_UPSCALE]
+    )
+    runtime_state = BotTaskRuntimeState(actual_cost=LTX25_VIDEO_UPSCALE_COST)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
+    duration_label = f"{LTX25_VIDEO_UPSCALE_DURATION_SECONDS}s"
+    resolution_label = f"{LTX25_VIDEO_UPSCALE_FACTOR}x"
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
+            translate_context_text(
+                context,
+                "task.status_processing_mode_with_settings",
+                mode_name=mode_name,
+                resolution=resolution_label,
+                duration=duration_label,
+            ),
+            notice=notice,
+        ),
+        progress_wait_text=translate_context_text(
+            context, "task.status_wait_generating_video"
+        ),
+        completion_caption=translate_context_text(
+            context, "task.status_completion_mode", mode_name=mode_name
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_output_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
+    )
+    inputs = build_task_inputs(
+        prompt=normalized_prompt,
+        images=[video_path],
+        duration=LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+    )
+    return await run_bot_task_application(
+        flow=build_bot_task_flow_context(
+            context=context,
+            chat_id=chat_id,
+            status_msg_id=message_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=MODE_LTX25_VIDEO_UPSCALE,
+            inputs=inputs,
+            prompt=normalized_prompt,
+            is_video=True,
+            deduct_quota=True,
+            cost_override=LTX25_VIDEO_UPSCALE_COST,
+            user_cancel_allowed=True,
+            allow_cancel=True,
+            send_result=True,
+            record_history=True,
+            message_spec=message_spec,
+            submitted_status_builder=build_translated_cost_status_builder(
+                context,
+                "task.status_submitted_mode_with_settings",
+                notice=notice,
+                mode_name=mode_name,
+                resolution=resolution_label,
+                duration=duration_label,
+            ),
+            prefer_edit_status=True,
+            billing_resolution=resolution_label,
+            requested_duration=LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+            cleanup=cleanup,
+            cleanup_paths=build_cleanup_paths([video_path]),
+            runtime_state=runtime_state,
+            task_label="ltx25 video upscale task",
+            failure_policy=BotTaskFailurePolicy(
+                unexpected_should_refund=lambda state: (
+                    state.task_submitted and state.actual_cost > 0
+                ),
+                unexpected_error_log_message=build_unexpected_error_log_message(
+                    "ltx25 video upscale task", verb="processing"
                 ),
                 unexpected_error_prefix="系统错误",
             ),

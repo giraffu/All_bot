@@ -45,8 +45,9 @@ def test_default_main_bot_menu_config_matches_current_menu_catalog():
         ],
         "menu.video_to_video": [
             {"key": "menu.video_to_video_replacement", "visible": True},
-            {"key": "menu.video_to_video_action_transfer", "visible": True},
-            {"key": "menu.face_video", "visible": True},
+                {"key": "menu.video_to_video_action_transfer", "visible": True},
+                {"key": "menu.video_upscale", "visible": False},
+                {"key": "menu.face_video", "visible": True},
         ],
     }
     assert MAIN_BOT_MENU_CONFIG_KEY == "main_bot_menu_config:v1"

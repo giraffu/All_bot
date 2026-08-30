@@ -8,6 +8,23 @@ from src.domain_config.wan22_aio_video import (
 
 
 class ImageService:
+    async def submit_ltx25_video_upscale_task(
+        self,
+        task_id: str,
+        *,
+        video_path: str,
+        prompt: str,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        return await api_client.submit_ltx25_video_upscale(
+            task_id,
+            video_path=video_path,
+            prompt=prompt,
+            length=length,
+            priority=priority,
+        )
+
     async def submit_minimax_h3_task(
         self,
         task_id: str,

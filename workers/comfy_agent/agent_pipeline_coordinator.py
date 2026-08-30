@@ -201,6 +201,7 @@ class AgentPipelineCoordinator:
             await self.agent._cancel_prefetch_task()
             await self.agent._prepare_task_inputs(
                 params=params,
+                task_type=task_type,
                 downloaded_input_paths=downloaded_input_paths,
                 uploaded_input_artifacts=comfy_input_artifacts,
                 comfy_filename_prefix=task_id,

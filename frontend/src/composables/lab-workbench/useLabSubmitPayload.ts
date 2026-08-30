@@ -145,6 +145,30 @@ export function useLabSubmitPayload({
       return
     }
 
+    if (currentMode.value.id === 'ltx25_video_upscale') {
+      const video = uploadedSlotAssets.value.target_video
+      if (!video?.key) {
+        message.warning(t('lab.workbench.validation.upload_slots_required'))
+        return
+      }
+      if (
+        typeof video.durationSeconds === 'number'
+        && video.durationSeconds > 5.1
+      ) {
+        message.warning(t('lab.workbench.validation.ltx25_video_too_long'))
+        return
+      }
+      await submitAndTrack(buildGenerationTaskPayload({
+        taskType: 'ltx25_video_upscale',
+        images: [video.key],
+        duration: 5,
+        prompt: prompt.value,
+        promptTarget: 'inputs',
+        isTemplate: false,
+      }))
+      return
+    }
+
     if (currentMode.value.id === 'minimax_h3') {
       const mode = minimaxH3Mode?.value ?? 't2v'
       const isH3Extension = Boolean(h3PrevTaskId?.value)

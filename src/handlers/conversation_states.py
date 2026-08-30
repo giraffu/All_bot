@@ -10,6 +10,10 @@ class Scail2VideoState(IntEnum):
     WAIT_DURATION = auto()
 
 
+class Ltx25VideoUpscaleState(IntEnum):
+    WAIT_VIDEO = auto()
+
+
 class EditImageState(IntEnum):
     """自由P图/幻想换脸流程的状态枚举"""
 

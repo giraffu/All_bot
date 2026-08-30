@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
     BotoConfig = None
 from agent_input_preparation import (
     prepare_h3_reference_video_tail,
+    prepare_ltx25_video_upscale_input,
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
 )
@@ -887,7 +888,11 @@ class ComfyAgent:
         img_filename: str,
         param_key: str,
         comfy_input_dir: str = COMFY_INPUT_DIR,
+        task_type: str | None = None,
     ) -> None:
+        prepare_input_file_func = prepare_h3_reference_video_tail
+        if task_type == "ltx25_video_upscale":
+            prepare_input_file_func = prepare_ltx25_video_upscale_input
         await process_agent_single_input_asset(
             params=params,
             downloaded_input_paths=downloaded_input_paths,
@@ -899,7 +904,7 @@ class ComfyAgent:
             download_input_func=self.download_input_from_minio,
             should_normalize_image_input_func=self._should_normalize_image_input,
             normalize_input_image_func=self._normalize_input_image_for_comfy,
-            prepare_input_file_func=prepare_h3_reference_video_tail,
+            prepare_input_file_func=prepare_input_file_func,
             upload_prepared_input_func=self._upload_prepared_input,
             logger=logger,
             download_timeout_seconds=MINIO_DOWNLOAD_TIMEOUT_SECONDS,
@@ -915,6 +920,7 @@ class ComfyAgent:
         uploaded_input_artifacts: list[Any] | None = None,
         comfy_filename_prefix: str = "",
         comfy_input_dir: str = COMFY_INPUT_DIR,
+        task_type: str | None = None,
     ) -> None:
         async def process_with_input_dir(**kwargs):
             await self._process_single_input_asset(
@@ -922,6 +928,7 @@ class ComfyAgent:
                 comfy_input_dir=comfy_input_dir,
                 uploaded_input_artifacts=uploaded_input_artifacts,
                 comfy_filename_prefix=comfy_filename_prefix,
+                task_type=task_type,
             )
 
         await prepare_agent_task_inputs(

@@ -12,6 +12,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_MINIMAX_H3_FLF2V,
     MODE_MINIMAX_H3_I2V,
     MODE_MINIMAX_H3_REF2V,
@@ -33,6 +34,7 @@ from src.core.task_dispatcher import (
     BaseVideoStrategy,
     DefaultImageStrategy,
     FaceSwapStrategy,
+    Ltx25VideoUpscaleStrategy,
     LtxVideoStrategy,
     LtxT2VStrategy,
     MiniMaxH3Strategy,
@@ -71,6 +73,9 @@ def test_strategy_factory_returns_correct_strategy():
     # LTX Video
     strategy = StrategyFactory.get_strategy("ltx_video")
     assert isinstance(strategy, LtxVideoStrategy)
+
+    strategy = StrategyFactory.get_strategy(MODE_LTX25_VIDEO_UPSCALE)
+    assert isinstance(strategy, Ltx25VideoUpscaleStrategy)
 
     assert isinstance(StrategyFactory.get_strategy("ltx_t2v"), LtxT2VStrategy)
     assert isinstance(StrategyFactory.get_strategy("ltx_t2v_ic"), LtxT2VStrategy)
@@ -115,6 +120,59 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy("unknown_mode")
     assert isinstance(strategy, DefaultImageStrategy)
     assert strategy.mode == "unknown_mode"
+
+
+@pytest.mark.asyncio
+async def test_ltx25_video_upscale_strategy_isolated_submission(monkeypatch):
+    submit_mock = AsyncMock(return_value="backend-upscale-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx25_video_upscale_task=submit_mock,
+    )
+    strategy = Ltx25VideoUpscaleStrategy()
+    inputs = {
+        "saved_input_images": ["/tmp/source.mp4"],
+        "prompt": "keep the exact same composition",
+        "duration": 5,
+    }
+
+    assert strategy.get_cost(inputs) == 40
+    assert strategy.get_file_paths_to_upload({"images": ["owned/source.mp4"]}) == [
+        "owned/source.mp4"
+    ]
+    assert strategy.get_metadata(inputs)["upscale_factor"] == 2
+    result = await strategy.submit_task("task-1", inputs, priority=7)
+
+    assert result == "backend-upscale-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        video_path="/tmp/source.mp4",
+        prompt="keep the exact same composition",
+        length=5,
+        priority=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx25_video_upscale_strategy_rejects_missing_video(monkeypatch):
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx25_video_upscale_task=AsyncMock(),
+    )
+    with pytest.raises(CoreDomainError, match="输入视频"):
+        await Ltx25VideoUpscaleStrategy().submit_task(
+            "task-1", {"duration": 5}, priority=0
+        )
+
+    with pytest.raises(CoreDomainError, match="只接受一个输入视频"):
+        await Ltx25VideoUpscaleStrategy().submit_task(
+            "task-1",
+            {
+                "saved_input_images": ["/tmp/a.mp4", "/tmp/b.mp4"],
+                "duration": 5,
+            },
+            priority=0,
+        )
 
 
 def test_face_swap_versions_share_two_credit_price():

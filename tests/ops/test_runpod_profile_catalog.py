@@ -69,6 +69,7 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("ltx_video_v2v_audio", "ltx_video"),
         ("ltx_t2v", "ltx_t2v"),
         ("ltx_t2v_ic", "ltx_t2v"),
+        ("ltx25_video_upscale", "ltx25_video_upscale"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ],
 )
@@ -115,6 +116,11 @@ def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
             "allbot-runpod-prod-ltx-t2v-manual-01",
         ),
         (
+            "ltx25_video_upscale",
+            "runpod_prod_ltx25_video_upscale_manual_01",
+            "allbot-runpod-prod-ltx25-video-upscale-manual-01",
+        ),
+        (
             "pornmaster_flux2_edit_bf16",
             "runpod_prod_pornmaster_flux2_edit_bf16_manual_01",
             "allbot-runpod-prod-pornmaster-flux2-edit-bf16-manual-01",
@@ -156,6 +162,7 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "ltx_video_v2v_audio",
     ]
     assert options["ltx_t2v"] == ["ltx_t2v", "ltx_t2v_ic"]
+    assert options["ltx25_video_upscale"] == ["ltx25_video_upscale"]
     assert "pornmaster_flux2_edit" not in options
     assert options["pornmaster_flux2_edit_bf16"] == [
         "character_reference_build",
@@ -179,6 +186,8 @@ def test_ltx_t2v_is_operator_visible_but_not_autoscaled():
     ]
     assert worker_options["ltx_t2v"]["autoscaler_enabled"] is False
     assert "ltx_t2v" not in autoscaler_profiles
+    assert worker_options["ltx25_video_upscale"]["autoscaler_enabled"] is False
+    assert "ltx25_video_upscale" not in autoscaler_profiles
 
 
 def test_i2i_pro_routes_both_face_swap_types_to_v2_workflow():

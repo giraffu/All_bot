@@ -7,6 +7,7 @@ from src.domain_config.scail2_video import (
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
     SCAIL2_TASK_TYPES,
 )
+from src.domain_config.ltx25_video_upscale import LTX25_VIDEO_UPSCALE_TASK_TYPE
 
 # Directories
 TMP_DIR = os.path.abspath("./tg_tmp")
@@ -48,6 +49,7 @@ MODE_LTX_VIDEO_V2_FLF2V = "ltx_video_v2_flf2v"
 MODE_PROMPT_OPTIMIZE = "prompt_optimize"
 MODE_LTX_T2V = "ltx_t2v"
 MODE_LTX_T2V_IC = "ltx_t2v_ic"
+MODE_LTX25_VIDEO_UPSCALE = LTX25_VIDEO_UPSCALE_TASK_TYPE
 MODE_MINIMAX_H3_T2V = "minimax_h3_t2v"
 MODE_MINIMAX_H3_I2V = "minimax_h3_i2v"
 MODE_MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
@@ -102,6 +104,7 @@ MODE_NAME_MAP = {
     MODE_LTX_VIDEO_FLF2V: "task.mode_ltx_video",
     MODE_LTX_VIDEO_V2: "task.mode_ltx_video_v2",
     MODE_LTX_VIDEO_V2_FLF2V: "task.mode_ltx_video_v2",
+    MODE_LTX25_VIDEO_UPSCALE: "task.mode_ltx25_video_upscale",
     MODE_MINIMAX_H3_T2V: "task.mode_minimax_h3_t2v",
     MODE_MINIMAX_H3_I2V: "task.mode_minimax_h3_i2v",
     MODE_MINIMAX_H3_FLF2V: "task.mode_minimax_h3_flf2v",
@@ -444,6 +447,7 @@ VIDEO_TASK_TYPES = [
     MODE_LTX_VIDEO_V2_FLF2V,
     MODE_LTX_T2V,
     MODE_LTX_T2V_IC,
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_MINIMAX_H3_T2V,
     MODE_MINIMAX_H3_I2V,
     MODE_MINIMAX_H3_FLF2V,

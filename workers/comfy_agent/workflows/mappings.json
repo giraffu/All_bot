@@ -297,5 +297,15 @@
         "width_input": "Xi",
         "height": "181",
         "height_input": "Xi"
+    },
+    "ltx25_video_upscale": {
+        "video": "5001",
+        "video_input": "file",
+        "prompt": "5508",
+        "prompt_input": "value",
+        "negative_prompt": "5509",
+        "negative_prompt_input": "value",
+        "seed": "5516:4832",
+        "seed_input": "noise_seed"
     }
 }
