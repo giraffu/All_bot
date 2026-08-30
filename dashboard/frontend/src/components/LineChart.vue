@@ -46,6 +46,10 @@ const props = defineProps({
   metrics: {
     type: Array,
     default: () => ['new_users', 'new_users_all', 'generations', 'active_users', 'checkins', 'consumed_credits']
+  },
+  reserveLegendSpace: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -501,12 +505,12 @@ const option = computed(() => {
     },
     legend: {
       data: visibleSeries.map(s => s.name),
-      bottom: 'bottom'
+      bottom: 0
     },
     grid: {
       left: '3%',
       right: '8%',
-      bottom: '10%',
+      bottom: props.reserveLegendSpace ? 76 : '10%',
       containLabel: true
     },
     xAxis: {
