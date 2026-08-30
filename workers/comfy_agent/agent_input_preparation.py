@@ -19,6 +19,10 @@ except ImportError:  # pragma: no cover - package import in focused tests
     )
 
 
+LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS = 5.25
+LTX25_UPSCALE_ENCODING_CUTOFF_SECONDS = 5.1
+
+
 def _cleanup_partial_downloads(local_path: str) -> None:
     for path in [local_path, *glob.glob(f"{local_path}.*.part.minio")]:
         try:
@@ -115,7 +119,7 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
         probe_payload = json.loads(probe.stdout.decode("utf-8"))
         streams = probe_payload.get("streams", [])
         duration = float(probe_payload.get("format", {}).get("duration") or 0)
-        if duration > 5.1:
+        if duration > LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
             raise ValueError("source video exceeds the 5 second limit")
         has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
         command = [
@@ -147,7 +151,10 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
                 "-frames:v",
                 "121",
                 "-t",
-                "5.041667",
+                # Let the 121-frame cap define the exact 5.041667s video
+                # duration. Using that same value as ffmpeg's time cutoff
+                # drops the boundary frame on real 24fps H3 encodes.
+                str(LTX25_UPSCALE_ENCODING_CUTOFF_SECONDS),
                 "-c:v",
                 "libx264",
                 "-preset",
