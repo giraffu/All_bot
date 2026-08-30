@@ -135,9 +135,15 @@ async def prepare_task_submission_payload(
         final_priority=final_priority,
         video_request=video_request,
     )
-    submission_context.apply_to_inputs(inputs)
-    apply_processed_input_refs = getattr(strategy, "apply_processed_input_refs", None)
+    apply_processed_input_refs = getattr(
+        type(strategy), "apply_processed_input_refs", None
+    )
     if callable(apply_processed_input_refs):
-        apply_processed_input_refs(inputs, saved_inputs)
+        # Typed strategies must see the original input layout before the common
+        # saved_input_images projection would flatten every processed media ref.
+        inputs["prompt"] = submission_context.prompt
+        apply_processed_input_refs(strategy, inputs, saved_inputs)
+    else:
+        submission_context.apply_to_inputs(inputs)
     submission_context.metadata = strategy.get_metadata(inputs)
     return submission_context

@@ -7,6 +7,7 @@ from src.core.task_core_input_preparation import (
     prepare_task_submission_payload,
     process_input_path,
 )
+from src.core.task_dispatcher import MiniMaxH3Strategy
 from src.core.task_core_video_request import (
     build_video_task_request,
     infer_requested_billing_resolution,
@@ -248,6 +249,143 @@ async def test_prepare_task_submission_payload_promotes_strategy_inputs_before_h
     ]
     assert result.metadata["saved_inputs"] == result.saved_inputs
     assert inputs["saved_input_images"] == result.saved_inputs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("image_names", "video_name", "audio_name"),
+    [
+        (["subject.jpg"], None, "voice.mp3"),
+        (["subject.jpg", "location.jpg"], "previous.mp4", None),
+        (
+            ["subject.jpg", "face.jpg", "body.jpg", "outfit.jpg"],
+            "previous.mp4",
+            "voice.mp3",
+        ),
+        (
+            ["one.jpg", "two.jpg", "three.jpg", "four.jpg", "five.jpg"],
+            "previous.mp4",
+            "voice.mp3",
+        ),
+    ],
+)
+async def test_prepare_h3_ref2v_keeps_typed_reference_assets_in_separate_slots(
+    image_names,
+    video_name,
+    audio_name,
+):
+    strategy = MiniMaxH3Strategy(
+        "minimax_h3_ref2v",
+        seed_provider=lambda: 123,
+    )
+    processed_paths = []
+
+    async def priority(_user_id: int):
+        return 0, "user", "title"
+
+    async def process(user_logger, path: str):
+        assert user_logger.user_id == 9
+        processed_paths.append(path)
+        return f"task-inputs/registry-h3/{path.rsplit('/', 1)[-1]}"
+
+    inputs = {
+        "prompt": "continue the scene",
+        "saved_input_images": [
+            f"staging/user-uploads/9/{name}" for name in image_names
+        ],
+        "aspect_ratio": "16:9",
+    }
+    if video_name:
+        inputs["reference_video"] = f"staging/user-uploads/9/{video_name}"
+    if audio_name:
+        inputs["reference_audio"] = f"staging/user-uploads/9/{audio_name}"
+
+    result = await prepare_task_submission_payload(
+        user_id=9,
+        username="tester",
+        task_type="minimax_h3_ref2v",
+        inputs=inputs,
+        registry_task_id="registry-h3",
+        strategy=strategy,
+        base_priority=0,
+        is_template=False,
+        is_video_task=True,
+        video_request=VideoTaskRequest(),
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id,
+            username=username,
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=process,
+        bucket_name="user-data-test",
+    )
+
+    expected_names = [
+        *image_names,
+        *([video_name] if video_name else []),
+        *([audio_name] if audio_name else []),
+    ]
+    assert processed_paths == [
+        f"staging/user-uploads/9/{name}" for name in expected_names
+    ]
+    assert inputs["saved_input_images"] == [
+        f"task-inputs/registry-h3/{name}" for name in image_names
+    ]
+    assert inputs.get("reference_video") == (
+        f"task-inputs/registry-h3/{video_name}" if video_name else None
+    )
+    assert inputs.get("reference_audio") == (
+        f"task-inputs/registry-h3/{audio_name}" if audio_name else None
+    )
+    assert result.metadata["saved_inputs"] == inputs["saved_input_images"]
+    assert result.metadata["reference_video"] == inputs.get("reference_video")
+    assert result.metadata["reference_audio"] == inputs.get("reference_audio")
+
+
+@pytest.mark.asyncio
+async def test_prepare_h3_ref2v_rejects_missing_processed_reference_asset():
+    strategy = MiniMaxH3Strategy("minimax_h3_ref2v", seed_provider=lambda: 123)
+
+    async def priority(_user_id: int):
+        return 0, "user", "title"
+
+    async def process(user_logger, path: str):
+        assert user_logger.user_id == 9
+        if path.endswith("previous.mp4"):
+            return ""
+        return "task-inputs/registry-h3/subject.jpg"
+
+    inputs = {
+        "prompt": "continue the scene",
+        "saved_input_images": ["staging/user-uploads/9/subject.jpg"],
+        "reference_video": "staging/user-uploads/9/previous.mp4",
+        "aspect_ratio": "16:9",
+    }
+
+    with pytest.raises(CoreDomainError, match="参考素材处理数量不匹配"):
+        await prepare_task_submission_payload(
+            user_id=9,
+            username="tester",
+            task_type="minimax_h3_ref2v",
+            inputs=inputs,
+            registry_task_id="registry-h3",
+            strategy=strategy,
+            base_priority=0,
+            is_template=False,
+            is_video_task=True,
+            video_request=VideoTaskRequest(),
+            user_logger_factory=lambda user_id, username: SimpleNamespace(
+                user_id=user_id,
+                username=username,
+            ),
+            validate_local_input_paths_func=lambda **_kwargs: None,
+            get_user_priority_and_identity_func=priority,
+            load_prompts_func=lambda: {},
+            process_input_path_func=process,
+            bucket_name="user-data-test",
+        )
 
 
 @pytest.mark.asyncio

@@ -1059,6 +1059,15 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
     ) -> None:
         spec = self._spec(inputs)
         image_count = len(spec.images)
+        expected_count = (
+            image_count
+            + (1 if spec.reference_video else 0)
+            + (1 if spec.reference_audio else 0)
+        )
+        if len(processed_refs) != expected_count:
+            raise CoreDomainError(
+                "MiniMax H3 参考素材处理数量不匹配，无法继续派发任务。"
+            )
         inputs["saved_input_images"] = processed_refs[:image_count]
         cursor = image_count
         if spec.reference_video:
