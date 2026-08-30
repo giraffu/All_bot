@@ -19,8 +19,11 @@ Web 使用练功房结构化 `target_video` 上传槽；主 Bot 使用
 canonical API workflow 是
 `workers/comfy_agent/workflows/LTX 2.5 IC V2V Upscale.api.json`，mapping 和
 patcher 固定注入输入视频、正负提示词、seed、IC-LoRA 强度 `1.0` 和输出前缀。
-Worker 在上传 ComfyUI 前通过 ffmpeg 统一成 Div64、24fps、121 帧，并为无声视频
-补静音轨。最终 `CreateVideo` 复用源视频音轨，不使用采样器生成的音频作为结果。
+Worker 在上传 ComfyUI 前通过 ffmpeg 统一成 Div32 源尺寸、24fps、121
+帧；工作流再将宽高各乘 2，因此输出是 Div64。H3 beta4 的
+672×384 输入保持原尺寸，结果为 1344×768，不再因按 Div64 下取整而变成
+640×384。无声视频会补静音轨；最终 `CreateVideo` 复用源视频音轨，不使用
+采样器生成的音频作为结果。
 
 该 IC-LoRA 是生成式 2 倍高清化：它会合成细节，不等同于确定性像素超分。
 输入应是构图和动作已经满意的干净低分辨率成片；严重压缩伪影修复不属于其

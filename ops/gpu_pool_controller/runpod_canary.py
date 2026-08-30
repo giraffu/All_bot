@@ -577,7 +577,11 @@ class RunPodCanaryRunner:
         self._sleep = sleep_func
         self._emit_func = emit_func or (lambda message: print(message, file=sys.stderr))
         self._preflight_create_guard_pods: list[dict[str, Any]] = []
-        self._http_client = RunPodHttpClient(error_type=RunPodCanaryError)
+        self._http_client = RunPodHttpClient(
+            error_type=RunPodCanaryError,
+            transient_get_attempts=3,
+            sleep_func=sleep_func,
+        )
 
     def _control_config(self) -> RunPodControlConfig:
         return RunPodControlConfig(

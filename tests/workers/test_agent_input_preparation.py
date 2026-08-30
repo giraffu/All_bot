@@ -12,7 +12,7 @@ from workers.comfy_agent.agent_input_preparation import (
 )
 
 
-def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div64(
+def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div32(
     tmp_path, monkeypatch
 ):
     source = tmp_path / "source.mp4"
@@ -43,7 +43,8 @@ def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div64(
     assert ffmpeg[ffmpeg.index("-frames:v") + 1] == "121"
     video_filter = ffmpeg[ffmpeg.index("-vf") + 1]
     assert "fps=24" in video_filter
-    assert "trunc(iw/64)*64" in video_filter
+    assert "round(iw/32)*32" in video_filter
+    assert "round(ih/32)*32" in video_filter
     assert ffmpeg[ffmpeg.index("-map") + 1] == "0:v:0"
     assert "0:a:0" in ffmpeg
     assert Path(result).read_bytes() == b"normalized-video"

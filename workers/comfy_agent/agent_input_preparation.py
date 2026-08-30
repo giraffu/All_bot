@@ -89,7 +89,7 @@ def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
 
 
 def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
-    """Create the fixed 5s/24fps/121-frame, Div64 input required by LTX-2.5."""
+    """Create the fixed 5s/24fps/121-frame, Div32 source for 2x LTX-2.5."""
     if param_key != "video":
         return local_path
     source = Path(local_path)
@@ -144,7 +144,7 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
                 "-vf",
                 (
                     "fps=24,"
-                    "scale='max(64,trunc(iw/64)*64)':'max(64,trunc(ih/64)*64)':"
+                    "scale='max(32,round(iw/32)*32)':'max(32,round(ih/32)*32)':"
                     "flags=lanczos,setsar=1,"
                     "tpad=stop_mode=clone:stop_duration=5.1"
                 ),

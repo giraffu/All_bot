@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import http.client
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,9 +29,13 @@ class RunPodHttpClient:
         *,
         error_type: type[Exception] = RunPodHttpError,
         urlopen_func: Callable[..., Any] | None = None,
+        transient_get_attempts: int = 1,
+        sleep_func: Callable[[float], None] = time.sleep,
     ) -> None:
         self._error_type = error_type
         self._urlopen = urlopen_func or urllib.request.urlopen
+        self._transient_get_attempts = max(1, int(transient_get_attempts))
+        self._sleep = sleep_func
 
     def json(
         self,
@@ -90,26 +96,39 @@ class RunPodHttpClient:
             method=method,
             headers=request_headers,
         )
-        try:
-            with self._urlopen(request, timeout=30) as response:
-                status = int(response.status)
-                raw = response.read()
+        attempts = self._transient_get_attempts if method.upper() == "GET" else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                with self._urlopen(request, timeout=30) as response:
+                    status = int(response.status)
+                    raw = response.read()
+                    text = raw.decode("utf-8", errors="replace")
+                break
+            except urllib.error.HTTPError as exc:
+                status = int(exc.code)
+                raw = exc.read()
                 text = raw.decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:
-            status = int(exc.code)
-            raw = exc.read()
-            text = raw.decode("utf-8", errors="replace")
-            if status not in expected_statuses and status not in allow_statuses:
-                raise self._status_error(
-                    f"{method} {safe_url(url)} returned HTTP {status}: "
-                    f"{redact_text(text[:500])}",
-                    status,
+                if status not in expected_statuses and status not in allow_statuses:
+                    raise self._status_error(
+                        f"{method} {safe_url(url)} returned HTTP {status}: "
+                        f"{redact_text(text[:500])}",
+                        status,
+                    ) from exc
+                break
+            except (
+                urllib.error.URLError,
+                http.client.RemoteDisconnected,
+                ConnectionResetError,
+                TimeoutError,
+            ) as exc:
+                if attempt < attempts:
+                    self._sleep(min(float(attempt), 2.0))
+                    continue
+                reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+                raise self._error(
+                    f"{method} {safe_url(url)} network error: "
+                    f"{redact_text(str(reason))}"
                 ) from exc
-        except urllib.error.URLError as exc:
-            raise self._error(
-                f"{method} {safe_url(url)} network error: "
-                f"{redact_text(str(exc.reason))}"
-            ) from exc
         if status not in expected_statuses and status not in allow_statuses:
             raise self._status_error(
                 f"{method} {safe_url(url)} returned HTTP {status}: "

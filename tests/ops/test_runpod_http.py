@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import http.client
 import urllib.error
 
 import pytest
@@ -148,6 +149,46 @@ def test_http_request_wraps_network_error_with_safe_url():
 
     assert "GET https://api.example/raw network error" in str(exc_info.value)
     assert "token=secret" not in str(exc_info.value)
+
+
+def test_http_request_retries_remote_disconnect_for_get_only():
+    attempts = []
+
+    def urlopen(request, *, timeout):
+        attempts.append(request.get_method())
+        if len(attempts) == 1:
+            raise http.client.RemoteDisconnected("remote closed")
+        return FakeResponse(200, b'{"ok": true}')
+
+    client = RunPodHttpClient(
+        urlopen_func=urlopen,
+        transient_get_attempts=3,
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = client.json("GET", "https://api.example/tasks/finished")
+
+    assert payload == {"ok": True, "_status": 200}
+    assert attempts == ["GET", "GET"]
+
+
+def test_http_request_does_not_retry_remote_disconnect_for_post():
+    attempts = []
+
+    def urlopen(request, *, timeout):
+        attempts.append(request.get_method())
+        raise http.client.RemoteDisconnected("remote closed")
+
+    client = RunPodHttpClient(
+        urlopen_func=urlopen,
+        transient_get_attempts=3,
+        sleep_func=lambda _seconds: None,
+    )
+
+    with pytest.raises(RunPodHttpError, match="network error"):
+        client.json("POST", "https://api.example/tasks", json_body={"x": 1})
+
+    assert attempts == ["POST"]
 
 
 def test_safe_url_strips_query_and_fragment():
