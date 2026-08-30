@@ -22,6 +22,7 @@ export type UnifiedLabModeId =
   | 'ltx_video'
   | 'ltx_video_v2'
   | 'ltx_t2v'
+  | 'ltx25_video_upscale'
   | 'minimax_h3'
   | 'wan22_video_v2'
   | 'scail2_action_transfer'
@@ -249,6 +250,7 @@ export const WEB_LTX_VIDEO_ENTRY_ENABLED = getRuntimeFlag(
 )
 export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const WEB_LTX_VIDEO_V2_ENABLED = getRuntimeFlag('enable_ltx_video_v2', false)
+export const WEB_LTX25_VIDEO_UPSCALE_ENABLED = getRuntimeFlag('enable_ltx25_video_upscale', true)
 export const WEB_CHARACTER_ASSETS_ENABLED = getRuntimeFlag('enable_character_assets', false)
 export const WEB_CHARACTER_ASSETS_ENTRY_ENABLED = getRuntimeFlag(
   'enable_character_assets_entry',
@@ -647,6 +649,35 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     ],
   },
   {
+    id: 'ltx25_video_upscale',
+    taskType: 'ltx25_video_upscale',
+    titleKey: 'lab.cards.ltx25_video_upscale_title',
+    descriptionKey: 'lab.cards.ltx25_video_upscale_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 40,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.ltx25_video_upscale',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: false,
+    supportsAdvancedOptions: false,
+    promptRequired: false,
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'target_video',
+        labelKey: 'lab.workbench.upload_slots.upscale_video',
+        hintKey: 'lab.workbench.upload_slot_hints.upscale_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.upscale_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
+  },
+  {
     id: 'ltx_video',
     taskType: 'ltx_video',
     titleKey: 'lab.cards.high_res_video_title',
@@ -773,6 +804,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== 'ltx_video' || (WEB_LTX_VIDEO_ENABLED && WEB_LTX_VIDEO_ENTRY_ENABLED))
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
+  && (mode.id !== 'ltx25_video_upscale' || WEB_LTX25_VIDEO_UPSCALE_ENABLED)
   && (mode.id !== 'minimax_h3' || (WEB_MINIMAX_H3_ENABLED && WEB_MINIMAX_H3_ENTRY_ENABLED))
 )) as LabModeConfig[]
 
@@ -818,6 +850,8 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'ltx_t2v':
     case 'ltx_t2v_ic':
       return 'ltx_t2v'
+    case 'ltx25_video_upscale':
+      return 'ltx25_video_upscale'
     case 'minimax_h3_t2v':
     case 'minimax_h3_i2v':
     case 'minimax_h3_flf2v':

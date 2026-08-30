@@ -67,6 +67,10 @@ export function useLabSlotUploads({
   }
 
   const handleAssetVideoMetadata = (slotId: LabUploadSlotId, durationSeconds: number | null) => {
+    const item = uploadedSlotAssets.value[slotId]
+    if (item) {
+      item.durationSeconds = durationSeconds
+    }
     if (!isScail2ModeId(currentMode.value.id) || slotId !== 'motion_video') {
       return
     }
@@ -75,6 +79,7 @@ export function useLabSlotUploads({
 
   const shouldLimitStructuredVideoUpload = (slotId: LabUploadSlotId) => (
     (isScail2ModeId(currentMode.value.id) && slotId === 'motion_video')
+    || (currentMode.value.id === 'ltx25_video_upscale' && slotId === 'target_video')
   )
 
   const beforeUploadSlot = async (slotId: LabUploadSlotId, file: File) => {

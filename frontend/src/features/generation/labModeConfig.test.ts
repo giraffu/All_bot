@@ -183,6 +183,7 @@ describe('labModeConfig', () => {
   it('keeps LTX video dubbing out of the user-facing lab modes', () => {
     expect(UNIFIED_LAB_MODES.map(mode => mode.id)).not.toContain('ltx_video_audio')
     expect(resolveLabModeIdFromTaskType('ltx_video')).toBe('ltx_video')
+    expect(resolveLabModeIdFromTaskType('ltx25_video_upscale')).toBe('ltx25_video_upscale')
     expect(resolveLabModeIdFromTaskType('ltx_video_audio')).toBe(DEFAULT_LAB_MODE_ID)
   })
 

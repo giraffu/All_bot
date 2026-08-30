@@ -26,6 +26,7 @@ from src.constants import (
     MODE_LTX_VIDEO_V2_FLF2V,
     MODE_LTX_T2V,
     MODE_LTX_T2V_IC,
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_MINIMAX_H3_T2V,
     MODE_MINIMAX_H3_I2V,
     MODE_MINIMAX_H3_FLF2V,
@@ -502,6 +503,15 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         central_type=MODE_PROMPT_OPTIMIZE,
         is_generation=False,
         cost=1,
+    ),
+    MODE_LTX25_VIDEO_UPSCALE: _entry(
+        MODE_LTX25_VIDEO_UPSCALE,
+        central_type=MODE_LTX25_VIDEO_UPSCALE,
+        workflow_filename="LTX 2.5 IC V2V Upscale.api.json",
+        runpod_profile="ltx25_video_upscale",
+        is_generation=True,
+        is_video=True,
+        cost=40,
     ),
     "ltx_video_v2v_audio": _entry(
         "ltx_video_v2v_audio",

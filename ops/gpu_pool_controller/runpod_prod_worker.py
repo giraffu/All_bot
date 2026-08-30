@@ -29,6 +29,10 @@ from .providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
@@ -44,6 +48,7 @@ from .providers.runpod import (
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
@@ -101,6 +106,7 @@ PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_LTX_T2V_TASK_TYPE = "ltx_t2v"
+PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE = "ltx25_video_upscale"
 PROD_MINIMAX_H3_TASK_TYPE = "minimax_h3"
 PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
 PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
@@ -1826,6 +1832,8 @@ class RunPodProdWorkerRunner:
             return target_settings.gpu_type_ids_ltx_video
         if spec["runpod_task_type"] == PROD_LTX_T2V_TASK_TYPE:
             return target_settings.gpu_type_ids_ltx_t2v
+        if spec["runpod_task_type"] == PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE:
+            return target_settings.gpu_type_ids_ltx25_video_upscale
         if spec["runpod_task_type"] == PROD_MINIMAX_H3_TASK_TYPE:
             return target_settings.gpu_type_ids_minimax_h3
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
@@ -1858,6 +1866,23 @@ class RunPodProdWorkerRunner:
             if rendered_disk < min_disk:
                 failures.append(
                     f"containerDiskInGb must be at least {min_disk} for ltx_t2v"
+                )
+        if spec["runpod_task_type"] == PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE:
+            min_disk = max(
+                int(
+                    getattr(
+                        target_settings,
+                        "container_disk_gb_ltx25_video_upscale",
+                        0,
+                    )
+                ),
+                RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+            )
+            rendered_disk = self._rendered_container_disk(body)
+            if rendered_disk < min_disk:
+                failures.append(
+                    "containerDiskInGb must be at least "
+                    f"{min_disk} for ltx25_video_upscale"
                 )
         if spec["runpod_task_type"] == PROD_IMAGE_TO_VIDEO_TASK_TYPE:
             min_disk = max(
@@ -2530,6 +2555,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_LTX_VIDEO_TASK_TYPE
     if profile_key == "ltx_t2v":
         return PROD_LTX_T2V_TASK_TYPE
+    if profile_key == "ltx25_video_upscale":
+        return PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE
     if profile_key == "minimax_h3":
         return PROD_MINIMAX_H3_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit":
@@ -2703,6 +2730,26 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
             ),
             "image_prefix": RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+            "workflow_overrides": "",
+        }
+    if profile_key == "ltx25_video_upscale":
+        return {
+            "runpod_task_type": PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE,
+            "runtime_profile": "ltx25_video_upscale",
+            "supported_task_types": RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_ltx25_video_upscale
+                or RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_ltx25_video_upscale
+                or RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_ltx25_video_upscale,
+                RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
+            ),
+            "image_prefix": RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
     if profile_key == "minimax_h3":
@@ -2978,6 +3025,7 @@ def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
             "scail2",
             "ltx_video",
             "ltx_t2v",
+            "ltx25_video_upscale",
             "minimax_h3",
             "pornmaster_flux2_edit_bf16",
         )

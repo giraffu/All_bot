@@ -72,6 +72,7 @@ async def test_public_entry_visibility_returns_only_safe_flags_without_cache():
             "enable_ltx_video_entry": True,
             "enable_ltx_video_v2_entry": True,
             "enable_ltx_t2v_entry": True,
+            "enable_ltx25_video_upscale_entry": False,
             "enable_minimax_h3_entry": False,
             "enable_wan22_video_v2_entry": True,
             "enable_scail2_action_transfer_entry": True,

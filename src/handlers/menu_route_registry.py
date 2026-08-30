@@ -24,6 +24,7 @@ FSM_MENU_KEYS = (
     "menu.video_to_video",
     "menu.video_to_video_replacement",
     "menu.video_to_video_action_transfer",
+    "menu.video_upscale",
     "menu.txt2img",
     "menu.i2i_pro",
     "menu.free_edit",

@@ -22,6 +22,7 @@ export const TASK_TYPE_CONTRACT = {
   "image_to_video": { publicType: "image_to_video", isGeneration: false, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 6 },
   "img2img": { publicType: "img2img", isGeneration: false, isVideo: false, gallerySupported: false, applyInputReuseSupported: false, cost: null },
   "img2img_lora": { publicType: "img2img_lora", isGeneration: true, isVideo: false, gallerySupported: true, applyInputReuseSupported: false, cost: 6 },
+  "ltx25_video_upscale": { publicType: "ltx25_video_upscale", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 40 },
   "ltx_t2v": { publicType: "ltx_t2v", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 10 },
   "ltx_t2v_ic": { publicType: "ltx_t2v_ic", isGeneration: true, isVideo: true, gallerySupported: false, applyInputReuseSupported: false, cost: 12 },
   "ltx_video": { publicType: "ltx_video", isGeneration: true, isVideo: true, gallerySupported: true, applyInputReuseSupported: true, cost: 10 },

@@ -16,10 +16,15 @@ from .runpod_profile_catalog import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_VOLUME_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+    RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD,
+    RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB,
     RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
     RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
     RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS,
-    RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_MINIMAX_H3_VOLUME_GB,
@@ -180,6 +185,8 @@ class RunPodPodRequestBuilder:
         profile = self.profile_for_task_type(task_type)
         if profile.task_type == "ltx_t2v":
             self.validate_ltx_t2v_contract()
+        if profile.task_type == "ltx25_video_upscale":
+            self.validate_ltx25_video_upscale_contract()
         if profile.task_type == "minimax_h3":
             self.validate_minimax_h3_contract()
         if environment == "cloud-prod":
@@ -197,6 +204,7 @@ class RunPodPodRequestBuilder:
             "scail2",
             "ltx_video",
             "ltx_t2v",
+            "ltx25_video_upscale",
             "minimax_h3",
             "pornmaster_flux2_edit_bf16",
         }:
@@ -229,6 +237,7 @@ class RunPodPodRequestBuilder:
                 "scail2",
                 "ltx_video",
                 "ltx_t2v",
+                "ltx25_video_upscale",
                 "minimax_h3",
                 "pornmaster_flux2_edit_bf16",
             }
@@ -312,6 +321,16 @@ class RunPodPodRequestBuilder:
         ):
             raise ValueError("ltx_t2v model manifest key must use the fixed release")
 
+    def validate_ltx25_video_upscale_contract(self) -> None:
+        if tuple(self.settings.gpu_type_ids_ltx25_video_upscale) != RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS:
+            raise ValueError("ltx25_video_upscale GPU types must use the verified fixed set")
+        if self.settings.use_template_ltx25_video_upscale or self.settings.template_id_ltx25_video_upscale:
+            raise ValueError("ltx25_video_upscale RunPod templates are disabled")
+        if self.settings.model_prefix_ltx25_video_upscale != RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX:
+            raise ValueError("ltx25_video_upscale model prefix must use the fixed release")
+        if self.settings.model_manifest_key_ltx25_video_upscale != RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY:
+            raise ValueError("ltx25_video_upscale model manifest key must use the fixed release")
+
     def validate_minimax_h3_contract(self) -> None:
         gpu_type_ids = tuple(self.settings.gpu_type_ids_minimax_h3)
         if not gpu_type_ids or not set(gpu_type_ids).issubset(
@@ -365,6 +384,12 @@ class RunPodPodRequestBuilder:
                 self.settings.container_disk_gb_ltx_t2v,
                 RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
             )
+        if profile.task_type == "ltx25_video_upscale":
+            return max(
+                self.settings.container_disk_gb,
+                self.settings.container_disk_gb_ltx25_video_upscale,
+                RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB,
+            )
         if profile.task_type == "minimax_h3":
             return max(
                 self.settings.container_disk_gb,
@@ -387,6 +412,8 @@ class RunPodPodRequestBuilder:
     def volume_gb_for(self, profile: RunPodTaskProfile) -> int:
         if profile.task_type == "ltx_t2v":
             return max(self.settings.volume_gb, RUNPOD_LTX_T2V_VOLUME_GB)
+        if profile.task_type == "ltx25_video_upscale":
+            return max(self.settings.volume_gb, RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB)
         if profile.task_type == "minimax_h3":
             return max(self.settings.volume_gb, RUNPOD_MINIMAX_H3_VOLUME_GB)
         return self.settings.volume_gb
@@ -627,6 +654,8 @@ class RunPodPodRequestBuilder:
             return self.settings.projected_cost_per_hr_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.projected_cost_per_hr_ltx_t2v
+        if profile.task_type == "ltx25_video_upscale":
+            return self.settings.projected_cost_per_hr_ltx25_video_upscale
         if profile.task_type == "minimax_h3":
             return self.settings.projected_cost_per_hr_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
@@ -662,6 +691,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_LTX_T2V":
             return self.settings.gpu_type_ids_ltx_t2v
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_LTX25_VIDEO_UPSCALE":
+            return self.settings.gpu_type_ids_ltx25_video_upscale
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_MINIMAX_H3":
             return self.settings.gpu_type_ids_minimax_h3
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT":
@@ -675,6 +706,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.gpu_type_ids_ltx_t2v
+        if profile.task_type == "ltx25_video_upscale":
+            return self.settings.gpu_type_ids_ltx25_video_upscale
         if profile.task_type == "minimax_h3":
             return self.settings.gpu_type_ids_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
@@ -716,6 +749,10 @@ class RunPodPodRequestBuilder:
             if not self.settings.use_template_ltx_t2v:
                 return ""
             return self.settings.template_id_ltx_t2v
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_LTX25_VIDEO_UPSCALE":
+            if not self.settings.use_template_ltx25_video_upscale:
+                return ""
+            return self.settings.template_id_ltx25_video_upscale
         if profile.template_env_key == "RUNPOD_TEMPLATE_ID_MINIMAX_H3":
             if not self.settings.use_template_minimax_h3:
                 return ""
@@ -743,6 +780,8 @@ class RunPodPodRequestBuilder:
             return self.settings.image_name_ltx_video
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_LTX_T2V":
             return self.settings.image_name_ltx_t2v
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_LTX25_VIDEO_UPSCALE":
+            return self.settings.image_name_ltx25_video_upscale
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_MINIMAX_H3":
             return self.settings.image_name_minimax_h3
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT":
@@ -767,6 +806,8 @@ class RunPodPodRequestBuilder:
             return "allbot/comfy-runpod-ltx-video:pending"
         if profile.task_type == "ltx_t2v":
             return "allbot/comfy-runpod-ltx-t2v:pending"
+        if profile.task_type == "ltx25_video_upscale":
+            return "allbot/comfy-runpod-ltx25-video-upscale:pending"
         if profile.task_type == "minimax_h3":
             return "allbot/comfy-runpod-minimax-h3:pending"
         if profile.task_type == "pornmaster_flux2_edit":
@@ -797,6 +838,11 @@ class RunPodPodRequestBuilder:
             return (
                 self.settings.docker_start_cmd_ltx_t2v
                 or RUNPOD_LTX_T2V_DOCKER_START_CMD
+            )
+        if profile.task_type == "ltx25_video_upscale":
+            return (
+                self.settings.docker_start_cmd_ltx25_video_upscale
+                or RUNPOD_LTX25_VIDEO_UPSCALE_DOCKER_START_CMD
             )
         if profile.task_type == "minimax_h3":
             return (
@@ -855,6 +901,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_prefix_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.model_prefix_ltx_t2v
+        if profile.task_type == "ltx25_video_upscale":
+            return self.settings.model_prefix_ltx25_video_upscale
         if profile.task_type == "minimax_h3":
             return self.settings.model_prefix_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
@@ -878,6 +926,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_manifest_key_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.model_manifest_key_ltx_t2v
+        if profile.task_type == "ltx25_video_upscale":
+            return self.settings.model_manifest_key_ltx25_video_upscale
         if profile.task_type == "minimax_h3":
             return self.settings.model_manifest_key_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
@@ -903,6 +953,8 @@ class RunPodPodRequestBuilder:
         if profile.task_type == "ltx_video":
             return profile.supported_task_types
         if profile.task_type == "ltx_t2v":
+            return profile.supported_task_types
+        if profile.task_type == "ltx25_video_upscale":
             return profile.supported_task_types
         if profile.task_type == "minimax_h3":
             return profile.supported_task_types

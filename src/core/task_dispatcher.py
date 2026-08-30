@@ -13,6 +13,7 @@ from src.constants import (
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_PROMPT_OPTIMIZE,
     MODE_LTX_VIDEO_V2,
     MODE_LTX_VIDEO_V2_FLF2V,
@@ -42,6 +43,12 @@ from src.domain_config.scail2_video import (
     normalize_scail2_negative_prompt,
     normalize_scail2_positive_prompt,
     resolve_scail2_execution_task_type,
+)
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_COST,
+    LTX25_VIDEO_UPSCALE_FACTOR,
+    normalize_ltx25_video_upscale_duration,
+    normalize_ltx25_video_upscale_prompt,
 )
 from src.domain_config.task_type_registry import get_execution_task_type
 from src.domain_config.ltx_t2v import (
@@ -925,6 +932,49 @@ class LtxVideoStrategy(BaseTaskStrategy):
         )
 
 
+class Ltx25VideoUpscaleStrategy(BaseTaskStrategy):
+    """Dispatch source-video-only enhancement to its isolated GPU profile."""
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        normalize_ltx25_video_upscale_duration(inputs.get("duration"))
+        return LTX25_VIDEO_UPSCALE_COST
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        images = inputs.get("images")
+        if isinstance(images, list):
+            return images
+        video = inputs.get("video") or inputs.get("target_video")
+        return [video] if video else []
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "saved_inputs": _get_saved_input_images(inputs)[:1],
+            "requested_duration": normalize_ltx25_video_upscale_duration(
+                inputs.get("duration")
+            ),
+            "upscale_factor": LTX25_VIDEO_UPSCALE_FACTOR,
+            "ltx_profile": "ltx25_ic_v2v_upscale",
+            "gallery_supported": False,
+        }
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        saved_inputs = _get_saved_input_images(inputs)
+        if len(saved_inputs) != 1 or not saved_inputs[0]:
+            raise CoreDomainError("LTX-2.5 视频高清化只接受一个输入视频。")
+        video_path = saved_inputs[0]
+        duration = normalize_ltx25_video_upscale_duration(inputs.get("duration"))
+        prompt = normalize_ltx25_video_upscale_prompt(inputs.get("prompt"))
+        return await _get_dispatch_image_service().submit_ltx25_video_upscale_task(
+            task_id,
+            video_path=video_path,
+            prompt=prompt,
+            length=duration,
+            priority=priority,
+        )
+
+
 class LtxVideoV2Strategy(LtxVideoStrategy):
     def __init__(self, task_type: str):
         self.task_type = task_type
@@ -1290,6 +1340,9 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     MODE_FACE_SWAP_V2: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
     MODE_PROMPT_OPTIMIZE: lambda _task_type, _feature_flags: PromptOptimizeStrategy(),
     "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
+    MODE_LTX25_VIDEO_UPSCALE: (
+        lambda _task_type, _feature_flags: Ltx25VideoUpscaleStrategy()
+    ),
     MODE_LTX_VIDEO_V2: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
     MODE_LTX_VIDEO_V2_FLF2V: lambda task_type, _feature_flags: LtxVideoV2Strategy(
         task_type

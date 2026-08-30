@@ -1,4 +1,34 @@
 profiles:
+  ltx25_video_upscale:
+    runtime_profile: ltx25_video_upscale
+    task_types:
+      - ltx25_video_upscale
+    model_bundles:
+      - ltx25_video_upscale_runtime
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - LTXICLoRALoaderModelOnly
+      - LTXAddVideoICLoRAGuide
+      - LTXVImgToVideoInplace
+      - LTXVConcatAVLatent
+      - LTXVSeparateAVLatent
+      - LTXVCropGuides
+      - LoadVideo
+      - GetVideoComponents
+      - CreateVideo
+      - SaveVideo
+      - ImageFromBatch
+      - MathExpression|pysssss
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/LTX 2.5 IC V2V Upscale.api.json
+    min_vram_gb: 24
+    image_ref: ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:pending
+    all_in_one_image_ref: ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:pending
+    model_prefix: ltx25_video_upscale/2026-08-31-int8-ic-v1
+    model_manifest_key: ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json
+
   all:
     runtime_profile: all
     task_types:

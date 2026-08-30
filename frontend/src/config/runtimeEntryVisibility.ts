@@ -17,6 +17,7 @@ const ENTRY_VISIBILITY_KEYS = [
   'enable_scail2_action_transfer_entry',
   'enable_scail2_video_replacement_entry',
   'enable_scail2_face_swap_v2_entry',
+  'enable_ltx25_video_upscale_entry',
   'enable_character_assets_entry',
   'enable_gallery_txt2img_entry',
   'enable_gallery_i2i_pro_entry',

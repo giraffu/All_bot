@@ -71,6 +71,7 @@
     "video_to_video_replacement": "🪄 Video Replacement",
     "video_to_video_action_transfer": "🕺 Action Transfer",
     "video_to_video_action_transfer_long": "🕺 Action Transfer",
+    "video_upscale": "✨ Video Upscale",
     "txt2img": "✨ Text2Img",
     "i2i_pro": "🌟 Face Swap Pro",
     "free_edit": "🎨 Free Edit",
@@ -876,6 +877,8 @@
       "high_res_video_v2_desc": "Uses LTX 10Eros v1.4 DMD with start or start/end frames and optional vision prompt optimization.",
       "ltx_t2v_title": "Text to Video",
       "ltx_t2v_desc": "Describe visuals, camera motion, dialogue, and ambience; optionally select a character sheet for consistency.",
+      "ltx25_video_upscale_title": "LTX-2.5 Video Upscale",
+      "ltx25_video_upscale_desc": "Upload up to 5 seconds and use generative IC V2V to preserve motion and composition at 2x dimensions.",
       "minimax_h3_title": "Advanced Image-to-Video Pro",
       "minimax_h3_desc": "Text, first-frame, first/last-frame, and character-reference video modes.",
       "character_reference_title": "Character Identity",
@@ -962,21 +965,24 @@
         "target_image": "Body Image",
         "target_video": "Body Video",
         "reference_image": "Reference Image",
-        "motion_video": "Motion Video"
+        "motion_video": "Motion Video",
+        "upscale_video": "Video to Upscale"
       },
       "upload_slot_hints": {
         "face_image": "Upload a clear face image",
         "target_image": "Upload the body image to swap into",
         "target_video": "Upload the body video to swap into",
         "reference_image": "Upload the character image to animate or swap in",
-        "motion_video": "Upload the video that provides motion, camera, and composition"
+        "motion_video": "Upload the video that provides motion, camera, and composition",
+        "upscale_video": "MP4/MOV/WebM, up to 5 seconds and 40MB; output dimensions are doubled"
       },
       "upload_slot_buttons": {
         "face_image": "Add Face Image",
         "target_image": "Add Body Image",
         "target_video": "Add Body Video",
         "reference_image": "Add Reference",
-        "motion_video": "Add Motion Video"
+        "motion_video": "Add Motion Video",
+        "upscale_video": "Add Video"
       },
       "submit_image": "Generate Image",
       "submit_video": "Generate Video",
@@ -1067,6 +1073,7 @@
         "txt2img": "Describe the image you want directly, for example: cinematic portrait, moonlight, detailed face, soft rim light, realistic skin.",
         "video": "Describe the motion and camera movement, for example: the subject smiles and turns, hair moves in the wind, camera slowly pushes in.",
         "ltx_t2v": "Describe visuals, motion, camera, dialogue, and ambience, for example: a rainy street, slow push-in, quiet dialogue, distant traffic.",
+        "ltx25_video_upscale": "Leave blank to preserve the source strictly, or describe texture/detail improvements without adding new motion or composition.",
         "minimax_h3": "Describe visuals, characters, camera motion, dialogue, and ambience. Character reference mode can use Picture n tags.",
         "scail2_action_transfer": "Leave blank to use the default prompt, or add guidance such as natural motion and stable framing.",
         "scail2_action_transfer_long": "Leave blank to use the default prompt, or add reference and motion guidance such as natural motion and stable framing.",
@@ -1080,7 +1087,8 @@
         "ltx_lora_limit": "You can choose up to 3 addon models"
         ,"minimax_h3_images": "The reference image count does not match the selected Advanced Image-to-Video Pro mode"
         ,"minimax_h3_descriptions": "Add an identity and appearance description for every character reference"
-        ,"minimax_h3_frame_ratio": "The last frame must match the first frame aspect ratio. Please upload it again."
+        ,"minimax_h3_frame_ratio": "The last frame must match the first frame aspect ratio. Please upload it again.",
+        "ltx25_video_too_long": "Video Upscale v1 supports source videos up to 5 seconds."
       },
       "mode_kinds": {
         "image": "Image",
@@ -1233,6 +1241,7 @@
     "mode_scail2_action_transfer_long": "Action Transfer",
     "mode_scail2_video_replacement": "Video Replacement",
     "mode_scail2_face_swap_v2": "Video Face Swap",
+    "mode_ltx25_video_upscale": "LTX-2.5 Video Upscale",
     "mode_video_lora": "Img2Video",
     "mode_template_contribute": "Template Contribute",
     "mode_none": "No Mode",
@@ -1373,6 +1382,13 @@
       "invalid_duration": "⚠️ This mode does not support that duration. Please start again.",
       "video_too_large": "⚠️ The motion video must be under {max_mb}MB. Please compress or trim it and send again.",
       "submitting": "🚀 Submitting the {mode_name} task, duration {duration}s. Estimated cost: {cost} credits. Please wait..."
+    },
+    "ltx25_upscale": {
+      "disabled": "⚠️ The video-upscale node has not completed model validation and is not open yet.",
+      "start": "✨ **LTX-2.5 Video Upscale**\n\nSend an MP4/MOV/WebM video up to 5 seconds and {max_mb}MB. Output dimensions are doubled and the source audio is preserved. Estimated cost: {cost} credits.\n\nSend /cancel anytime to exit.",
+      "too_large": "⚠️ The video must be 40MB or smaller. Please compress it and retry.",
+      "too_long": "⚠️ Version 1 supports videos up to 5 seconds. Please trim and retry.",
+      "submitting": "🚀 Video received. Submitting the 2x upscale task..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **Entered Face Swap Pro mode** (cost: {cost} credits).\n\n**Step 1:** Send 1 reference image.\n\nYou can send /cancel anytime to exit.",

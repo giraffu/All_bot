@@ -86,6 +86,20 @@ def test_face_swap_versions_share_two_credit_price_on_i2i_pro_capacity():
     assert get_runpod_profile("face_swap_v2") == "i2i_pro"
 
 
+def test_ltx25_video_upscale_has_an_isolated_gpu_profile_contract():
+    entry = TASK_TYPE_REGISTRY["ltx25_video_upscale"]
+
+    assert entry.public_type == "ltx25_video_upscale"
+    assert entry.execution_type == "ltx25_video_upscale"
+    assert entry.central_type == "ltx25_video_upscale"
+    assert entry.workflow_filename == "LTX 2.5 IC V2V Upscale.api.json"
+    assert entry.runpod_profile == "ltx25_video_upscale"
+    assert entry.is_generation is True
+    assert entry.is_video is True
+    assert entry.gallery_supported is False
+    assert entry.cost == 40
+
+
 def test_registry_matches_gallery_and_apply_capability_lists():
     gallery_supported = {
         entry.task_type

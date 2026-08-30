@@ -67,6 +67,12 @@ def _assert_task_access(
     ):
         raise CoreDomainError("高级视频生成功能当前未开放。")
     if (
+        task_type == "ltx25_video_upscale"
+        and not operator_canary_authorized
+        and not env_enabled("LTX25_VIDEO_UPSCALE_ENABLED")
+    ):
+        raise CoreDomainError("LTX-2.5 视频高清化当前未开放。")
+    if (
         task_type == "minimax_h3_ref2v"
         and not operator_canary_authorized
         and not env_enabled("MINIMAX_H3_REF2V_ENABLED")
@@ -277,6 +283,8 @@ async def prepare_web_submission_request(
         raise CoreDomainError("纯文生视频不能携带角色或环境引用。")
 
     images = list(inputs.get("images") or [])
+    if req.task_type == "ltx25_video_upscale" and len(images) != 1:
+        raise CoreDomainError("视频高清化需要且只允许上传一个视频。")
     if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
         raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")
     if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:

@@ -33,6 +33,7 @@ export type PendingReferenceUpload = UploadedReference & {
 export type UploadedSlotAsset = UploadedReference & {
   previewKind: LabUploadPreviewKind
   uploading?: true
+  durationSeconds?: number | null
 }
 
 export type LabAssetUploadSlot = {

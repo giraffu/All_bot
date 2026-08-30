@@ -12,6 +12,7 @@ const WEB_LAB_MODE_ENTRY_FLAGS: Record<string, string> = {
   ltx_video: 'enable_ltx_video_entry',
   ltx_video_v2: 'enable_ltx_video_v2_entry',
   ltx_t2v: 'enable_ltx_t2v_entry',
+  ltx25_video_upscale: 'enable_ltx25_video_upscale_entry',
   minimax_h3: 'enable_minimax_h3_entry',
   wan22_video_v2: 'enable_wan22_video_v2_entry',
   scail2_action_transfer: 'enable_scail2_action_transfer_entry',
@@ -79,6 +80,9 @@ export const isGalleryTaskTypeEntryEnabled = (taskType: string): boolean => {
 }
 
 export const isGenerationTaskTypeEnabled = (taskType: string): boolean => {
+  if (taskType === 'ltx25_video_upscale') {
+    return getRuntimeFlag('enable_ltx25_video_upscale', true)
+  }
   if (taskType === 'ltx_video' || taskType === 'ltx_video_flf2v') {
     return isLtxVideoFeatureEnabled()
   }

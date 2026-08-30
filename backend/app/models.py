@@ -12,6 +12,10 @@ from src.domain_config.scail2_video import (
     Scail2DurationError,
     normalize_scail2_duration_seconds,
 )
+from src.domain_config.ltx25_video_upscale import (
+    normalize_ltx25_video_upscale_duration,
+    normalize_ltx25_video_upscale_prompt,
+)
 
 
 class TaskStatus(str, Enum):
@@ -39,6 +43,7 @@ class TaskType(str, Enum):
     LTX_VIDEO_V2V_AUDIO = "ltx_video_v2v_audio"
     LTX_VIDEO_V2 = "ltx_video_v2"
     LTX_VIDEO_V2_FLF2V = "ltx_video_v2_flf2v"
+    LTX25_VIDEO_UPSCALE = "ltx25_video_upscale"
     PROMPT_OPTIMIZE = "prompt_optimize"
     LTX_T2V = "ltx_t2v"
     LTX_T2V_IC = "ltx_t2v_ic"
@@ -315,6 +320,34 @@ class LtxT2VRequest(BaseModel):
     sulphur_strength: Optional[float] = Field(default=None, ge=0, le=1)
     seed: Optional[int] = Field(default=None, ge=0, le=18446744073709551615)
     priority: int = 0
+
+
+class Ltx25VideoUpscaleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    video: str
+    prompt: str = ""
+    length: int = 5
+    priority: int = 0
+
+    @field_validator("video")
+    @classmethod
+    def validate_video(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("video is required")
+        return normalized
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        return normalize_ltx25_video_upscale_prompt(value)
+
+    @field_validator("length")
+    @classmethod
+    def validate_length(cls, value: int) -> int:
+        return normalize_ltx25_video_upscale_duration(value)
 
 
 class MiniMaxH3Request(BaseModel):
