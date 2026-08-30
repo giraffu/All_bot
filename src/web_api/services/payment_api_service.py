@@ -12,6 +12,7 @@ from src.services.membership_plan_catalog import (
 from src.services.order_v2_service import (
     build_legacy_order_payload,
     build_order_public_lookup_stmt,
+    build_rmb_order_settlement_snapshot,
     build_order_settlement_snapshot,
     build_order_v2_payload,
     generate_business_order_id,
@@ -125,7 +126,10 @@ async def create_rmb_order_payload(
         original_price=plan.price_rmb,
         final_price=plan.price_rmb,
         settlement_schema_version="order_plan_v1",
-        settlement_snapshot=build_order_settlement_snapshot(plan),
+        settlement_snapshot=build_rmb_order_settlement_snapshot(
+            plan,
+            pay_type=pay_type,
+        ),
         status="PENDING",
         payment_channel="RMB",
         payment_provider=payment_provider,

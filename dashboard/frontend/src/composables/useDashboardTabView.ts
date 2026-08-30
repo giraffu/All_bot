@@ -16,10 +16,13 @@ interface DashboardTabView {
 interface DashboardOverviewState {
   stats: Ref<unknown>
   statsHistory: Ref<unknown[]>
+  financeStats: Ref<unknown>
+  financeStatsHistory: Ref<unknown[]>
   cumulativeStatsHistory: Ref<unknown[]>
   historyTimeRange: Ref<number>
   timeRangeOptions: unknown[]
   loadHistory: () => Promise<void> | void
+  loadFinanceHistory: () => Promise<void> | void
 }
 
 interface DashboardGalleryCommentsState {
@@ -56,14 +59,14 @@ export function useDashboardTabView(
     }
     if (key === 'finance') {
       return {
-        stats: overview.stats.value,
-        statsHistory: overview.statsHistory.value,
+        stats: overview.financeStats.value,
+        statsHistory: overview.financeStatsHistory.value,
         historyTimeRange: overview.historyTimeRange.value,
         timeRangeOptions: overview.timeRangeOptions,
         'onUpdate:historyTimeRange': (value: number) => {
           overview.historyTimeRange.value = value
         },
-        onLoadHistory: overview.loadHistory,
+        onLoadHistory: overview.loadFinanceHistory,
       }
     }
     if (key === 'users') {

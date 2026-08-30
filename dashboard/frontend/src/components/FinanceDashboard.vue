@@ -1,41 +1,27 @@
-<script setup>
-import { ref, watch, onMounted } from 'vue'
-import { fetchStatsHistory } from '../api/api'
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { fetchFinanceHistory } from '../api/api'
 import StatsCards from './StatsCards.vue'
 import LineChart from './LineChart.vue'
 import FinanceHourlyChart from './FinanceHourlyChart.vue'
+import RmbChannelSummary from './RmbChannelSummary.vue'
 
-const props = defineProps({
-  stats: {
-    type: Object,
-    required: true
-  },
-  statsHistory: {
-    type: Array,
-    required: true
-  },
-  historyTimeRange: {
-    type: Number,
-    required: true
-  },
-  timeRangeOptions: {
-    type: Array,
-    required: true
-  }
-})
+interface TimeRangeOption { label: string, value: number }
+interface FinanceStats { rmb_balance?: number, rmb_channels?: Record<string, { amount: number, orders: number }>, [key: string]: unknown }
+const props = defineProps<{ stats: FinanceStats, statsHistory: Record<string, any>[], historyTimeRange: number, timeRangeOptions: TimeRangeOption[] }>()
 
 const emit = defineEmits(['update:historyTimeRange', 'loadHistory'])
 
-const updateHistoryTimeRange = (value) => {
+const updateHistoryTimeRange = (value: number) => {
   emit('update:historyTimeRange', value)
   emit('loadHistory')
 }
 
 const rechargedCreditsTimeRange = ref(7)
-const rechargedCreditsHistory = ref([])
+const rechargedCreditsHistory = ref<Record<string, any>[]>([])
 
 const disciplesTimeRange = ref(7)
-const disciplesHistory = ref([])
+const disciplesHistory = ref<Record<string, any>[]>([])
 
 const loadRechargedCreditsHistory = async () => {
   if (rechargedCreditsTimeRange.value === props.historyTimeRange && props.statsHistory.length) {
@@ -43,7 +29,7 @@ const loadRechargedCreditsHistory = async () => {
     return;
   }
   try {
-    rechargedCreditsHistory.value = await fetchStatsHistory(rechargedCreditsTimeRange.value)
+    rechargedCreditsHistory.value = await fetchFinanceHistory(rechargedCreditsTimeRange.value)
   } catch (err) {
     console.error(err)
   }
@@ -55,7 +41,7 @@ const loadDisciplesHistory = async () => {
     return;
   }
   try {
-    disciplesHistory.value = await fetchStatsHistory(disciplesTimeRange.value)
+    disciplesHistory.value = await fetchFinanceHistory(disciplesTimeRange.value)
   } catch (err) {
     console.error(err)
   }
@@ -73,19 +59,12 @@ watch(() => props.statsHistory, (newVal) => {
   }
 }, { immediate: true })
 
-onMounted(() => {
-  if (rechargedCreditsTimeRange.value !== props.historyTimeRange || !props.statsHistory.length) {
-    loadRechargedCreditsHistory();
-  }
-  if (disciplesTimeRange.value !== props.historyTimeRange || !props.statsHistory.length) {
-    loadDisciplesHistory();
-  }
-})
 </script>
 
 <template>
   <div class="flex-1 flex flex-col gap-6">
     <StatsCards :stats="stats" mode="finance" />
+    <RmbChannelSummary class="finance-rmb-breakdown" :total="stats.rmb_balance || 0" :channels="stats.rmb_channels || {}" />
 
     <div class="flex flex-col gap-6">
       <div class="flex items-center justify-between px-2">
@@ -111,11 +90,10 @@ onMounted(() => {
           <LineChart title="每日充值 (TON)" :data="statsHistory" :metrics="['ton_recharge', 'cumulative_ton']" />
         </div>
         <div class="h-80">
-          <LineChart title="4
-             (Stars)" :data="statsHistory" :metrics="['stars_recharge', 'cumulative_stars']" />
+          <LineChart title="每日充值 (Stars)" :data="statsHistory" :metrics="['stars_recharge', 'cumulative_stars']" />
         </div>
         <div class="h-80">
-          <LineChart title="每日充值 (RMB)" :data="statsHistory" :metrics="['rmb_recharge', 'cumulative_rmb']" />
+          <LineChart title="每日充值 (RMB · 按渠道)" :data="statsHistory" :metrics="['rmb_direct_alipay', 'rmb_collected_alipay', 'rmb_collected_wechat', 'rmb_legacy_unclassified', 'cumulative_rmb']" />
         </div>
       </div>
       
@@ -195,3 +173,11 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+@media (max-width: 767px) {
+  .finance-rmb-breakdown {
+    order: -1;
+  }
+}
+</style>

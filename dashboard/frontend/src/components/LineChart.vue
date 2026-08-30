@@ -307,6 +307,42 @@ const option = computed(() => {
       }
     },
     {
+      id: 'rmb_direct_alipay',
+      name: '支付宝直连',
+      type: 'bar',
+      stack: 'rmb-channel',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.rmb_direct_alipay || 0),
+      color: '#1677ff'
+    },
+    {
+      id: 'rmb_collected_alipay',
+      name: '代收 · 支付宝',
+      type: 'bar',
+      stack: 'rmb-channel',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.rmb_collected_alipay || 0),
+      color: '#faad14'
+    },
+    {
+      id: 'rmb_collected_wechat',
+      name: '代收 · 微信',
+      type: 'bar',
+      stack: 'rmb-channel',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.rmb_collected_wechat || 0),
+      color: '#52c41a'
+    },
+    {
+      id: 'rmb_legacy_unclassified',
+      name: '历史未区分',
+      type: 'bar',
+      stack: 'rmb-channel',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.rmb_legacy_unclassified || 0),
+      color: '#94a3b8'
+    },
+    {
       id: 'cumulative_rmb',
       name: '累计充值 (RMB)',
       type: 'line',

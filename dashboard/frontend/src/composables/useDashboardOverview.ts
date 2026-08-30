@@ -1,5 +1,10 @@
 import { ref, watch } from 'vue'
-import { fetchStats, fetchStatsHistory } from '../api/api'
+import {
+  fetchFinanceHistory,
+  fetchFinanceStats,
+  fetchStats,
+  fetchStatsHistory,
+} from '../api/api'
 
 const defaultStats = () => ({
   total_users: 0,
@@ -28,6 +33,11 @@ const defaultStats = () => ({
 export function useDashboardOverview() {
   const stats = ref(defaultStats())
   const statsHistory = ref<any[]>([])
+  const financeStats = ref<Record<string, any>>({
+    rmb_balance: 0,
+    rmb_channels: {},
+  })
+  const financeStatsHistory = ref<any[]>([])
   const cumulativeStatsHistory = ref<any[]>([])
   const historyTimeRange = ref(7)
   const refreshLoading = ref(false)
@@ -58,10 +68,30 @@ export function useDashboardOverview() {
     }
   }
 
-  const refreshData = async () => {
+  const loadFinanceStats = async () => {
+    try {
+      financeStats.value = await fetchFinanceStats()
+    } catch (error) {
+      console.error('Error fetching finance stats:', error)
+    }
+  }
+
+  const loadFinanceHistory = async () => {
+    try {
+      financeStatsHistory.value = await fetchFinanceHistory(historyTimeRange.value)
+    } catch (error) {
+      console.error('Error fetching finance history:', error)
+    }
+  }
+
+  const refreshData = async (scope: string = 'home') => {
     refreshLoading.value = true
     try {
-      await Promise.all([loadStats(), loadHistory()])
+      if (scope === 'finance') {
+        await Promise.all([loadFinanceStats(), loadFinanceHistory()])
+      } else {
+        await Promise.all([loadStats(), loadHistory()])
+      }
     } finally {
       refreshLoading.value = false
     }
@@ -99,12 +129,15 @@ export function useDashboardOverview() {
   return {
     stats,
     statsHistory,
+    financeStats,
+    financeStatsHistory,
     cumulativeStatsHistory,
     historyTimeRange,
     refreshLoading,
     timeRangeOptions,
     loadStats,
     loadHistory,
+    loadFinanceHistory,
     refreshData
   }
 }

@@ -141,6 +141,7 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
     assert created_order.internal_user_id == 2002
     assert created_order.settlement_schema_version == "order_plan_v1"
     assert created_order.settlement_snapshot["plan_id"] == 1
+    assert created_order.settlement_snapshot["rmb_pay_type"] == "alipay"
     assert result["data"]["order_id"] == "bo_test_1"
     assert result["data"]["legacy_order_id"].startswith("WEB_")
     create_url.assert_awaited_once()

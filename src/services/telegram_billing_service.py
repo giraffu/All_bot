@@ -11,6 +11,7 @@ from src.services.membership_plan_catalog import (
     build_visible_membership_plans_stmt,
 )
 from src.services.order_v2_service import (
+    build_rmb_order_settlement_snapshot,
     build_order_settlement_snapshot,
     generate_business_order_id,
     get_order_public_id,
@@ -44,6 +45,7 @@ async def create_rmb_pending_order(
     plan,
     out_trade_no: str,
     payment_provider: str,
+    pay_type: str,
 ):
     async with AsyncSessionLocal() as session:
         new_order = Order(
@@ -54,7 +56,10 @@ async def create_rmb_pending_order(
             original_price=plan.price_rmb,
             final_price=plan.price_rmb,
             settlement_schema_version="order_plan_v1",
-            settlement_snapshot=build_order_settlement_snapshot(plan),
+            settlement_snapshot=build_rmb_order_settlement_snapshot(
+                plan,
+                pay_type=pay_type,
+            ),
             status="PENDING",
             payment_channel="RMB",
             payment_provider=payment_provider,

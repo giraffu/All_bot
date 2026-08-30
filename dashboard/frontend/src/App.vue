@@ -24,11 +24,14 @@ const collapsed = ref(isMobile.value)
 const {
   stats,
   statsHistory,
+  financeStats,
+  financeStatsHistory,
   cumulativeStatsHistory,
   historyTimeRange,
   refreshLoading,
   timeRangeOptions,
   loadHistory,
+  loadFinanceHistory,
   refreshData
 } = useDashboardOverview()
 const {
@@ -84,10 +87,13 @@ const { currentTabView } = useDashboardTabView(
   {
     stats,
     statsHistory,
+    financeStats,
+    financeStatsHistory,
     cumulativeStatsHistory,
     historyTimeRange,
     timeRangeOptions,
     loadHistory,
+    loadFinanceHistory,
   },
   {
     viewHistory,
@@ -103,7 +109,7 @@ const isActiveTabScrollable = computed(() =>
 watch(activeTab, (newTab) => {
   const tab = newTab[0]
   if (tab === 'home' || tab === 'finance') {
-    void refreshData()
+    void refreshData(tab)
   }
   if (isMobile.value) {
     collapsed.value = true
@@ -119,7 +125,7 @@ watch(
   isAuthenticated,
   (authenticated) => {
     if (authenticated) {
-      void refreshData()
+      void refreshData(activeTab.value[0])
     }
   },
   { immediate: true }
@@ -128,6 +134,8 @@ watch(
 const handleLogout = () => {
   clearAuthToken()
 }
+
+const refreshActiveTab = () => refreshData(activeTab.value[0])
 </script>
 
 <template>
@@ -158,7 +166,7 @@ const handleLogout = () => {
         :current-tab-title="currentTabTitle"
         :refresh-loading="refreshLoading"
         @search="handleSearch"
-        @refresh="refreshData"
+        @refresh="refreshActiveTab"
         @logout="handleLogout"
       />
 

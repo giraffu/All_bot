@@ -68,6 +68,10 @@ sequenceDiagram
   - 保存本地业务单、支付渠道、RMB `payment_provider`、`tx_hash`、支付状态、`commission_usdt`、支付时间。
   - RMB 新订单在创建时把提供方固定为 `HUANYUY` 或 `ALIPAY_DIRECT`；历史 RMB
     订单迁移回填为 `HUANYUY`，非 RMB 订单保持空值。
+  - Web 与 Bot 的新 RMB 订单还在 `settlement_snapshot.rmb_pay_type` 固化用户选择的
+    `alipay` 或 `wxpay`。管理统计以“提供方 + 支付方式”区分支付宝直连、代收
+    支付宝和代收微信；没有该快照的旧代收订单必须单列“历史未区分”，不得猜测
+    或强行归入任一通道。
   - `tx_hash` 唯一，用于 TON 等外部流水幂等拦截。
 - `affiliate_transactions`
   - 返佣主账本，记录 `IN/OUT`、`transaction_type`、`reference_type/reference_id`、`idempotency_key`。
@@ -367,6 +371,12 @@ sequenceDiagram
 - Provider 启动回归
   - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。
   - 管理后台退款/强制终止路径不得在运行时才暴露 `Billing core providers 未注册`。
+- Dashboard 财务统计
+  - `/api/stats/finance/summary` 与 `/api/stats/finance/history` 只查询财务页所需的
+    余额、身份、邀请和订单聚合，财务页刷新不得回退到全局 Dashboard 用户、
+    History 与分布扫描。
+  - 覆盖支付宝直连、代收支付宝、代收微信与旧代收未区分四个互斥统计桶；Web 与
+    Bot 下单测试必须断言 `settlement_snapshot.rmb_pay_type` 已固化。
 - Dashboard 直连名单
   - 覆盖服务端分页、累计成功付费/历史直连付款聚合、首次使用日期与三态筛选、
     跨分页筛选全选、明确 ID 批量更新、10000 人上限，以及状态与审计同事务提交。

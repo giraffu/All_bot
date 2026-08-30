@@ -34,6 +34,20 @@ def build_order_settlement_snapshot(plan: MembershipPlan) -> dict:
     )
 
 
+def build_rmb_order_settlement_snapshot(
+    plan: MembershipPlan,
+    *,
+    pay_type: str,
+) -> dict:
+    """Persist the selected RMB rail without changing settlement semantics."""
+    normalized_pay_type = str(pay_type).strip().lower()
+    if normalized_pay_type not in {"alipay", "wxpay"}:
+        raise ValueError("Unsupported RMB payment type")
+    snapshot = build_order_settlement_snapshot(plan)
+    snapshot["rmb_pay_type"] = normalized_pay_type
+    return snapshot
+
+
 def build_order_v2_payload(business_order_id: str) -> str:
     return f"{ORDER_V2_PREFIX}{business_order_id}"
 

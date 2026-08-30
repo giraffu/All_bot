@@ -114,6 +114,20 @@ async def test_get_stats_routes_through_loader(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_finance_summary_routes_through_focused_loader(monkeypatch):
+    stats_router._stats_cache.clear()
+    stats_router._stats_cache_locks.clear()
+    loader = AsyncMock(return_value={"rmb_balance": 88})
+    monkeypatch.setattr(stats_router, "load_finance_dashboard_summary", loader)
+    db = object()
+
+    result = await stats_router.get_finance_summary(db=db)
+
+    assert result == {"rmb_balance": 88}
+    loader.assert_awaited_once_with(db=db, logger=stats_router.logger)
+
+
+@pytest.mark.asyncio
 async def test_get_hourly_stats_routes_through_loader(monkeypatch):
     expected = {"00": 0, "01": 2}
     loader = AsyncMock(return_value=expected)
