@@ -144,6 +144,95 @@ async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
+    monkeypatch,
+):
+    edit = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    data = {
+        "mode": "ref2v",
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "images": [],
+        "reference_descriptions": [],
+        "reference_video": "/tmp/owned-tail.mp4",
+        "extension_start_frame": "/tmp/owned-tail.png",
+        "is_extension": True,
+        "runtime_profiles": {
+            "ref2v": {"main_model": "official", "addon_items": []},
+        },
+    }
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
+    query = SimpleNamespace(
+        data="h3ext_mode_ref2v",
+        answer=AsyncMock(),
+        message=object(),
+    )
+
+    state = await fsm.extension_mode_callback(
+        SimpleNamespace(callback_query=query), context
+    )
+
+    assert state == AdvancedVideoProState.WAIT_SETTINGS
+    assert "直接发送新提示词" in edit.await_args.args[1]
+    buttons = [
+        button
+        for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    send_prompt = next(
+        button for button in buttons if button.callback_data == "avp_settings_done"
+    )
+    assert send_prompt.text == "发送提示词"
+
+    query.data = "avp_settings_done"
+    state = await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
+
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert "请输入视频提示词" in edit.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_h3_extension_reference_image_continues_existing_reference_flow(
+    monkeypatch,
+):
+    reply = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/new-reference.png"),
+    )
+    data = {
+        "mode": "ref2v",
+        "images": [],
+        "reference_descriptions": [],
+        "reference_audio": None,
+        "reference_video": "/tmp/owned-tail.mp4",
+        "is_extension": True,
+    }
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: data},
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=object())),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            photo=[SimpleNamespace(file_id="reference-image")],
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_image(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
+    assert data["images"] == ["/tmp/new-reference.png"]
+    assert data["reference_video"] == "/tmp/owned-tail.mp4"
+    assert "完成选图后进入可选参考语音步骤" in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
 async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeypatch):
     submit = Mock(return_value=object())
     create_background = Mock()

@@ -145,6 +145,15 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     rows = [duration_buttons, preset_buttons[:2], preset_buttons[2:]]
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
+    if data.get("is_extension") and data.get("mode") == "ref2v":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _text(context, "发送提示词", "Send prompt"),
+                    callback_data="avp_settings_done",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -165,7 +174,17 @@ def _settings_text(context, data: dict) -> str:
         else data["aspect"]
     )
     mode = data.get("mode")
-    if mode == "t2v":
+    if data.get("is_extension") and mode == "ref2v":
+        direct_action_zh = (
+            "点击“发送提示词”后输入新提示词即可生成；也可直接发送 1–4 张参考图，"
+            "继续原有的参考图、可选语音和提示词流程。"
+        )
+        direct_action_en = (
+            "Tap Send prompt and enter a new prompt to generate, or send 1–4 "
+            "reference images to continue through the existing image, optional "
+            "voice, and prompt flow."
+        )
+    elif mode == "t2v":
         direct_action_zh = "直接发送提示词后立即生成，无需再次确认。"
         direct_action_en = (
             "Send the prompt to generate immediately; no confirmation is needed."
@@ -482,15 +501,6 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                     "请先选择图生视频模式。",
                     "Choose an image-to-video mode first.",
                 ),
-            ),
-        )
-        return AdvancedVideoProState.WAIT_SETTINGS
-    if data.get("is_extension") and data.get("mode") == "ref2v":
-        await robust_reply_text(
-            update.message,
-            _with_cancel_hint(
-                context,
-                _text(context, "上一段末尾视频已作为参考，请直接发送新提示词。", "The previous segment tail is loaded as a video reference. Send a new prompt."),
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
