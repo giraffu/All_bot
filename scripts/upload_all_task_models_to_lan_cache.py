@@ -248,6 +248,7 @@ def _build_union_manifest(
     bundle_refs = []
     sources = []
     files_by_path: dict[str, dict[str, Any]] = {}
+    obsolete_files_by_path: dict[str, dict[str, Any]] = {}
     for bundle, version in target.bundle_versions:
         manifest = registry.load_manifest(bundle, version)
         bundle_refs.append(
@@ -263,6 +264,10 @@ def _build_union_manifest(
             relative_path = str(item["relative_path"]).lstrip("/")
             size_bytes = int(item["size_bytes"])
             sha256 = str(item["sha256"])
+            if relative_path in obsolete_files_by_path:
+                raise RuntimeError(
+                    f"active model file cannot also be obsolete: {relative_path}"
+                )
             existing = files_by_path.get(relative_path)
             if existing:
                 if (
@@ -279,11 +284,38 @@ def _build_union_manifest(
                 "sha256": sha256,
                 "size_bytes": size_bytes,
             }
+        for item in manifest.get("obsolete_files") or []:
+            relative_path = str(item["relative_path"]).lstrip("/")
+            size_bytes = int(item["size_bytes"])
+            sha256 = str(item["sha256"])
+            if relative_path in files_by_path:
+                raise RuntimeError(
+                    f"active model file cannot also be obsolete: {relative_path}"
+                )
+            existing = obsolete_files_by_path.get(relative_path)
+            if existing:
+                if (
+                    existing["sha256"] != sha256
+                    or int(existing["size_bytes"]) != size_bytes
+                ):
+                    raise RuntimeError(
+                        "conflicting obsolete model bundle entries for "
+                        f"{relative_path}: {existing['sha256']} vs {sha256}"
+                    )
+                continue
+            obsolete_files_by_path[relative_path] = {
+                "relative_path": relative_path,
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+            }
     files = sorted(files_by_path.values(), key=lambda item: item["relative_path"])
+    obsolete_files = sorted(
+        obsolete_files_by_path.values(), key=lambda item: item["relative_path"]
+    )
     version = target.version or ",".join(
         sorted({item["version"] for item in bundle_refs if item.get("version")})
     )
-    return {
+    union_manifest = {
         "bundle": "union",
         "version": version,
         "bundles": bundle_refs,
@@ -292,6 +324,9 @@ def _build_union_manifest(
         "file_count": len(files),
         "files": files,
     }
+    if obsolete_files:
+        union_manifest["obsolete_files"] = obsolete_files
+    return union_manifest
 
 
 def _load_existing_sha_index(client, *, bucket: str) -> dict[str, str]:

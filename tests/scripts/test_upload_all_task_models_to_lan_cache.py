@@ -60,3 +60,50 @@ def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
     assert target.prefix == "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"
     assert target.manifest_key == "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18/manifest.json"
     assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"),)
+
+
+def test_target_manifest_preserves_exact_obsolete_file_cleanup(tmp_path: Path):
+    registry = ModelRegistry(tmp_path / "registry")
+    registry.ensure_layout()
+    active_sha = "a" * 64
+    obsolete_sha = "b" * 64
+    blob = registry.blob_path(active_sha)
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(b"model")
+    target = TARGETS_BY_NAME["minimax_h3"]
+    registry.write_bundle_manifest(
+        bundle="minimax_h3_runtime",
+        version="2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18",
+        profiles=["minimax_h3"],
+        source={"revision": "fixed"},
+        files=[
+            {
+                "relative_path": "diffusion_models/MiniMaxH3/beta4.safetensors",
+                "sha256": active_sha,
+                "size_bytes": 5,
+                "source_path": str(blob),
+            }
+        ],
+        obsolete_files=[
+            {
+                "relative_path": "diffusion_models/MiniMaxH3/beta3.safetensors",
+                "sha256": obsolete_sha,
+                "size_bytes": 4,
+            }
+        ],
+    )
+
+    manifests = build_target_manifests(
+        registry=registry,
+        existing_by_sha={},
+        targets=(target,),
+    )
+
+    manifest = manifests[target.manifest_key]
+    assert manifest["obsolete_files"] == [
+        {
+            "relative_path": "diffusion_models/MiniMaxH3/beta3.safetensors",
+            "sha256": obsolete_sha,
+            "size_bytes": 4,
+        }
+    ]
