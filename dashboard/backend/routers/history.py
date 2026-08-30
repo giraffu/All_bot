@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ async def get_all_history(
     is_public: Optional[bool] = None,
     worker_id: Optional[str] = None,
     source: Optional[str] = None,
+    username: Annotated[Optional[str], Query(max_length=100)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Get all history with pagination and multiple optional filters"""
@@ -38,6 +39,7 @@ async def get_all_history(
         is_public=is_public,
         worker_id=worker_id,
         source=source,
+        username=username,
         count_cache=history_count_cache,
         logger_override=logger,
     )

@@ -19,6 +19,63 @@ describe('HistoryTable source filters', () => {
     apiMocks.fetchWorkerList.mockResolvedValue({ workers: [] })
   })
 
+  it('searches by username from the first page when Enter is pressed', async () => {
+    const InputStub = defineComponent({
+      name: 'AInputSearch',
+      inheritAttrs: false,
+      emits: ['update:value', 'search', 'change'],
+      template: '<input v-bind="$attrs" />',
+    })
+    const TableStub = defineComponent({
+      name: 'ATable',
+      props: {
+        pagination: { type: Object, required: true },
+        scroll: { type: Object, required: true },
+      },
+      emits: ['change'],
+      template: '<div />',
+    })
+    const wrapper = shallowMount(HistoryTable, {
+      global: { components: { AInputSearch: InputStub, ATable: TableStub } },
+    })
+    await flushPromises()
+
+    wrapper.getComponent(TableStub).vm.$emit('change', { current: 2 })
+    await flushPromises()
+    const usernameInput = wrapper.getComponent(InputStub)
+    expect(usernameInput.attributes('placeholder')).toBe('搜索用户名')
+    usernameInput.vm.$emit('update:value', '  Gray  ')
+    usernameInput.vm.$emit('search', '  Gray  ')
+    await flushPromises()
+
+    expect(apiMocks.fetchHistoryAll).toHaveBeenLastCalledWith(
+      1,
+      20,
+      null,
+      null,
+      null,
+      null,
+      null,
+      'Gray',
+      { signal: expect.any(AbortSignal) },
+    )
+
+    usernameInput.vm.$emit('update:value', '')
+    usernameInput.vm.$emit('change', { target: { value: '' } })
+    await flushPromises()
+    expect(apiMocks.fetchHistoryAll).toHaveBeenLastCalledWith(
+      1,
+      20,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { signal: expect.any(AbortSignal) },
+    )
+  })
+
   it('widens the worker filter and sends the selected QQCC source', async () => {
     const SelectStub = defineComponent({
       name: 'ASelect',
@@ -57,6 +114,7 @@ describe('HistoryTable source filters', () => {
       null,
       null,
       'bot:qqcc',
+      null,
       { signal: expect.any(AbortSignal) },
     )
   })
@@ -109,6 +167,7 @@ describe('HistoryTable source filters', () => {
       null,
       null,
       null,
+      null,
       { signal: expect.any(AbortSignal) },
     )
   })
@@ -121,7 +180,7 @@ describe('HistoryTable source filters', () => {
     apiMocks.fetchHistoryAll.mockImplementation((...args) => new Promise((resolve) => {
       pendingRequests.push({
         resolve,
-        signal: args[7].signal,
+        signal: args[8].signal,
       })
     }))
     const SelectStub = defineComponent({

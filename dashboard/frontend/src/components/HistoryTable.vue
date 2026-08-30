@@ -13,7 +13,6 @@ import MediaItem from './MediaItem.vue'
 import { 
   UserOutlined,
   ReloadOutlined,
-  SearchOutlined,
   CloseCircleFilled
 } from '@ant-design/icons-vue'
 
@@ -27,6 +26,8 @@ const selectedRating = ref(null)
 const selectedPublic = ref(null)
 const selectedWorker = ref(null)
 const selectedSource = ref(null)
+const usernameInput = ref('')
+const selectedUsername = ref(null)
 const workerOptions = ref([{ label: '全部节点', value: null }])
 const sourceOptions = HISTORY_SOURCE_OPTIONS
 let activeHistoryRequest = null
@@ -62,6 +63,7 @@ const loadData = async (page = 1) => {
       selectedPublic.value,
       selectedWorker.value,
       selectedSource.value,
+      selectedUsername.value,
       { signal: requestController.signal },
     )
     if (activeHistoryRequest !== requestController) return
@@ -96,12 +98,28 @@ const handleFilterChange = () => {
   loadData(1)
 }
 
+const handleUsernameSearch = (value) => {
+  const normalizedValue = value.trim().replace(/^@/, '')
+  usernameInput.value = normalizedValue
+  selectedUsername.value = normalizedValue || null
+  loadData(1)
+}
+
+const handleUsernameInputChange = (event) => {
+  if (event.target.value === '' && selectedUsername.value !== null) {
+    selectedUsername.value = null
+    loadData(1)
+  }
+}
+
 const resetFilters = () => {
   selectedTypes.value = []
   selectedRating.value = null
   selectedPublic.value = null
   selectedWorker.value = null
   selectedSource.value = null
+  usernameInput.value = ''
+  selectedUsername.value = null
   loadData(1)
 }
 
@@ -199,6 +217,23 @@ onBeforeUnmount(() => {
           data-testid="history-filter-strip"
           class="history-filter-strip flex min-w-0 flex-1 items-center gap-3 overflow-x-auto rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 shadow-sm"
         >
+            <!-- Username Filter -->
+            <div class="flex shrink-0 items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">用户名:</span>
+              <a-input-search
+                v-model:value="usernameInput"
+                data-testid="history-username-filter"
+                style="width: 160px"
+                placeholder="搜索用户名"
+                size="small"
+                allow-clear
+                @change="handleUsernameInputChange"
+                @search="handleUsernameSearch"
+              />
+            </div>
+
+            <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
+
             <!-- Multiple Type Filter -->
             <div class="flex shrink-0 items-center gap-2">
               <span class="text-gray-500 text-xs font-medium">类型:</span>
@@ -290,7 +325,7 @@ onBeforeUnmount(() => {
             </div>
 
             <a-button 
-              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null || selectedSource !== null"
+              v-if="selectedUsername !== null || selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null || selectedSource !== null"
               size="small" 
               type="text" 
               danger 

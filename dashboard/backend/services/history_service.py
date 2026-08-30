@@ -85,12 +85,22 @@ def _history_count_cache_key(
     is_public: bool | None,
     worker_id: str | None,
     source: str | None,
+    username: str | None,
 ) -> HistoryCountCacheKey:
     type_key = (
         tuple(sorted(type.split(","))) if type and type != "all" else ()
     )
     worker_key = worker_id if worker_id and worker_id != "all" else ""
-    return (type_key, rating, is_public, worker_key, source or "")
+    username_key = (username or "").strip().lstrip("@").lower()
+    return (type_key, rating, is_public, worker_key, source or "", username_key)
+
+
+def _escape_like_query(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
 
 
 def _build_history_filters(
@@ -100,6 +110,7 @@ def _build_history_filters(
     is_public: bool | None,
     worker_id: str | None,
     source: str | None,
+    username: str | None,
 ) -> list:
     filters = []
     if type and type != "all":
@@ -117,6 +128,10 @@ def _build_history_filters(
             )
             .exists()
         )
+    normalized_username = (username or "").strip().lstrip("@")
+    if normalized_username:
+        username_pattern = f"%{_escape_like_query(normalized_username)}%"
+        filters.append(User.username.ilike(username_pattern, escape="\\"))
     qqcc_history = History.extra_outputs[QQCC_REGENERATE_CONTEXT_KEY].is_not(None)
     private_submission_exists = (
         select(1)
@@ -174,6 +189,7 @@ async def refresh_default_history_count_cache(
         is_public=None,
         worker_id=None,
         source=None,
+        username=None,
     )
     async with session_factory() as db:
         total = await count_cache.refresh(
@@ -245,6 +261,7 @@ async def get_all_history_payload(
     is_public: bool | None = None,
     worker_id: str | None = None,
     source: str | None = None,
+    username: str | None = None,
     count_cache: HistoryCountCache | None = None,
     storage_service=None,
     resolve_media_urls_func=resolve_history_media_urls,
@@ -289,6 +306,7 @@ async def get_all_history_payload(
             is_public=is_public,
             worker_id=worker_id,
             source=source,
+            username=username,
         )
         if count_cache is None:
             total = await _load_history_count(db=db, filters=filters)
@@ -299,6 +317,7 @@ async def get_all_history_payload(
                 is_public=is_public,
                 worker_id=worker_id,
                 source=source,
+                username=username,
             )
             total = await count_cache.get_or_load(
                 cache_key,
