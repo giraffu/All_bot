@@ -60,3 +60,20 @@ def test_ltx25_upscale_image_is_model_free_and_runtime_pinned():
     ) < dockerfile.index(
         "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker"
     )
+
+
+def test_ltx25_upscale_runtime_refresh_is_dependency_closed():
+    dockerfile = (
+        ROOT / "workers/runpod_profiles/ltx25_video_upscale/Dockerfile.runtime-refresh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:"
+        "a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2"
+    ) in dockerfile
+    assert "RUNTIME_REQUIREMENTS_SHA256" in dockerfile
+    assert (
+        "COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh "
+        "/opt/allbot/runpod_bootstrap_from_git.sh"
+    ) in dockerfile
+    assert 'assert "ltx25_video_upscale" in p' in dockerfile

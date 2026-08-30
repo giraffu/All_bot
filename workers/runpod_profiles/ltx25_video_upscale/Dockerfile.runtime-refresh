@@ -1,0 +1,37 @@
+ARG RUNTIME_BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2
+FROM ${RUNTIME_BASE_IMAGE}
+
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ARG RUNTIME_REQUIREMENTS_SHA256=d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.runtime-base-digest="sha256:a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c - && rm -rf /opt/allbot/runtime/runpod_worker
+COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+COPY shared /opt/allbot/runtime/runpod_worker/shared
+COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+RUN echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c -
+RUN set -euo pipefail; \
+    test -n "$ALLBOT_GIT_SHA"; \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256"; \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
+    test -x /opt/allbot/runpod_bootstrap_from_git.sh; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.runtime_manifest import load_runtime_manifest; load_runtime_manifest(); from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; assert "ltx25_video_upscale" in p'; \
+    python3 -c 'import fastapi, minio, uvicorn, websockets'
+RUN PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel)'
+
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_WORKER_DIR=/opt/allbot/runtime/runpod_worker
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]
