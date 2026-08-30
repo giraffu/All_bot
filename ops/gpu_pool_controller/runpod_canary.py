@@ -32,6 +32,10 @@ from .providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
@@ -43,6 +47,7 @@ from .providers.runpod import (
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
+    RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX,
     RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX,
@@ -50,6 +55,7 @@ from .providers.runpod import (
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
@@ -104,6 +110,10 @@ EXPECTED_LTX_VIDEO_MODEL_PREFIX = RUNPOD_LTX_VIDEO_MODEL_PREFIX
 EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY = RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
 EXPECTED_LTX_T2V_MODEL_PREFIX = RUNPOD_LTX_T2V_MODEL_PREFIX
 EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY = RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX = RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
+EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY = (
+    RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+)
 EXPECTED_MINIMAX_H3_MODEL_PREFIX = RUNPOD_MINIMAX_H3_MODEL_PREFIX
 EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY = RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
@@ -122,6 +132,9 @@ EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro
 EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX
 EXPECTED_LTX_T2V_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX
+EXPECTED_LTX25_VIDEO_UPSCALE_IMAGE_REF_PREFIX = (
+    RUNPOD_PUBLIC_LTX25_VIDEO_UPSCALE_IMAGE_PREFIX
+)
 EXPECTED_MINIMAX_H3_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX
 DEFAULT_CLOUD_TEST_WEB_API_URL = "https://api-cf-test.aivison.it.com/api"
 DEFAULT_CLOUD_TEST_CENTRAL_URL = EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL
@@ -133,6 +146,9 @@ EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 EXPECTED_SCAIL2_GPU_TYPE_IDS = RUNPOD_SCAIL2_GPU_TYPE_IDS
 EXPECTED_LTX_VIDEO_GPU_TYPE_IDS = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
 EXPECTED_LTX_T2V_GPU_TYPE_IDS = RUNPOD_LTX_T2V_GPU_TYPE_IDS
+EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS = (
+    RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS
+)
 EXPECTED_MINIMAX_H3_GPU_TYPE_IDS = RUNPOD_MINIMAX_H3_GPU_TYPE_IDS
 EXPECTED_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS = (
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
@@ -147,6 +163,7 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
+    RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX,
     RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
     RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX,
@@ -297,6 +314,19 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         task_summary="submit ltx_t2v and ltx_t2v_ic 5s Web tasks serially",
         worker_disable_summary=(
             "temporarily disable cloud-test workers supporting ltx_t2v or ltx_t2v_ic"
+        ),
+    ),
+    "ltx25_video_upscale": RunPodCanaryProfileSpec(
+        task_type="ltx25_video_upscale",
+        image_ref_prefix=EXPECTED_LTX25_VIDEO_UPSCALE_IMAGE_REF_PREFIX,
+        supported_task_types=RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
+        model_prefix=EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+        task_summary="submit one LTX-2.5 IC V2V 2x upscale Web task",
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting "
+            "ltx25_video_upscale"
         ),
     ),
     "minimax_h3": RunPodCanaryProfileSpec(
@@ -666,13 +696,14 @@ class RunPodCanaryRunner:
                 target_agent_id = str(runpod_worker.get("agent_id") or "")
 
                 if (
-                    RUNPOD_TASK_PROFILES[self.options.task_type].task_type == "ltx_t2v"
+                    RUNPOD_TASK_PROFILES[self.options.task_type].task_type
+                    in {"ltx_t2v", "ltx25_video_upscale"}
                     and not pod_reused
                 ):
                     self._set_agent_control(
                         target_agent_id,
                         "disabled",
-                        reason="runpod_ltx_t2v_default_disabled",
+                        reason="runpod_canary_default_disabled",
                         ttl_seconds=self.options.control_ttl_seconds,
                     )
                     summary["target_agent_control"] = {
@@ -687,7 +718,7 @@ class RunPodCanaryRunner:
                     self._set_agent_control(
                         target_agent_id,
                         "enabled",
-                        reason="runpod_ltx_t2v_canary",
+                        reason="runpod_canary_execution",
                         ttl_seconds=self.options.control_ttl_seconds,
                     )
                     summary["target_agent_control"]["canary_state"] = "enabled"
@@ -1088,7 +1119,7 @@ class RunPodCanaryRunner:
                 self._set_agent_control(
                     target_agent_id,
                     "disabled",
-                    reason="runpod_ltx_t2v_canary_complete",
+                    reason="runpod_canary_complete",
                     ttl_seconds=self.options.control_ttl_seconds,
                 )
                 cleanup["target_agent_disable"] = {
@@ -1246,7 +1277,11 @@ class RunPodCanaryRunner:
             failures.append(
                 f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
             )
-        if spec.task_type in {"ltx_t2v", "minimax_h3"} and not uses_canonical_digest:
+        if spec.task_type in {
+            "ltx_t2v",
+            "ltx25_video_upscale",
+            "minimax_h3",
+        } and not uses_canonical_digest:
             failures.append(
                 f"{spec.task_type} imageName must use an exact sha256 digest"
             )
