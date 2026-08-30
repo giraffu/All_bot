@@ -345,6 +345,7 @@ class WebEntryVisibilityConfig(BaseModel):
     ltx_video: bool = True
     ltx_video_v2: bool = True
     ltx_t2v: bool = True
+    ltx25_video_upscale: bool = False
     minimax_h3: bool = False
     wan22_video_v2: bool = True
     scail2_action_transfer: bool = True
