@@ -297,6 +297,10 @@ LOG_FILE="${RUNPOD_TRANSFER_LOG_FILE:-/tmp/allbot-model-transfer.log}"
 exec > "$LOG_FILE" 2>&1
 keepalive_on_failure() {
     status="$?"
+    trap - EXIT
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
     echo "[model-transfer] failed with exit status ${status}" >&2
     if [ "${RUNPOD_MODEL_TRANSFER_EXIT_ON_COMPLETE:-true}" = "false" ]; then
         echo "[model-transfer] keeping failed container alive for diagnostics" >&2
@@ -304,7 +308,7 @@ keepalive_on_failure() {
     fi
     exit "$status"
 }
-trap keepalive_on_failure ERR
+trap keepalive_on_failure EXIT
 echo "[model-transfer] boot $(date -Is)"
 if command -v apt-get >/dev/null 2>&1; then
     apt-get update
@@ -465,6 +469,7 @@ for index, item in enumerate(transfers, start=1):
 PY
 touch /tmp/allbot-model-transfer.done
 echo "[model-transfer] done $(date -Is)"
+trap - EXIT
 if [ "${RUNPOD_MODEL_TRANSFER_EXIT_ON_COMPLETE:-true}" != "false" ]; then
   exit 0
 fi
