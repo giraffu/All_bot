@@ -14,6 +14,8 @@ from dashboard.backend.services.stats_service import (
     load_dashboard_stats,
     load_dashboard_stats_history,
     load_finance_hourly_stats_by_date_str,
+    load_finance_dashboard_history,
+    load_finance_dashboard_summary,
     load_hourly_generation_stats_by_date_str,
     load_type_distribution_stats_by_date_str,
 )
@@ -94,6 +96,26 @@ async def get_finance_hourly_stats(
         ("finance_hourly", date_str or ""),
         lambda: load_finance_hourly_stats_by_date_str(db=db, date_str=date_str),
         error_message="Error getting finance hourly stats",
+    )
+
+
+@router.get("/finance/summary")
+async def get_finance_summary(db: AsyncSession = Depends(get_db)):
+    """Get the finance page's focused summary without global dashboard scans."""
+    return await _cached_stats_route(
+        ("finance_summary",),
+        lambda: load_finance_dashboard_summary(db=db, logger=logger),
+        error_message="Error getting finance summary",
+    )
+
+
+@router.get("/finance/history")
+async def get_finance_history(days: int = 7, db: AsyncSession = Depends(get_db)):
+    """Get finance-only history, including persisted RMB rail breakdowns."""
+    return await _cached_stats_route(
+        ("finance_history", days),
+        lambda: load_finance_dashboard_history(db=db, days=days),
+        error_message="Error getting finance history",
     )
 
 

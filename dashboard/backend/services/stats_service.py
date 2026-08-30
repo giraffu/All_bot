@@ -16,6 +16,10 @@ from dashboard.backend.services.stats_service_activity import (
 from dashboard.backend.services.stats_service_history import (
     load_dashboard_stats_history_impl,
 )
+from dashboard.backend.services.stats_service_finance import (
+    load_finance_dashboard_history_impl,
+    load_finance_dashboard_summary_impl,
+)
 from dashboard.backend.services.stats_service_summary import load_dashboard_stats_impl
 from dashboard.backend.services.stats_service_utils import (
     build_hourly_distribution,
@@ -116,3 +120,11 @@ async def load_dashboard_stats_history(
         logger=logger,
         video_types=VIDEO_TYPES,
     )
+
+
+async def load_finance_dashboard_summary(*, db: AsyncSession, logger: Logger) -> dict:
+    return await load_finance_dashboard_summary_impl(db=db, logger=logger)
+
+
+async def load_finance_dashboard_history(*, db: AsyncSession, days: int) -> list[dict]:
+    return await load_finance_dashboard_history_impl(db=db, days=days)

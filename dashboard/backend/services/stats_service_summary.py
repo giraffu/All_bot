@@ -59,7 +59,7 @@ async def _load_user_summary(db: AsyncSession) -> dict:
     }
 
 
-async def _load_identity_counts(db: AsyncSession) -> dict:
+async def load_identity_counts(db: AsyncSession) -> dict:
     identity_result = await db.execute(
         select(User.current_identity, func.count(User.id)).group_by(User.current_identity)
     )
@@ -113,7 +113,7 @@ async def _load_template_contribution_totals(db: AsyncSession) -> dict:
     }
 
 
-async def _load_invitation_revenue_totals(db: AsyncSession) -> dict:
+async def load_invitation_revenue_totals(db: AsyncSession) -> dict:
     invitation_stmt = (
         select(
             func.coalesce(
@@ -419,7 +419,7 @@ async def _load_credit_holding_distribution(db: AsyncSession) -> dict:
     return holding_distribution
 
 
-async def _load_external_balances_from_cache(logger: Logger) -> dict:
+async def load_external_balances_from_cache(logger: Logger) -> dict:
     ton_balance = 0.0
     usdt_balance = 0.0
     star_balance = 0
@@ -472,11 +472,11 @@ async def load_dashboard_stats_impl(
 
     user_summary = await _load_user_summary(db)
     total_db_users = user_summary["total_db_users"]
-    identity_counts = await _load_identity_counts(db)
+    identity_counts = await load_identity_counts(db)
     user_group_distribution = await _load_user_group_distribution(db, user_group_keys)
     global_activity_totals = await _load_global_activity_totals(db)
     template_totals = await _load_template_contribution_totals(db)
-    invitation_totals = await _load_invitation_revenue_totals(db)
+    invitation_totals = await load_invitation_revenue_totals(db)
     today_user_summary = await _load_today_user_summary(db, today)
     today_history_summary = await _load_history_today_summary(
         db=db,
@@ -498,7 +498,7 @@ async def load_dashboard_stats_impl(
         consumed_sub=consumed_sub,
     )
     holding_distribution = await _load_credit_holding_distribution(db)
-    external_balances = await _load_external_balances_from_cache(logger)
+    external_balances = await load_external_balances_from_cache(logger)
     rmb_balance = await _load_rmb_balance(db, logger)
 
     return {

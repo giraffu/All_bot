@@ -56,6 +56,7 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
         plan=plan,
         out_trade_no="RMB-ORDER-1",
         payment_provider="ALIPAY_DIRECT",
+        pay_type="alipay",
     )
 
     assert session.flushed is True
@@ -66,3 +67,4 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
     assert session.added[1].status == "pending"
     assert 29 <= (session.added[1].next_attempt_at - started_at).total_seconds() <= 31
     assert order.payment_provider == "ALIPAY_DIRECT"
+    assert order.settlement_snapshot["rmb_pay_type"] == "alipay"

@@ -346,6 +346,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         plan=plan,
         out_trade_no=out_trade_no,
         payment_provider=payment_provider,
+        pay_type=pay_type,
     )
 
     if plan.duration_days == 0:

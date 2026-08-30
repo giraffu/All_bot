@@ -20,6 +20,13 @@ export const login = async (username, password) => {
 
 export const fetchStats = async () => get('/api/stats')
 
+export const fetchFinanceStats = async () => get('/api/stats/finance/summary')
+
+export const fetchFinanceHistory = async (days = 7) =>
+  get(withQuery('/api/stats/finance/history', params => {
+    appendQueryParam(params, 'days', days)
+  }))
+
 export const fetchStatsHistory = async (days = 7) =>
   get(withQuery('/api/stats/history', params => {
     appendQueryParam(params, 'days', days)
@@ -34,22 +41,33 @@ export const fetchHourlyStats = async (dateStr = null) => {
   }))
 }
 
+const financeHourlyInFlight = new Map()
+
+const shareFinanceHourlyRequest = (key, loader) => {
+  const existing = financeHourlyInFlight.get(key)
+  if (existing) return existing
+  const request = loader().finally(() => financeHourlyInFlight.delete(key))
+  financeHourlyInFlight.set(key, request)
+  return request
+}
+
 /**
  * @param {string | null} [dateStr]
  */
 export const fetchFinanceHourlyStats = async (dateStr = null) => {
-  return get(withQuery('/api/stats/finance_hourly', params => {
+  const key = `daily:${dateStr || ''}`
+  return shareFinanceHourlyRequest(key, () => get(withQuery('/api/stats/finance_hourly', params => {
     appendQueryParam(params, 'date_str', dateStr)
-  }))
+  })))
 }
 
 /**
  * @param {number} [days]
  */
 export const fetchCumulativeFinanceHourlyStats = async (days = 7) =>
-  get(withQuery('/api/stats/finance_hourly/cumulative', params => {
+  shareFinanceHourlyRequest(`cumulative:${days}`, () => get(withQuery('/api/stats/finance_hourly/cumulative', params => {
     appendQueryParam(params, 'days', days)
-  }))
+  })))
 
 /**
  * @param {string | null} [dateStr]
