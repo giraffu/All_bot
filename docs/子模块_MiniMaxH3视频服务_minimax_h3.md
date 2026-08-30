@@ -397,6 +397,14 @@ H3 RunPod volume 固定至少 140 GB，用于 `/workspace/ComfyUI/models`；不�
 正式 autoscaler 还必须通过 `RUNPOD_PROJECTED_COST_PER_HR_MINIMAX_H3`
 配置正数的单 Pod 预估时租；缺失或非正数时成本门禁 fail closed，不得以
 0 成本绕过每小时预算上限。
+当正式 H3 Pod 需要拒绝低内存或低带宽宿主机时，操作者分别设置
+`RUNPOD_MIN_RAM_PER_GPU_MINIMAX_H3` 和
+`RUNPOD_MIN_DOWNLOAD_MBPS_MINIMAX_H3`；provider 只把正数渲染为 RunPod
+`minRAMPerGPU` 与 `minDownloadMbps` 创建门禁，0 表示不附加该筛选条件。
+这两个字段只约束新建 Pod 的宿主机选择，不修改 Worker 模型、工作流或任务参数。
+H3 默认 GPU 仍为 RTX 5090；正式操作者可显式把
+`RUNPOD_GPU_TYPE_IDS_MINIMAX_H3` 收窄为已验证的 RTX PRO 6000 Blackwell Server，
+并与上述 RAM/带宽门禁组合。未知 GPU 类型 fail closed，不能借环境变量绕过。
 
 不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
 revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test

@@ -18,6 +18,7 @@ from .runpod_profile_catalog import (
     RUNPOD_LTX_T2V_VOLUME_GB,
     RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
     RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
+    RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS,
     RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
@@ -269,6 +270,13 @@ class RunPodPodRequestBuilder:
             "interruptible": self.settings.interruptible,
             "env": self.pod_env(profile=profile, environment=environment),
         }
+        if profile.task_type == "minimax_h3":
+            if self.settings.min_download_mbps_minimax_h3:
+                body["minDownloadMbps"] = (
+                    self.settings.min_download_mbps_minimax_h3
+                )
+            if self.settings.min_ram_per_gpu_minimax_h3:
+                body["minRAMPerGPU"] = self.settings.min_ram_per_gpu_minimax_h3
         if self.settings.network_volume_id:
             body["networkVolumeId"] = self.settings.network_volume_id
         else:
@@ -305,8 +313,14 @@ class RunPodPodRequestBuilder:
             raise ValueError("ltx_t2v model manifest key must use the fixed release")
 
     def validate_minimax_h3_contract(self) -> None:
-        if tuple(self.settings.gpu_type_ids_minimax_h3) != RUNPOD_MINIMAX_H3_GPU_TYPE_IDS:
-            raise ValueError("minimax_h3 only supports NVIDIA GeForce RTX 5090 in v1")
+        gpu_type_ids = tuple(self.settings.gpu_type_ids_minimax_h3)
+        if not gpu_type_ids or not set(gpu_type_ids).issubset(
+            RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS
+        ):
+            raise ValueError(
+                "minimax_h3 gpuTypeIds must be a non-empty subset of verified GPU types: "
+                + ",".join(RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS)
+            )
         if self.settings.use_template_minimax_h3 or self.settings.template_id_minimax_h3:
             raise ValueError("minimax_h3 RunPod templates are disabled")
         if self.settings.model_prefix_minimax_h3 != RUNPOD_MINIMAX_H3_MODEL_PREFIX:

@@ -447,6 +447,8 @@ class RunPodSettings:
     container_disk_gb_ltx_video: int = RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_t2v: int = RUNPOD_LTX_T2V_CONTAINER_DISK_GB
     container_disk_gb_minimax_h3: int = RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB
+    min_download_mbps_minimax_h3: int = 0
+    min_ram_per_gpu_minimax_h3: int = 0
     container_disk_gb_pornmaster_flux2_edit: int = (
         RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
     )
@@ -563,6 +565,10 @@ class RunPodSettings:
     def __post_init__(self) -> None:
         if not 1 <= self.model_download_concurrency <= 8:
             raise ValueError("model_download_concurrency must be between 1 and 8")
+        if self.min_download_mbps_minimax_h3 < 0:
+            raise ValueError("min_download_mbps_minimax_h3 must not be negative")
+        if self.min_ram_per_gpu_minimax_h3 < 0:
+            raise ValueError("min_ram_per_gpu_minimax_h3 must not be negative")
 
     @classmethod
     def from_env(cls) -> "RunPodSettings":
@@ -737,6 +743,14 @@ class RunPodSettings:
             container_disk_gb_minimax_h3=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_MINIMAX_H3"),
                 default=RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
+            ),
+            min_download_mbps_minimax_h3=_int_env(
+                os.getenv("RUNPOD_MIN_DOWNLOAD_MBPS_MINIMAX_H3"),
+                default=0,
+            ),
+            min_ram_per_gpu_minimax_h3=_int_env(
+                os.getenv("RUNPOD_MIN_RAM_PER_GPU_MINIMAX_H3"),
+                default=0,
             ),
             container_disk_gb_pornmaster_flux2_edit=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT"),
