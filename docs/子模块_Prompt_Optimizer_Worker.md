@@ -84,7 +84,7 @@ FLF 模板。
 H3 新任务注册 `minimax_h3_t2v_prompt@5`、`minimax_h3_i2v_prompt@5` 与
 `minimax_h3_flf2v_prompt@5`，分别接受 0 张图、一张 `start_image`、按顺序的
 `start_image,end_image`，时长只允许 5/10/15 秒。三者使用
-`minimax_h3_10eros_naughtytimes@5`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
+`minimax_h3_10eros_naughtytimes@6`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
 输出三个固定字段：`integrated_multimodal_description`、`overall_soundscape`、
 `non_diegetic_music`。T2V 直接从第一个字段开始；I2V 先输出精确的 0.00 秒
 `<Picture 1>` 对齐句；FLF2V 先输出 Picture 1/2、动态结束时间和实际最终 Shot 编号的
@@ -124,7 +124,7 @@ snapshot。Worker 发布前逐条核对 `<d>[Language] 原文</d>`；翻译、�
 写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
 对象键，不能再次包含桶名。
 
-H3 默认生成基础链固定 10Eros TURBO hybrid Beta3 与原生 7-step er_sde；LightX2V
+H3 默认生成基础链固定 10Eros TURBO hybrid Beta4 与 7-step Euler/simple；LightX2V
 8-step 只保留给官方 FL2VA。十八个 LoRA 由生成任务的
 服务端目录可选注入。Prompt Optimizer 自身仍不接受非空 `lora_items`、单模型字段
 或自由规则文本；它只编译内容，不决定或输出 LoRA。`minimax_h3_hmnsfw@1` 与

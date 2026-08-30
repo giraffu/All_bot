@@ -195,7 +195,7 @@ async def test_submit_minimax_h3_uses_fixed_stack_and_shared_scene_config():
     await submit_prompt_optimization(
         request=_request(
             target_task_type="minimax_h3_i2v",
-            template={"id": "minimax_h3_10eros_naughtytimes", "version": 5},
+            template={"id": "minimax_h3_10eros_naughtytimes", "version": 6},
             prompt='中文场景描述，女人低声说：“Keep looking at me.”',
             context={"duration_seconds": 10},
         ),
@@ -211,7 +211,7 @@ async def test_submit_minimax_h3_uses_fixed_stack_and_shared_scene_config():
     assert inputs["trusted_context"] == {}
     assert "HMBreasts" not in inputs["prompt_config_snapshot"]["user_message"]
     assert "hmmotion" not in inputs["prompt_config_snapshot"]["user_message"]
-    assert inputs["profile_ref"] == "minimax_h3_i2v_prompt@5"
+    assert inputs["profile_ref"] == "minimax_h3_i2v_prompt@6"
     assert "integrated_multimodal_description" in inputs["prompt_config_snapshot"]["system_message"]
     assert "<Picture 1> (from [Shot 1]) is fully referenced." in inputs["prompt_config_snapshot"]["user_message"]
     assert "[English]" in inputs["prompt_config_snapshot"]["user_message"]
@@ -225,7 +225,7 @@ async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
         await submit_prompt_optimization(
             request=_request(
                 target_task_type="minimax_h3_i2v",
-                template={"id": "minimax_h3_10eros_naughtytimes", "version": 5},
+                template={"id": "minimax_h3_10eros_naughtytimes", "version": 6},
                 lora_items=[{"name": "client_rule_injection", "strength": 1.0}],
             ),
             current_user=SimpleNamespace(id=7, username="alice"),

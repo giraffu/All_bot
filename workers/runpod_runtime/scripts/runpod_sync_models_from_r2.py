@@ -163,6 +163,95 @@ def merge_model_manifests(
     return list(merged.values())
 
 
+def _obsolete_model_files(
+    manifests: dict[str, dict[str, object]],
+    *,
+    active_relative_paths: set[str],
+) -> list[dict[str, object]]:
+    obsolete: dict[str, dict[str, object]] = {}
+    owners: dict[str, str] = {}
+    for manifest_key, manifest in manifests.items():
+        entries = manifest.get("obsolete_files") or []
+        if not isinstance(entries, list):
+            raise RuntimeError(
+                f"model manifest obsolete_files must be a list: {manifest_key}"
+            )
+        for raw_entry in entries:
+            if not isinstance(raw_entry, dict):
+                raise RuntimeError("obsolete model entries must be objects")
+            relative_path = str(raw_entry.get("relative_path") or "").strip().lstrip("/")
+            sha256 = str(raw_entry.get("sha256") or "").strip().lower()
+            try:
+                size_bytes = int(raw_entry.get("size_bytes"))
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("obsolete model size_bytes must be an integer") from exc
+            if (
+                not relative_path
+                or ".." in Path(relative_path).parts
+                or len(sha256) != 64
+                or any(character not in "0123456789abcdef" for character in sha256)
+                or size_bytes < 0
+            ):
+                raise RuntimeError(
+                    f"model manifest has invalid obsolete file: {manifest_key}"
+                )
+            if relative_path in active_relative_paths:
+                raise RuntimeError(
+                    f"model path is both active and obsolete: {relative_path}"
+                )
+            item = {
+                "relative_path": relative_path,
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+            }
+            existing = obsolete.get(relative_path)
+            if existing is not None and existing != item:
+                raise RuntimeError(
+                    "conflicting obsolete model identities for "
+                    f"{relative_path}: {owners[relative_path]} vs {manifest_key}"
+                )
+            obsolete[relative_path] = item
+            owners[relative_path] = manifest_key
+    return list(obsolete.values())
+
+
+def _remove_obsolete_model_files(
+    *,
+    manifests: dict[str, dict[str, object]],
+    active_files: list[dict[str, object]],
+    target_dir: Path,
+) -> tuple[list[str], list[str]]:
+    entries = _obsolete_model_files(
+        manifests,
+        active_relative_paths={str(item["relative_path"]) for item in active_files},
+    )
+    removable: list[tuple[str, Path]] = []
+    missing: list[str] = []
+    target_root = target_dir.resolve()
+    for entry in entries:
+        relative_path = str(entry["relative_path"])
+        target = target_dir / relative_path
+        if not target.resolve(strict=False).is_relative_to(target_root):
+            raise RuntimeError(f"obsolete model path escapes target directory: {relative_path}")
+        if not target.exists():
+            missing.append(relative_path)
+            continue
+        if target.is_symlink() or not target.is_file():
+            raise RuntimeError(f"obsolete model path is not a regular file: {relative_path}")
+        if (
+            target.stat().st_size != int(entry["size_bytes"])
+            or _sha256_file(target) != str(entry["sha256"])
+        ):
+            raise RuntimeError(f"obsolete model identity mismatch: {relative_path}")
+        removable.append((relative_path, target))
+    removed: list[str] = []
+    for relative_path, target in removable:
+        target.unlink()
+        removed.append(relative_path)
+        _log_event("obsolete_file_removed", relative_path=relative_path)
+    return removed, missing
+
+
 def _ensure_disk_capacity(*, target_dir: Path, required_bytes: int) -> None:
     headroom_bytes = _int_env(
         "RUNPOD_MODEL_MIN_FREE_BYTES",
@@ -540,6 +629,12 @@ def sync_models(*, bucket: str, prefix: str, target_dir: Path, verify_existing: 
             elapsed_seconds=round(time.monotonic() - verify_started_at, 3),
         )
 
+    removed_obsolete, missing_obsolete = _remove_obsolete_model_files(
+        manifests=manifests,
+        active_files=files,
+        target_dir=target_dir,
+    )
+
     return {
         "ok": True,
         "bucket": bucket,
@@ -552,6 +647,8 @@ def sync_models(*, bucket: str, prefix: str, target_dir: Path, verify_existing: 
         "skipped_existing_count": len(skipped),
         "downloaded": downloaded,
         "skipped_existing": skipped,
+        "removed_obsolete": removed_obsolete,
+        "missing_obsolete": missing_obsolete,
     }
 
 

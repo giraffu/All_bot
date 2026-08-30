@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "unet_name": "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
+      "unet_name": "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader"
@@ -136,15 +136,21 @@
   },
   "33": {
     "inputs": {
-      "sampler_name": "er_sde"
+      "sampler_name": "euler"
     },
     "class_type": "KSamplerSelect"
   },
   "34": {
     "inputs": {
-      "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
+      "model": [
+        "7",
+        0
+      ],
+      "scheduler": "simple",
+      "steps": 7,
+      "denoise": 1.0
     },
-    "class_type": "ManualSigmas"
+    "class_type": "BasicScheduler"
   },
   "35": {
     "inputs": {

@@ -20,14 +20,21 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18"
+VERSION = "2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"
 MIN_FREE_BYTES = 110 * 1024**3
+OBSOLETE_FILES = (
+    {
+        "relative_path": "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
+        "sha256": "ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2",
+        "size_bytes": 40_228_492_688,
+    },
+)
 FILES = (
     (
-        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
-        "ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2",
-        40_228_492_688,
-        "https://huggingface.co/TenStrip/10Eros-Max/resolve/47be06381f1a558f5fbd96e94d808d61fb164006/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
+        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors",
+        "bf34b4c9d2fa973ae84c480a1a5a04d2978958023bb6be7375b3b9e4818965e3",
+        40_222_982_192,
+        "https://huggingface.co/TenStrip/10Eros-Max/resolve/3c071106f5b62c02b3cb0b7d831083cdb582b289/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors",
     ),
     (
         "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
@@ -283,11 +290,11 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3252313:file/3135351",
             ],
             "revision": (
-                "10eros-v3=47be0638; comfy-int8=4cc1d817; "
+                "10eros-beta4=3c071106; comfy-int8=4cc1d817; "
                 "comfy-support=014cd40f; lightx2v=ec01fa4c"
             ),
             "variant": (
-                "10Eros-Max TURBO hybrid Beta3 for FL2VA and Ref2VA, "
+                "10Eros-Max TURBO hybrid Beta4 for FL2VA and Ref2VA, "
                 "official pruned INT8 ConvRot FL2VA and Ref2VA bases, "
                 "plus LightX2V FL2VA 8-step v1.0 and Ref2VA 4-step v0.1 "
                 "acceleration for their selectable official profiles, and eighteen "
@@ -302,6 +309,7 @@ def prepare(registry: ModelRegistry) -> Path:
             ),
         },
         files=manifest_files,
+        obsolete_files=list(OBSOLETE_FILES),
     )
 
 

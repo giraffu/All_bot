@@ -365,7 +365,7 @@ def test_minimax_h3_non_reference_modes_reject_reference_audio(task_type, images
         )
 
 
-def test_minimax_h3_uses_fixed_10eros_v3_hybrid_model_for_all_public_modes():
+def test_minimax_h3_uses_fixed_10eros_beta4_hybrid_model_for_all_public_modes():
     for task_type, images in (
         (MINIMAX_H3_T2V, []),
         (MINIMAX_H3_I2V, ["first.png"]),
@@ -384,7 +384,7 @@ def test_minimax_h3_uses_fixed_10eros_v3_hybrid_model_for_all_public_modes():
             },
         )
         assert spec.model_name == (
-            "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+            "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
         )
 
 
@@ -485,7 +485,7 @@ def test_minimax_h3_ref2v_accepts_ordered_reference_images(count):
 
     assert spec.mode == "ref2v"
     assert spec.images == tuple(images)
-    assert spec.model_name == "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+    assert spec.model_name == "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
     assert (spec.width, spec.height) != (0, 0)
 
 

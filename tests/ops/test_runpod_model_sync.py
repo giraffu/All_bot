@@ -181,9 +181,16 @@ def test_runpod_model_sync_rejects_insufficient_disk_space(
 
 
 class _ManifestDownloadClient:
-    def __init__(self, files: dict[str, bytes], *, fail_key: str = "") -> None:
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        *,
+        fail_key: str = "",
+        obsolete_files: list[dict[str, object]] | None = None,
+    ) -> None:
         self.files = files
         self.fail_key = fail_key
+        self.obsolete_files = obsolete_files or []
 
     def get_object(self, bucket: str, key: str, *, offset: int = 0):
         del bucket
@@ -198,7 +205,8 @@ class _ManifestDownloadClient:
                             "key": name,
                         }
                         for name, content in self.files.items()
-                    ]
+                    ],
+                    "obsolete_files": self.obsolete_files,
                 }
             ).encode()
 
@@ -365,6 +373,63 @@ def test_runpod_model_sync_failure_keeps_partials_and_publishes_nothing(
 
     assert (tmp_path / "bad.bin.partial").exists()
     assert not any((tmp_path / name).exists() for name in files)
+
+
+def test_runpod_model_sync_removes_only_exact_obsolete_file_after_success(
+    monkeypatch, tmp_path
+):
+    sync_module = _load_module()
+    old_payload = b"beta3"
+    old_path = tmp_path / "diffusion_models" / "old.safetensors"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(old_payload)
+    client = _ManifestDownloadClient(
+        {"diffusion_models/new.safetensors": b"beta4"},
+        obsolete_files=[
+            {
+                "relative_path": "diffusion_models/old.safetensors",
+                "size_bytes": len(old_payload),
+                "sha256": hashlib.sha256(old_payload).hexdigest(),
+            }
+        ],
+    )
+    monkeypatch.setattr(sync_module, "_client_from_env", lambda: client)
+    monkeypatch.setenv("RUNPOD_MODEL_MIN_FREE_BYTES", "0")
+
+    result = sync_module.sync_models(
+        bucket="models", prefix="profile", target_dir=tmp_path, verify_existing=True
+    )
+
+    assert not old_path.exists()
+    assert result["removed_obsolete"] == ["diffusion_models/old.safetensors"]
+
+
+def test_runpod_model_sync_keeps_obsolete_path_when_content_identity_differs(
+    monkeypatch, tmp_path
+):
+    sync_module = _load_module()
+    old_path = tmp_path / "diffusion_models" / "old.safetensors"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(b"unexpected-content")
+    client = _ManifestDownloadClient(
+        {"diffusion_models/new.safetensors": b"beta4"},
+        obsolete_files=[
+            {
+                "relative_path": "diffusion_models/old.safetensors",
+                "size_bytes": 5,
+                "sha256": hashlib.sha256(b"beta3").hexdigest(),
+            }
+        ],
+    )
+    monkeypatch.setattr(sync_module, "_client_from_env", lambda: client)
+    monkeypatch.setenv("RUNPOD_MODEL_MIN_FREE_BYTES", "0")
+
+    with pytest.raises(RuntimeError, match="obsolete model identity mismatch"):
+        sync_module.sync_models(
+            bucket="models", prefix="profile", target_dir=tmp_path, verify_existing=True
+        )
+
+    assert old_path.exists()
 
 
 def test_lan_local_model_sync_hashes_existing_large_file_in_chunks(monkeypatch, tmp_path):

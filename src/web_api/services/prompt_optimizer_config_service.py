@@ -15,7 +15,7 @@ SCENE_TEMPLATE_REFS = {
     "ltx_video_v2": "ltx_scene_script_cinematic@3",
     "ltx_t2v": "ltx_scene_script_cinematic@4",
     "ltx_t2v_ic": "ltx_scene_script_cinematic@4",
-    "minimax_h3": "minimax_h3_10eros_naughtytimes@5",
+    "minimax_h3": "minimax_h3_10eros_naughtytimes@6",
 }
 SCENE_LABELS = {
     "ltx_video_v2": ("高级图生视频 v2", "首帧与首尾帧共用配置"),
@@ -97,7 +97,7 @@ def _is_current_h3_template(system_template: str, user_template: str) -> bool:
         all(position >= 0 for position in positions)
         and positions == sorted(positions)
         and "SERVER-DETECTED DIALOGUE LANGUAGE" in system_template
-        and "10Eros-Max TURBO hybrid Beta3" in system_template
+        and "10Eros-Max TURBO hybrid Beta4" in system_template
         and "optional server-selected add-ons" in system_template
         and "{dialogue_language_instructions}" in user_template
     )

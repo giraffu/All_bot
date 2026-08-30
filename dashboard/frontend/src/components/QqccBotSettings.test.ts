@@ -1563,7 +1563,7 @@ describe('QqccBotSettings', () => {
         default_ai_video_engine: 'minimax_h3',
         default_ai_video_main_model: '10eros',
         ai_video_main_models: [
-          { value: '10eros', label: '10Eros Max H3 v3' },
+          { value: '10eros', label: '10Eros Max H3 Beta4' },
           { value: 'official', label: 'MiniMax H3 官方模型' },
         ],
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
@@ -1626,7 +1626,7 @@ describe('QqccBotSettings', () => {
         default_ai_video_engine: 'minimax_h3',
         default_ai_video_main_model: '10eros',
         ai_video_main_models: [
-          { value: '10eros', label: '10Eros Max H3 v3' },
+          { value: '10eros', label: '10Eros Max H3 Beta4' },
           { value: 'official', label: 'MiniMax H3 官方模型' },
           {
             value: 'official_ref2v_turbo', label: '官方 REF2V 极速',
