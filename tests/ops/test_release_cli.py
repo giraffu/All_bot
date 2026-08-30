@@ -341,6 +341,42 @@ def test_gpu_build_accepts_declared_exact_external_base_ref():
     ]
 
 
+def test_ltx25_gpu_build_declares_external_base_transport_alias():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    digest = "sha256:" + "3" * 64
+    base_ref = (
+        "dockerpull.pw/yanwk/comfyui-boot@sha256:"
+        "4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9"
+    )
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            if "--format" in command:
+                return module.CommandResult(0, digest, "")
+            return module.CommandResult(1, "", "not found")
+        return module.CommandResult(0, "", "")
+
+    module.build_modules(
+        catalog,
+        ["ltx25_video_upscale"],
+        sha="b" * 40,
+        image_prefix="127.0.0.1:15000/allbot",
+        external_base_ref=base_ref,
+        dependencies=module.ReleaseDependencies(
+            run=fake_run,
+            temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+        ),
+    )
+
+    build = next(call for call in calls if call[:3] == ["docker", "buildx", "build"])
+    assert ["--build-arg", f"BASE_IMAGE={base_ref}"] in [
+        build[index : index + 2] for index in range(len(build) - 1)
+    ]
+
+
 def test_gpu_build_rejects_mutable_external_base_ref():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
