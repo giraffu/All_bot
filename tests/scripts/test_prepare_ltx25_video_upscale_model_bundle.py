@@ -43,6 +43,11 @@ def test_ltx25_upscale_image_is_model_free_and_runtime_pinned():
     assert "LTXICLoRALoaderModelOnly" in dockerfile
     assert "LTXAddVideoICLoRAGuide" in dockerfile
     assert (
+        "COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh "
+        "/opt/allbot/runpod_bootstrap_from_git.sh"
+    ) in dockerfile
+    assert "test -x /opt/allbot/runpod_bootstrap_from_git.sh" in dockerfile
+    assert (
         "ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/"
         "allbot-comfy-runpod-wan22-aio-video@sha256:"
         "5f959c7936e6ce271cbbb0d595993b48c4e408d6aded9476de949493d76400b4"
