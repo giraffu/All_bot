@@ -55,6 +55,18 @@ def test_ref2v_extension_accepts_server_reference_video_without_images():
     assert plan.reference_video == "/tmp/previous-tail.mp4"
 
 
+def test_ref2v_extension_keeps_new_reference_images_with_server_reference_video():
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="continue with this character",
+        images=["/tmp/new-character.png"],
+        reference_video="/tmp/previous-tail.mp4",
+    )
+
+    assert plan.images == ("/tmp/new-character.png",)
+    assert plan.reference_video == "/tmp/previous-tail.mp4"
+
+
 @pytest.mark.parametrize("image_count", [0, 5])
 def test_ref2v_rejects_zero_or_five_images(image_count):
     with pytest.raises(AdvancedVideoProSubmissionError, match="1 至 4"):
