@@ -152,6 +152,26 @@ def test_single_transfer_mode_stays_compatible():
     ]
 
 
+def test_transfer_start_script_installs_failure_trap_with_posix_sh(tmp_path):
+    module = _load_module()
+    script = module._transfer_start_script()
+    bootstrap = script.split('echo "[model-transfer] boot', maxsplit=1)[0]
+    log_file = tmp_path / "transfer.log"
+
+    result = subprocess.run(
+        ["/bin/sh", "-c", bootstrap + "\nexit 0\n"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "RUNPOD_TRANSFER_LOG_FILE": str(log_file),
+        },
+    )
+
+    assert result.returncode == 0
+
+
 def test_transfer_guard_allows_second_pod_when_explicitly_capped_at_two():
     module = _load_module()
 
