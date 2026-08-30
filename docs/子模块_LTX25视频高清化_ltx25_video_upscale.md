@@ -13,6 +13,8 @@ Web 使用练功房结构化 `target_video` 上传槽；主 Bot 使用
 `ltx25_video_upscale` 初始为不可见，服务端和 Bot 还要求
 `LTX25_VIDEO_UPSCALE_ENABLED=true`。只有模型许可、镜像和 canary 均通过后才能
 同时打开入口和执行开关。
+`config-contract` 必须将该开关同时投影到 `web-api` 和 `main-bot`；
+只写入宿主机总 env 但未出现在这两个容器中时，入口仍按关闭处理。
 
 ## 2. 工作流与输入契约
 

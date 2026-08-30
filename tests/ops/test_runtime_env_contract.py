@@ -105,6 +105,7 @@ def _environment(environment: str) -> dict[str, str]:
         "RMB_RECONCILIATION_ENABLED": "false",
         "ALIPAY_DIRECT_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
+        "LTX25_VIDEO_UPSCALE_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "CHARACTER_ASSETS_ENABLED": "true" if environment == "test" else "false",
         "CHARACTER_EXPLICIT_VIEWS_ENABLED": (
@@ -158,12 +159,19 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["WORKER_REDIS_URL"] == "redis://prod-worker/0"
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
+    assert web["LTX25_VIDEO_UPSCALE_ENABLED"] == "false"
     assert web["CHARACTER_ASSETS_ENABLED"] == "false"
     assert web["CHARACTER_EXPLICIT_VIEWS_ENABLED"] == "false"
     assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
     assert web["WEB_FINALIZER_IN_WEB_ENABLED"] == "false"
     assert bot["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
+    assert bot["LTX25_VIDEO_UPSCALE_ENABLED"] == "false"
+    assert all(
+        "LTX25_VIDEO_UPSCALE_ENABLED" not in projection
+        for service, projection in snapshot.projections.items()
+        if service not in {"web-api", "main-bot"}
+    )
     assert all(
         "LTX_T2V_BACKEND_ENABLED" not in projection
         for service, projection in snapshot.projections.items()
