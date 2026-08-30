@@ -118,6 +118,7 @@ export const fetchHistoryAll = async (
   isPublic = null,
   workerId = null,
   source = null,
+  username = null,
   requestConfig = {},
 ) => {
   return get(withQuery('/api/history/all', params => {
@@ -128,6 +129,7 @@ export const fetchHistoryAll = async (
     if (isPublic !== null) appendQueryParam(params, 'is_public', isPublic)
     if (workerId && workerId !== 'all') appendQueryParam(params, 'worker_id', workerId)
     if (source && source !== 'all') appendQueryParam(params, 'source', source)
+    appendQueryParam(params, 'username', username)
   }), requestConfig)
 }
 

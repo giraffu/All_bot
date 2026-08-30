@@ -250,6 +250,33 @@ async def test_history_count_cache_keeps_filter_totals_separate():
 
 
 @pytest.mark.asyncio
+async def test_history_count_cache_keeps_username_totals_separate():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    gray_db = _FakeHistoryDb(total=3, rows=[])
+    alice_db = _FakeHistoryDb(total=7, rows=[])
+
+    gray_result = await history_service.get_all_history_payload(
+        db=gray_db,
+        username="Gray",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+    alice_result = await history_service.get_all_history_payload(
+        db=alice_db,
+        username="alice",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    assert gray_result["total"] == 3
+    assert alice_result["total"] == 7
+    assert gray_db.execute_calls == 2
+    assert alice_db.execute_calls == 2
+
+
+@pytest.mark.asyncio
 async def test_history_count_cache_single_flights_concurrent_loads():
     count_cache = history_service.HistoryCountCache(ttl_seconds=300)
     load_started = asyncio.Event()
@@ -448,6 +475,54 @@ async def test_get_all_history_payload_worker_filter_uses_exists_without_duplica
 
 
 @pytest.mark.asyncio
+async def test_get_all_history_payload_filters_by_partial_username_case_insensitively():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        for model in (User, History, WorkerLog):
+            await connection.run_sync(model.__table__.create)
+        await connection.exec_driver_sql(
+            "CREATE TABLE private_bot_task_submissions "
+            "(registry_task_id VARCHAR(64), client_type VARCHAR(128))"
+        )
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add_all(
+            [
+                User(id=123, username="GrayArtist", full_name="Gray"),
+                User(id=456, username="someone_else", full_name="Someone"),
+                History(
+                    user_id=123,
+                    task_id="task-gray",
+                    type="img2img",
+                    output_file="gray.png",
+                    source="web",
+                ),
+                History(
+                    user_id=456,
+                    task_id="task-other",
+                    type="img2img",
+                    output_file="other.png",
+                    source="web",
+                ),
+            ]
+        )
+        await db.commit()
+
+        result = await history_service.get_all_history_payload(
+            db=db,
+            username="gray",
+            storage_service=_FakeStorage(),
+            resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+        )
+
+    await engine.dispose()
+
+    assert result["total"] == 1
+    assert [item["username"] for item in result["items"]] == ["GrayArtist"]
+
+
+@pytest.mark.asyncio
 async def test_get_all_history_payload_accepts_qqcc_source_filter():
     storage_service = _FakeStorage()
     history = _build_history(
@@ -496,7 +571,7 @@ async def test_get_all_history_payload_degrades_when_thumbnail_lookup_fails():
 
 
 @pytest.mark.asyncio
-async def test_get_all_history_router_forwards_source_filter(monkeypatch):
+async def test_get_all_history_router_forwards_source_and_username_filters(monkeypatch):
     captured = {}
 
     async def fake_get_all_history_payload(**kwargs):
@@ -511,11 +586,13 @@ async def test_get_all_history_router_forwards_source_filter(monkeypatch):
 
     result = await history_router.get_all_history(
         source="bot:qqcc-private",
+        username="gray",
         db=object(),
     )
 
     assert result == {"items": [], "total": 0}
     assert captured["source"] == "bot:qqcc-private"
+    assert captured["username"] == "gray"
 
 
 @pytest.mark.asyncio
