@@ -86,14 +86,14 @@ watch(() => props.statsHistory, (newVal) => {
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div class="h-80">
+        <div class="finance-history-chart h-[420px]">
           <LineChart title="每日充值 (TON)" :data="statsHistory" :metrics="['ton_recharge', 'cumulative_ton']" />
         </div>
-        <div class="h-80">
+        <div class="finance-history-chart h-[420px]">
           <LineChart title="每日充值 (Stars)" :data="statsHistory" :metrics="['stars_recharge', 'cumulative_stars']" />
         </div>
-        <div class="h-80">
-          <LineChart title="每日充值 (RMB · 按渠道)" :data="statsHistory" :metrics="['rmb_direct_alipay', 'rmb_collected_alipay', 'rmb_collected_wechat', 'rmb_legacy_unclassified', 'cumulative_rmb']" />
+        <div class="finance-history-chart finance-history-chart--rmb h-[420px]">
+          <LineChart title="每日充值 (RMB · 按渠道)" :data="statsHistory" :metrics="['rmb_direct_alipay', 'rmb_collected_alipay', 'rmb_collected_wechat', 'rmb_legacy_unclassified', 'cumulative_rmb']" reserve-legend-space />
         </div>
       </div>
       
