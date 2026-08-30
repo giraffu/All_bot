@@ -42,6 +42,9 @@ def test_ltx25_upscale_image_is_model_free_and_runtime_pinned():
     assert "find \"${comfyui_dir}/models\" -type f -name '*.safetensors'" in dockerfile
     assert "LTXICLoRALoaderModelOnly" in dockerfile
     assert "LTXAddVideoICLoRAGuide" in dockerfile
+    assert "--filter=blob:none" not in dockerfile
+    assert 'fetch --depth 1 origin "${COMFYUI_REF}"' in dockerfile
+    assert 'fetch --depth 1 origin "${LTXVIDEO_REF}"' in dockerfile
     assert (
         "COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh "
         "/opt/allbot/runpod_bootstrap_from_git.sh"

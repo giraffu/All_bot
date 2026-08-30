@@ -33,7 +33,7 @@ RUN set -euo pipefail; \
     rm -rf "${comfyui_dir}"; mkdir -p "${comfyui_dir}"; \
     git -C "${comfyui_dir}" init; \
     git -C "${comfyui_dir}" remote add origin "${COMFYUI_REPO}"; \
-    git -C "${comfyui_dir}" fetch --depth 1 --filter=blob:none origin "${COMFYUI_REF}"; \
+    git -C "${comfyui_dir}" fetch --depth 1 origin "${COMFYUI_REF}"; \
     git -C "${comfyui_dir}" checkout --force FETCH_HEAD; \
     test "$(git -C "${comfyui_dir}" rev-parse HEAD)" = "${COMFYUI_REF}"; \
     python3 -m pip install -r "${comfyui_dir}/requirements.txt"; \
@@ -61,7 +61,7 @@ RUN set -euo pipefail; \
     ltxvideo_dir="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
     mkdir -p "${ltxvideo_dir}"; git -C "${ltxvideo_dir}" init; \
     git -C "${ltxvideo_dir}" remote add origin "${LTXVIDEO_REPO}"; \
-    git -C "${ltxvideo_dir}" fetch --depth 1 --filter=blob:none origin "${LTXVIDEO_REF}"; \
+    git -C "${ltxvideo_dir}" fetch --depth 1 origin "${LTXVIDEO_REF}"; \
     git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
     test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
     python3 -m pip install -r "${ltxvideo_dir}/requirements.txt"; \
