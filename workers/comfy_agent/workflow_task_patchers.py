@@ -1421,8 +1421,9 @@ _MINIMAX_H3_PRECISION_PRESETS = {
 _MINIMAX_H3_FRAME_COUNT_BY_DURATION = {5: 124, 10: 243, 15: 362}
 _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
     "model_input": ["1", 0],
-    "sampler_name": "er_sde",
-    "sigmas": "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00",
+    "sampler_name": "euler",
+    "scheduler": "simple",
+    "steps": 7,
     "shift_video": 12.0,
     "shift_audio": 3.0,
 }

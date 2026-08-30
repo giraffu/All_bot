@@ -8,14 +8,13 @@ import json
 from pathlib import Path
 
 
-TEN_EROS_V3_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+TEN_EROS_BETA4_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
 CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 AUDIO_VAE = "MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors"
 LIGHTX2V_LORA = (
     "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 )
-REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
@@ -32,15 +31,14 @@ def build(task_type: str) -> dict:
     if task_type not in FILENAMES:
         raise ValueError("unsupported public MiniMax H3 task type")
     is_ref2v = task_type == "minimax_h3_ref2v"
-    # 10Eros v3 is a native TURBO hybrid for both FL2VA and REF2VA. Keep the
+    # 10Eros Beta4 is a native TURBO hybrid for both FL2VA and REF2VA. Keep the
     # LightX2V node available only for the selectable official FL2VA model;
-    # the default v3 graph bypasses it and uses the author's preferred 7-step
-    # er_sde sigma schedule.
+    # the default graph bypasses it and uses the author's euler/simple guidance.
     base_model_input = ["1", 0]
     workflow = {
         "1": _node(
             "UNETLoader",
-            unet_name=TEN_EROS_V3_MODEL,
+            unet_name=TEN_EROS_BETA4_MODEL,
             weight_dtype="default",
         ),
         "2": _node(
@@ -78,10 +76,13 @@ def build(task_type: str) -> dict:
         ),
         "31": _node("RandomNoise", noise_seed=1),
         "32": _node("BasicGuider", model=["7", 0], conditioning=["30", 0]),
-        "33": _node("KSamplerSelect", sampler_name="er_sde"),
+        "33": _node("KSamplerSelect", sampler_name="euler"),
         "34": _node(
-            "ManualSigmas",
-            sigmas=REF2V_SIGMAS,
+            "BasicScheduler",
+            model=["7", 0],
+            scheduler="simple",
+            steps=7,
+            denoise=1.0,
         ),
         "35": _node(
             "SamplerCustomAdvanced",

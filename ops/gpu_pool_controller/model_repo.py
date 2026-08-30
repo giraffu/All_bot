@@ -118,6 +118,7 @@ class ModelRegistry:
         profiles: list[str],
         source: dict[str, Any],
         files: list[dict[str, Any]],
+        obsolete_files: list[dict[str, Any]] | None = None,
     ) -> Path:
         manifest = {
             "bundle": bundle,
@@ -127,6 +128,10 @@ class ModelRegistry:
             "imported_at": datetime.now(timezone.utc).isoformat(),
             "files": sorted(files, key=lambda item: item["relative_path"]),
         }
+        if obsolete_files:
+            manifest["obsolete_files"] = sorted(
+                obsolete_files, key=lambda item: item["relative_path"]
+            )
         return self.write_manifest(bundle, version, manifest)
 
     def render_rsync_plan(

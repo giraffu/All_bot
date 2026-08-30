@@ -310,7 +310,7 @@ async def submit_prompt_optimization(
                 "environment_description", ""
             ),
             "addon_summary": (
-                "10Eros-Max TURBO hybrid Beta3 with its native 7-step er_sde "
+                "10Eros-Max TURBO hybrid Beta4 with its 7-step euler/simple "
                 "schedule; optional add-ons are selected by the server."
             ),
             "addon_rules": trusted_context.get(

@@ -20,7 +20,7 @@ TASKS = {
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
-TEN_EROS_V3_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+TEN_EROS_BETA4_MODEL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
 OFFICIAL_FL2VA_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 OFFICIAL_REF2VA_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
@@ -30,7 +30,6 @@ REF2V_TURBO_LORA = (
     "MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
 )
 NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
-REF2V_SIGMAS = "1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00"
 
 
 def test_minimax_h3_api_workflows_are_deterministic():
@@ -40,7 +39,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
         main = Path("workers/comfy_agent/workflows") / filename
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
-        assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
+        assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_BETA4_MODEL
         assert "nodes" not in workflow
         if task_type == "minimax_h3_ref2v":
             assert "8" not in workflow
@@ -56,14 +55,16 @@ def test_minimax_h3_api_workflows_are_deterministic():
             assert workflow["30"]["class_type"] == "MiniMaxH3ReferenceToVideo"
             assert workflow["30"]["inputs"]["ref_image_size"] == "match"
             assert workflow["26"]["class_type"] == "VHS_LoadVideo"
-            assert workflow["33"]["inputs"]["sampler_name"] == "er_sde"
+            assert workflow["33"]["inputs"]["sampler_name"] == "euler"
             assert workflow["34"] == {
-                "inputs": {"sigmas": REF2V_SIGMAS},
-                "class_type": "ManualSigmas",
+                "inputs": {
+                    "model": ["7", 0],
+                    "scheduler": "simple",
+                    "steps": 7,
+                    "denoise": 1.0,
+                },
+                "class_type": "BasicScheduler",
             }
-            assert not any(
-                node.get("class_type") == "BasicScheduler" for node in workflow.values()
-            )
             continue
         assert workflow["8"]["inputs"] == {
             "model": ["1", 0],
@@ -96,11 +97,16 @@ def test_minimax_h3_api_workflows_are_deterministic():
         assert workflow["5"]["inputs"]["vae_name"] == OFFICIAL_VIDEO_VAE
         assert workflow["32"]["inputs"]["model"] == ["7", 0]
         assert workflow["34"] == {
-            "inputs": {"sigmas": REF2V_SIGMAS},
-            "class_type": "ManualSigmas",
+            "inputs": {
+                "model": ["7", 0],
+                "scheduler": "simple",
+                "steps": 7,
+                "denoise": 1.0,
+            },
+            "class_type": "BasicScheduler",
         }
         assert workflow["33"] == {
-            "inputs": {"sampler_name": "er_sde"},
+            "inputs": {"sampler_name": "euler"},
             "class_type": "KSamplerSelect",
         }
         assert not any(
@@ -169,10 +175,10 @@ def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
         },
     )
 
-    assert result["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
+    assert result["1"]["inputs"]["unet_name"] == TEN_EROS_BETA4_MODEL
 
 
-def test_minimax_h3_patcher_without_addon_uses_10eros_v3_native_turbo_path():
+def test_minimax_h3_patcher_without_addon_uses_10eros_beta4_native_turbo_path():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
@@ -180,12 +186,17 @@ def test_minimax_h3_patcher_without_addon_uses_10eros_v3_native_turbo_path():
     assert patched["8"]["inputs"]["lora_name"] == LIGHTX2V_LORA
     assert "9" not in patched
     assert patched["2"]["inputs"]["model"] == ["1", 0]
-    assert patched["33"]["inputs"]["sampler_name"] == "er_sde"
+    assert patched["33"]["inputs"]["sampler_name"] == "euler"
     assert patched["34"] == {
-        "inputs": {"sigmas": REF2V_SIGMAS},
-        "class_type": "ManualSigmas",
+        "inputs": {
+            "model": ["7", 0],
+            "scheduler": "simple",
+            "steps": 7,
+            "denoise": 1.0,
+        },
+        "class_type": "BasicScheduler",
     }
-    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
+    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA4_MODEL
     assert patched["30"]["inputs"]["prompt"] == "scene"
 
 
@@ -250,12 +261,17 @@ def test_minimax_h3_patcher_keeps_10eros_ref2v_turbo_profile():
         {"prompt": "scene", "image": "subject.png", "image2": "reference.png"},
     )
 
-    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_V3_MODEL
+    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA4_MODEL
     assert patched["30"]["inputs"]["ref_image_size"] == "match"
-    assert patched["33"]["inputs"]["sampler_name"] == "er_sde"
+    assert patched["33"]["inputs"]["sampler_name"] == "euler"
     assert patched["34"] == {
-        "inputs": {"sigmas": REF2V_SIGMAS},
-        "class_type": "ManualSigmas",
+        "inputs": {
+            "model": ["7", 0],
+            "scheduler": "simple",
+            "steps": 7,
+            "denoise": 1.0,
+        },
+        "class_type": "BasicScheduler",
     }
 
 

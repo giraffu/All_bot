@@ -167,7 +167,7 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
 ## 提示词优化契约
 
 新 Prompt Optimizer 任务使用三个 `profile@5` 与
-`minimax_h3_10eros_naughtytimes@5`。输出不是旧的 200–270 词单段 caption，而是
+`minimax_h3_10eros_naughtytimes@6`。输出不是旧的 200–270 词单段 caption，而是
 MiniMax 官方 Base 顺序：`integrated_multimodal_description` →
 `overall_soundscape` → `non_diegetic_music`。T2V 无对齐首行；I2V 必须先写官方
 `<Picture 1>` 0.00 秒对齐句；FLF2V 必须先写 Picture 1/2、动态结束时间和正文实际
@@ -218,10 +218,10 @@ checkpoint、采样器、scheduler、sigma、steps 或参考图缩放策略。
 
 四种模式的 `10eros` 默认基础链统一使用一个作者原始资产：
 
-- 10Eros-Max TURBO hybrid Beta3
-  `10Eros_Max_h3_TURBO-hybrid_beta3.safetensors`，revision
-  `47be06381f1a558f5fbd96e94d808d61fb164006`，40,228,492,688 bytes，SHA256
-  `ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2`；
+- 10Eros-Max TURBO hybrid Beta4
+  `10Eros_Max_h3_TURBO-hybrid_beta4.safetensors`，revision
+  `3c071106f5b62c02b3cb0b7d831083cdb582b289`，40,222,982,192 bytes，SHA256
+  `bf34b4c9d2fa973ae84c480a1a5a04d2978958023bb6be7375b3b9e4818965e3`；
 - LightX2V FL2VA 8-step v1.0 `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`
   仍保留给 `official` FL2VA，
   1,956,193,000 bytes，SHA256
@@ -284,24 +284,24 @@ Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连�
 24fps，但公开 workflow guidance 为 1，因此只视为待 canary 候选。POV Missionary
 作者仍标记为早期实验版。五个新模型在实机 canary 完成前均不得标记为已验证。
 
-T2V/I2V/FLF2V 的 `10eros` v3 基础顺序为：`UNETLoader(TURBO hybrid Beta3) →
+T2V/I2V/FLF2V 的 `10eros` Beta4 基础顺序为：`UNETLoader(TURBO hybrid Beta4) →
 [用户选中 LoRA 有序链] → ModelAttentionBackend(comfy kitchen attention) →
 MiniMaxH3SigmaShift(12/3) → ReservedVRAMSetter(2 GiB auto、3 GiB 上限) →
-MiniMaxH3ImageToVideo → er_sde/ManualSigmas(1.00,0.94,0.83,0.72,0.55,0.30,0.10,0.00)`。
-这是作者对 TURBO 模型偏好的 7-step 调度，默认链不得再叠加 LightX2V。
+MiniMaxH3ImageToVideo → Euler/BasicScheduler(simple, 7 steps)`。
+这是作者对 Beta4 公布的 Euler/simple 6–8 steps 范围内保留原 7-step 成本的调度，
+默认链不得再叠加 LightX2V。
 `official` FL2VA 保持 `UNETLoader → LightX2V(1.0) → 可选 LoRA → Euler/simple/8 steps`。
 输出继续解码 H3 原生同步音轨。
 
-REF2V 在 `10eros` 下使用同一 TURBO hybrid Beta3，不加载 LightX2V。其链路为
+REF2V 在 `10eros` 下使用同一 TURBO hybrid Beta4，不加载 LightX2V。其链路为
 PyTorch attention、video/audio sigma shift `11/4`、
-`MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("er_sde") →
-ManualSigmas("1.00, 0.94, 0.83, 0.72, 0.55, 0.30, 0.10, 0.00") →
-SamplerCustomAdvanced`；禁止 `BasicScheduler`。十八个候选 LoRA 中最多十三个仍按选择顺序注入；
+`MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("euler") →
+BasicScheduler("simple", 7, 1.0) → SamplerCustomAdvanced`。十八个候选 LoRA 中最多十三个仍按选择顺序注入；
 REF2VA Motion v0.2 可进入任一 REF2V profile，并始终追加在所选基础/加速链之后。
 
 `official + REF2V` 是独立执行 profile：同一基础节点在 patch 后切换为官方 INT8
 ConvRot Ref2VA、`ref_image_size="max"`、`KSamplerSelect("res_multistep")` 和
-`BasicScheduler("simple", 20, 1.0)`；不继承 10Eros 的 ManualSigmas。这里固定
+`BasicScheduler("simple", 20, 1.0)`；不继承 10Eros 的 7-step profile。这里固定
 `simple` 是为了与当前 Comfy-Org 官方模板精确对齐；官方说明参考很多时 `beta` 或
 `normal` 往往优于 `simple`，后续若要调整必须作为新的受控 profile 单独 canary。
 
@@ -313,9 +313,9 @@ sampler、缩放策略和专用 LoRA 是同一蒸馏契约，不能替换为 FL2
 改成 8 steps。`official` 20-step 高保真 profile 继续保留。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包包含
-10Eros TURBO hybrid Beta3、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十八个
-可选 LoRA，不包含 RedMix。旧 checkpoint、
-blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
+10Eros TURBO hybrid Beta4、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十八个
+可选 LoRA，不包含 RedMix。新 manifest 完整校验后只按路径、尺寸和 SHA256 精确删除
+Beta3 checkpoint；其它 checkpoint、LoRA、blob 与 bundle 保持不变。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；7-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续四模式 GPU canary 才能定论。
 
@@ -330,8 +330,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-27-10eros-v3-official-int8-h3-turbo-profiles-addon18`、26 个文件的字节数与
-SHA256，总计 114,106,812,703 bytes，准备前要求模型卷至少 110 GiB 可用。
+`2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18`、26 个文件的字节数与
+SHA256，总计 114,101,302,207 bytes，准备前要求模型卷至少 110 GiB 可用。
 脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
@@ -339,7 +339,7 @@ SHA256，总计 114,106,812,703 bytes，准备前要求模型卷至少 110 GiB �
 任何远端 registry。
 
 作者发布新版本时保持 workflow 拓扑不变，只更新准备脚本与 bundle 中的 repository
-revision、filename/modelVersion/fileId、SHA256 和 size。新版本必须使用新 bundle version，
+revision、filename/modelVersion/fileId、SHA256、size 和精确 obsolete identity。新版本必须使用新 bundle version，
 不能覆盖旧 manifest；完整校验、focused tests 与 GPU canary 通过后才可单独更新部署指针。
 
 镜像模块仍为 `minimax_h3`。LAN 与 RunPod artifact 独立发布；RunPod profile 只接受

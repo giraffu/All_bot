@@ -3,8 +3,8 @@
 MiniMax H3 使用独立 `minimax_h3` profile。RunPod profile 已加入 autoscaler，并以
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、
 `minimax_h3_ref2v` 四类 execution task 的聚合积压做扩缩容和 Worker 拉取；默认工时
-只用于容量估算，可由 Dashboard autoscaler 设置覆盖。当前 24 文件模型包为
-112,485,084,951 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认 10Eros v3
+只用于容量估算，可由 Dashboard autoscaler 设置覆盖。当前 26 文件模型包为
+114,101,302,207 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认 10Eros Beta4
 TURBO 与官方 INT8 ConvRot FL2VA/Ref2VA checkpoint。GPU allowlist 仍为 RTX 5090。
 `gpu-177-gpu1-minimax_h3_test` LAN 测试候选仍不声明 REF2V；正式 LAN 候选只能在
 canonical 镜像 digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。

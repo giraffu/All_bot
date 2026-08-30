@@ -26,6 +26,8 @@ from src.prompt_optimizer.minimax_h3_prompt import (
     MINIMAX_H3_OPTIONAL_ADDONS_USER,
     MINIMAX_H3_V3_OPTIONAL_ADDONS_SYSTEM,
     MINIMAX_H3_V3_OPTIONAL_ADDONS_USER,
+    MINIMAX_H3_BETA4_OPTIONAL_ADDONS_SYSTEM,
+    MINIMAX_H3_BETA4_OPTIONAL_ADDONS_USER,
     MINIMAX_H3_REF2V_SYSTEM,
     MINIMAX_H3_REF2V_USER,
 )
@@ -392,6 +394,13 @@ _MINIMAX_H3_V5_PROFILE_REFS = frozenset(
         "minimax_h3_flf2v_prompt@5",
     }
 )
+_MINIMAX_H3_V6_PROFILE_REFS = frozenset(
+    {
+        "minimax_h3_t2v_prompt@6",
+        "minimax_h3_i2v_prompt@6",
+        "minimax_h3_flf2v_prompt@6",
+    }
+)
 _MINIMAX_H3_REF2V_PROFILE_REFS = frozenset(
     f"minimax_h3_ref2v_prompt@{count}" for count in range(1, 5)
 )
@@ -573,6 +582,23 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "dialogue_language_instructions",
             ),
             compatible_profile_refs=_MINIMAX_H3_V5_PROFILE_REFS,
+            active=False,
+        ),
+        "minimax_h3_10eros_naughtytimes@6": PromptOptimizationTemplate(
+            id="minimax_h3_10eros_naughtytimes",
+            version=6,
+            label="高级图生视频pro",
+            description="10Eros H3 Beta4 官方结构、对白语言保留与可选 LoRA",
+            system_template=MINIMAX_H3_BETA4_OPTIONAL_ADDONS_SYSTEM,
+            user_template=MINIMAX_H3_BETA4_OPTIONAL_ADDONS_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "original_prompt",
+                "dialogue_language_instructions",
+            ),
+            compatible_profile_refs=_MINIMAX_H3_V6_PROFILE_REFS,
         ),
         "minimax_h3_ref2v@1": PromptOptimizationTemplate(
             id="minimax_h3_ref2v",
@@ -872,6 +898,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@5",
             max_output_characters=7000,
+            active=False,
         ),
         "minimax_h3_i2v_prompt@5": PromptOptimizationProfile(
             id="minimax_h3_i2v_prompt",
@@ -886,6 +913,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@5",
             max_output_characters=7000,
+            active=False,
         ),
         "minimax_h3_flf2v_prompt@5": PromptOptimizationProfile(
             id="minimax_h3_flf2v_prompt",
@@ -899,6 +927,49 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             model_route="ltx-prompt-optimizer",
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@5"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@5",
+            max_output_characters=7000,
+            active=False,
+        ),
+        "minimax_h3_t2v_prompt@6": PromptOptimizationProfile(
+            id="minimax_h3_t2v_prompt",
+            version=6,
+            supported_target_task_types=frozenset({MINIMAX_H3_T2V}),
+            required_media_roles=(),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@6"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@6",
+            max_output_characters=7000,
+        ),
+        "minimax_h3_i2v_prompt@6": PromptOptimizationProfile(
+            id="minimax_h3_i2v_prompt",
+            version=6,
+            supported_target_task_types=frozenset({MINIMAX_H3_I2V}),
+            required_media_roles=("start_image",),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@6"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@6",
+            max_output_characters=7000,
+        ),
+        "minimax_h3_flf2v_prompt@6": PromptOptimizationProfile(
+            id="minimax_h3_flf2v_prompt",
+            version=6,
+            supported_target_task_types=frozenset({MINIMAX_H3_FLF2V}),
+            required_media_roles=("start_image", "end_image"),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@6"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@6",
             max_output_characters=7000,
         ),
         **{
@@ -957,14 +1028,14 @@ def _resolve_profile(
     ):
         profile_ref = "ltx_eros_t2v_ic_msr@1"
     elif target_task_type == MINIMAX_H3_T2V and not roles:
-        profile_ref = "minimax_h3_t2v_prompt@5"
+        profile_ref = "minimax_h3_t2v_prompt@6"
     elif target_task_type == MINIMAX_H3_I2V and roles == ("start_image",):
-        profile_ref = "minimax_h3_i2v_prompt@5"
+        profile_ref = "minimax_h3_i2v_prompt@6"
     elif target_task_type == MINIMAX_H3_FLF2V and roles == (
         "start_image",
         "end_image",
     ):
-        profile_ref = "minimax_h3_flf2v_prompt@5"
+        profile_ref = "minimax_h3_flf2v_prompt@6"
     elif target_task_type == MINIMAX_H3_REF2V and 1 <= len(roles) <= 4 and roles == tuple(
         f"reference_image_{index}" for index in range(1, len(roles) + 1)
     ):
@@ -1197,7 +1268,7 @@ def build_prompt_variables(
         ),
         "media_frame_instructions": media_frame_instructions,
         "dialogue_language_instructions": build_dialogue_language_contract(prompt),
-        "addon_summary": "10Eros-Max TURBO hybrid Beta3 with its native 7-step er_sde schedule; optional add-ons are selected by the server and must not be named in the generated prompt.",
+        "addon_summary": "10Eros-Max TURBO hybrid Beta4 with its 7-step euler/simple schedule; optional add-ons are selected by the server and must not be named in the generated prompt.",
         "addon_rules": "Do not output model names, LoRA names, strengths, or trigger tokens.",
         "breasts_vocabulary_rule": (
             "nipples and areoles require textual or visual evidence; areolas is forbidden."

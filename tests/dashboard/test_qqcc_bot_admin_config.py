@@ -672,7 +672,7 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
     assert options["default_ai_video_main_model"] == "10eros"
     assert options["ai_video_main_models"] == [
-        {"value": "10eros", "label": "10Eros Max H3 v3"},
+        {"value": "10eros", "label": "10Eros Max H3 Beta4"},
         {"value": "official", "label": "MiniMax H3 官方模型"},
         {
             "value": "official_ref2v_turbo",

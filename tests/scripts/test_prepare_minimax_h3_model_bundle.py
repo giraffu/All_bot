@@ -12,11 +12,11 @@ def test_split_author_stack_uses_exact_twenty_six_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
-        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors"
+        "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
     ][1:4] == (
-        "ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2",
-        40_228_492_688,
-        "https://huggingface.co/TenStrip/10Eros-Max/resolve/47be06381f1a558f5fbd96e94d808d61fb164006/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
+        "bf34b4c9d2fa973ae84c480a1a5a04d2978958023bb6be7375b3b9e4818965e3",
+        40_222_982_192,
+        "https://huggingface.co/TenStrip/10Eros-Max/resolve/3c071106f5b62c02b3cb0b7d831083cdb582b289/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors",
     )
     assert files[
         "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
@@ -136,7 +136,7 @@ def test_split_author_stack_uses_exact_twenty_six_pinned_assets():
         "https://civitai.red/api/download/models/3252313?fileId=3135351",
     )
     assert len(files) == 26
-    assert sum(entry[2] for entry in module.FILES) == 114_106_812_703
+    assert sum(entry[2] for entry in module.FILES) == 114_101_302_207
     assert module.MIN_FREE_BYTES == 110 * 1024**3
 
 
@@ -257,9 +257,16 @@ def test_prepare_reuses_nine_existing_blobs_and_downloads_only_two(monkeypatch, 
 
     assert downloads == [9, 10]
     assert manifest["source"]["revision"] == (
-        "10eros-v3=47be0638; comfy-int8=4cc1d817; "
+        "10eros-beta4=3c071106; comfy-int8=4cc1d817; "
         "comfy-support=014cd40f; lightx2v=ec01fa4c"
     )
+    assert manifest["obsolete_files"] == [
+        {
+            "relative_path": "diffusion_models/MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta3.safetensors",
+            "sha256": "ea0df6670a84dfe594fe12c1202dfd82a497dbf2a75d6f06279a6b6993ab64b2",
+            "size_bytes": 40_228_492_688,
+        }
+    ]
     assert "official pruned INT8 ConvRot" in manifest["source"]["variant"]
     assert [item["relative_path"] for item in manifest["files"]] == sorted(
         item[0] for item in assets
