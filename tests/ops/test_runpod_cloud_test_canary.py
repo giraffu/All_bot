@@ -123,6 +123,18 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     assert h3_cases[2]["payload"]["inputs"]["images"] == [image_key, image_key]
     assert h3_cases[3]["payload"]["inputs"]["main_model"] == "official_ref2v_turbo"
 
+    upscale_cases = RunPodCloudTestCanaryCaseBuilder(
+        _config(tmp_path, task_type="ltx25_video_upscale")
+    ).task_cases("user-data-test/web_uploads/3/h3-final.mp4")
+    assert len(upscale_cases) == 1
+    assert upscale_cases[0]["expected_central_task_type"] == "ltx25_video_upscale"
+    assert upscale_cases[0]["payload"]["inputs"] == {
+        "images": ["user-data-test/web_uploads/3/h3-final.mp4"],
+        "duration": 5,
+        "duration_seconds": 5,
+        "seed": 20260831,
+    }
+
 
 def test_split_video_case_builder_preserves_fixed_order(tmp_path):
     cases = RunPodCloudTestCanaryCaseBuilder(_config(tmp_path)).split_video_task_cases(

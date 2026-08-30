@@ -48,6 +48,23 @@ runtime 和 workflow。模型 manifest 固定为
 disabled Worker 跑一单 5 秒 canary，核对 2 倍尺寸、121 帧、音轨和 identity/
 composition 保真，再决定是否启用接单。
 
+云测试 canary 使用已经上传到 `user-data-test` 的最长 5 秒视频对象，入口为：
+
+```bash
+python3 scripts/gpu_pool_controller.py runpod canary \
+  --task-type ltx25_video_upscale \
+  --env cloud-test \
+  --env-file .env.cloud.test \
+  --input-object-key <test-video-object-key> \
+  --allow-existing-prod-managed-pods \
+  --execute
+```
+
+runner 在目标 heartbeat 后先把新 agent 设为 disabled，仅在提交这一单时临时启用，
+终态或异常都会再次禁用并删除本次 test Pod；既有 prod manual Pod 只允许作为忽略的
+只读基线，不能成为 cleanup 目标。验收后还要回读 provider 和 Central，确认测试 Pod
+与 agent heartbeat 均无残留。
+
 ## 4. 发布红线与验证
 
 模型准备、镜像构建和 Git 提交不等于部署。创建 RunPod/LAN Worker、上传模型、

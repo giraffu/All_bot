@@ -90,6 +90,8 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.ltx_video_task_cases(image_object_key)
         if profile.task_type == "ltx_t2v":
             return self.ltx_t2v_task_cases(image_object_key)
+        if profile.task_type == "ltx25_video_upscale":
+            return self.ltx25_video_upscale_task_cases(image_object_key)
         if profile.task_type == "minimax_h3":
             return self.minimax_h3_task_cases(image_object_key)
         if profile.task_type == "pornmaster_flux2_edit_bf16":
@@ -341,6 +343,28 @@ class RunPodCloudTestCanaryCaseBuilder:
                     "priority": 0,
                 },
             },
+        ]
+
+    def ltx25_video_upscale_task_cases(
+        self, video_object_key: str
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "ltx25_video_upscale_2x_5s",
+                "expected_central_task_type": "ltx25_video_upscale",
+                "payload": {
+                    "task_type": "ltx25_video_upscale",
+                    "inputs": {
+                        "images": [video_object_key],
+                        "duration": 5,
+                        "duration_seconds": 5,
+                        "seed": 20260831,
+                    },
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            }
         ]
 
     def i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:

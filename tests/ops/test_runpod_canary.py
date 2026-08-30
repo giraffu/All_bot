@@ -19,6 +19,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_LTX_T2V_IMAGE_REF_PREFIX,
     EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY,
     EXPECTED_LTX_T2V_MODEL_PREFIX,
+    EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+    EXPECTED_LTX25_VIDEO_UPSCALE_IMAGE_REF_PREFIX,
+    EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
+    EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
     EXPECTED_MINIMAX_H3_GPU_TYPE_IDS,
     EXPECTED_MINIMAX_H3_IMAGE_REF_PREFIX,
     EXPECTED_MINIMAX_H3_MODEL_MANIFEST_KEY,
@@ -49,6 +53,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
 )
@@ -75,6 +80,10 @@ PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
 PUBLIC_LTX_T2V_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:"
     "83a5f8c1ccafcd146cd73545643b39b64d6d94a5a077cfdf5a0338f381c24f15"
+)
+PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:"
+    "1f24a1c04dd28f9834743783314491490569116a7524fd41f94c03443bc6c661"
 )
 PUBLIC_MINIMAX_H3_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:"
@@ -217,6 +226,15 @@ class FakeRunPodProvider:
             model_prefix = EXPECTED_LTX_T2V_MODEL_PREFIX
             model_manifest_key = EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY
             gpu_type_ids = list(EXPECTED_LTX_T2V_GPU_TYPE_IDS)
+            template_id = ""
+        elif task_type == "ltx25_video_upscale":
+            image_name = PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE
+            supported_task_types = ",".join(
+                RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES
+            )
+            model_prefix = EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
+            model_manifest_key = EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS)
             template_id = ""
         else:
             image_name = PUBLIC_GHCR_IMAGE
@@ -490,6 +508,86 @@ def test_runpod_canary_ltx_t2v_dry_run_preflights_disabled_profile():
         for step in payload["would_execute"]
     )
     assert provider.create_calls == 0
+
+
+def test_runpod_canary_ltx25_upscale_dry_run_preflights_disabled_profile():
+    provider = FakeRunPodProvider()
+    payload = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(
+            task_type="ltx25_video_upscale", execute=False, quiet=True
+        ),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] == PUBLIC_LTX25_VIDEO_UPSCALE_GHCR_IMAGE
+    assert payload["render"]["gpu_type_ids"] == list(
+        EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS
+    )
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["model_prefix"] == (
+        EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
+    )
+    assert payload["render"]["model_manifest_key"] == (
+        EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
+    )
+    assert any(
+        "submit one LTX-2.5 IC V2V 2x upscale Web task" in step
+        for step in payload["would_execute"]
+    )
+    assert provider.create_calls == 0
+
+
+def test_runpod_canary_ltx25_upscale_disables_before_task_and_on_cleanup():
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        )
+    )
+    runner = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(
+            task_type="ltx25_video_upscale",
+            execute=True,
+            cleanup=True,
+            quiet=True,
+            disable_workers=False,
+        ),
+        sleep_func=lambda _seconds: None,
+    )
+    runner._run_web_preflight = lambda summary: None  # type: ignore[method-assign]
+    runner._wait_pod_readiness = lambda pod_id, summary: None  # type: ignore[method-assign]
+    runner._wait_runpod_worker = (  # type: ignore[method-assign]
+        lambda pod_id, summary: {
+            "agent_id": f"runpod_test_ltx25_video_upscale_{pod_id}"
+        }
+    )
+    runner._resolve_canary_image = (  # type: ignore[method-assign]
+        lambda summary: "user-data-test/web_uploads/3/h3-final.mp4"
+    )
+    runner._task_cases = lambda object_key: []  # type: ignore[method-assign]
+    controls = []
+    runner._set_agent_control = (  # type: ignore[method-assign]
+        lambda agent_id, state, **kwargs: controls.append((state, kwargs["reason"]))
+        or {"ok": True}
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert controls == [
+        ("disabled", "runpod_canary_default_disabled"),
+        ("enabled", "runpod_canary_execution"),
+        ("disabled", "runpod_canary_complete"),
+    ]
+    assert provider.create_calls == 1
+    assert provider.delete_calls == 1
 
 
 def test_runpod_canary_minimax_h3_dry_run_requires_exact_release_profile():
