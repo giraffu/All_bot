@@ -43,7 +43,7 @@ describe('HistoryTable source filters', () => {
     wrapper.getComponent(TableStub).vm.$emit('change', { current: 2 })
     await flushPromises()
     const usernameInput = wrapper.getComponent(InputStub)
-    expect(usernameInput.attributes('placeholder')).toBe('搜索用户名')
+    expect(usernameInput.attributes('placeholder')).toBe('输入完整用户名')
     usernameInput.vm.$emit('update:value', '  Gray  ')
     usernameInput.vm.$emit('search', '  Gray  ')
     await flushPromises()
