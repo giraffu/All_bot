@@ -17,6 +17,8 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
         RunPodSettings(
             image_name_minimax_h3=digest,
             prod_agent_id="runpod_prod_minimax_h3_manual_01",
+            min_download_mbps_minimax_h3=2000,
+            min_ram_per_gpu_minimax_h3=128,
         )
     )
     body = builder.create_pod_body(
@@ -30,6 +32,8 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
     assert body["gpuTypeIds"] == ["NVIDIA GeForce RTX 5090"]
     assert body["containerDiskInGb"] >= 100
     assert body["volumeInGb"] >= 100
+    assert body["minDownloadMbps"] == 2000
+    assert body["minRAMPerGPU"] == 128
     assert body["env"]["POOL_RUNTIME_PROFILE"] == "minimax_h3"
     assert body["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
@@ -76,3 +80,45 @@ def test_minimax_h3_projected_cost_env_drives_scale_guard(monkeypatch):
     assert builder.configured_projected_cost(
         RUNPOD_TASK_PROFILES["minimax_h3"]
     ) == pytest.approx(0.99)
+
+
+def test_minimax_h3_resource_gate_env_is_rendered(monkeypatch):
+    monkeypatch.setenv("RUNPOD_MIN_DOWNLOAD_MBPS_MINIMAX_H3", "2000")
+    monkeypatch.setenv("RUNPOD_MIN_RAM_PER_GPU_MINIMAX_H3", "128")
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.min_download_mbps_minimax_h3 == 2000
+    assert settings.min_ram_per_gpu_minimax_h3 == 128
+
+
+def test_minimax_h3_allows_pro_6000_server_with_resource_gates():
+    digest = "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "b" * 64
+    body = RunPodPodRequestBuilder(
+        RunPodSettings(
+            image_name_minimax_h3=digest,
+            gpu_type_ids_minimax_h3=(
+                "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            ),
+            min_download_mbps_minimax_h3=2000,
+            min_ram_per_gpu_minimax_h3=128,
+        )
+    ).create_pod_body(task_type="minimax_h3_t2v", environment="cloud-test")
+
+    assert body["gpuTypeIds"] == [
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+    ]
+    assert body["minDownloadMbps"] == 2000
+    assert body["minRAMPerGPU"] == 128
+
+
+def test_minimax_h3_rejects_unverified_gpu_type():
+    digest = "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "c" * 64
+
+    with pytest.raises(ValueError, match="verified GPU types"):
+        RunPodPodRequestBuilder(
+            RunPodSettings(
+                image_name_minimax_h3=digest,
+                gpu_type_ids_minimax_h3=("NVIDIA L40S",),
+            )
+        ).create_pod_body(task_type="minimax_h3_t2v", environment="cloud-test")

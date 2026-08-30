@@ -1730,6 +1730,19 @@ class RunPodProdWorkerRunner:
                 + ",".join(expected_gpu_type_ids)
                 + " for prod-worker"
             )
+        if self.options.profile == "minimax_h3":
+            expected_download = int(
+                getattr(target_settings, "min_download_mbps_minimax_h3", 0)
+            )
+            expected_ram = int(
+                getattr(target_settings, "min_ram_per_gpu_minimax_h3", 0)
+            )
+            if expected_download and body.get("minDownloadMbps") != expected_download:
+                failures.append(
+                    f"minDownloadMbps must be {expected_download} for minimax_h3"
+                )
+            if expected_ram and body.get("minRAMPerGPU") != expected_ram:
+                failures.append(f"minRAMPerGPU must be {expected_ram} for minimax_h3")
         self._validate_profile_container_disk(
             body=body,
             spec=spec,
@@ -1915,6 +1928,8 @@ class RunPodProdWorkerRunner:
             "templateId": bool(body.get("templateId")),
             "gpu_type_ids": body.get("gpuTypeIds"),
             "container_disk_gb": body.get("containerDiskInGb"),
+            "min_download_mbps": body.get("minDownloadMbps"),
+            "min_ram_per_gpu": body.get("minRAMPerGPU"),
             "central_api_url": env.get("CENTRAL_API_URL"),
             "agent_id": env.get("AGENT_ID"),
             "supported_task_types": env.get("SUPPORTED_TASK_TYPES"),
