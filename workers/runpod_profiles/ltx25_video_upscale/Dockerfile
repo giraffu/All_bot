@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim@sha256:4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9
-ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:5f959c7936e6ce271cbbb0d595993b48c4e408d6aded9476de949493d76400b4
 
 FROM ${NODE_SOURCE_IMAGE} AS node_source
 FROM ${BASE_IMAGE}
@@ -43,6 +43,7 @@ RUN set -euo pipefail; \
 
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite /opt/allbot/node_source/ComfyUI-VideoHelperSuite
 COPY workers/runpod_profiles/ltx_t2v/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
+RUN rm -rf /opt/allbot/runtime/runpod_worker
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
 COPY src /opt/allbot/runtime/runpod_worker/src
