@@ -294,14 +294,17 @@ MiniMaxH3ImageToVideo → Euler/BasicScheduler(simple, 7 steps)`。
 输出继续解码 H3 原生同步音轨。
 
 REF2V 在 `10eros` 下使用同一 TURBO hybrid Beta4，不加载 LightX2V。其链路为
-PyTorch attention、video/audio sigma shift `11/4`、
+PyTorch attention、video/audio sigma shift `12/7`、
 `MiniMaxH3ReferenceToVideo(ref_image_size="match")`、`KSamplerSelect("euler") →
-BasicScheduler("simple", 7, 1.0) → SamplerCustomAdvanced`。十八个候选 LoRA 中最多十三个仍按选择顺序注入；
+BasicScheduler("simple", 8, 1.0) → SamplerCustomAdvanced`。Beta4 作者页将该版本描述为
+ref/T2VA hybrid，并明确说明 reference 可用；这里使用其当前推荐的 8 steps、video
+shift 12 和 audio shift 7 下限。传统 I2V prompting 不能代替 REF2VA reference
+prompting。十八个候选 LoRA 中最多十三个仍按选择顺序注入；
 REF2VA Motion v0.2 可进入任一 REF2V profile，并始终追加在所选基础/加速链之后。
 
 `official + REF2V` 是独立执行 profile：同一基础节点在 patch 后切换为官方 INT8
 ConvRot Ref2VA、`ref_image_size="max"`、`KSamplerSelect("res_multistep")` 和
-`BasicScheduler("simple", 20, 1.0)`；不继承 10Eros 的 7-step profile。这里固定
+`BasicScheduler("simple", 20, 1.0)`；不继承 10Eros 的 8-step REF2V profile。这里固定
 `simple` 是为了与当前 Comfy-Org 官方模板精确对齐；官方说明参考很多时 `beta` 或
 `normal` 往往优于 `simple`，后续若要调整必须作为新的受控 profile 单独 canary。
 
@@ -316,7 +319,7 @@ sampler、缩放策略和专用 LoRA 是同一蒸馏契约，不能替换为 FL2
 10Eros TURBO hybrid Beta4、官方 FL2VA/Ref2VA、两份任务专属加速 LoRA和上述十八个
 可选 LoRA，不包含 RedMix。新 manifest 完整校验后只按路径、尺寸和 SHA256 精确删除
 Beta3 checkpoint；其它 checkpoint、LoRA、blob 与 bundle 保持不变。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
-内存；7-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
+内存；7/8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续四模式 GPU canary 才能定论。
 
 四份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到

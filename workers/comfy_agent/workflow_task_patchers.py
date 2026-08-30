@@ -1427,6 +1427,12 @@ _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
     "shift_video": 12.0,
     "shift_audio": 3.0,
 }
+_MINIMAX_H3_TEN_EROS_REF2VA_EXECUTION_PROFILE = {
+    **_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE,
+    "steps": 8,
+    "shift_video": 12.0,
+    "shift_audio": 7.0,
+}
 _MINIMAX_H3_FL2VA_TURBO_LORA = (
     "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 )
@@ -1494,14 +1500,11 @@ def _apply_minimax_h3_execution_profile(
     if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO:
         profile = _MINIMAX_H3_OFFICIAL_REF2VA_TURBO_EXECUTION_PROFILE
     elif main_model != MINIMAX_H3_MAIN_MODEL_OFFICIAL:
-        profile = {
-            **_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE,
-            **(
-                {"shift_video": 11.0, "shift_audio": 4.0}
-                if task_type == "minimax_h3_ref2v"
-                else {}
-            ),
-        }
+        profile = (
+            _MINIMAX_H3_TEN_EROS_REF2VA_EXECUTION_PROFILE
+            if task_type == "minimax_h3_ref2v"
+            else _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
+        )
     elif task_type == "minimax_h3_ref2v":
         profile = _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE
     else:
