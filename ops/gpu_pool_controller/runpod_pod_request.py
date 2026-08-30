@@ -322,8 +322,14 @@ class RunPodPodRequestBuilder:
             raise ValueError("ltx_t2v model manifest key must use the fixed release")
 
     def validate_ltx25_video_upscale_contract(self) -> None:
-        if tuple(self.settings.gpu_type_ids_ltx25_video_upscale) != RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS:
-            raise ValueError("ltx25_video_upscale GPU types must use the verified fixed set")
+        gpu_type_ids = tuple(self.settings.gpu_type_ids_ltx25_video_upscale)
+        if not gpu_type_ids or not set(gpu_type_ids).issubset(
+            RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS
+        ):
+            raise ValueError(
+                "ltx25_video_upscale GPU types must be a non-empty subset of the "
+                "verified fixed set"
+            )
         if self.settings.use_template_ltx25_video_upscale or self.settings.template_id_ltx25_video_upscale:
             raise ValueError("ltx25_video_upscale RunPod templates are disabled")
         if self.settings.model_prefix_ltx25_video_upscale != RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX:

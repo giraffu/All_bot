@@ -234,7 +234,7 @@ class FakeRunPodProvider:
             )
             model_prefix = EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX
             model_manifest_key = EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
-            gpu_type_ids = list(EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS)
+            gpu_type_ids = list(self.settings.gpu_type_ids_ltx25_video_upscale)
             template_id = ""
         else:
             image_name = PUBLIC_GHCR_IMAGE
@@ -539,6 +539,25 @@ def test_runpod_canary_ltx25_upscale_dry_run_preflights_disabled_profile():
         for step in payload["would_execute"]
     )
     assert provider.create_calls == 0
+
+
+def test_runpod_canary_ltx25_accepts_one_verified_gpu_for_node_selection():
+    verified_gpu = EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[1]
+    settings = RunPodSettings(
+        gpu_type_ids_ltx25_video_upscale=(verified_gpu,),
+    )
+    provider = FakeRunPodProvider(settings=settings)
+
+    payload = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(
+            task_type="ltx25_video_upscale", execute=False, quiet=True
+        ),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["gpu_type_ids"] == [verified_gpu]
 
 
 def test_runpod_canary_ltx25_upscale_disables_before_task_and_on_cleanup():

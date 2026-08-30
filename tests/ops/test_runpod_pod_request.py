@@ -15,6 +15,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -221,5 +222,39 @@ def test_ltx_t2v_request_rejects_profile_contract_drift(overrides, error):
     with pytest.raises(ValueError, match=error):
         RunPodPodRequestBuilder(settings).create_pod_body(
             task_type="ltx_t2v",
+            environment="cloud-test",
+        )
+
+
+def test_ltx25_upscale_request_allows_one_verified_gpu_for_canary_selection():
+    verified_gpu = RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[1]
+    settings = _settings_for_profile("ltx25_video_upscale")
+    settings = RunPodSettings(
+        **{
+            **settings.__dict__,
+            "gpu_type_ids_ltx25_video_upscale": (verified_gpu,),
+        }
+    )
+
+    body = RunPodPodRequestBuilder(settings).create_pod_body(
+        task_type="ltx25_video_upscale",
+        environment="cloud-test",
+    )
+
+    assert body["gpuTypeIds"] == [verified_gpu]
+
+
+def test_ltx25_upscale_request_rejects_unverified_gpu_selection():
+    settings = _settings_for_profile("ltx25_video_upscale")
+    settings = RunPodSettings(
+        **{
+            **settings.__dict__,
+            "gpu_type_ids_ltx25_video_upscale": ("NVIDIA GeForce RTX 4090",),
+        }
+    )
+
+    with pytest.raises(ValueError, match="non-empty subset"):
+        RunPodPodRequestBuilder(settings).create_pod_body(
+            task_type="ltx25_video_upscale",
             environment="cloud-test",
         )

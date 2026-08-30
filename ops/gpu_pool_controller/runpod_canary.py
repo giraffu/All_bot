@@ -192,6 +192,7 @@ class RunPodCanaryProfileSpec:
     model_manifest_key: str
     allow_template_id: bool = False
     expected_gpu_type_ids: tuple[str, ...] = ()
+    allow_expected_gpu_subset: bool = False
     workflow_overrides: str = ""
     task_summary: str = ""
     worker_disable_summary: str = ""
@@ -323,6 +324,7 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         model_prefix=EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
         model_manifest_key=EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
         expected_gpu_type_ids=EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+        allow_expected_gpu_subset=True,
         task_summary="submit one LTX-2.5 IC V2V 2x upscale Web task",
         worker_disable_summary=(
             "temporarily disable cloud-test workers supporting "
@@ -1289,10 +1291,13 @@ class RunPodCanaryRunner:
             failures.append(
                 f"{spec.task_type} imageName must use an exact sha256 digest"
             )
-        if (
-            spec.expected_gpu_type_ids
-            and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids
-        ):
+        rendered_gpu_type_ids = tuple(body.get("gpuTypeIds") or ())
+        gpu_type_ids_match = rendered_gpu_type_ids == spec.expected_gpu_type_ids
+        if spec.allow_expected_gpu_subset:
+            gpu_type_ids_match = bool(rendered_gpu_type_ids) and set(
+                rendered_gpu_type_ids
+            ).issubset(spec.expected_gpu_type_ids)
+        if spec.expected_gpu_type_ids and not gpu_type_ids_match:
             failures.append(
                 "gpuTypeIds must be " + ",".join(spec.expected_gpu_type_ids)
             )
