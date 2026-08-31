@@ -41,6 +41,7 @@ CHUNK_SIZE = 8 * 1024 * 1024
 @dataclass(frozen=True)
 class LogicalReference:
     history_id: int
+    task_id: str | None
     role: str
     ordinal: int
     reference: str
@@ -94,6 +95,26 @@ def normalize_snapshot_key(reference: object, *, source_bucket: str) -> str | No
     return raw
 
 
+def resolve_snapshot_primary_key(
+    reference: LogicalReference, *, source_bucket: str
+) -> str | None:
+    """Match the established archive-worker preference for legacy flat names.
+
+    A flat History value is a filename, not an R2 key.  Its primary managed
+    location is ``history/<task_id>/<filename>``.  The flat-key fallback is
+    deliberately a later, separately reported pass so a broad root namespace
+    is never mistaken for the primary History object.
+    """
+    key = normalize_snapshot_key(reference.reference, source_bucket=source_bucket)
+    if key is None:
+        return None
+    if "/" not in key and reference.task_id:
+        task_id = str(reference.task_id).strip()
+        if task_id and all(char not in task_id for char in "/\\\x00\r\n"):
+            return f"history/{task_id}/{key}"
+    return key
+
+
 def extract_snapshot_references(rows: Iterable[dict[str, Any]]) -> list[LogicalReference]:
     """Use the same input/output/extra_outputs semantics as the app."""
     references: list[LogicalReference] = []
@@ -114,6 +135,7 @@ def extract_snapshot_references(rows: Iterable[dict[str, Any]]) -> list[LogicalR
             references.append(
                 LogicalReference(
                     history_id=asset.history_id,
+                    task_id=str(row.get("task_id") or "").strip() or None,
                     role=asset.role,
                     ordinal=asset.ordinal,
                     reference=asset.source_ref,
@@ -128,7 +150,7 @@ def build_manifest(
     grouped: dict[str, list[dict[str, Any]]] = {}
     rejected: list[dict[str, Any]] = []
     for reference in extract_snapshot_references(rows):
-        key = normalize_snapshot_key(reference.reference, source_bucket=source_bucket)
+        key = resolve_snapshot_primary_key(reference, source_bucket=source_bucket)
         payload = asdict(reference)
         if key is None:
             rejected.append(payload)
@@ -156,7 +178,7 @@ async def load_history_rows(database_url: str) -> list[dict[str, Any]]:
     connection = await asyncpg.connect(database_url.replace("postgresql+asyncpg://", "postgresql://", 1))
     try:
         rows = await connection.fetch(
-            "select id,input_file,output_file,extra_outputs from history order by id"
+            "select id,task_id,input_file,output_file,extra_outputs from history order by id"
         )
         return [dict(row) for row in rows]
     finally:
