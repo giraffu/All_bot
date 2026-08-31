@@ -3,9 +3,11 @@ from scripts.r2_history_snapshot_backup import (
     MANIFEST_SCHEMA,
     build_manifest,
     copy_one,
+    collect_copy_results,
     extract_snapshot_references,
     normalize_snapshot_key,
 )
+from concurrent.futures import Future
 
 
 class _Body:
@@ -108,3 +110,15 @@ def test_copy_preserves_key_and_resumes_only_after_local_sha_verification(tmp_pa
     assert second == {"key": "history/task-1/result.png", "status": "already_verified", "bytes": 14}
     assert (root / "history/task-1/result.png").read_bytes() == b"snapshot-media"
     assert client.head_calls == 2
+
+
+def test_copy_batch_records_individual_failure_without_aborting_other_objects() -> None:
+    success = Future()
+    success.set_result({"key": "history/ok.png", "status": "completed", "bytes": 3})
+    missing = Future()
+    missing.set_exception(FileNotFoundError("not retained"))
+
+    completed, failures = collect_copy_results([success, missing])
+
+    assert completed == [{"key": "history/ok.png", "status": "completed", "bytes": 3}]
+    assert failures == {"FileNotFoundError": 1}
