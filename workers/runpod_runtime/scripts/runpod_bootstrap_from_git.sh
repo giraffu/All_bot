@@ -85,12 +85,11 @@ LOCAL_RELAY_PORT="${LOCAL_RELAY_PORT:-8013}"
 RUNPOD_POD_ID_SAFE="${RUNPOD_POD_ID:-${POD_ID:-$(hostname 2>/dev/null || echo pending)}}"
 
 cleanup() {
-    if [ -n "${RELAY_PID:-}" ]; then
-        kill "$RELAY_PID" >/dev/null 2>&1 || true
-    fi
-    if [ -n "${COMFY_PID:-}" ]; then
-        kill "$COMFY_PID" >/dev/null 2>&1 || true
-    fi
+    for pid in "${EMBEDDED_TEST_AGENT_PID:-}" "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+            kill "$pid" >/dev/null 2>&1 || true
+        fi
+    done
 }
 trap cleanup INT TERM
 
@@ -98,7 +97,7 @@ shutdown_children() {
     local status="${1:-0}"
     trap - INT TERM
     cleanup
-    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+    for pid in "${EMBEDDED_TEST_AGENT_PID:-}" "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
         if [ -n "$pid" ]; then
             wait "$pid" >/dev/null 2>&1 || true
         fi
@@ -393,9 +392,19 @@ log "RunPod relay ready; starting comfy agent"
 python3 "$RUNPOD_WORKER_DIR/comfy_agent/agent_main.py" &
 AGENT_PID="$!"
 
-log "process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID}"
+EMBEDDED_TEST_AGENT_PID=""
+if [ "${RUNPOD_EMBEDDED_TEST_AGENT_ENABLED:-false}" = "true" ]; then
+    bash "$RUNPOD_WORKER_DIR/scripts/runpod_embedded_test_agent.sh" &
+    EMBEDDED_TEST_AGENT_PID="$!"
+fi
+
+log "process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID} embedded_test=${EMBEDDED_TEST_AGENT_PID:-disabled}"
+managed_pids=("$AGENT_PID" "$RELAY_PID" "$COMFY_PID")
+if [ -n "$EMBEDDED_TEST_AGENT_PID" ]; then
+    managed_pids+=("$EMBEDDED_TEST_AGENT_PID")
+fi
 set +e
-wait -n "$AGENT_PID" "$RELAY_PID" "$COMFY_PID"
+wait -n "${managed_pids[@]}"
 supervised_status="$?"
 set -e
 

@@ -166,6 +166,12 @@ ComfyUI。它们必须使用不同 agent identity，分别连接 test/prod Centr
 目标 Central queue、两个 agent heartbeat/current task 和 ComfyUI queue，避免把控制面
 排队与 GPU 执行排队混为一谈。
 
+`ltx25_video_upscale` 是共享 ComfyUI 的容器内变体：正式 RunPod Pod 内的独立 test
+relay/agent 直接调用 `127.0.0.1:8188`，不使用本节的 Pod 外 Worker Compose，也不
+开放公网 ComfyUI。该 agent 仍必须使用 test Central、`user-data-test`、独立 identity
+和独立 spool；具体契约见 `docs/子模块_LTX25视频高清化_ltx25_video_upscale.md`。
+在实际 Pod 尚未创建时，test Central 不会出现该 agent，这是预期状态。
+
 上述并存只适用于消费任务，不放宽 GPU mutation 门禁。模型缓存、workflow、镜像、
 ComfyUI 生命周期和 LAN slot 切换仍由对应 operator 在显式维护窗口操作；独占性能测试
 或争用诊断需要暂停某一侧时，必须作为当次临时操作明确记录，不能写成默认拓扑。

@@ -22,7 +22,8 @@ from dashboard.backend.services.runpod_admin_commands import (
 @pytest.fixture(autouse=True)
 def _clear_runpod_admin_operations(monkeypatch):
     pins = {
-        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:"
+        + format(index % 16, "x") * 64
         for index, image_env in enumerate(
             sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
             start=1,
@@ -31,7 +32,7 @@ def _clear_runpod_admin_operations(monkeypatch):
     monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
     monkeypatch.setenv(
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES",
-        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,minimax_h3,pornmaster_flux2_edit_bf16",
+        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,ltx25_video_upscale,minimax_h3,pornmaster_flux2_edit_bf16",
     )
     runpod_admin_service.set_runpod_operation_store_for_tests(
         InMemoryRunPodOperationStore()
@@ -156,6 +157,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "scail2",
         "ltx_video",
         "ltx_t2v",
+        "ltx25_video_upscale",
         "minimax_h3",
         "pornmaster_flux2_edit_bf16",
     ]
@@ -166,6 +168,16 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
     ltx_t2v = next(item for item in payload["profiles"] if item["profile"] == "ltx_t2v")
     assert ltx_t2v["supported_task_types"] == ["ltx_t2v", "ltx_t2v_ic"]
     assert ltx_t2v["autoscaler_enabled"] is False
+    ltx25 = next(
+        item for item in payload["profiles"]
+        if item["profile"] == "ltx25_video_upscale"
+    )
+    assert ltx25 == {
+        "profile": "ltx25_video_upscale",
+        "label": "LTX-2.5 IC V2V / 视频高清化",
+        "supported_task_types": ["ltx25_video_upscale"],
+        "autoscaler_enabled": False,
+    }
     minimax_h3 = next(
         item for item in payload["profiles"] if item["profile"] == "minimax_h3"
     )

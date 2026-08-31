@@ -380,6 +380,7 @@ def _settings(**overrides) -> RunPodSettings:
         "image_name_minimax_h3": PUBLIC_MINIMAX_H3_GHCR_IMAGE,
         "image_name_pornmaster_flux2_edit": PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
+        "worker_central_url_cloud_test": "https://worker-central-test.example.test",
     }
     values.update(overrides)
     return RunPodSettings(**values)
@@ -898,6 +899,22 @@ def test_prod_worker_render_ltx25_upscale_is_isolated_and_disabled_by_default():
         payload["render"]["container_disk_gb"]
         == RUNPOD_LTX25_VIDEO_UPSCALE_CONTAINER_DISK_GB
     )
+    env = provider.render_create_pod_request(
+        task_type="ltx25_video_upscale",
+        environment="cloud-prod",
+        redact=False,
+    )["json"]["env"]
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["AGENT_ID"] == "runpod_prod_ltx25_video_upscale_manual_01"
+    assert env["MINIO_BUCKET"] == "user-data-prod"
+    assert env["RUNPOD_EMBEDDED_TEST_AGENT_ENABLED"] == "true"
+    assert env["RUNPOD_TEST_AGENT_ID_PREFIX"] == "runpod_test_ltx25_video_upscale"
+    assert env["RUNPOD_TEST_CENTRAL_API_URL"] == (
+        provider.settings.worker_central_url_cloud_test
+    )
+    assert env["RUNPOD_TEST_MINIO_BUCKET"] == "user-data-test"
+    assert env["RUNPOD_TEST_SUPPORTED_TASK_TYPES"] == "ltx25_video_upscale"
+    assert env["RUNPOD_TEST_RUNTIME_PROFILE"] == "ltx25_video_upscale"
     assert provider.create_calls == 0
 
 
