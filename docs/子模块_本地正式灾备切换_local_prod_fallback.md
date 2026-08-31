@@ -40,6 +40,11 @@ scripts/sync_cloud_prod_to_local_shadow.py --execute
 
 脚本默认 dry-run。`R2_BUCKET_SYNC_ENABLED=true` 时仅把 R2 同步到本地 shadow；本地对象桶不作为应用运行时回源。
 
+每次同步成功切换 shadow、完成外部校验并写入 manifest 后，只保留刚刚产生的
+一个 `bot_db_prod_shadow_previous_*` 作为 immediate rollback；更早的 previous
+数据库会被删除。带日期的 dump 文件继续由 `SHADOW_SYNC_RETENTION_DAYS` 管理，
+两种保留机制不能互相替代。
+
 灾备启用写入前必须备份现有本地数据库，再由人工明确把 `bot_db_prod_shadow` 提升为本地写库。订单、余额、任务历史和用户写入必须在回切时对账。
 
 ## 4. 启动本地服务

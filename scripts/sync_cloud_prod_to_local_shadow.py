@@ -562,6 +562,8 @@ def local_postgres_env(config: ShadowSyncConfig) -> dict[str, str]:
             "SHADOW_DB": config.shadow_database_name,
             "SHADOW_NEXT_DB": config.next_database_name,
             "SHADOW_PREVIOUS_DB": config.previous_database_name,
+            "SHADOW_PREVIOUS_PREFIX": f"{config.shadow_database_name}_previous_",
+            "SHADOW_COMPACT_PREVIOUS_PREFIX": f"{config.shadow_database_name}_prev_",
         }
     )
     return env
@@ -1176,6 +1178,51 @@ def run_db_atomic_switch(config: ShadowSyncConfig, runner: CommandRunner) -> Non
     )
 
 
+def prune_old_previous_databases(
+    config: ShadowSyncConfig,
+    runner: CommandRunner,
+) -> None:
+    env = local_postgres_env(config)
+    list_sql = (
+        "SELECT datname FROM pg_database "
+        "WHERE ("
+        "left(datname, char_length('$SHADOW_PREVIOUS_PREFIX')) = "
+        "'$SHADOW_PREVIOUS_PREFIX' OR "
+        "left(datname, char_length('$SHADOW_COMPACT_PREVIOUS_PREFIX')) = "
+        "'$SHADOW_COMPACT_PREVIOUS_PREFIX'"
+        ") AND datname <> '$SHADOW_PREVIOUS_DB' "
+        "ORDER BY datname;"
+    )
+    script = "\n".join(
+        [
+            "set -eu",
+            "psql --dbname=\"$LOCAL_MAINTENANCE_DB\" -v ON_ERROR_STOP=1 -At "
+            f'-c "{list_sql}" |',
+            "while IFS= read -r old_previous_db; do",
+            '  [ -n "$old_previous_db" ] || continue',
+            '  case "$old_previous_db" in',
+            '    "$SHADOW_PREVIOUS_PREFIX"*|"$SHADOW_COMPACT_PREVIOUS_PREFIX"*) ;;',
+            '    *) echo "Refusing unexpected previous database: $old_previous_db" >&2; exit 1 ;;',
+            "  esac",
+            '  [ "$old_previous_db" != "$SHADOW_DB" ]',
+            '  [ "$old_previous_db" != "$SHADOW_NEXT_DB" ]',
+            '  [ "$old_previous_db" != "$SHADOW_PREVIOUS_DB" ]',
+            '  [ "$old_previous_db" != "$LOCAL_MAINTENANCE_DB" ]',
+            '  dropdb --force --maintenance-db="$LOCAL_MAINTENANCE_DB" "$old_previous_db"',
+            '  echo "Pruned old shadow previous database: $old_previous_db"',
+            "done",
+        ]
+    )
+    runner.run(
+        docker_cmd(
+            config.postgres_image,
+            script,
+            env_keys=tuple(env),
+        ),
+        env=env,
+    )
+
+
 def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
     if not config.r2_bucket_sync_enabled:
         print("R2 bucket sync skipped: R2_BUCKET_SYNC_ENABLED=false")
@@ -1497,6 +1544,7 @@ def run_shadow_sync(config: ShadowSyncConfig, *, execute: bool) -> CommandRunner
             print(f"Manifest written: {config.manifest_path}")
         else:
             print("[dry-run] Would write manifest with dump sha256 and validation counts")
+        prune_old_previous_databases(config, runner)
         prune_old_backups(config, execute=execute)
     return runner
 
