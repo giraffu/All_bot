@@ -43,6 +43,9 @@ REQUEST_RETRY_ATTEMPTS = int(os.getenv("RELAY_REQUEST_RETRY_ATTEMPTS", "3"))
 STATUS_FLUSH_INTERVAL_SECONDS = float(
     os.getenv("RELAY_STATUS_FLUSH_INTERVAL_SECONDS", "0.5")
 )
+TASK_HEARTBEAT_INTERVAL_SECONDS = float(
+    os.getenv("RELAY_TASK_HEARTBEAT_INTERVAL_SECONDS", "15")
+)
 UPLOAD_RETRY_ATTEMPTS = int(os.getenv("UPLOAD_SIDECAR_RETRY_ATTEMPTS", "3"))
 UPLOAD_RETRY_BASE_SECONDS = float(
     os.getenv("UPLOAD_SIDECAR_RETRY_BASE_SECONDS", "0.5")
@@ -73,6 +76,9 @@ class RelayState:
         self.pending_statuses: dict[str, dict[str, Any]] = {}
         self.status_lock = asyncio.Lock()
         self.flush_task: asyncio.Task | None = None
+        self.active_task_agents: dict[str, str] = {}
+        self.active_tasks_lock = asyncio.Lock()
+        self.task_heartbeat_task: asyncio.Task | None = None
         self.running = False
 
 
@@ -218,6 +224,50 @@ async def _drop_pending_status(task_id: str) -> None:
         state.pending_statuses.pop(task_id, None)
 
 
+async def _track_active_task(*, task_id: str, agent_id: str) -> None:
+    if not task_id:
+        return
+    async with state.active_tasks_lock:
+        state.active_task_agents[task_id] = agent_id
+
+
+async def _drop_active_task(task_id: str) -> None:
+    if not task_id:
+        return
+    async with state.active_tasks_lock:
+        state.active_task_agents.pop(task_id, None)
+
+
+async def _heartbeat_active_tasks_once() -> None:
+    async with state.active_tasks_lock:
+        active_tasks = list(state.active_task_agents.items())
+    for task_id, agent_id in active_tasks:
+        payload = {"task_id": task_id}
+        if agent_id:
+            payload["agent_id"] = agent_id
+        try:
+            response = await _forward_request(
+                "POST",
+                "/api/agent/task/task_heartbeat",
+                json_body=payload,
+                retry=True,
+            )
+            if response.status_code >= 400:
+                logger.warning(
+                    "task_heartbeat_failed task_id=%s status=%s",
+                    task_id,
+                    response.status_code,
+                )
+        except Exception as exc:
+            logger.warning("task_heartbeat_failed task_id=%s error=%s", task_id, exc)
+
+
+async def _task_heartbeat_loop() -> None:
+    while state.running:
+        await asyncio.sleep(TASK_HEARTBEAT_INTERVAL_SECONDS)
+        await _heartbeat_active_tasks_once()
+
+
 async def _status_flush_loop() -> None:
     while state.running:
         await asyncio.sleep(STATUS_FLUSH_INTERVAL_SECONDS)
@@ -254,6 +304,7 @@ async def startup() -> None:
     await asyncio.to_thread(_cleanup_orphan_spool_files)
     state.running = True
     state.flush_task = asyncio.create_task(_status_flush_loop())
+    state.task_heartbeat_task = asyncio.create_task(_task_heartbeat_loop())
     logger.info(
         "runpod_relay_started upstream=%s spool_dir=%s",
         CENTRAL_API_URL,
@@ -268,6 +319,12 @@ async def shutdown() -> None:
         state.flush_task.cancel()
         try:
             await state.flush_task
+        except asyncio.CancelledError:
+            pass
+    if state.task_heartbeat_task:
+        state.task_heartbeat_task.cancel()
+        try:
+            await state.task_heartbeat_task
         except asyncio.CancelledError:
             pass
     await _flush_status_once()
@@ -316,17 +373,26 @@ async def update_status(request: Request):
     payload = await request.json()
     status = str(payload.get("status", ""))
     if status in {"failed", "cancelled"}:
-        await _drop_pending_status(str(payload.get("task_id", "")))
-        return await _forward_request(
+        task_id = str(payload.get("task_id", ""))
+        await _drop_pending_status(task_id)
+        response = await _forward_request(
             "POST",
             "/api/agent/task/status",
             json_body=payload,
             retry=True,
         )
+        if response.status_code < 400:
+            await _drop_active_task(task_id)
+        return response
 
     task_id = str(payload.get("task_id", ""))
     if not task_id:
         raise HTTPException(status_code=400, detail="task_id is required")
+    if status == "running":
+        await _track_active_task(
+            task_id=task_id,
+            agent_id=str(payload.get("agent_id", "")),
+        )
 
     async with state.status_lock:
         state.pending_statuses[task_id] = payload
@@ -336,13 +402,17 @@ async def update_status(request: Request):
 @app.post("/api/agent/task/complete")
 async def complete_task(request: Request) -> JSONResponse:
     payload = await request.json()
-    await _drop_pending_status(str(payload.get("task_id", "")))
-    return await _forward_request(
+    task_id = str(payload.get("task_id", ""))
+    await _drop_pending_status(task_id)
+    response = await _forward_request(
         "POST",
         "/api/agent/task/complete",
         json_body=payload,
         retry=True,
     )
+    if response.status_code < 400:
+        await _drop_active_task(task_id)
+    return response
 
 
 @app.post("/api/agent/task/heartbeat")
@@ -357,12 +427,19 @@ async def heartbeat(request: Request) -> JSONResponse:
 
 @app.post("/api/agent/task/task_heartbeat")
 async def task_heartbeat(request: Request) -> JSONResponse:
-    return await _forward_request(
+    payload = await request.json()
+    response = await _forward_request(
         "POST",
         "/api/agent/task/task_heartbeat",
-        json_body=await request.json(),
+        json_body=payload,
         retry=True,
     )
+    if response.status_code < 400:
+        await _track_active_task(
+            task_id=str(payload.get("task_id", "")),
+            agent_id=str(payload.get("agent_id", "")),
+        )
+    return response
 
 
 def _upload_one_asset(*, client: Minio, bucket: str, asset: UploadAsset) -> None:
