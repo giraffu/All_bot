@@ -2364,6 +2364,29 @@ def test_cli_parses_runpod_prod_worker_ltx_video_profile_command():
     assert args.quiet is True
 
 
+def test_cli_parses_runpod_prod_worker_ltx25_video_upscale_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "add",
+            "--profile",
+            "ltx25_video_upscale",
+            "--count",
+            "1",
+            "--execute",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "add"
+    assert args.profile == "ltx25_video_upscale"
+    assert args.count == 1
+    assert args.execute is True
+    assert args.quiet is True
+
+
 def test_cli_rejects_retired_runpod_pornmaster_flux2_fp8_profile():
     with pytest.raises(SystemExit):
         build_parser().parse_args(
