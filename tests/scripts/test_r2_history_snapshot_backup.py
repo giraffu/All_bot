@@ -7,6 +7,7 @@ from scripts.r2_history_snapshot_backup import (
     extract_snapshot_references,
     iter_manifest_objects,
     normalize_snapshot_key,
+    resolve_snapshot_primary_key,
 )
 from concurrent.futures import Future
 
@@ -38,6 +39,7 @@ def test_snapshot_manifest_uses_input_output_and_nested_extra_paths() -> None:
         [
             {
                 "id": 7,
+                "task_id": "task-7",
                 "input_file": "task-inputs/run-1/0.png|user-data-prod/history/a/input.jpg",
                 "output_file": "https://example.invalid/user-data-prod/task-results/run-1/primary.webp?sig=x",
                 "extra_outputs": {"preview": {"items": [{"path": "history/a/extra.mp4"}]}},
@@ -60,8 +62,8 @@ def test_snapshot_manifest_uses_input_output_and_nested_extra_paths() -> None:
 def test_snapshot_manifest_deduplicates_but_keeps_all_logical_references() -> None:
     manifest = build_manifest(
         [
-            {"id": 1, "input_file": "history/shared.png", "output_file": None, "extra_outputs": {}},
-            {"id": 2, "input_file": None, "output_file": "history/shared.png", "extra_outputs": {}},
+            {"id": 1, "task_id": "one", "input_file": "history/shared.png", "output_file": None, "extra_outputs": {}},
+            {"id": 2, "task_id": "two", "input_file": None, "output_file": "history/shared.png", "extra_outputs": {}},
         ],
         source_bucket="user-data-prod",
         snapshot_label="snapshot-1",
@@ -76,6 +78,14 @@ def test_snapshot_key_rejects_path_escape_and_preserves_bucket_relative_path() -
     assert normalize_snapshot_key("../private/key", source_bucket="user-data-prod") is None
     assert normalize_snapshot_key("", source_bucket="user-data-prod") is None
     assert normalize_snapshot_key("history/a//b.png", source_bucket="user-data-prod") is None
+
+
+def test_flat_history_value_resolves_to_the_task_history_key_first() -> None:
+    reference = extract_snapshot_references(
+        [{"id": 8, "task_id": "task-8", "input_file": "input.png", "output_file": None, "extra_outputs": {}}]
+    )[0]
+
+    assert resolve_snapshot_primary_key(reference, source_bucket="user-data-prod") == "history/task-8/input.png"
 
 
 def test_invalid_extra_outputs_does_not_create_assets() -> None:
