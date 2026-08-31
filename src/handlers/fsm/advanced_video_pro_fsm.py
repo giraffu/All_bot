@@ -377,24 +377,24 @@ async def start_extension(
         return ConversationHandler.END
     data = seed.fsm_data
     data["runtime_profiles"] = runtime_profiles
+    data["mode"] = "ref2v"
+    data["images"] = []
+    _apply_runtime_profile(data)
     context.user_data["in_conversation"] = TAG
     context.user_data[DATA_KEY] = data
     await robust_reply_text(
         query.message,
-        _with_cancel_hint(
-            context,
+        (
             _text(
                 context,
-                "已载入上一段末尾约 5 秒作为视频参考。请选择视频续写，或使用尾帧并上传一张新的终止帧。",
-                "The final five seconds of the previous segment are loaded as a video reference. Continue from the video or use its last frame with a new end frame.",
-            ),
+                "已载入上一段末尾约 5 秒作为视频参考。",
+                "The final five seconds of the previous segment are loaded as a video reference.",
+            )
+            + "\n\n"
+            + _settings_text(context, data)
         ),
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(_text(context, "视频参考续写", "Continue from video"), callback_data="h3ext_mode_ref2v")],
-                [InlineKeyboardButton(_text(context, "添加终止帧", "Add end frame"), callback_data="h3ext_mode_flf2v")],
-            ]
-        ),
+        reply_markup=_settings_keyboard(context, data),
+        parse_mode="Markdown",
     )
     return AdvancedVideoProState.WAIT_SETTINGS
 
@@ -403,22 +403,31 @@ async def extension_mode_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     query = update.callback_query
-    await query.answer()
+    requested_mode = str(query.data or "").removeprefix("h3ext_mode_")
+    legacy_first_last = requested_mode == "flf2v"
+    await query.answer(
+        _text(
+            context,
+            "首尾帧续写已取消，已切换为视频参考续写。",
+            "First/last-frame continuation is no longer available. Switched to video-reference continuation.",
+        )
+        if legacy_first_last
+        else None,
+        show_alert=legacy_first_last,
+    )
     data = context.user_data.get(DATA_KEY)
     if not data or not data.get("is_extension"):
         return ConversationHandler.END
-    mode = str(query.data or "").removeprefix("h3ext_mode_")
-    if mode not in {"ref2v", "flf2v"}:
+    if requested_mode not in {"ref2v", "flf2v"}:
         return AdvancedVideoProState.WAIT_SETTINGS
+    mode = "ref2v"
     data["mode"] = mode
-    data["images"] = (
-        [data["extension_start_frame"]] if mode == "flf2v" else []
-    )
+    data["images"] = []
     _apply_runtime_profile(data)
     guidance = _text(
         context,
-        "可调整时长和画质，然后直接发送新提示词。" if mode == "ref2v" else "可调整时长和画质，然后上传一张新的终止帧。",
-        "Adjust duration and quality, then send a new prompt." if mode == "ref2v" else "Adjust duration and quality, then upload a new end frame.",
+        "可调整时长和画质，然后直接发送新提示词。",
+        "Adjust duration and quality, then send a new prompt.",
     )
     await robust_edit_text(
         query.message,

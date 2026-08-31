@@ -212,12 +212,10 @@ const showPromptOptimizer = computed(() => (
         <template v-if="currentModeId === 'minimax_h3'" #before-prompt>
           <div class="mb-4 space-y-3 rounded-2xl border p-3">
             <a-segmented
+              v-if="!h3IsExtension"
               v-model:value="minimaxH3Mode"
               block
-              :options="h3IsExtension ? [
-                { label: t('lab.workbench.minimax_h3_extension_video_mode'), value: 'ref2v' },
-                { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
-              ] : [
+              :options="[
                 { label: t('lab.workbench.minimax_h3_modes.t2v'), value: 't2v' },
                 { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
                 { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },

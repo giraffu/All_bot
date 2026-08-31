@@ -115,15 +115,16 @@ Web 刷新并读取最新公开开关时不再渲染人物图库选择器，临�
   只信任父 History 的 `output_file`，Worker 下载后用 FFmpeg 截取末尾 5 秒、统一为
   24fps，再通过 `VHS_LoadVideo` 把帧序列和原音轨分别连接到
   `ref_videos.ref_video_0` / `ref_video_audios.ref_video_audio_0`。它用于继承人物、场景、
-  运动、镜头和声音上下文，但不是首帧锚定，不能宣称段间像素级无缝。用户仍可切换
-  FLF2V 添加终止帧，此时继续由服务端注入父段尾帧。父 REF2V 原参考图不向后携带。
+  运动、镜头和声音上下文，但不是首帧锚定，不能宣称段间像素级无缝。Web 与主 Bot
+  的新扩展入口只提供该视频参考续写，不再提供 FLF2V 终止帧续写。父 REF2V 原参考图
+  不向后携带。
 - `_minimax_h3_context` 当前版本为 2，继续严格读取版本 1。v2 在原模式、时长、档位、
   比例和附加模型快照之外保存 `prev_task_id` 与有序 `chain_task_ids`；入口只接受
   `minimax_h3_prev_task_id`，链数组由服务端按本人 History 重建，不能信任客户端。
   History/result API 只通过 `result_meta.minimax_h3_*` 暴露父任务、链、段号和拼接状态，
   内部上下文不进入 `extra_outputs` 公共响应。
-- Web 和主 Bot 每个续段都按实际目标模式（视频参考续写为 REF2V、终止帧续写为 FLF2V）
-  使用提交时最新 Dashboard Pro 模型预设与当前所选时长/画质正常计费；父段只提供
+- Web 和主 Bot 每个新续段固定按 REF2V，使用提交时最新 Dashboard Pro 模型预设与
+  当前所选时长/画质正常计费；父段只提供
   可信视频/尾帧、链路和投稿权限。主 Bot 结果 callback 为
   `h3_extend:<task_id>`，第二段起另提供 `h3_stitch:<task_id>`。
 - Web 使用 `GET /api/users/history/{task_id}/minimax-h3-chain` 查询本人链，使用

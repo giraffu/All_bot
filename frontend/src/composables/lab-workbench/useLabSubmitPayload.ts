@@ -170,8 +170,8 @@ export function useLabSubmitPayload({
     }
 
     if (currentMode.value.id === 'minimax_h3') {
-      const mode = minimaxH3Mode?.value ?? 't2v'
       const isH3Extension = Boolean(h3PrevTaskId?.value)
+      const mode = isH3Extension ? 'ref2v' : minimaxH3Mode?.value ?? 't2v'
       const images = uploadedReferences.value.map(item => item.key)
       const clientImages = h3PrevTaskId?.value
         ? uploadedReferences.value.filter(item => !item.locked).map(item => item.key)
