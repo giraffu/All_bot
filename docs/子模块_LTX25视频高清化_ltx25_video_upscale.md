@@ -92,6 +92,19 @@ Central 回读两个 heartbeat；无需创建 cloud-test Pod、填写公网 Comf
 测试主机部署临时隧道。没有实际创建 Pod 时，只能验证请求渲染和镜像契约，不能声称
 测试 Worker 已在线或 GPU 任务已通过。
 
+### 3.2 LAN `all` 与测试 Worker 并存
+
+LAN-only `all` profile 也包含 `ltx25_video_upscale` 的 workflow、节点和独立模型
+manifest。正式 consumer 将它作为完整能力集合的一员连接 prod Central；同容器额外
+启动一个只声明该类型的 test consumer，连接 test Central 与 `user-data-test`，并
+使用独立 relay、spool、prefetch cache 和 agent identity。测试 consumer 不受 GPU
+pool 管理且关闭 prefetch/pipeline，不能消费正式任务；两个 consumer 只共享
+loopback ComfyUI。
+
+该接线只准备 LAN 底层 Worker，不修改 test/prod Web 配置，也不自动打开
+`LTX25_VIDEO_UPSCALE_ENABLED`。LAN artifact 必须进入本地 registry 并按精确 digest
+单槽 rollout；不得因此推送 GHCR 或变更云端 RunPod 配置。
+
 ## 4. 发布红线与验证
 
 模型准备、镜像构建和 Git 提交不等于部署。创建 RunPod/LAN Worker、上传模型、

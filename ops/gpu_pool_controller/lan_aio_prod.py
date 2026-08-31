@@ -467,10 +467,22 @@ def runtime_env_content(
         raise RuntimeError("missing runtime env values: " + ", ".join(missing))
     lines = []
     for key in required:
-        value = agent_token if key == "LAN_AIO_AGENT_SECRET_TOKEN" and agent_token else values[key]
+        value = (
+            agent_token
+            if key == "LAN_AIO_AGENT_SECRET_TOKEN" and agent_token
+            else values[key]
+        )
         if "\n" in value or "\r" in value:
             raise RuntimeError(f"refusing newline in runtime env value {key}")
         lines.append(f"{key}={value}")
+    test_agent_token = values.get("LAN_AIO_TEST_AGENT_SECRET_TOKEN")
+    if test_agent_token:
+        if "\n" in test_agent_token or "\r" in test_agent_token:
+            raise RuntimeError(
+                "refusing newline in runtime env value "
+                "LAN_AIO_TEST_AGENT_SECRET_TOKEN"
+            )
+        lines.append(f"LAN_AIO_TEST_AGENT_SECRET_TOKEN={test_agent_token}")
     for key in sorted(set(LAN_AIO_RUNTIME_PROXY_ENV.values())):
         value = values.get(key)
         if not value:
@@ -4226,35 +4238,80 @@ def patch_baked_runpod_worker(
 
 
 def assert_prod_compose(rendered: str, slot: LanAioProdSlot) -> None:
+    try:
+        import yaml  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("LAN AIO compose validation requires PyYAML") from exc
+    compose = yaml.safe_load(rendered) or {}
+    service = (compose.get("services") or {}).get(slot.container_name) or {}
+    environment = service.get("environment") or {}
+    expected_common = {
+        "AGENT_ID": slot.agent_id,
+    }
     if slot.environment == "cloud-test":
-        forbidden = ["cloud-prod", "user-data-prod"]
-        required = [
-            "RUNPOD_ENVIRONMENT: cloud-test",
-            "CENTRAL_API_URL: https://worker-central-test.aivison.it.com",
-            "MINIO_RESULT_BUCKET: user-data-test",
-            f"AGENT_ID: {slot.agent_id}",
-            f"container_name: {slot.container_name}",
-        ]
+        expected = {
+            **expected_common,
+            "RUNPOD_ENVIRONMENT": "cloud-test",
+            "CENTRAL_API_URL": TEST_CENTRAL_URL,
+            "MINIO_RESULT_BUCKET": "user-data-test",
+        }
+        forbidden_values = {"cloud-prod", "user-data-prod"}
     elif slot.environment == "cloud-prod":
-        forbidden = ["cloud-test", "user-data-test"]
-        required = [
-            "RUNPOD_ENVIRONMENT: cloud-prod",
-            "CENTRAL_API_URL: https://worker-central.aivison.it.com",
-            "MINIO_RESULT_BUCKET: user-data-prod",
-            f"AGENT_ID: {slot.agent_id}",
-            f"container_name: {slot.container_name}",
-        ]
+        expected = {
+            **expected_common,
+            "RUNPOD_ENVIRONMENT": "cloud-prod",
+            "CENTRAL_API_URL": DEFAULT_CENTRAL_URL,
+            "MINIO_RESULT_BUCKET": "user-data-prod",
+        }
+        forbidden_values = {"cloud-test", "user-data-test"}
     else:
         raise RuntimeError(f"unsupported LAN AIO environment: {slot.environment}")
-    present = [item for item in forbidden if item in rendered]
+    mismatched = [
+        f"{key}={environment.get(key)!r}"
+        for key, value in expected.items()
+        if environment.get(key) != value
+    ]
+    if service.get("container_name") != slot.container_name:
+        mismatched.append(f"container_name={service.get('container_name')!r}")
+    if mismatched:
+        raise RuntimeError(
+            "rendered compose missing or mismatched: " + ", ".join(mismatched)
+        )
+
+    if slot.environment == "cloud-prod" and slot.target_profile_id == "all":
+        embedded_test_expected = {
+            "RUNPOD_EMBEDDED_TEST_AGENT_ENABLED": "true",
+            "RUNPOD_TEST_CENTRAL_API_URL": TEST_CENTRAL_URL,
+            "RUNPOD_TEST_AGENT_SECRET_TOKEN": (
+                "${LAN_AIO_TEST_AGENT_SECRET_TOKEN:?}"
+            ),
+            "RUNPOD_TEST_MINIO_ENDPOINT": "${LAN_AIO_MINIO_ENDPOINT:?}",
+            "RUNPOD_TEST_MINIO_ACCESS_KEY": "${LAN_AIO_MINIO_ACCESS_KEY:?}",
+            "RUNPOD_TEST_MINIO_SECRET_KEY": "${LAN_AIO_MINIO_SECRET_KEY:?}",
+            "RUNPOD_TEST_MINIO_BUCKET": "user-data-test",
+            "RUNPOD_TEST_SUPPORTED_TASK_TYPES": "ltx25_video_upscale",
+            "RUNPOD_TEST_RUNTIME_PROFILE": "ltx25_video_upscale",
+        }
+        embedded_mismatched = [
+            f"{key}={environment.get(key)!r}"
+            for key, value in embedded_test_expected.items()
+            if environment.get(key) != value
+        ]
+        if embedded_mismatched:
+            raise RuntimeError(
+                "rendered all profile has invalid cloud-test consumer: "
+                + ", ".join(embedded_mismatched)
+            )
+        return
+
+    present = sorted(
+        value for value in forbidden_values if value in json.dumps(environment)
+    )
     if present:
         raise RuntimeError(
             "rendered compose contains forbidden environment value: "
             + ", ".join(present)
         )
-    missing = [item for item in required if item not in rendered]
-    if missing:
-        raise RuntimeError("rendered compose missing: " + ", ".join(missing))
 
 
 def _worker_summary(worker: dict[str, Any]) -> dict[str, Any]:

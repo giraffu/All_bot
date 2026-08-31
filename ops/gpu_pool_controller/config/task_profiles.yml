@@ -51,6 +51,7 @@ profiles:
       - face_swap
       - ltx_t2v
       - ltx_t2v_ic
+      - ltx25_video_upscale
     model_bundles:
       - img2img_lora_baseline
       - video_basic_baseline
@@ -59,6 +60,7 @@ profiles:
       - scail2_baseline
       - i2i_pro_baseline
       - ltx_unified_runtime
+      - ltx25_video_upscale_runtime
     required_nodes:
       - UNETLoader
       - CLIPLoader
@@ -74,6 +76,11 @@ profiles:
       - LiconMSR
       - DiffusionModelLoaderKJ
       - VAELoaderKJ
+      - GetVideoComponents
+      - CreateVideo
+      - SaveVideo
+      - ImageFromBatch
+      - MathExpression|pysssss
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
     all_in_one_image_ref: 192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
@@ -86,6 +93,7 @@ profiles:
       - scail2/2026-06-17-test/manifest.json
       - i2i_pro/2026-06-14-test/manifest.json
       - ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json
+      - ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json
 
   scail2_flex:
     runtime_profile: scail2_flex

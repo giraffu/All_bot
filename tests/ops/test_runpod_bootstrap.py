@@ -431,7 +431,8 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     dockerfile = LAN_ALL_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
-    assert "COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
+    assert "COMFYUI_REF=8a33128f2f8c5585c57486c07de481241e70a39c" in dockerfile
+    assert "LTXVIDEO_REF=15d09abb5a187a8dcaea2fc31fe51ee96e6c9d0d" in dockerfile
     assert "BASE_IMAGE=192.168.1.115:5000/allbot/comfyui-boot@sha256:" in dockerfile
     assert (
         "NODE_SOURCE_IMAGE=192.168.1.115:5000/allbot/"
@@ -446,6 +447,8 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in dockerfile
     assert "character_description" in dockerfile
     assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
+    assert "LTX 2.5 IC V2V Upscale.api.json" in dockerfile
+    assert '"ltx25_video_upscale"' in dockerfile
     assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert "all)" in build_script
     assert "allbot/comfy-lan-all:local" in build_script
@@ -487,6 +490,14 @@ def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
     )
 
 
+def test_embedded_test_agent_allows_lan_provider_identity():
+    script = Path(
+        "workers/runpod_runtime/scripts/runpod_embedded_test_agent.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'POOL_PROVIDER="${RUNPOD_TEST_POOL_PROVIDER:-runpod}"' in script
+
+
 def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     dockerfile = LAN_ALL_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
     catalog = MODULE_CATALOG.read_text(encoding="utf-8")
@@ -503,6 +514,7 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     )
     assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert 'allbot.lan.profile="all"' in dockerfile
+    assert '"ltx25_video_upscale"' in dockerfile
     assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in dockerfile
     assert '"lan_all_runtime_refresh"' in catalog
     assert '"workers/runpod_profiles/all/Dockerfile.runtime-refresh"' in catalog

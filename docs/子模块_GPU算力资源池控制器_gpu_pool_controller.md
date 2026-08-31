@@ -248,7 +248,8 @@ ledger。
 `all` 是 LAN AIO 专用聚合 profile，不属于 RunPod provider、autoscaler、
 Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格等于
 `img2img`、Wan22 AIO、PornMaster BF16、SCAIL-2、LTX Video、`i2i_pro`、
-专属换脸和 LTX T2V/IC-LoRA 等现有池展开后的 19 个 execution task type；
+专属换脸、LTX T2V/IC-LoRA 和 `ltx25_video_upscale` 等现有池展开后的 20 个
+execution task type；
 不新增 public type、价格或业务身份。
 
 - canonical 镜像由受保护 main 的 exact SHA 构建，包含 workflow/custom node
@@ -256,8 +257,10 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
 - 发布模块 id 为 `lan_all`，LAN 运行 profile id 为 `all`；
   `release-rollout` 和 disabled canary 必须通过统一映射接受这对 id，
   不能以字符串不相等拒绝合法的 exact-digest 发布。
-- `all` 的 LTX 子栈与 `ltx_unified` 使用同一份
-  `ltx_unified/2026-08-01-comfy-fast/manifest.json` 和三份 extracted-10Eros workflow；
+- `all` 的 LTX 2.3 子栈与 `ltx_unified` 使用同一份
+  `ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json` 和三份
+  extracted-10Eros workflow；LTX 2.5 高清化另外合并独立的
+  `ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json`；
   不再同时声明旧 `ltx_video` 与 `ltx_t2v` manifest。多 manifest 同步继续按
   相对路径、大小和 SHA-256 复用既有对象，只补统一 manifest 的真实差集，
   普通 T2V 保留 Sulphur workflow，IC 使用纯官方单阶段 Ingredients
@@ -273,6 +276,11 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
   closed。
 - runtime 使用单 Comfy 执行、最多两个 claimed slot（执行 + 深度一预取），
   上传和 `/complete` 交付可与下一次 Comfy 执行重叠。
+- `all` 容器同时启动一个只声明 `ltx25_video_upscale` 的窄化 test consumer；它
+  使用 test Central 与 `user-data-test`、独立 relay/spool/agent identity，且
+  `POOL_MANAGED=false`、关闭 prefetch/pipeline。正式 consumer 仍连接 prod Central
+  并声明完整 20 类能力；二者只共享 loopback ComfyUI，不能交叉使用对象存储桶或
+  agent token。
 - `PREFERRED_TASK_TYPES` 为空时，Central 仍在全部支持类型中按全局 queue
   score 领取最早任务，不做按类型轮询或亲和。flex Worker 可显式声明
   preferred 子集，让单次原子领取先扫描 preferred 组、无匹配时才取 fallback；

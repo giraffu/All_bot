@@ -71,6 +71,7 @@ LAN_ALL_TASK_TYPES = (
     "face_swap",
     "ltx_t2v",
     "ltx_t2v_ic",
+    "ltx25_video_upscale",
 )
 LTX_UNIFIED_TASK_TYPES = (
     "ltx_video",
@@ -357,6 +358,7 @@ def test_cloud_test_slot_uses_separate_agent_token_without_leaking_prod_token():
     content = runtime_env_content(values, agent_token="test-token")
 
     assert "LAN_AIO_AGENT_SECRET_TOKEN=test-token" in content
+    assert "LAN_AIO_TEST_AGENT_SECRET_TOKEN=test-token" in content
     assert "prod-token" not in content
 
 
@@ -442,13 +444,17 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     config = load_controller_config()
     profile = config.profiles["all"]
     assert profile.task_types == LAN_ALL_TASK_TYPES
-    assert len(profile.model_manifest_keys) == 6
+    assert len(profile.model_manifest_keys) == 7
     assert (
         "ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json"
         in profile.model_manifest_keys
     )
     assert "ltx_video/2026-06-10/manifest.json" not in profile.model_manifest_keys
     assert "ltx_t2v/2026-07-22/manifest.json" not in profile.model_manifest_keys
+    assert (
+        "ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json"
+        in profile.model_manifest_keys
+    )
     assert "ltx_unified_runtime" in profile.model_bundles
     assert "ltx_video_baseline" not in profile.model_bundles
     assert "ltx_t2v_runtime" not in profile.model_bundles
@@ -481,6 +487,18 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
         profile.model_manifest_keys
     )
     assert environment["POOL_RUNTIME_PROFILE"] == "all"
+    assert environment["RUNPOD_EMBEDDED_TEST_AGENT_ENABLED"] == "true"
+    assert (
+        environment["RUNPOD_TEST_CENTRAL_API_URL"]
+        == "https://worker-central-test.aivison.it.com"
+    )
+    assert environment["RUNPOD_TEST_AGENT_SECRET_TOKEN"] == (
+        "${LAN_AIO_TEST_AGENT_SECRET_TOKEN:?}"
+    )
+    assert environment["RUNPOD_TEST_MINIO_BUCKET"] == "user-data-test"
+    assert environment["RUNPOD_TEST_SUPPORTED_TASK_TYPES"] == "ltx25_video_upscale"
+    assert environment["RUNPOD_TEST_RUNTIME_PROFILE"] == "ltx25_video_upscale"
+    assert environment["RUNPOD_TEST_POOL_PROVIDER"] == "lan_ssh"
     workflow_overrides = json.loads(
         environment["TASK_TYPE_WORKFLOW_OVERRIDES"]
     )
