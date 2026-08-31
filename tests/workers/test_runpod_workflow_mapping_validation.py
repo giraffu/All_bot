@@ -86,6 +86,7 @@ def test_lan_all_profile_validates_every_execution_workflow(monkeypatch):
         "face_swap",
         "ltx_t2v",
         "ltx_t2v_ic",
+        "ltx25_video_upscale",
     }
     monkeypatch.setenv(
         "WORKFLOW_FILENAME_OVERRIDES",
