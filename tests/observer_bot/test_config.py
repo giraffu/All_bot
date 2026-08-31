@@ -17,6 +17,12 @@ def test_settings_parse_isolated_bot_admins_and_authorized_groups():
     assert settings.authorized_group_ids == frozenset({-1001, -1002})
     assert settings.lm_studio_base_url == "http://lmstudio:1234"
     assert settings.central_api_url == "http://central-api:8003"
+    assert settings.worker_probe_enabled is True
+    assert settings.worker_probe_poll_seconds == 300
+    assert settings.worker_probe_window_seconds == 3600
+    assert settings.worker_probe_minimum_tasks == 5
+    assert settings.worker_probe_minimum_failures == 3
+    assert settings.worker_probe_failure_rate_percent == 50
 
 
 def test_settings_allow_database_managed_admins():

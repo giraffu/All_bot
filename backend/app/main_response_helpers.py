@@ -8,7 +8,12 @@ from typing import Any, Awaitable, Callable, Optional
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 
-from app.models import SystemStatusResponse, SystemWorkersResponse, TaskStatusResponse
+from app.models import (
+    SystemStatusResponse,
+    SystemWorkerOutcomesResponse,
+    SystemWorkersResponse,
+    TaskStatusResponse,
+)
 from minio import Minio
 from src.core.task_execution_types import resolve_worker_execution_task_type
 from src.domain_config.worker_pool_registry import iter_worker_pool_profiles
@@ -519,6 +524,23 @@ async def serve_task_result_file(
 async def build_system_workers_response(queue_manager) -> SystemWorkersResponse:
     workers = await _get_worker_snapshot(queue_manager)
     return SystemWorkersResponse(workers=workers, count=len(workers))
+
+
+async def build_system_worker_outcomes_response(
+    queue_manager,
+    *,
+    window_seconds: int,
+) -> SystemWorkerOutcomesResponse:
+    observed_at = time.time()
+    workers = await queue_manager.get_active_worker_outcome_stats(
+        window_seconds=window_seconds,
+        now=observed_at,
+    )
+    return SystemWorkerOutcomesResponse(
+        window_seconds=window_seconds,
+        observed_at=observed_at,
+        workers=workers,
+    )
 
 
 async def build_system_status_response(queue_manager) -> SystemStatusResponse:

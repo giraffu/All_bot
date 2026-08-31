@@ -35,6 +35,15 @@ def _integer(values: Mapping[str, str], key: str, default: int, *, minimum: int 
     return value
 
 
+def _boolean(values: Mapping[str, str], key: str, default: bool) -> bool:
+    raw = str(values.get(key, "true" if default else "false")).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{key} must be a boolean")
+
+
 def _telegram_bot_base_url(values: Mapping[str, str]) -> str:
     api_root = str(values.get("TELEGRAM_API_BASE_URL", "")).strip().rstrip("/")
     if not api_root or api_root.endswith("/bot"):
@@ -58,6 +67,13 @@ class ObserverSettings:
     queue_wait_threshold_seconds: int = 900
     queue_alert_cooldown_seconds: int = 1800
     queue_failure_threshold: int = 3
+    worker_probe_enabled: bool = True
+    worker_probe_poll_seconds: int = 300
+    worker_probe_window_seconds: int = 3600
+    worker_probe_minimum_tasks: int = 5
+    worker_probe_minimum_failures: int = 3
+    worker_probe_failure_rate_percent: int = 50
+    worker_probe_alert_cooldown_seconds: int = 3600
     report_tick_seconds: int = 300
     report_hour: int = 9
     report_max_input_chars: int = 60_000
@@ -78,6 +94,22 @@ class ObserverSettings:
         report_hour = _integer(values, "OBSERVER_REPORT_HOUR", 9, minimum=0)
         if report_hour > 23:
             raise ValueError("OBSERVER_REPORT_HOUR must be between 0 and 23")
+        worker_probe_window_seconds = _integer(
+            values, "OBSERVER_WORKER_PROBE_WINDOW_SECONDS", 3600, minimum=300
+        )
+        if worker_probe_window_seconds > 86_400:
+            raise ValueError(
+                "OBSERVER_WORKER_PROBE_WINDOW_SECONDS must be between 300 and 86400"
+            )
+        worker_probe_failure_rate_percent = _integer(
+            values,
+            "OBSERVER_WORKER_PROBE_FAILURE_RATE_PERCENT",
+            50,
+        )
+        if worker_probe_failure_rate_percent > 100:
+            raise ValueError(
+                "OBSERVER_WORKER_PROBE_FAILURE_RATE_PERCENT must be between 1 and 100"
+            )
         return cls(
             token=_required(values, "OBSERVER_BOT_TOKEN"),
             database_url=_required(values, "OBSERVER_DATABASE_URL"),
@@ -100,6 +132,25 @@ class ObserverSettings:
             ),
             queue_failure_threshold=_integer(
                 values, "OBSERVER_QUEUE_FAILURE_THRESHOLD", 3
+            ),
+            worker_probe_enabled=_boolean(
+                values, "OBSERVER_WORKER_PROBE_ENABLED", True
+            ),
+            worker_probe_poll_seconds=_integer(
+                values, "OBSERVER_WORKER_PROBE_POLL_SECONDS", 300
+            ),
+            worker_probe_window_seconds=worker_probe_window_seconds,
+            worker_probe_minimum_tasks=_integer(
+                values, "OBSERVER_WORKER_PROBE_MINIMUM_TASKS", 5
+            ),
+            worker_probe_minimum_failures=_integer(
+                values, "OBSERVER_WORKER_PROBE_MINIMUM_FAILURES", 3
+            ),
+            worker_probe_failure_rate_percent=worker_probe_failure_rate_percent,
+            worker_probe_alert_cooldown_seconds=_integer(
+                values,
+                "OBSERVER_WORKER_PROBE_ALERT_COOLDOWN_SECONDS",
+                3600,
             ),
             report_tick_seconds=_integer(values, "OBSERVER_REPORT_TICK_SECONDS", 300),
             report_hour=report_hour,

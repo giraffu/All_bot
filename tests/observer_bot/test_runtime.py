@@ -129,5 +129,42 @@ async def test_queue_monitor_job_uses_database_runtime_thresholds():
     assert calls == [{"total_pending_threshold": 30, "type_pending_threshold": 6}]
 
 
+@pytest.mark.asyncio
+async def test_worker_error_probe_job_uses_low_frequency_window_policy():
+    from observer_bot.runtime import worker_error_probe_job
+
+    calls = []
+
+    async def poll(**kwargs):
+        calls.append(kwargs)
+
+    settings = SimpleNamespace(
+        worker_probe_enabled=True,
+        worker_probe_window_seconds=3600,
+        worker_probe_minimum_tasks=5,
+        worker_probe_minimum_failures=3,
+        worker_probe_failure_rate_percent=50,
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "settings": settings,
+                "worker_error_probe": SimpleNamespace(poll=poll),
+            }
+        )
+    )
+
+    await worker_error_probe_job(context)
+
+    assert calls == [
+        {
+            "window_seconds": 3600,
+            "minimum_tasks": 5,
+            "minimum_failures": 3,
+            "failure_rate_threshold": 0.5,
+        }
+    ]
+
+
 async def _async_value(value):
     return value

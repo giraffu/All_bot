@@ -25,8 +25,10 @@ from observer_bot.runtime import (
     queue_monitor_job,
     report_tick_job,
     retention_job,
+    worker_error_probe_job,
 )
 from observer_bot.runtime_config import ObserverRuntimeConfigProvider
+from observer_bot.worker_error_probe import WorkerErrorProbe
 from src.log_redaction import install_log_redaction
 
 logger = logging.getLogger(__name__)
@@ -83,6 +85,13 @@ def build_application(
             cooldown_seconds=settings.queue_alert_cooldown_seconds,
             failure_threshold=settings.queue_failure_threshold,
         )
+        worker_error_probe = WorkerErrorProbe(
+            client=queue_client,
+            state_repository=repository,
+            notifier=notifier,
+            cooldown_seconds=settings.worker_probe_alert_cooldown_seconds,
+            failure_threshold=settings.queue_failure_threshold,
+        )
         report_service = ReportService(
             repository=repository,
             lm_client=lm_client,
@@ -93,6 +102,7 @@ def build_application(
         application.bot_data.update(
             notifier=notifier,
             queue_monitor=queue_monitor,
+            worker_error_probe=worker_error_probe,
             report_service=report_service,
             runtime_config_provider=runtime_config_provider,
         )
@@ -105,6 +115,12 @@ def build_application(
             interval=settings.queue_poll_seconds,
             first=5,
             name="observer-queue-monitor",
+        )
+        application.job_queue.run_repeating(
+            worker_error_probe_job,
+            interval=settings.worker_probe_poll_seconds,
+            first=30,
+            name="observer-worker-error-probe",
         )
         application.job_queue.run_repeating(
             report_tick_job,

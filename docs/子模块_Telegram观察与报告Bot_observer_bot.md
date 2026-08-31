@@ -12,6 +12,7 @@ V1 只包含：
 
 - Telegram 管理员通知；
 - AllBot Central 队列只读监控；
+- 正式环境当前有心跳 Worker 的低频失败率探针；
 - 明确授权群的文本消息与 caption 采集；
 - 日报、周报、月报和管理员手动报告；
 - 通过 OpenAI-compatible HTTP 直接调用本地 LM Studio。
@@ -26,6 +27,7 @@ Telegram 管理员 / 授权群
            │ polling（独立 token）
            ▼
       observer-bot ───── GET /system/status ─────► Central API
+           │             GET /system/worker-outcomes ───►
            │
            ├──── DML ───► observer_prod（独立逻辑数据库/role）
            │
@@ -42,6 +44,7 @@ Celery、消息总线或第二个 worker。PostgreSQL `observer_report_runs` 是
 - `observer_bot/main.py`：Telegram application、依赖装配和 job 注册。
 - `observer_bot/handlers.py`：授权群文本归一与采集。
 - `observer_bot/queue_monitor.py`：Central client、确定性拥堵/恢复策略。
+- `observer_bot/worker_error_probe.py`：Worker 滚动失败率、去重提醒与恢复策略。
 - `observer_bot/lmstudio_client.py`：`/v1/models` 与
   `/v1/chat/completions` adapter。
 - `observer_bot/report_service.py`：周期窗口、分段摘要、合并和持久化。
@@ -59,6 +62,21 @@ Celery、消息总线或第二个 worker。PostgreSQL `observer_report_runs` 是
 队列拥堵，也不会出现在拥堵通知中。首次超限发送告警，持续超限按 cooldown
 提醒，两个数量均恢复到设置值以内后发送恢复消息。连续读取 Central 失败达到
 阈值也告警，重新取得状态后发送监控恢复消息。以上逻辑不调用 LLM。
+
+Worker 失败率探针默认每 5 分钟读取一次 Central
+`GET /system/worker-outcomes?window_seconds=3600`。Central 只返回当前仍有 heartbeat
+的 Worker，并从短期执行面遥测计算窗口内任务成功/失败，不查询 Dashboard 主库。
+默认同时满足以下条件才告警：
+
+- 最近 1 小时至少 5 个终态样本；
+- 至少 3 个失败样本；
+- 失败率至少 50%。
+
+首次越线立即通知，同一 Worker 持续异常按 1 小时 cooldown 提醒，回落后发送恢复
+通知。消息包含 Worker ID、当前 heartbeat 状态、失败数/样本数和最多 5 个主要失败
+任务类型，不转发原始错误文本，避免把用户输入或凭据带入 Telegram。探针读取连续
+失败 3 次会通知不可用，重新取得统计后通知恢复。阈值与轮询频率由 Observer env
+控制；告警状态复用 `observer_alert_states` 跨重启去重，不新增数据库表。
 
 ## 群采集与报告
 
@@ -133,6 +151,13 @@ OBSERVER_DATABASE_ADMIN_URL=... python -m observer_bot.schema
 - `OBSERVER_LM_STUDIO_API_KEY`
 - `OBSERVER_LM_STUDIO_MODEL`
 - `OBSERVER_QUEUE_ALERT_COOLDOWN_SECONDS`
+- `OBSERVER_WORKER_PROBE_ENABLED`（默认开启）
+- `OBSERVER_WORKER_PROBE_POLL_SECONDS`（默认 300）
+- `OBSERVER_WORKER_PROBE_WINDOW_SECONDS`（默认 3600，范围 300..86400）
+- `OBSERVER_WORKER_PROBE_MINIMUM_TASKS`（默认 5）
+- `OBSERVER_WORKER_PROBE_MINIMUM_FAILURES`（默认 3）
+- `OBSERVER_WORKER_PROBE_FAILURE_RATE_PERCENT`（默认 50）
+- `OBSERVER_WORKER_PROBE_ALERT_COOLDOWN_SECONDS`（默认 3600）
 - `OBSERVER_REPORT_HOUR`、`OBSERVER_TIMEZONE`
 - `OBSERVER_MESSAGE_RETENTION_DAYS`
 - `TELEGRAM_API_BASE_URL`、`TELEGRAM_FILE_BASE_URL`
@@ -160,7 +185,9 @@ schema 使用 `ADD COLUMN IF NOT EXISTS` 升级已有数据库，不会覆盖既
 按不可变发布流程从完整 main SHA 构建镜像并以精确 digest 部署；不得在云主机
 同步源码或 build。首次上线顺序：建独立数据库 → 执行 schema → 配置 LM
 Studio/Tailscale → 投影 observer env → 构建并部署单个模块 → 验证管理员私聊、
-授权群采集、队列告警和报告。
+授权群采集、队列告警、Worker 失败率告警和报告。Worker 探针同时依赖包含
+`/system/worker-outcomes` 的 Central API 精确 digest；先部署 Central，再部署
+Observer。只发布代码不会补采发布前的 Worker 终态样本。
 
 ```bash
 .venv/bin/python -m pytest -q tests/observer_bot

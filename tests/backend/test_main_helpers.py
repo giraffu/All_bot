@@ -794,6 +794,34 @@ async def test_build_system_workers_response_counts_workers():
 
 
 @pytest.mark.asyncio
+async def test_build_system_worker_outcomes_response_reports_window():
+    class FakeQueueManager:
+        async def get_active_worker_outcome_stats(self, *, window_seconds, now):
+            assert window_seconds == 3600
+            assert isinstance(now, float)
+            return [
+                {
+                    "worker_id": "agent-1",
+                    "status": "running",
+                    "total_tasks": 10,
+                    "failed_tasks": 7,
+                    "failure_rate": 0.7,
+                    "failures_by_type": {"minimax_h3_i2v": 7},
+                    "last_failure_at": 123.0,
+                }
+            ]
+
+    response = await main_response_helpers.build_system_worker_outcomes_response(
+        FakeQueueManager(),
+        window_seconds=3600,
+    )
+
+    assert response.window_seconds == 3600
+    assert response.workers[0].worker_id == "agent-1"
+    assert response.workers[0].failed_tasks == 7
+
+
+@pytest.mark.asyncio
 async def test_build_system_status_response_uses_queue_metrics_and_worker_count():
     class FakeQueueManager:
         async def get_queue_size(self):
