@@ -1475,9 +1475,9 @@ _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
     "model_input": ["1", 0],
     "sampler_name": "euler",
     "scheduler": "simple",
-    "steps": 7,
+    "steps": 8,
     "shift_video": 12.0,
-    "shift_audio": 3.0,
+    "shift_audio": 7.0,
 }
 _MINIMAX_H3_TEN_EROS_REF2VA_EXECUTION_PROFILE = {
     **_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE,

@@ -286,9 +286,10 @@ Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连�
 
 T2V/I2V/FLF2V 的 `10eros` Beta4 基础顺序为：`UNETLoader(TURBO hybrid Beta4) →
 [用户选中 LoRA 有序链] → ModelAttentionBackend(comfy kitchen attention) →
-MiniMaxH3SigmaShift(12/3) → ReservedVRAMSetter(2 GiB auto、3 GiB 上限) →
-MiniMaxH3ImageToVideo → Euler/BasicScheduler(simple, 7 steps)`。
-这是作者对 Beta4 公布的 Euler/simple 6–8 steps 范围内保留原 7-step 成本的调度，
+MiniMaxH3SigmaShift(12/7) → ReservedVRAMSetter(2 GiB auto、3 GiB 上限) →
+MiniMaxH3ImageToVideo → Euler/BasicScheduler(simple, 8 steps)`。
+这是作者对 Beta4 当前公布的 Euler/simple 8 steps、video shift 12、audio shift 7
+下限的调度，用于避免低 audio shift 下的明显音频退化；
 默认链不得再叠加 LightX2V。
 `official` FL2VA 保持 `UNETLoader → LightX2V(1.0) → 可选 LoRA → Euler/simple/8 steps`。
 输出继续解码 H3 原生同步音轨。
