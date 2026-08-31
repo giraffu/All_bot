@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import urllib.error
+import urllib.request
 
 import pytest
 
@@ -55,6 +56,42 @@ def test_http_json_posts_json_with_query_params():
     assert captured["timeout"] == 30
     assert captured["headers"]["Authorization"] == "Bearer hidden"
     assert captured["headers"]["Content-type"] == "application/json"
+
+
+def test_prod_worker_http_ignores_environment_proxies_by_default(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DirectOpener:
+        def open(self, request, *, timeout):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            return FakeResponse(200, b'{"ok": true}')
+
+    def build_opener(*handlers):
+        captured["handlers"] = handlers
+        return DirectOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", build_opener)
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("environment-aware urlopen must not be used")
+        ),
+    )
+
+    payload = RunPodProdWorkerHttpClient().json(
+        "GET",
+        "http://100.107.220.127:8003/system/workers",
+    )
+
+    assert payload == {"ok": True, "_status": 200}
+    assert captured["url"] == "http://100.107.220.127:8003/system/workers"
+    assert captured["timeout"] == 30
+    handlers = captured["handlers"]
+    assert len(handlers) == 1
+    assert isinstance(handlers[0], urllib.request.ProxyHandler)
+    assert handlers[0].proxies == {}
 
 
 def test_http_json_returns_allowlisted_error_payload():

@@ -134,6 +134,14 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   读取用户名、端口和连接方式，再按 `allbot-cloud-ssh` 分段诊断。旧 Skill
   reference 已归档，不能用其中的 profile/track/attestation 快照决定当前操作。
   临时连接信息不得写入 Git。
+- cloud-prod Pod request 必须在模型同步前启动受公钥保护的诊断 sshd；镜像缺失
+  sshd 时允许入口按基础发行版安装，并且只接受 RunPod 当次注入的 `PUBLIC_KEY`。
+  这不授权密码登录、放宽防火墙或暴露其它端口。代理 SSH 与直连 TCP SSH 仍分别
+  使用 Pod 页面当次公布的入口，不能把临时地址写成稳定配置。
+- `scripts/runpod_prod_ops.sh` 的 Central/Web 控制请求必须绕过进程环境代理，避免
+  Tailscale/内网 Central 被 loopback proxy 错报为 502；RunPod provider 的公网 API
+  请求仍保留自身 HTTP client 与网络策略。状态命令必须以 Central Worker 心跳和
+  control state 为准，不能把代理错误当成 Pod 或 GPU 故障。
 - RunPod 启动入口必须把实际 ComfyUI `input/output/temp` 目录投影为
   `COMFY_ARTIFACT_*_DIR`。Worker 只在 Central 确认完成后清理任务媒体：
   先删除 ComfyUI history 返回的精确产物，再用完整 task ID 扫描三个已配置

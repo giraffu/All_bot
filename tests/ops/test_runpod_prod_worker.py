@@ -571,7 +571,7 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
     )
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -619,7 +619,7 @@ def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
     )
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -660,7 +660,7 @@ def test_prod_worker_render_i2i_pro_uses_prod_profile_defaults():
     assert payload["render"]["workflow_overrides"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -772,7 +772,7 @@ def test_prod_worker_render_scail2_uses_prod_profile_defaults():
     assert payload["render"]["model_manifest_key"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -817,7 +817,7 @@ def test_prod_worker_render_ltx_video_uses_v12_profile_defaults():
     assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -960,7 +960,7 @@ def test_prod_worker_render_minimax_h3_uses_fixed_release_profile_defaults():
         payload["request"]["json"]["env"]["RUNPOD_MODEL_TARGET_DIR"]
         == "/workspace/ComfyUI/models"
     )
-    assert payload["render"]["sshd_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "true"
     assert provider.create_calls == 0
 
 

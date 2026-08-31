@@ -1142,7 +1142,7 @@ def test_runpod_settings_from_env_injects_public_key_file(
         "PUBLIC_KEY": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest allbot-runpod-debug"
     }
     assert payload["json"]["env"]["PUBLIC_KEY"] == settings.extra_env["PUBLIC_KEY"]
-    assert "PUBLIC_KEY" not in prod_payload["json"]["env"]
+    assert prod_payload["json"]["env"]["PUBLIC_KEY"] == settings.extra_env["PUBLIC_KEY"]
 
 
 def test_runpod_settings_from_env_supports_wan22_docker_start_script_file(
@@ -1218,7 +1218,7 @@ def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == ("img2img_lora/2026-06-10/manifest.json")
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
@@ -1293,7 +1293,7 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
     assert env["COMFY_EXTRA_ARGS"] == RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
@@ -1342,7 +1342,7 @@ def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manife
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "false"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
@@ -1487,7 +1487,7 @@ def test_render_create_cloud_prod_i2i_pro_uses_prod_refs_and_multitask_manifest(
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
@@ -1536,7 +1536,7 @@ def test_render_create_cloud_prod_scail2_uses_prod_refs_and_manifest():
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
@@ -1590,7 +1590,7 @@ def test_render_create_cloud_prod_ltx_video_uses_v12_override_and_manifest():
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "true"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF

@@ -1793,8 +1793,8 @@ class RunPodProdWorkerRunner:
             "RUNPOD_MODEL_MANIFEST_KEY": spec["model_manifest_key"],
             "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
             "RUNPOD_COMFY_KJNODES_ENABLED": "false",
-            "RUNPOD_START_SSHD": "false",
-            "RUNPOD_INSTALL_SSHD_IF_MISSING": "false",
+            "RUNPOD_START_SSHD": "true",
+            "RUNPOD_INSTALL_SSHD_IF_MISSING": "true",
         }
         if spec["runpod_task_type"] == PROD_WAN22_VIDEO_V2_TASK_TYPE:
             expected_env["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] = (
