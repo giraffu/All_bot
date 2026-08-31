@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -29,7 +30,10 @@ def _dependencies() -> TaskCoreProcessDependencies:
         return TaskSubmissionExecutionResult(
             registry_task_id="task-1",
             backend_task_id="backend-1",
-            submission_context=SimpleNamespace(saved_inputs=["saved.png"]),
+            submission_context=SimpleNamespace(
+                saved_inputs=["saved.png"],
+                registry_saved_inputs=lambda: ["saved.png"],
+            ),
         )
 
     return TaskCoreProcessDependencies(
@@ -51,6 +55,38 @@ def _dependencies() -> TaskCoreProcessDependencies:
         release_concurrency_lock_func=AsyncMock(),
         shield_func=lambda coro: coro,
         logger=MagicMock(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_application_uses_runtime_price_provider_for_web_and_bot_billing():
+    price_resolver = AsyncMock(return_value=9)
+    dependencies = replace(
+        _dependencies(),
+        resolve_task_cost_func=price_resolver,
+    )
+
+    result = await TaskApplication(dependencies=dependencies).submit(
+        TaskSubmissionCommand(
+            internal_user_id=7,
+            username="user",
+            task_type="txt2img",
+            inputs={"prompt": "demo"},
+            task_id="task-priced",
+        ),
+        TaskSubmissionPolicy(client_type="bot", cost_override=3),
+        RecordingJournal(),
+    )
+
+    assert result["cost"] == 9
+    price_resolver.assert_awaited_once_with(
+        task_type="txt2img",
+        inputs={"prompt": "demo"},
+        client_type="bot",
+        default_cost=3,
+    )
+    dependencies.check_and_deduct_credits_func.assert_awaited_once_with(
+        7, 9, "txt2img", "user"
     )
 
 

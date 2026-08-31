@@ -2,14 +2,37 @@ from src.quota import QuotaManager
 
 
 class PermissionQuotaService:
-    def __init__(self, quota_manager: QuotaManager):
+    def __init__(self, quota_manager: QuotaManager, resolve_task_cost_func=None):
         self.quota_manager = quota_manager
+        self.resolve_task_cost_func = resolve_task_cost_func
 
     async def check_quota(
-        self, tg_id: int, username: str, full_name: str, cost: int = 1
+        self,
+        tg_id: int,
+        username: str,
+        full_name: str,
+        cost: int = 1,
+        *,
+        task_type: str | None = None,
+        client_type: str = "bot",
     ) -> bool:
         from src.core.exceptions import InsufficientCreditsError
         from src.core.user_core import get_or_create_user_by_telegram
+
+        if task_type:
+            resolve_task_cost = self.resolve_task_cost_func
+            if resolve_task_cost is None:
+                from src.services.task_pricing_config_service import (
+                    resolve_runtime_task_cost,
+                )
+
+                resolve_task_cost = resolve_runtime_task_cost
+            cost = await resolve_task_cost(
+                task_type=task_type,
+                inputs={},
+                client_type=client_type,
+                default_cost=cost,
+            )
 
         internal_user, _ = await get_or_create_user_by_telegram(
             tg_id, username, full_name

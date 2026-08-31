@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from 'vitest'
 
-import { getLabModeConfig } from '@/features/generation/labModeConfig'
+import { getLabModeConfig, type LabModeConfig } from '@/features/generation/labModeConfig'
 import {
   getDefaultResolutionForMode,
   getLabCostHintKey,
@@ -10,6 +12,36 @@ import {
 } from './modeHelpers'
 
 describe('lab workbench mode helpers', () => {
+  it('uses a runtime task price override for the displayed web cost', () => {
+    window.__ALLBOT_TASK_PRICE_OVERRIDES__ = Object.freeze({
+      txt2img: 17,
+      ltx_t2v_ic: 23,
+    })
+    const mode = {
+      id: 'txt2img',
+      taskType: 'txt2img',
+      baseCost: 2,
+    } as LabModeConfig
+
+    expect(getLabModeCost({
+      mode,
+      uploadedReferenceCount: 0,
+      resolution: '512',
+      duration: '5',
+      wan22ResolutionPreset: 'preview',
+    })).toBe(17)
+
+    expect(getLabModeCost({
+      mode: getLabModeConfig('ltx_t2v'),
+      taskTypeOverride: 'ltx_t2v_ic',
+      uploadedReferenceCount: 0,
+      resolution: '768x448',
+      duration: '5',
+      wan22ResolutionPreset: 'preview',
+      hasCharacter: true,
+    })).toBe(23)
+    window.__ALLBOT_TASK_PRICE_OVERRIDES__ = undefined
+  })
   it('identifies grouped video modes', () => {
     expect(isScail2ModeId('scail2_action_transfer')).toBe(true)
     expect(isScail2ModeId('scail2_video_replacement')).toBe(true)

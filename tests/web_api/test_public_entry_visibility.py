@@ -60,6 +60,7 @@ async def test_public_entry_visibility_returns_only_safe_flags_without_cache():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.json() == {
+        "task_price_overrides": {},
         "flags": {
             "enable_edit_entry": False,
             "enable_edit_v2_5_entry": True,

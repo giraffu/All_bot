@@ -790,7 +790,14 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=cost
+            user.id,
+            user.username,
+            user.full_name,
+            cost=cost,
+            task_type=submission_plan.task_type,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError

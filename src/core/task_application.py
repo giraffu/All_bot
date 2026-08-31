@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from dataclasses import replace
 
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_process_flow import (
@@ -61,6 +62,17 @@ class TaskApplication:
             dependencies=dependencies,
             cost_override=policy.cost_override,
         )
+        if dependencies.resolve_task_cost_func is not None:
+            resolved_cost = await dependencies.resolve_task_cost_func(
+                task_type=task_type,
+                inputs=command.inputs,
+                client_type=policy.client_type,
+                default_cost=request.cost,
+            )
+            resolved_cost = int(resolved_cost)
+            if resolved_cost < 0:
+                raise ValueError("resolved task cost must be non-negative")
+            request = replace(request, cost=resolved_cost)
         await ensure_submission_concurrency_lock(
             user_id=user_id,
             task_type=task_type,

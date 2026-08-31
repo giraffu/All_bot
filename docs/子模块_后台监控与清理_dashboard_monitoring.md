@@ -50,7 +50,8 @@ sequenceDiagram
   当前直连状态和历史直连付款三态做服务端筛选、排序与分页。前端只保留当前页，
   不把全量用户下载到浏览器。
 - 管理接口鉴权与审计
-- “入口控制”页以 Web 端、主 Bot、修仙市集三个同级横向子页管理展示入口。
+- “入口控制”页以 Web 端、主 Bot、修仙市集、Pro 模型预设和任务定价五个同级横向子页
+  管理展示入口与运行时配置。
   Web 子页覆盖当前练功房全部正式入口，包括自由 P 图各版本、文生图、幻想换脸、
   图生视频各版本、人物角色图、换脸、动作迁移、视频换人、LTX 和 H3 Pro；已被替代
   或能力层明确停用的旧入口不伪装为可控项目。Web/市集配置写入
@@ -61,6 +62,11 @@ sequenceDiagram
   Web 读取公开安全布尔值，写接口仍受 Dashboard 鉴权与 Cloudflare Access 双层保护。
   Web“人物角色图”关闭时，高级图生视频 Pro 的 REF2V 人物图库选择器也随之隐藏；
   该联动不关闭 REF2V 的临时参考图上传能力。
+- “任务定价”通过认证接口 `GET/PUT /api/main-bot/task-pricing` 展示
+  `task_type_registry.py` 的全部任务，支持搜索、设置固定覆盖价或恢复系统价。配置只写
+  `runtime_checkpoints.task_pricing_config:v1` 的显式 overrides；不复制默认价格表，
+  不修改 Worker/workflow。覆盖同时用于 Web 与主 Bot 新任务，运行中任务继续使用提交
+  快照，私有 QQCC 不受该全局覆盖影响。
 - Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
   查询、状态转换、Telegram 投递与事务提交已收口到
   `support_ticket_admin_service.py`。`private_bots.py` 与

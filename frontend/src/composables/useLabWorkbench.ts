@@ -10,6 +10,7 @@ import { useUpload } from '@/composables/useUpload'
 import { useTasksStore } from '@/stores/tasks'
 import type { PromptOptimizationOriginDraft } from '@/stores/taskStoreTypes'
 import api from '@/api'
+import { getRuntimeTaskPrice } from '@/config/runtime'
 import {
   DEFAULT_VISIBLE_LAB_MODE_ID,
   DEFAULT_VIDEO_DURATION,
@@ -35,6 +36,7 @@ import {
   buildDefaultLtxVideoLoraItem,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  getImageToVideoRequestTaskType,
   LTX_VIDEO_LORA_OPTIONS,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem,
@@ -365,8 +367,31 @@ export function useLabWorkbench() {
           : t('lab.workbench.add_reference')
   ))
 
+  const pricedTaskType = computed(() => {
+    if (currentMode.value.id === 'edit' && selectedEditLora.value) {
+      return 'img2img_lora'
+    }
+    if (currentMode.value.id === 'custom_video') {
+      return getImageToVideoRequestTaskType(
+        currentMode.value.taskType,
+        selectedVideoLora.value,
+      )
+    }
+    if (currentMode.value.id === 'ltx_t2v' && useT2VReferences.value) {
+      return 'ltx_t2v_ic'
+    }
+    if (
+      currentMode.value.id === 'ltx_video_v2'
+      && references.uploadedReferences.value.length >= 2
+    ) {
+      return 'ltx_video_v2_flf2v'
+    }
+    return currentMode.value.taskType
+  })
+
   const cost = computed(() => getLabModeCost({
     mode: currentMode.value,
+    taskTypeOverride: pricedTaskType.value,
     uploadedReferenceCount: references.uploadedReferences.value.length,
     resolution: resolution.value,
     duration: duration.value,
@@ -374,10 +399,13 @@ export function useLabWorkbench() {
     hasCharacter: useT2VReferences.value,
   }))
   const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
-      ? getMinimaxH3Cost(
-        minimaxH3Mode.value === 'ref2v' ? 'ref2v' : 'normal',
-        minimaxH3ResolutionPreset.value,
-        Number(duration.value),
+      ? getRuntimeTaskPrice(
+        `minimax_h3_${minimaxH3Mode.value}`,
+        getMinimaxH3Cost(
+          minimaxH3Mode.value === 'ref2v' ? 'ref2v' : 'normal',
+          minimaxH3ResolutionPreset.value,
+          Number(duration.value),
+        ),
       )
     : cost.value)
 

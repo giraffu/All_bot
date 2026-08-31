@@ -80,7 +80,8 @@ sequenceDiagram
   - 返佣兑换记录表，按 `(user_id, idempotency_key)` 保证单用户幂等。
   - `details` 中落地 `current_credits` 与 `available_balance_usdt` 快照，供重放时稳定返回首次成功结果。
 - `runtime_checkpoints`
-  - 保存跨进程运行时游标，当前首个用途是 TON 轮询 `last_lt`。
+  - 保存跨进程运行时游标和小型运行时配置；任务定价使用
+    `task_pricing_config:v1`，只保存按 registry `task_type` 的显式覆盖值，不复制完整默认价格表。
   - TON key 形如 `ton:<merchant_address>:last_lt`，`value` 保存 JSON 快照并记录 `updated_at`。
 - `rmb_payment_reconciliation_jobs`
   - 仅在新建 RMB PENDING 订单时同事务创建，不自动回填历史漏单。
@@ -89,7 +90,24 @@ sequenceDiagram
 
 ## 4. 核心实现事实
 
-### 4.1 Web 鉴权与资产访问前提
+### 4.1 任务定价与扣费边界
+
+- Dashboard 的认证接口 `/api/main-bot/task-pricing` 读取完整任务 registry，并只写
+  `task_pricing_config:v1.overrides`。允许 `0–100000` 整数；未知任务、布尔值、负数和
+  超上限值必须拒绝，清空字段表示恢复系统默认或动态算法。
+- Web 与主 Bot 的任务默认价仍由 dispatcher/domain config 按 task type、图片数、
+  时长、清晰度等参数计算；`TaskApplication` 通过显式
+  `TaskCoreProcessDependencies.resolve_task_cost_func` 在扣费前应用覆盖。该 provider
+  是最终计费 seam，入口展示、前端静态常量和 Worker workflow 都不是账本事实源。
+- 公共 Web `/api/app/entry-visibility` 可同时下发只读 `task_price_overrides` 供价格展示；
+  即使展示缓存失效，服务端最终扣费仍重新读取当前配置。主 Bot/QQCC 的场景预检不得
+  取代该裁决点。
+- 覆盖只作用于 `client_type=web|bot`。私有 QQCC、官方场景固定总价和内部
+  `deduct_quota=false` 阶段保持原契约，避免租户定价被全局后台静默改写。
+- 价格在扣费时固化到提交、账本和恢复记录；配置更新只影响新任务。退款只读取根任务
+  已扣费快照，不按当前价格反算。
+
+### 4.2 Web 鉴权与资产访问前提
 
 - Web 侧 JWT 由 `src/web_api/core/security.py` 使用 `SECRET_KEY` 签发，不再由 `BOT_TOKEN` 直接签发。
 - 登录通道已经包含 Telegram Mini App / Login Widget 与账号密码两类入口。
@@ -99,7 +117,7 @@ sequenceDiagram
   - `password_version` 黑名单校验，确保改密后旧 Token 失效。
   - 当前身份/境界是否仍满足 Web 访问条件，防止“先登录后降权”继续访问。
 
-### 4.2 订单履约红线
+### 4.3 订单履约红线
 
 - 当前支付履约共享内核是 `payment_fulfillment_service.fulfill_payment_command(PaymentFulfillmentCommand(...))`，返回 `PaymentFulfillmentResult`；RMB `fulfill_order(...)` 只保留旧 bool 兼容包装。
 - RMB 适配层按本地业务单定位订单；TON / USDT-TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
@@ -210,7 +228,7 @@ sequenceDiagram
   - 失效邀请充值相关缓存
 - “纯灵石套餐”与“身份月卡套餐”共用履约入口，但 `duration_days == 0` 时只加灵石，不变更身份。
 
-### 4.3 Affiliate 返佣闭环
+### 4.4 Affiliate 返佣闭环
 
 - 首单返佣金额写入 `orders.commission_usdt`，缺汇率时必须失败并回滚，不能静默写 0。
 - 用户中心与 Bot 分享面板的 `invitation_recharge` 统计只聚合 `orders.commission_usdt > 0` 的受邀充值订单，用来展示“受邀者首笔充值”口径；受邀者后续复购不再增加该展示金额或次数。
@@ -229,13 +247,13 @@ sequenceDiagram
 - 人工打款成功必须记录唯一交易哈希；Bot 通知属于事务提交后的 best-effort
   副作用，失败不得回滚兑换终态。
 
-### 4.4 审计与事务边界
+### 4.5 审计与事务边界
 
 - `QuotaManager.adjust_credits/add_credits/deduct_credits` 在复用外部 `AsyncSession` 时，也必须把 `user_logs` 一并写进当前事务。
 - 路由层如果传入外部事务，核心服务应复用该事务并由调用方统一 `commit`；核心服务不能擅自提前提交半个闭环。
 - “先持久化唯一业务单/外部流水，再做资产副作用”仍是支付与返佣相关逻辑的统一基线。
 
-### 4.5 标准邀请奖励
+### 4.6 标准邀请奖励
 
 - 标准邀请奖励与付费 affiliate 返佣是两套账：前者直接写 `users.credits` + `user_logs`，后者写 `affiliate_transactions` 并可兑换灵石。
 - 只有 `get_or_create_user_by_telegram(...)` 在本次邀请请求中返回 `is_new=True` 的真实新用户，才可通过邀请链接记录 `referrals`、`users.invited_by`、邀请人 `referral_count`；历史用户即使尚无 `invited_by` 也不得补绑。`QuotaManager.process_referral(...)` 以必填的 `new_user_was_created=True` 再次守住该边界。注册阶段不再给邀请人发放奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
@@ -244,14 +262,14 @@ sequenceDiagram
 - 奖励发放按同一邀请关系的历史 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 流水补差额，`extra_info.invitee_id` 是幂等核对字段；老数据中已发过的注册 +5 会计入目标，不会因新规则重复发放。
 - Dashboard 用户转移保留源用户及其 Telegram / Web 登录身份，只把资产与业务记录并入目标并净化源账户；源 Telegram ID 再次访问时仍解析为既有用户并返回 `is_new=false`，不得因账户合并重新获得默认新手资产、建立新邀请关系或触发入群/首次生成邀请奖励。封禁状态不能随净化清除。
 
-### 4.6 Provider 注册入口
+### 4.7 Provider 注册入口
 
 - Billing core 不在模块 import 时自动装配 provider；应用入口负责调用 `ensure_billing_core_providers_registered()`。
 - 当前必须注册 billing provider 的入口包括 `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py`。
 - Dashboard Backend 的退款、强制终止、资产调整和订单处理会进入 billing core；若只注册 task core provider，会触发 `Billing core providers 未注册`。
 - `paid_group_guard_bot` 只读查询 `users` / `orders` 判断付费群入群资格，不做支付履约、返佣、灵石、会员结算或 user_logs 写入，因此不属于 billing provider 注册入口。
 
-### 4.7 付费群审核资格
+### 4.8 付费群审核资格
 
 - 付费群审核 Bot 的默认资格口径为：`users.telegram_id` 命中申请人，且满足“历史成功订单 / 后台赠送套餐订单 / 筑基期及以上修为”之一。
 - 真实支付订单要求 `orders.status = 'SUCCESS' AND paid_at IS NOT NULL`；后台赠送免费套餐订单要求 `orders.status = 'SUCCESS'`，并通过 `tx_hash` 的 `manual_` 前缀或 `order_id` 的 `GIFT:` 前缀识别。

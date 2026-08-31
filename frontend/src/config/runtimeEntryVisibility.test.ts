@@ -20,6 +20,11 @@ describe('runtime entry visibility hydration', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        task_price_overrides: {
+          txt2img: 9,
+          image: 0,
+          invalid: -1,
+        },
         flags: {
           enable_edit_entry: false,
           enable_custom_video_entry: false,
@@ -43,6 +48,10 @@ describe('runtime entry visibility hydration', () => {
       enable_custom_video_entry: false,
       enable_minimax_h3_entry: true,
       enable_gallery_minimax_h3_entry: false,
+    })
+    expect(window.__ALLBOT_TASK_PRICE_OVERRIDES__).toEqual({
+      txt2img: 9,
+      image: 0,
     })
   })
 

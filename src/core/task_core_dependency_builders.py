@@ -91,6 +91,7 @@ def build_task_core_process_dependencies(
     release_concurrency_lock_func,
     shield_func=asyncio.shield,
     logger,
+    resolve_task_cost_func=None,
 ) -> TaskCoreProcessDependencies:
     return TaskCoreProcessDependencies(
         get_strategy_func=get_strategy_func,
@@ -105,6 +106,7 @@ def build_task_core_process_dependencies(
         release_concurrency_lock_func=release_concurrency_lock_func,
         shield_func=shield_func,
         logger=logger,
+        resolve_task_cost_func=resolve_task_cost_func,
     )
 
 
