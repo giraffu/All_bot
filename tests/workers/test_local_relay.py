@@ -19,6 +19,7 @@ if "minio" not in sys.modules and importlib.util.find_spec("minio") is None:
     sys.modules["minio"] = minio_module
 
 from local_relay import relay_main as relay  # noqa: E402
+from workers.runpod_runtime.runpod_relay import relay_main as runpod_relay  # noqa: E402
 
 
 class FakeRequest:
@@ -184,6 +185,82 @@ async def test_relay_drops_queued_progress_before_forwarding_complete(monkeypatc
         ("POST", "/api/agent/task/complete", payload, True),
     ]
     assert relay.state.pending_statuses == {}
+
+
+@pytest.mark.asyncio
+async def test_runpod_relay_independently_heartbeats_active_task_until_complete(
+    monkeypatch,
+):
+    calls = []
+    runpod_relay.state.pending_statuses = {}
+    runpod_relay.state.status_lock = asyncio.Lock()
+    runpod_relay.state.active_task_agents = {}
+    runpod_relay.state.active_tasks_lock = asyncio.Lock()
+
+    async def fake_forward(method, path, *, params=None, json_body=None, retry=True):
+        calls.append((method, path, json_body, retry))
+        return JSONResponse({"status": "ok"})
+
+    monkeypatch.setattr(runpod_relay, "_forward_request", fake_forward)
+    running = {
+        "task_id": "task-1",
+        "agent_id": "runpod-prod-01",
+        "status": "running",
+        "progress": 0.1,
+    }
+
+    assert await runpod_relay.update_status(FakeRequest(running)) == {
+        "status": "ok",
+        "relayed": "queued",
+    }
+    await runpod_relay._heartbeat_active_tasks_once()
+
+    assert calls == [
+        (
+            "POST",
+            "/api/agent/task/task_heartbeat",
+            {"task_id": "task-1", "agent_id": "runpod-prod-01"},
+            True,
+        )
+    ]
+
+    complete = {
+        "task_id": "task-1",
+        "agent_id": "runpod-prod-01",
+        "result": "result.mp4",
+    }
+    response = await runpod_relay.complete_task(FakeRequest(complete))
+
+    assert response.status_code == 200
+    assert runpod_relay.state.active_task_agents == {}
+
+
+@pytest.mark.asyncio
+async def test_runpod_relay_keeps_heartbeat_when_complete_is_not_accepted(
+    monkeypatch,
+):
+    runpod_relay.state.pending_statuses = {}
+    runpod_relay.state.status_lock = asyncio.Lock()
+    runpod_relay.state.active_task_agents = {"task-1": "runpod-prod-01"}
+    runpod_relay.state.active_tasks_lock = asyncio.Lock()
+
+    async def failed_forward(*_args, **_kwargs):
+        return JSONResponse({"detail": "temporary upstream failure"}, status_code=502)
+
+    monkeypatch.setattr(runpod_relay, "_forward_request", failed_forward)
+
+    response = await runpod_relay.complete_task(
+        FakeRequest(
+            {
+                "task_id": "task-1",
+                "agent_id": "runpod-prod-01",
+                "result": "result.mp4",
+            }
+        )
+    )
+
+    assert response.status_code == 502
+    assert runpod_relay.state.active_task_agents == {"task-1": "runpod-prod-01"}
 
 
 @pytest.mark.asyncio
