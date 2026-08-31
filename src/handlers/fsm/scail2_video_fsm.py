@@ -481,6 +481,10 @@ async def process_duration_selection(
             user.username,
             getattr(user, "full_name", None),
             cost=cost,
+            task_type=str(fsm_data.get("task_type") or ""),
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as exc:
         if isinstance(exc, InsufficientCreditsError):

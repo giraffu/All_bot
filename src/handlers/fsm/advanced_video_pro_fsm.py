@@ -747,7 +747,14 @@ async def _submit_generation(
     user = update.effective_user
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=plan.cost
+            user.id,
+            user.username,
+            user.full_name,
+            cost=plan.cost,
+            task_type=plan.task_type,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as exc:
         from src.core.exceptions import InsufficientCreditsError

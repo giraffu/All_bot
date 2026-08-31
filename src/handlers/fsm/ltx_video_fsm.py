@@ -15,6 +15,7 @@ from telegram.ext import (
 from src.constants import (
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
+    MODE_LTX_VIDEO,
 )
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
@@ -750,7 +751,14 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=cost
+            user.id,
+            user.username,
+            user.full_name,
+            cost=cost,
+            task_type=MODE_LTX_VIDEO,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError

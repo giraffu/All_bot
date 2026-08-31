@@ -5,9 +5,12 @@ import message from 'ant-design-vue/es/message'
 import {
   fetchFeatureEntryVisibilityConfig,
   fetchMainBotMenuConfig,
+  fetchTaskPricingConfig,
   updateFeatureEntryVisibilityConfig,
   updateMainBotMenuConfig,
+  updateTaskPricingConfig,
 } from '../api/api'
+import { getTaskTypeLabel } from '../constants/taskTypes'
 
 interface MenuItemConfig {
   key: string
@@ -102,6 +105,26 @@ interface FeatureEntryVisibilityConfigResponse {
   key: string
   config: FeatureEntryVisibilityConfig
   options?: AdvancedVideoProOptions
+  updated_at?: string | null
+}
+
+interface TaskPricingItem {
+  task_type: string
+  public_type: string
+  execution_type: string
+  default_cost: number | null
+  override_cost: number | null
+  effective_cost: number | null
+  pricing_mode: 'fixed' | 'dynamic'
+  is_generation: boolean
+  is_video: boolean
+  legacy_alias_of: string | null
+}
+
+interface TaskPricingConfigResponse {
+  key: string
+  overrides: Record<string, number>
+  items: TaskPricingItem[]
   updated_at?: string | null
 }
 
@@ -242,27 +265,34 @@ const GALLERY_ENTRY_OPTIONS = [
   label: string
 }>
 
-type EntryScope = 'web' | 'bot' | 'gallery' | 'models'
+type EntryScope = 'web' | 'bot' | 'gallery' | 'models' | 'pricing'
 
 const ENTRY_SCOPE_TABS: ReadonlyArray<{ key: EntryScope; label: string }> = [
   { key: 'web', label: 'Web 端' },
   { key: 'bot', label: '主 Bot' },
   { key: 'gallery', label: '修仙市集' },
   { key: 'models', label: 'Pro 模型预设' },
+  { key: 'pricing', label: '任务定价' },
 ]
 
 const loading = ref(false)
 const saving = ref(false)
 const entryLoading = ref(false)
 const entrySaving = ref(false)
+const pricingLoading = ref(false)
+const pricingSaving = ref(false)
 const updatedAt = ref<string | null>(null)
 const entryUpdatedAt = ref<string | null>(null)
+const pricingUpdatedAt = ref<string | null>(null)
 const config = ref<MainBotMenuConfig>(emptyConfig())
 const entryConfig = ref<FeatureEntryVisibilityConfig>(emptyEntryConfig())
 const advancedVideoProOptions = ref<AdvancedVideoProOptions>(
   emptyAdvancedVideoProOptions(),
 )
 const activeScope = ref<EntryScope>('web')
+const pricingItems = ref<TaskPricingItem[]>([])
+const pricingOverrides = ref<Record<string, number | string | null>>({})
+const pricingSearch = ref('')
 
 const visibleMainCount = computed(() =>
   config.value.main_menu.items.filter((item) => item.visible).length
@@ -314,6 +344,30 @@ const applyEntryResponse = (payload: FeatureEntryVisibilityConfigResponse) => {
   entryConfig.value = cloneEntryConfig(payload.config)
   if (payload.options) advancedVideoProOptions.value = payload.options
   entryUpdatedAt.value = payload.updated_at ?? null
+}
+
+const applyPricingResponse = (payload: TaskPricingConfigResponse) => {
+  pricingItems.value = payload.items.map(item => ({ ...item }))
+  pricingOverrides.value = Object.fromEntries(
+    payload.items.map(item => [item.task_type, item.override_cost]),
+  )
+  pricingUpdatedAt.value = payload.updated_at ?? null
+}
+
+const filteredPricingItems = computed(() => {
+  const query = pricingSearch.value.trim().toLowerCase()
+  if (!query) return pricingItems.value
+  return pricingItems.value.filter(item => (
+    item.task_type.toLowerCase().includes(query)
+    || item.public_type.toLowerCase().includes(query)
+    || getTaskTypeLabel(item.task_type).toLowerCase().includes(query)
+  ))
+})
+
+const taskPriceLabel = (item: TaskPricingItem) => getTaskTypeLabel(item.task_type)
+const taskPriceInputId = (taskType: string) => taskType.replaceAll('.', '-')
+const clearTaskPrice = (taskType: string) => {
+  pricingOverrides.value[taskType] = null
 }
 
 const addonOptionsForMode = (mode: AdvancedVideoProMode) => (
@@ -391,8 +445,42 @@ const loadEntryConfig = async () => {
   }
 }
 
+const loadTaskPricing = async () => {
+  pricingLoading.value = true
+  try {
+    applyPricingResponse(await fetchTaskPricingConfig())
+  } catch {
+    message.error('加载任务定价失败')
+  } finally {
+    pricingLoading.value = false
+  }
+}
+
 const reloadAll = async () => {
-  await Promise.all([loadEntryConfig(), loadConfig()])
+  await Promise.all([loadEntryConfig(), loadConfig(), loadTaskPricing()])
+}
+
+const saveTaskPricing = async () => {
+  const overrides: Record<string, number> = {}
+  for (const item of pricingItems.value) {
+    const rawValue = pricingOverrides.value[item.task_type]
+    if (rawValue === null || rawValue === undefined || rawValue === '') continue
+    const normalized = Number(rawValue)
+    if (!Number.isInteger(normalized) || normalized < 0 || normalized > 100000) {
+      message.error(`${taskPriceLabel(item)}价格必须是 0–100000 的整数`)
+      return
+    }
+    overrides[item.task_type] = normalized
+  }
+  pricingSaving.value = true
+  try {
+    applyPricingResponse(await updateTaskPricingConfig({ overrides }))
+    message.success('任务定价已保存，Web 与主 Bot 新任务立即统一生效')
+  } catch {
+    message.error('保存任务定价失败')
+  } finally {
+    pricingSaving.value = false
+  }
 }
 
 const moveMainItem = (index: number, offset: -1 | 1) => {
@@ -462,17 +550,17 @@ onMounted(() => {
         <div>
           <h2 class="text-lg font-semibold text-slate-950">入口与菜单控制</h2>
           <p class="mt-1 text-sm text-slate-500">
-            分别管理 Web、主 Bot、修仙市集入口与 Pro 模型预设；不会停用任务、旧按钮、深链或文字命令。
+            统一管理 Web、主 Bot、修仙市集入口、Pro 模型预设与任务灵石定价；入口开关不会停用旧按钮、深链或文字命令。
           </p>
         </div>
         <div class="toolbar">
           <button
             type="button"
             class="secondary-button"
-            :disabled="loading || entryLoading"
+            :disabled="loading || entryLoading || pricingLoading"
             @click="reloadAll"
           >
-            {{ loading || entryLoading ? '刷新中…' : '全部刷新' }}
+            {{ loading || entryLoading || pricingLoading ? '刷新中…' : '全部刷新' }}
           </button>
         </div>
       </div>
@@ -489,6 +577,87 @@ onMounted(() => {
           {{ tab.label }}
         </button>
       </nav>
+    </section>
+
+    <section
+      v-if="activeScope === 'pricing'"
+      data-testid="task-pricing-panel"
+      class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div class="section-heading">
+        <div>
+          <h3 class="text-base font-semibold text-slate-900">所有任务统一定价</h3>
+          <p class="mt-1 text-sm text-slate-500">
+            覆盖价同时用于 Web 与主 Bot 的新任务；留空会恢复系统默认或按时长、清晰度动态计算。
+          </p>
+          <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(pricingUpdatedAt) }}</p>
+        </div>
+        <button
+          type="button"
+          class="primary-button"
+          data-testid="save-task-pricing"
+          :disabled="pricingSaving || pricingLoading"
+          @click="saveTaskPricing"
+        >
+          {{ pricingSaving ? '保存中…' : '保存任务定价' }}
+        </button>
+      </div>
+
+      <p class="mt-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        设置覆盖价后，该任务的所有参数组合按固定灵石数计费；0 表示免费。运行中任务继续使用提交时已记录的价格。
+      </p>
+
+      <div class="pricing-toolbar mt-4">
+        <input
+          v-model="pricingSearch"
+          type="search"
+          placeholder="搜索任务名称或 task_type"
+          data-testid="task-pricing-search"
+        />
+        <span>{{ filteredPricingItems.length }} / {{ pricingItems.length }} 个任务</span>
+      </div>
+
+      <div class="pricing-list mt-3">
+        <article
+          v-for="item in filteredPricingItems"
+          :key="item.task_type"
+          class="pricing-item"
+        >
+          <div class="pricing-identity">
+            <div class="text-sm font-medium text-slate-800">{{ taskPriceLabel(item) }}</div>
+            <div class="text-xs text-slate-400">{{ item.task_type }}</div>
+            <div class="mt-1 text-xs text-slate-500">
+              系统价：
+              <span v-if="item.default_cost !== null">{{ item.default_cost }} 灵石</span>
+              <span v-else>动态计算</span>
+              <span v-if="item.legacy_alias_of"> · 兼容入口 → {{ item.legacy_alias_of }}</span>
+            </div>
+          </div>
+          <div class="pricing-actions">
+            <label>
+              <span>覆盖价</span>
+              <input
+                v-model.number="pricingOverrides[item.task_type]"
+                type="number"
+                min="0"
+                max="100000"
+                step="1"
+                placeholder="留空"
+                :data-testid="`task-price-${taskPriceInputId(item.task_type)}`"
+              />
+            </label>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="pricingOverrides[item.task_type] === null"
+              :data-testid="`clear-task-price-${taskPriceInputId(item.task_type)}`"
+              @click="clearTaskPrice(item.task_type)"
+            >
+              恢复系统价
+            </button>
+          </div>
+        </article>
+      </div>
     </section>
 
     <section
@@ -846,6 +1015,15 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .submenu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .submenu-card { border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: 1rem; }
 .web-entry-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.pricing-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: #64748b; font-size: .8rem; }
+.pricing-toolbar input { width: min(28rem, 100%); border: 1px solid #cbd5e1; border-radius: .55rem; padding: .55rem .7rem; color: #334155; }
+.pricing-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.pricing-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #e2e8f0; border-radius: .65rem; padding: .8rem; }
+.pricing-identity { min-width: 0; }
+.pricing-identity .text-xs { overflow-wrap: anywhere; }
+.pricing-actions { display: flex; align-items: flex-end; gap: .5rem; flex: 0 0 auto; }
+.pricing-actions label { display: flex; flex-direction: column; gap: .25rem; color: #64748b; font-size: .72rem; }
+.pricing-actions input { width: 6.5rem; border: 1px solid #cbd5e1; border-radius: .5rem; padding: .48rem .55rem; color: #334155; }
 .fixed-back-item { border: 1px dashed #cbd5e1; border-radius: .6rem; padding: .65rem .8rem; color: #64748b; font-size: .8rem; text-align: center; }
 .advanced-video-pro-config { border: 1px solid #bfdbfe; border-radius: .75rem; background: #f8fbff; padding: 1rem; }
 .advanced-video-pro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -873,6 +1051,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .submenu-grid { grid-template-columns: 1fr; }
   .web-entry-grid { grid-template-columns: 1fr; }
   .advanced-video-pro-grid { grid-template-columns: 1fr; }
+  .pricing-list { grid-template-columns: 1fr; }
+  .pricing-toolbar, .pricing-item, .pricing-actions { align-items: stretch; flex-direction: column; }
+  .pricing-actions input { width: 100%; }
   .scope-tab { flex: 1 0 auto; padding-inline: .8rem; text-align: center; }
 }
 </style>

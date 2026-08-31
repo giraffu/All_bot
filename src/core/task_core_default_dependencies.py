@@ -282,6 +282,7 @@ def build_default_task_core_process_dependencies(
     bucket_name,
     shield_func=asyncio.shield,
     logger_override=logger,
+    resolve_task_cost_func=None,
 ) -> TaskCoreProcessDependencies:
     prepare_task_submission_payload_func = build_default_task_core_process_input_builder(
         user_logger_factory=user_logger_factory,
@@ -314,4 +315,5 @@ def build_default_task_core_process_dependencies(
         **side_effect_bindings,
         shield_func=shield_func,
         logger=logger_override,
+        resolve_task_cost_func=resolve_task_cost_func,
     )

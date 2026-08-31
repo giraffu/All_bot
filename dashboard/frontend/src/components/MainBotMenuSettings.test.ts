@@ -8,6 +8,8 @@ const apiMocks = vi.hoisted(() => ({
   updateMainBotMenuConfig: vi.fn(),
   fetchFeatureEntryVisibilityConfig: vi.fn(),
   updateFeatureEntryVisibilityConfig: vi.fn(),
+  fetchTaskPricingConfig: vi.fn(),
+  updateTaskPricingConfig: vi.fn(),
 }))
 
 const messageMocks = vi.hoisted(() => ({
@@ -157,11 +159,44 @@ const buildEntryVisibilityResponse = () => ({
   },
 })
 
+const buildTaskPricingResponse = () => ({
+  key: 'task_pricing_config:v1',
+  updated_at: null,
+  overrides: { txt2img: 9 },
+  items: [
+    {
+      task_type: 'txt2img',
+      public_type: 'txt2img',
+      execution_type: 'txt2img',
+      default_cost: 2,
+      override_cost: 9,
+      effective_cost: 9,
+      pricing_mode: 'fixed',
+      is_generation: true,
+      is_video: false,
+      legacy_alias_of: null,
+    },
+    {
+      task_type: 'image',
+      public_type: 'img2img',
+      execution_type: 'img2img',
+      default_cost: null,
+      override_cost: null,
+      effective_cost: null,
+      pricing_mode: 'dynamic',
+      is_generation: true,
+      is_video: false,
+      legacy_alias_of: 'img2img',
+    },
+  ],
+})
+
 describe('MainBotMenuSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.fetchMainBotMenuConfig.mockResolvedValue(buildResponse())
     apiMocks.fetchFeatureEntryVisibilityConfig.mockResolvedValue(buildEntryVisibilityResponse())
+    apiMocks.fetchTaskPricingConfig.mockResolvedValue(buildTaskPricingResponse())
     apiMocks.updateMainBotMenuConfig.mockImplementation(async (payload) => ({
       ...buildResponse(),
       config: payload,
@@ -170,9 +205,18 @@ describe('MainBotMenuSettings', () => {
       ...buildEntryVisibilityResponse(),
       config: payload,
     }))
+    apiMocks.updateTaskPricingConfig.mockImplementation(async (payload) => ({
+      ...buildTaskPricingResponse(),
+      overrides: payload.overrides,
+      items: buildTaskPricingResponse().items.map(item => ({
+        ...item,
+        override_cost: payload.overrides[item.task_type] ?? null,
+        effective_cost: payload.overrides[item.task_type] ?? item.default_cost,
+      })),
+    }))
   })
 
-  it('renders entry controls and Pro model presets as four same-level tabs', async () => {
+  it('renders entry controls, Pro model presets, and task pricing as same-level tabs', async () => {
     const wrapper = mount(MainBotMenuSettings)
     await flushPromises()
 
@@ -180,6 +224,7 @@ describe('MainBotMenuSettings', () => {
     expect(wrapper.get('[data-testid="scope-tab-bot"]').text()).toContain('主 Bot')
     expect(wrapper.get('[data-testid="scope-tab-gallery"]').text()).toContain('修仙市集')
     expect(wrapper.get('[data-testid="scope-tab-models"]').text()).toContain('Pro 模型预设')
+    expect(wrapper.get('[data-testid="scope-tab-pricing"]').text()).toContain('任务定价')
     expect(wrapper.find('[data-testid="web-entry-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="bot-entry-panel"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('自由P图')
@@ -208,6 +253,29 @@ describe('MainBotMenuSettings', () => {
     expect(wrapper.get('[data-testid="scope-tab-models"]').classes()).toContain('is-active')
     expect(wrapper.get('[data-testid="scope-tab-web"]').classes()).not.toContain('is-active')
     expect(wrapper.text()).toContain('高级图生视频 Pro 模型预设')
+
+    await wrapper.get('[data-testid="scope-tab-pricing"]').trigger('click')
+    expect(wrapper.find('[data-testid="advanced-video-pro-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="task-pricing-panel"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('文生图')
+    expect(wrapper.text()).toContain('动态计算')
+  })
+
+  it('saves fixed task prices and clears an override back to the system default', async () => {
+    const wrapper = mount(MainBotMenuSettings)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="scope-tab-pricing"]').trigger('click')
+    await wrapper.get('[data-testid="task-price-txt2img"]').setValue('12')
+    await wrapper.get('[data-testid="task-price-image"]').setValue('4')
+    await wrapper.get('[data-testid="clear-task-price-txt2img"]').trigger('click')
+    await wrapper.get('[data-testid="save-task-pricing"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateTaskPricingConfig).toHaveBeenCalledWith({
+      overrides: { image: 4 },
+    })
+    expect(messageMocks.success).toHaveBeenCalledWith('任务定价已保存，Web 与主 Bot 新任务立即统一生效')
   })
 
   it('saves Web and market visibility separately from the Bot menu', async () => {

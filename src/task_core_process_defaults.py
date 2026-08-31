@@ -42,6 +42,7 @@ def build_runtime_default_task_core_process_dependencies(
     )
     from src.services.storage import storage
     from src.services.storage_r2_promotion import promote_staged_user_inputs
+    from src.services.task_pricing_config_service import resolve_runtime_task_cost
     from src.utils import load_prompts
 
     async def attach_submission_side_effects_func(**kwargs):
@@ -100,4 +101,5 @@ def build_runtime_default_task_core_process_dependencies(
         bucket_name=MINIO_BUCKET,
         shield_func=asyncio.shield,
         logger_override=logger_override,
+        resolve_task_cost_func=resolve_runtime_task_cost,
     )

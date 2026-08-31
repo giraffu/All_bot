@@ -13,6 +13,7 @@ import {
   getWan22VideoV2Cost,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
+import { getRuntimeTaskPrice } from '@/config/runtime'
 
 export const DEFAULT_EDIT_LORA_STRENGTH = 1
 
@@ -36,6 +37,7 @@ export const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
 
 export type GetLabModeCostOptions = {
   mode: LabModeConfig
+  taskTypeOverride?: string
   uploadedReferenceCount: number
   resolution: string
   duration: string
@@ -45,30 +47,37 @@ export type GetLabModeCostOptions = {
 
 export const getLabModeCost = ({
   mode,
+  taskTypeOverride,
   uploadedReferenceCount,
   resolution,
   duration,
   wan22ResolutionPreset,
   hasCharacter = false,
 }: GetLabModeCostOptions) => {
+  const taskType = taskTypeOverride ?? mode.taskType
+  let defaultCost: number
   if (mode.id === 'edit') {
-    return uploadedReferenceCount >= 2 ? 6 : 2
+    defaultCost = uploadedReferenceCount >= 2 ? 6 : 2
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
   if (mode.id === FREE_EDIT_V3_MODE_ID) {
-    return 5
+    return getRuntimeTaskPrice(taskType, 5)
   }
 
   if (mode.id === FREE_EDIT_V2_5_MODE_ID) {
-    return uploadedReferenceCount >= 2 ? 7 : 3
+    defaultCost = uploadedReferenceCount >= 2 ? 7 : 3
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
   if (mode.id === 'custom_video' || mode.id === 'wan22_video_v2') {
-    return getWan22VideoV2Cost(wan22ResolutionPreset, duration)
+    defaultCost = getWan22VideoV2Cost(wan22ResolutionPreset, duration)
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
   if (mode.id === 'face_video') {
-    return resolution === '1024' ? 36 : 18
+    defaultCost = resolution === '1024' ? 36 : 18
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
   if (isLtxLabModeId(mode.id)) {
@@ -76,15 +85,18 @@ export const getLabModeCost = ({
     if (duration === '10') multiplier = 2
     else if (duration === '15') multiplier = 3
     else if (duration === '20') multiplier = 4
-    if (mode.id === 'ltx_t2v' && hasCharacter) return 12 * multiplier
-    return 10 * multiplier
+    defaultCost = mode.id === 'ltx_t2v' && hasCharacter
+      ? 12 * multiplier
+      : 10 * multiplier
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
   if (isScail2ModeId(mode.id)) {
-    return getScail2VideoCost(duration || DEFAULT_VIDEO_DURATION, mode.id)
+    defaultCost = getScail2VideoCost(duration || DEFAULT_VIDEO_DURATION, mode.id)
+    return getRuntimeTaskPrice(taskType, defaultCost)
   }
 
-  return mode.baseCost
+  return getRuntimeTaskPrice(taskType, mode.baseCost)
 }
 
 export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {

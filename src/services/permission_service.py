@@ -73,9 +73,23 @@ class PermissionService:
         )
 
     async def check_quota(
-        self, tg_id: int, username: str, full_name: str, cost: int = 1
+        self,
+        tg_id: int,
+        username: str,
+        full_name: str,
+        cost: int = 1,
+        *,
+        task_type: str | None = None,
+        client_type: str = "bot",
     ) -> bool:
-        return await self.quota.check_quota(tg_id, username, full_name, cost)
+        return await self.quota.check_quota(
+            tg_id,
+            username,
+            full_name,
+            cost,
+            task_type=task_type,
+            client_type=client_type,
+        )
 
     async def increment_quota(
         self,

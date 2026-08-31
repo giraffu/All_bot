@@ -367,6 +367,7 @@ async def _validate_quick_image_submission(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     cost: int,
+    task_type: str,
 ) -> bool:
     from src.core.user_core import get_or_create_user_by_telegram
     from src.core.exceptions import InsufficientCreditsError
@@ -389,7 +390,14 @@ async def _validate_quick_image_submission(
 
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=cost
+            user.id,
+            user.username,
+            user.full_name,
+            cost=cost,
+            task_type=task_type,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as exc:
         if not isinstance(exc, InsufficientCreditsError):
@@ -670,6 +678,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context=context,
         user_id=user_id,
         cost=cost,
+        task_type=submission_plan.task_type,
     ):
         return ConversationHandler.END
 

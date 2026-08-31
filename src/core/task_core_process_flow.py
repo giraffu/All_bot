@@ -241,12 +241,22 @@ def build_successful_submission_response(
     execution_result: TaskSubmissionExecutionResult,
     cost: int,
 ) -> dict[str, Any]:
+    saved_inputs_getter = getattr(
+        execution_result.submission_context,
+        "registry_saved_inputs",
+        None,
+    )
+    saved_inputs = (
+        saved_inputs_getter()
+        if callable(saved_inputs_getter)
+        else list(getattr(execution_result.submission_context, "saved_inputs", []) or [])
+    )
     return {
         "task_id": execution_result.registry_task_id,
         "registry_task_id": execution_result.registry_task_id,
         "backend_task_id": execution_result.backend_task_id,
         "cost": cost,
-        "saved_inputs": execution_result.submission_context.registry_saved_inputs(),
+        "saved_inputs": saved_inputs,
     }
 
 

@@ -207,6 +207,10 @@ async def confirm_advanced_video_prompt_generation(update, context):
             update.effective_user.username,
             update.effective_user.full_name,
             cost=draft.generation_cost,
+            task_type=f"minimax_h3_{draft.mode}",
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception:
         await safe_answer_query(

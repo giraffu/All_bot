@@ -1385,7 +1385,14 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user = update.effective_user
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=plan.total_cost
+            user.id,
+            user.username,
+            user.full_name,
+            cost=plan.total_cost,
+            task_type=plan.mode,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError

@@ -87,6 +87,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user.username,
             user.full_name,
             cost=cost,
+            task_type=MODE_TXT2IMG,
+            client_type=(getattr(context, "bot_data", None) or {}).get(
+                "bot_client_type", "bot"
+            ),
         )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError

@@ -51,6 +51,7 @@ class TaskCoreProcessDependencies:
     release_concurrency_lock_func: Callable[..., Awaitable[Any]]
     shield_func: Callable[[Awaitable[Any]], Awaitable[Any]]
     logger: Any
+    resolve_task_cost_func: Callable[..., Awaitable[int]] | None = None
 
 
 @dataclass(frozen=True)

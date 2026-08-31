@@ -24,6 +24,7 @@
 - `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
+- `src/services/task_pricing_config_service.py`：Web/主 Bot 运行时定价 adapter；以 registry 为完整任务目录，在 `runtime_checkpoints.task_pricing_config:v1` 只保存显式覆盖价
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
 所有 Bot / Web / QQCC / Dashboard 任务都通过启动时显式构造的 `TaskApplication` + dependencies 边界进入调度链，不在上层直接 import 基础设施实现。旧 facade 只保留为必须显式传 dependencies 的测试/兼容适配器。
@@ -105,6 +106,10 @@ sequenceDiagram
 职责：
 
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
+- 策略先计算内置固定价或按参数计算的动态默认价；runtime composition root 注入
+  `resolve_task_cost_func`，在扣费、journal 和派发前把 Web/主 Bot 的后台覆盖价解析为
+  最终价。core 不读取数据库或 Dashboard 配置；QQCC 私有租户等其它 client type
+  保持各自既有计费契约。
 - 输入准备从 command 接收精确 `registry_task_id`，先把策略输入归一为对象
   key（Bot 本地文件会先上传 staging），再通过 runtime dependency 提升为
   `task-inputs/`；覆盖 Web/Bot/QQCC，且早于扣费、journal 和 Central 派发
@@ -115,6 +120,16 @@ sequenceDiagram
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
 - 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
+- 最终价随 submission intent、active registry 和账本进入任务快照；运行中任务不受
+  后续改价影响，取消、失败与恢复必须按该快照幂等退款，不能重新查询当前价格。
+
+定价事实分为三层，禁止互相复制职责：
+
+1. `task_type_registry.py` 和 dispatcher/domain config 提供版本化的内置默认价与动态算法；
+2. `task_pricing_config_service.py` 只校验、持久化和解析按精确 `task_type` 的固定覆盖价，
+   清空覆盖即恢复第一层，覆盖值 `0` 表示免费；
+3. `TaskApplication` 是唯一最终扣费裁决点。Web 公开入口只下发展示用覆盖值，前端
+   不成为计费事实源；Worker/workflow 不读取价格。
 
 默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。input builder 持有可替换的 staging promotion capability，生产 adapter
 在 `src/task_core_process_defaults.py` 装配，core 只传递 ID、有序引用和结果。
@@ -200,6 +215,11 @@ Bot presentation 通过 `record_history` 区分用户可见结果与内部链路
 `record_history=false` 跳过 History、生成次数与 Web history warmup；该字段必须进入
 Bot 任务恢复契约，避免进程恢复时补写内部阶段。`send_result=false` 只控制 Telegram
 投递，不能隐式代表不记录历史。
+
+主 Bot FSM 的余额预检会把精确 `task_type` 与 `bot_client_type` 交给同一定价
+provider，避免降价后仍被旧默认价提前拦截；预检只改善提示，最终扣费仍以
+`TaskApplication` 的第二次权威解析为准。私有/官方 QQCC client type 不套用主 Bot
+覆盖价。
 
 当前 `task_service_flow.py` 已直接内聚提交、monitor、terminal 与 cleanup 四段 helper，不再额外拆出仅单文件消费的 stage 壳。
 

@@ -450,7 +450,14 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
     result = await wan22_video_v2_fsm.submit_generation(update, context)
 
     assert result == ConversationHandler.END
-    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=30)
+    quota_mock.assert_awaited_once_with(
+        12345,
+        "tester",
+        "Test User",
+        cost=30,
+        task_type="wan22_video_v2",
+        client_type="bot",
+    )
     process_task_mock.assert_called_once_with(
         context=context,
         chat_id=10001,
@@ -521,7 +528,14 @@ async def test_skip_negative_prompt_submits_without_settings_confirmation(monkey
 
     assert result == ConversationHandler.END
     query.answer.assert_awaited_once()
-    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=24)
+    quota_mock.assert_awaited_once_with(
+        12345,
+        "tester",
+        "Test User",
+        cost=24,
+        task_type="wan22_video_v2",
+        client_type="bot",
+    )
     process_task_mock.assert_called_once()
     assert process_task_mock.call_args.kwargs["negative_prompt"] == ""
     create_background_task_mock.assert_called_once_with(context, ("bg-task",))
@@ -567,7 +581,14 @@ async def test_receive_negative_prompt_submits_without_settings_confirmation(mon
     result = await wan22_video_v2_fsm.receive_negative_prompt(update, context)
 
     assert result == ConversationHandler.END
-    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=6)
+    quota_mock.assert_awaited_once_with(
+        12345,
+        "tester",
+        "Test User",
+        cost=6,
+        task_type="wan22_video_v2",
+        client_type="bot",
+    )
     process_task_mock.assert_called_once()
     assert process_task_mock.call_args.kwargs["negative_prompt"] == "custom negative"
     create_background_task_mock.assert_called_once_with(context, ("bg-task",))

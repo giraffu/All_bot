@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -330,6 +330,17 @@ class MainBotMenuConfigRequest(BaseModel):
 class MainBotMenuConfigResponse(BaseModel):
     key: str
     config: Dict[str, Any]
+    updated_at: Optional[datetime] = None
+
+
+class TaskPricingConfigRequest(BaseModel):
+    overrides: Dict[str, StrictInt] = Field(default_factory=dict)
+
+
+class TaskPricingConfigResponse(BaseModel):
+    key: str
+    overrides: Dict[str, int]
+    items: List[Dict[str, Any]]
     updated_at: Optional[datetime] = None
 
 

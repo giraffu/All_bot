@@ -328,6 +328,11 @@ export const fetchMainBotMenuConfig = async () => get('/api/main-bot/menu-config
 export const updateMainBotMenuConfig = async (payload) =>
   put('/api/main-bot/menu-config', payload)
 
+export const fetchTaskPricingConfig = async () => get('/api/main-bot/task-pricing')
+
+export const updateTaskPricingConfig = async (payload) =>
+  put('/api/main-bot/task-pricing', payload)
+
 export const fetchFeatureEntryVisibilityConfig = async () =>
   get('/api/entry-visibility')
 

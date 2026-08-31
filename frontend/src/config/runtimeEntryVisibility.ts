@@ -37,6 +37,7 @@ type EntryVisibilityKey = typeof ENTRY_VISIBILITY_KEYS[number]
 
 interface EntryVisibilityResponse {
   flags?: Partial<Record<EntryVisibilityKey, unknown>>
+  task_price_overrides?: Record<string, unknown>
 }
 
 export const hydrateRuntimeEntryVisibility = async (
@@ -68,7 +69,18 @@ export const hydrateRuntimeEntryVisibility = async (
       ...(window.__ALLBOT_CONFIG__ ?? {}),
       ...safeFlags,
     })
-    return Object.keys(safeFlags).length > 0
+    const safeTaskPrices = Object.fromEntries(
+      Object.entries(payload.task_price_overrides ?? {}).flatMap(([key, value]) => (
+        typeof value === 'number'
+        && Number.isInteger(value)
+        && value >= 0
+        && value <= 100000
+          ? [[key, value]]
+          : []
+      )),
+    )
+    window.__ALLBOT_TASK_PRICE_OVERRIDES__ = Object.freeze(safeTaskPrices)
+    return Object.keys(safeFlags).length > 0 || Object.keys(safeTaskPrices).length > 0
   } catch {
     return false
   } finally {
