@@ -67,6 +67,7 @@ def test_cloud_cleanup_service_is_persistent_digest_pinned_and_cloud_only():
     assert "R2_TEMP_CLEANUP_CLOUD_IMAGE" in service
     assert "scripts.r2_temp_cleanup_cloud_coordinator" in service
     assert "/var/lib/allbot/r2-temp-cleanup-cloud/current" in service
+    assert "R2_TEMP_CLEANUP_VERIFICATION_CONCURRENCY=16" in service
     assert "HTTP_PROXY=" in service
     assert "HTTPS_PROXY=" in service
     assert "ALL_PROXY=" in service
