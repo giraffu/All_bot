@@ -21,6 +21,7 @@ const labels: Record<string, string> = {
   'lab.workbench.ltx_stitch_chain': '拼接',
   'lab.workbench.minimax_h3_extend_generation': 'H3 扩展生成',
   'lab.workbench.minimax_h3_stitch_chain': 'H3 免费拼接',
+  'lab.workbench.minimax_h3_modes.flf2v': '首尾帧',
   'lab.workbench.continue_generation': '继续生成',
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
@@ -277,6 +278,10 @@ const mountView = () => mount(CustomFeatures, {
       'a-select': {
         template: '<div><slot /></div>',
       },
+      'a-segmented': {
+        props: ['options'],
+        template: '<div class="segmented-stub"><span v-for="option in options" :key="option.value">{{ option.label }}</span></div>',
+      },
       'a-slider': true,
       'a-input-number': true,
     },
@@ -393,6 +398,17 @@ describe('CustomFeatures advanced video effects', () => {
 
     expect(wrapper.find('.h3-audio-stub').exists()).toBe(true)
     expect(wrapper.text()).toContain('<Audio 1>')
+  })
+
+  it('does not expose first-last mode switching during H3 extension', () => {
+    workbench = createMinimaxWorkbench()
+    workbench.h3IsExtension.value = true
+    workbench.minimaxH3Mode.value = 'ref2v'
+
+    const wrapper = mountView()
+
+    expect(wrapper.find('.segmented-stub').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('首尾帧')
   })
 })
 

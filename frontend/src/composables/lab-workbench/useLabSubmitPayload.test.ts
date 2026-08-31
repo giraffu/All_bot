@@ -277,21 +277,18 @@ describe('useLabSubmitPayload', () => {
     expect(harness.submitTask.mock.calls.at(-1)?.[0].inputs).not.toHaveProperty('lora_items')
   })
 
-  it('submits H3 continuation with only the new client end frame', async () => {
+  it('forces H3 continuation to video reference when stale state requests first-last mode', async () => {
     const harness = createHarness('minimax_h3')
     harness.prompt.value = 'continue into a quiet close-up'
     harness.minimaxH3Mode.value = 'flf2v'
     harness.h3PrevTaskId.value = 'h3-parent'
-    harness.uploadedReferences.value = [
-      { ...refImage('new-end.png'), width: 1280, height: 720 },
-    ]
 
     await harness.handleSubmit()
 
     expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
-      task_type: 'minimax_h3_flf2v',
+      task_type: 'minimax_h3_ref2v',
       inputs: expect.objectContaining({
-        images: ['new-end.png'],
+        images: [],
         minimax_h3_prev_task_id: 'h3-parent',
       }),
     }), 'lab.cards.minimax_h3_title')

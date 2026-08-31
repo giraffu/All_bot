@@ -87,7 +87,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypatch):
+async def test_h3_extension_entry_opens_video_reference_settings_without_mode_choice(monkeypatch):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
     monkeypatch.setattr(
@@ -140,7 +140,58 @@ async def test_h3_extension_entry_locks_owned_tail_and_offers_two_modes(monkeypa
         for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert callbacks == ["h3ext_mode_ref2v", "h3ext_mode_flf2v"]
+    assert "已载入上一段末尾约 5 秒作为视频参考" in reply.await_args.args[1]
+    assert callbacks == [
+        "avp_duration_5",
+        "avp_duration_10",
+        "avp_duration_15",
+        "avp_preset_preview",
+        "avp_preset_small",
+        "avp_preset_standard",
+        "avp_preset_hd",
+        "avp_aspect_16:9",
+        "avp_aspect_9:16",
+        "avp_aspect_1:1",
+        "avp_aspect_4:3",
+        "avp_aspect_3:4",
+        "avp_settings_done",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_h3_extension_legacy_first_last_callback_falls_back_to_video_reference():
+    data = {
+        "mode": "ref2v",
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "images": [],
+        "reference_descriptions": [],
+        "reference_video": "/tmp/owned-tail.mp4",
+        "extension_start_frame": "/tmp/owned-tail.png",
+        "is_extension": True,
+        "runtime_profiles": {
+            "ref2v": {"main_model": "official", "addon_items": []},
+        },
+    }
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
+    query = SimpleNamespace(
+        data="h3ext_mode_flf2v",
+        answer=AsyncMock(),
+        message=object(),
+    )
+
+    state = await fsm.extension_mode_callback(
+        SimpleNamespace(callback_query=query), context
+    )
+
+    assert state == AdvancedVideoProState.WAIT_SETTINGS
+    assert data["mode"] == "ref2v"
+    assert data["images"] == []
+    query.answer.assert_awaited_once_with(
+        "首尾帧续写已取消，已切换为视频参考续写。",
+        show_alert=True,
+    )
 
 
 @pytest.mark.asyncio
