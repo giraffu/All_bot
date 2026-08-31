@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -293,6 +294,18 @@ def load_verified_manifest(path: Path) -> dict[str, Any]:
     return manifest
 
 
+def collect_copy_results(futures: Iterable[Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Allow a frozen batch to finish when individual historical keys are absent."""
+    completed: list[dict[str, Any]] = []
+    failures: Counter[str] = Counter()
+    for future in as_completed(futures):
+        try:
+            completed.append(future.result())
+        except Exception as exc:
+            failures[type(exc).__name__] += 1
+    return completed, dict(sorted(failures.items()))
+
+
 def command_plan(args: argparse.Namespace) -> None:
     import asyncio
 
@@ -329,9 +342,8 @@ def command_copy(args: argparse.Namespace) -> None:
             )
             for item in objects
         ]
-        for future in as_completed(futures):
-            results.append(future.result())
-    print(json.dumps({"completed": len(results), "bytes": sum(item["bytes"] for item in results), "manifest_sha256": manifest["manifest_sha256"]}))
+        results, failures = collect_copy_results(futures)
+    print(json.dumps({"completed": len(results), "bytes": sum(item["bytes"] for item in results), "failures": failures, "manifest_sha256": manifest["manifest_sha256"]}))
 
 
 def main() -> None:
