@@ -11,6 +11,9 @@ ENTRYPOINT_SCRIPT = Path("workers/runpod_runtime/scripts/runpod_entrypoint.sh")
 BAKED_ENTRYPOINT_SCRIPT = Path(
     "workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh"
 )
+EMBEDDED_TEST_AGENT_SCRIPT = Path(
+    "workers/runpod_runtime/scripts/runpod_embedded_test_agent.sh"
+)
 PROFILE_DOCKERFILE = Path("workers/runpod_profiles/img2img_lora/Dockerfile")
 PROFILE_LOCAL_DOCKERFILE = Path(
     "workers/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
@@ -208,8 +211,33 @@ def test_scail2_flex_artifact_is_a_restricted_union_runtime():
 
 
 def test_runpod_entrypoint_script_has_valid_bash_syntax():
-    for path in (ENTRYPOINT_SCRIPT, BAKED_ENTRYPOINT_SCRIPT):
+    for path in (
+        ENTRYPOINT_SCRIPT,
+        BAKED_ENTRYPOINT_SCRIPT,
+        EMBEDDED_TEST_AGENT_SCRIPT,
+    ):
         subprocess.run(["bash", "-n", str(path)], check=True)
+
+
+def test_ltx25_embedded_test_worker_is_narrow_and_test_isolated():
+    script = EMBEDDED_TEST_AGENT_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'SUPPORTED_TASK_TYPES="${RUNPOD_TEST_SUPPORTED_TASK_TYPES:-ltx25_video_upscale}"' in script
+    assert 'POOL_RUNTIME_PROFILE="${RUNPOD_TEST_RUNTIME_PROFILE:-ltx25_video_upscale}"' in script
+    assert 'MINIO_INPUT_BUCKET="$bucket"' in script
+    assert 'MINIO_RESULT_BUCKET="$bucket"' in script
+    assert 'COMFY_API_URL="http://127.0.0.1:8188"' in script
+    assert 'POOL_MANAGED="false"' in script
+    assert "RUNPOD_TEST_CENTRAL_API_URL" in script
+    assert "RUNPOD_TEST_AGENT_SECRET_TOKEN" in script
+    assert "RUNPOD_TEST_MINIO_ACCESS_KEY" in script
+    assert "RUNPOD_TEST_MINIO_SECRET_KEY" in script
+
+    for entrypoint in (ENTRYPOINT_SCRIPT, BOOTSTRAP_SCRIPT):
+        text = entrypoint.read_text(encoding="utf-8")
+        assert "runpod_embedded_test_agent.sh" in text
+        assert "RUNPOD_EMBEDDED_TEST_AGENT_ENABLED" in text
+        assert "EMBEDDED_TEST_AGENT_PID" in text
 
 
 def test_runpod_runtime_requires_baked_agent_and_never_clones_allbot_at_startup():

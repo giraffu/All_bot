@@ -41,12 +41,12 @@ mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_C
 shutdown_children() {
     local status="${1:-0}"
     trap - INT TERM
-    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+    for pid in "${EMBEDDED_TEST_AGENT_PID:-}" "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
         if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
             kill "$pid" >/dev/null 2>&1 || true
         fi
     done
-    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+    for pid in "${EMBEDDED_TEST_AGENT_PID:-}" "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
         if [ -n "$pid" ]; then
             wait "$pid" >/dev/null 2>&1 || true
         fi
@@ -175,13 +175,22 @@ done
 python3 "$ROOT_DIR/comfy_agent/agent_main.py" &
 AGENT_PID="$!"
 
-echo "Process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID:-external}"
-set +e
-if [ -n "${COMFY_PID:-}" ]; then
-    wait -n "$AGENT_PID" "$RELAY_PID" "$COMFY_PID"
-else
-    wait -n "$AGENT_PID" "$RELAY_PID"
+EMBEDDED_TEST_AGENT_PID=""
+if [ "${RUNPOD_EMBEDDED_TEST_AGENT_ENABLED:-false}" = "true" ]; then
+    bash "$ROOT_DIR/scripts/runpod_embedded_test_agent.sh" &
+    EMBEDDED_TEST_AGENT_PID="$!"
 fi
+
+echo "Process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID:-external} embedded_test=${EMBEDDED_TEST_AGENT_PID:-disabled}"
+managed_pids=("$AGENT_PID" "$RELAY_PID")
+if [ -n "${COMFY_PID:-}" ]; then
+    managed_pids+=("$COMFY_PID")
+fi
+if [ -n "$EMBEDDED_TEST_AGENT_PID" ]; then
+    managed_pids+=("$EMBEDDED_TEST_AGENT_PID")
+fi
+set +e
+wait -n "${managed_pids[@]}"
 supervised_status="$?"
 set -e
 

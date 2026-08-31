@@ -70,10 +70,35 @@ runner 在目标 heartbeat 后先把新 agent 设为 disabled，仅在提交这�
 只读基线，不能成为 cleanup 目标。验收后还要回读 provider 和 Central，确认测试 Pod
 与 agent heartbeat 均无残留。
 
+### 3.1 正式 Pod 与测试 Worker 并存
+
+Dashboard 手工创建 `ltx25_video_upscale` 正式 Pod 时，Pod 内始终启动正式 consumer；
+它使用 `runpod_prod_ltx25_video_upscale_manual_NN`、prod Central 和
+`user-data-prod`。同一 Pod 还启动一个窄化的测试 consumer，使用
+`runpod_test_ltx25_video_upscale_<pod-id>`、test Central 和 `user-data-test`，只
+声明 `ltx25_video_upscale`。测试 consumer 关闭 prefetch/pipeline，并标记
+`POOL_MANAGED=false`，因此不会成为正式 autoscaler 容量，也不会消费正式任务。
+
+两个 consumer 只共享 Pod loopback 上的 ComfyUI 和物理 GPU 队列；各自使用独立
+relay 端口、spool、agent identity、Central 与对象存储。不得为了测试开放公网
+8188、复用正式 agent ID，或把 test Central 配成正式 Central。正式创建契约会对
+test Central URL 和两组 RunPod secret reference fail closed；如果测试配置缺失，
+整个 Pod 创建在 provider sanity check 阶段失败，不能退化成只有正式 Worker 的
+半配置状态。
+
+因此人工操作只需要在正式 Dashboard 的 RunPod 管理中新增
+“LTX-2.5 IC V2V / 视频高清化”。Pod 完成模型同步并启动后，应分别在 prod/test
+Central 回读两个 heartbeat；无需创建 cloud-test Pod、填写公网 ComfyUI 地址或在
+测试主机部署临时隧道。没有实际创建 Pod 时，只能验证请求渲染和镜像契约，不能声称
+测试 Worker 已在线或 GPU 任务已通过。
+
 ## 4. 发布红线与验证
 
 模型准备、镜像构建和 Git 提交不等于部署。创建 RunPod/LAN Worker、上传模型、
 修改 test/prod env 或开放入口仍属于 GPU/生产 mutation，必须由用户明确确认。
+正式 Dashboard 环境还必须将 `RUNPOD_CLOUD_TEST_CENTRAL_API_URL` 投影给受控
+RunPod operator，并把 `ltx25_video_upscale` 加入 verified profile allowlist；
+`RUNPOD_RELEASE_PROFILE_PINS_JSON` 中的 LTX25 image 必须为 exact digest。
 
 最小验证包括 task registry、Central request、dispatcher、workflow mapping/
 patcher、ffmpeg 输入规范化、Web 载荷、Bot 菜单配置、RunPod pod request、前端构建

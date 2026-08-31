@@ -1820,6 +1820,26 @@ class RunPodProdWorkerRunner:
             expected_env["COMFY_EXTRA_ARGS"] = (
                 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
             )
+        if spec["runpod_task_type"] == PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE:
+            expected_env.update(
+                {
+                    "RUNPOD_EMBEDDED_TEST_AGENT_ENABLED": "true",
+                    "RUNPOD_TEST_AGENT_ID_PREFIX": (
+                        "runpod_test_ltx25_video_upscale"
+                    ),
+                    "RUNPOD_TEST_CENTRAL_API_URL": (
+                        target_settings.worker_central_url_cloud_test
+                    ),
+                    "RUNPOD_TEST_MINIO_BUCKET": "user-data-test",
+                    "RUNPOD_TEST_SUPPORTED_TASK_TYPES": (
+                        "ltx25_video_upscale"
+                    ),
+                    "RUNPOD_TEST_RUNTIME_PROFILE": (
+                        "ltx25_video_upscale"
+                    ),
+                    "RUNPOD_TEST_LOCAL_RELAY_PORT": "8014",
+                }
+            )
         return expected_env
 
     def _expected_prod_gpu_type_ids(
@@ -1943,6 +1963,36 @@ class RunPodProdWorkerRunner:
                 failures.append(f"{key} must use prod RunPod secret reference")
             if not value.startswith("{{ RUNPOD_SECRET_"):
                 failures.append(f"{key} must not contain an inline secret")
+
+        if env.get("RUNPOD_EMBEDDED_TEST_AGENT_ENABLED") == "true":
+            test_expected_refs = {
+                "RUNPOD_TEST_AGENT_SECRET_TOKEN": (
+                    target_settings.agent_secret_token_ref
+                ),
+                "RUNPOD_TEST_MINIO_ACCESS_KEY": (
+                    target_settings.minio_access_key_ref
+                ),
+                "RUNPOD_TEST_MINIO_SECRET_KEY": (
+                    target_settings.minio_secret_key_ref
+                ),
+            }
+            for key, expected in test_expected_refs.items():
+                value = str(env.get(key) or "")
+                if value != expected:
+                    failures.append(f"{key} must use test RunPod secret reference")
+                if not value.startswith("{{ RUNPOD_SECRET_"):
+                    failures.append(f"{key} must not contain an inline secret")
+            test_central = str(env.get("RUNPOD_TEST_CENTRAL_API_URL") or "")
+            if not test_central or "example.com" in test_central:
+                failures.append(
+                    "RUNPOD_TEST_CENTRAL_API_URL must be an explicit test Central URL"
+                )
+            if test_central.rstrip("/") == str(
+                target_settings.worker_central_url_cloud_prod
+            ).rstrip("/"):
+                failures.append(
+                    "RUNPOD_TEST_CENTRAL_API_URL must not equal prod Central"
+                )
 
     def _render_summary(self, render: dict[str, Any]) -> dict[str, Any]:
         body = render.get("json") or {}

@@ -65,6 +65,11 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - Dashboard 手动池 profile catalog 包含独立 `ltx_t2v`，对应
   `ltx_t2v,ltx_t2v_ic`。创建后的 worker 默认 disabled，支持开启、暂停、重启、
   锁定和删除；该 profile 的 `autoscaler_enabled=false`，不会被自动扩缩容。
+- Dashboard 手动池还包含 `ltx25_video_upscale`，同样只允许手工新增且不参加
+  autoscaler。它的正式 Pod 内同时运行 prod/test 两个独立 consumer：prod consumer
+  使用正式 Central/R2，test consumer 仅使用 test Central/`user-data-test`，二者只
+  共享 loopback ComfyUI。这个 profile 不公开 8188，也不需要 Pod 外测试 agent；
+  test Central URL 或 test secret reference 缺失时，正式创建请求 fail closed。
 - Dashboard 的 `RUNPOD_RELEASE_PROFILE_PINS_JSON` 必须与管理 profile catalog
   派生的 image env key 集合精确一致，且每个值都是
   `repository@sha256:<digest>`。`deploy/service-env-contract.yml` 和

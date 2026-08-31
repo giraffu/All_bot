@@ -512,6 +512,37 @@ class RunPodPodRequestBuilder:
             env["AGENT_ID"] = env_config["agent_id"]
             env["AGENT_ID_PREFIX"] = env_config["agent_id"]
             env["POOL_IMAGE_REF"] = self.prod_image_name_for(profile)
+            if profile.task_type == "ltx25_video_upscale":
+                env.update(
+                    {
+                        "RUNPOD_EMBEDDED_TEST_AGENT_ENABLED": "true",
+                        "RUNPOD_TEST_AGENT_ID_PREFIX": profile.agent_id_prefix,
+                        "RUNPOD_TEST_CENTRAL_API_URL": (
+                            self.settings.worker_central_url_cloud_test
+                        ),
+                        "RUNPOD_TEST_AGENT_SECRET_TOKEN": (
+                            self.settings.agent_secret_token_ref
+                        ),
+                        "RUNPOD_TEST_MINIO_ENDPOINT": (
+                            self.settings.minio_endpoint
+                            or "<RUNPOD_SECRET:MINIO_ENDPOINT>"
+                        ),
+                        "RUNPOD_TEST_MINIO_ACCESS_KEY": (
+                            self.settings.minio_access_key_ref
+                        ),
+                        "RUNPOD_TEST_MINIO_SECRET_KEY": (
+                            self.settings.minio_secret_key_ref
+                        ),
+                        "RUNPOD_TEST_MINIO_BUCKET": "user-data-test",
+                        "RUNPOD_TEST_SUPPORTED_TASK_TYPES": (
+                            "ltx25_video_upscale"
+                        ),
+                        "RUNPOD_TEST_RUNTIME_PROFILE": (
+                            "ltx25_video_upscale"
+                        ),
+                        "RUNPOD_TEST_LOCAL_RELAY_PORT": "8014",
+                    }
+                )
         if profile.task_type == "wan22_video_v2":
             env["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] = format_seconds_env(
                 self.settings.wan22_video_v2_completion_timeout_seconds

@@ -16,7 +16,8 @@ from dashboard.backend.services.runpod_admin_commands import (
 @pytest.fixture(autouse=True)
 def _release_profile_pins(monkeypatch):
     pins = {
-        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:"
+        + format(index % 16, "x") * 64
         for index, image_env in enumerate(
             sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
             start=1,
@@ -25,7 +26,7 @@ def _release_profile_pins(monkeypatch):
     monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
     monkeypatch.setenv(
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES",
-        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,minimax_h3,pornmaster_flux2_edit_bf16",
+        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,ltx25_video_upscale,minimax_h3,pornmaster_flux2_edit_bf16",
     )
 
 
@@ -353,7 +354,8 @@ def test_operation_env_pins_release_profile_images_over_stale_container_env(
 ):
     builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
     pins = {
-        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:"
+        + format(index % 16, "x") * 64
         for index, image_env in enumerate(
             sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
             start=1,
