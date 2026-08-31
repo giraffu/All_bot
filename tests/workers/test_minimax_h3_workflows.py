@@ -86,7 +86,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
         assert workflow["3"]["inputs"] == {
             "model": ["2", 0],
             "shift_video": 12.0,
-            "shift_audio": 3.0,
+            "shift_audio": 7.0,
         }
         assert workflow["7"]["class_type"] == "ReservedVRAMSetter"
         assert workflow["30"]["class_type"] == "MiniMaxH3ImageToVideo"
@@ -100,7 +100,7 @@ def test_minimax_h3_api_workflows_are_deterministic():
             "inputs": {
                 "model": ["7", 0],
                 "scheduler": "simple",
-                "steps": 7,
+                "steps": 8,
                 "denoise": 1.0,
             },
             "class_type": "BasicScheduler",
@@ -186,12 +186,14 @@ def test_minimax_h3_patcher_without_addon_uses_10eros_beta4_native_turbo_path():
     assert patched["8"]["inputs"]["lora_name"] == LIGHTX2V_LORA
     assert "9" not in patched
     assert patched["2"]["inputs"]["model"] == ["1", 0]
+    assert patched["3"]["inputs"]["shift_video"] == 12.0
+    assert patched["3"]["inputs"]["shift_audio"] == 7.0
     assert patched["33"]["inputs"]["sampler_name"] == "euler"
     assert patched["34"] == {
         "inputs": {
             "model": ["7", 0],
             "scheduler": "simple",
-            "steps": 7,
+            "steps": 8,
             "denoise": 1.0,
         },
         "class_type": "BasicScheduler",

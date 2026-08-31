@@ -50,7 +50,7 @@ def build(task_type: str) -> dict:
             "MiniMaxH3SigmaShift",
             model=["2", 0],
             shift_video=12.0,
-            shift_audio=7.0 if is_ref2v else 3.0,
+            shift_audio=7.0,
         ),
         "7": _node(
             "ReservedVRAMSetter",
@@ -81,7 +81,7 @@ def build(task_type: str) -> dict:
             "BasicScheduler",
             model=["7", 0],
             scheduler="simple",
-            steps=8 if is_ref2v else 7,
+            steps=8,
             denoise=1.0,
         ),
         "35": _node(
