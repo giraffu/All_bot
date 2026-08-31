@@ -778,3 +778,17 @@ python3 scripts/doc_quality_checker.py
 
 部署后再做小批量真实对象验收、断点重跑、NAS 离线、校验错误、Range、容量告警
 和两轮缺失确认演练。生产迁移必须按“热 → 最近冷 → 更早冷”逐批执行。
+
+### 数据库快照驱动的独立 NAS 备份
+
+`scripts/r2_history_snapshot_backup.py` 是一次性/周期性的独立备份工具，不接入
+`media_archive_outbox`、Central、Web 或任何 R2 迁移、退役与删除开关。先将受保护的
+PostgreSQL dump 恢复到隔离的临时数据库，再用 `plan` 读取其 `History.input_file`、
+`output_file` 与 `extra_outputs.*.path`，生成 0600 的冻结 manifest。`copy` 只消费该
+manifest：按 R2 key 原样写入独立 NAS 根目录，用 SQLite 断点状态保存大小、ETag、SHA-256
+和失败类；下载前后均 HEAD，流式 SHA-256 后以 `.part` 原子改名。它绝不写业务数据库、
+不修改 R2、也不将 NAS 回执视为删除授权。
+
+配置、manifest 和 state 均须放在受限目录，R2 凭据只用 `env:NAME` 引用。首次运行固定
+manifest 的小批 canary，限速和并发从配置读取；完成基线后，必须以更新的数据库快照另立
+增量 manifest，不能把旧快照描述成当前全量覆盖。
