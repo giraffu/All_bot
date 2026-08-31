@@ -188,6 +188,53 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _verify_manifest_file(path: Path, expected_sha256: str) -> None:
+    if len(expected_sha256) != 64 or _sha256_file(path) != expected_sha256:
+        raise ValueError("frozen manifest file SHA-256 is invalid")
+
+
+def iter_manifest_objects(path: Path) -> Iterable[dict[str, Any]]:
+    """Stream the canonical ``objects`` array without retaining the whole plan."""
+    marker = '"objects":['
+    decoder = json.JSONDecoder()
+    buffer = ""
+    found = False
+    exhausted = False
+    with path.open(encoding="utf-8") as stream:
+        while True:
+            if not exhausted and len(buffer) < 2 * 1024 * 1024:
+                chunk = stream.read(1024 * 1024)
+                exhausted = not chunk
+                buffer += chunk
+            if not found:
+                marker_index = buffer.find(marker)
+                if marker_index < 0:
+                    if exhausted:
+                        raise ValueError("manifest objects array is missing")
+                    buffer = buffer[-len(marker) :]
+                    continue
+                buffer = buffer[marker_index + len(marker) :]
+                found = True
+            buffer = buffer.lstrip()
+            if buffer.startswith("]"):
+                return
+            if buffer.startswith(","):
+                buffer = buffer[1:].lstrip()
+            try:
+                item, end = decoder.raw_decode(buffer)
+            except json.JSONDecodeError:
+                if exhausted:
+                    raise ValueError("manifest object is truncated") from None
+                chunk = stream.read(1024 * 1024)
+                exhausted = not chunk
+                buffer += chunk
+                continue
+            if not isinstance(item, dict) or not isinstance(item.get("key"), str):
+                raise ValueError("manifest object is invalid")
+            yield item
+            buffer = buffer[end:]
+
+
 def _init_state(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     conn = sqlite3.connect(path, timeout=30)
@@ -315,26 +362,45 @@ def command_plan(args: argparse.Namespace) -> None:
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     target.write_bytes(_canonical_json(manifest) + b"\n")
     os.chmod(target, 0o600)
-    print(json.dumps({"objects": len(manifest["objects"]), "rejected": len(manifest["rejected_references"]), "manifest_sha256": manifest["manifest_sha256"]}))
+    file_sha256 = _sha256_file(target)
+    sidecar = target.with_suffix(target.suffix + ".sha256")
+    sidecar.write_text(file_sha256 + "\n")
+    os.chmod(sidecar, 0o600)
+    print(json.dumps({"objects": len(manifest["objects"]), "rejected": len(manifest["rejected_references"]), "manifest_sha256": manifest["manifest_sha256"], "file_sha256": file_sha256}))
 
 
 def command_copy(args: argparse.Namespace) -> None:
     config = json.loads(Path(args.config).read_text())
-    manifest = load_verified_manifest(Path(args.manifest))
+    manifest_path = Path(args.manifest)
+    _verify_manifest_file(manifest_path, str(config["manifest_file_sha256"]))
+    source_bucket = str(config["source_bucket"])
     root = Path(_resolve_env(str(config["destination_root"]))).expanduser()
     state_path = Path(_resolve_env(str(config["state_path"]))).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     client = _build_r2_client(config)
     workers = max(1, min(16, int(config.get("workers", 4))))
     limiter = BandwidthLimiter(int(config.get("bandwidth_bytes_per_second", 30 * 1024 * 1024)))
-    objects = manifest["objects"][: max(1, args.limit)]
+    state = _init_state(state_path)
+    try:
+        objects = []
+        for item in iter_manifest_objects(manifest_path):
+            status_row = state.execute(
+                "select status from snapshot_objects where object_key=?", (item["key"],)
+            ).fetchone()
+            if status_row and status_row[0] in {"completed", "failed"}:
+                continue
+            objects.append(item)
+            if len(objects) >= max(1, args.limit):
+                break
+    finally:
+        state.close()
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
             pool.submit(
                 copy_one,
                 client,
-                bucket=manifest["source_bucket"],
+                bucket=source_bucket,
                 root=root,
                 key=item["key"],
                 state_path=state_path,
@@ -343,7 +409,7 @@ def command_copy(args: argparse.Namespace) -> None:
             for item in objects
         ]
         results, failures = collect_copy_results(futures)
-    print(json.dumps({"completed": len(results), "bytes": sum(item["bytes"] for item in results), "failures": failures, "manifest_sha256": manifest["manifest_sha256"]}))
+    print(json.dumps({"completed": len(results), "bytes": sum(item["bytes"] for item in results), "failures": failures, "manifest_sha256": config.get("manifest_sha256", "")}))
 
 
 def main() -> None:

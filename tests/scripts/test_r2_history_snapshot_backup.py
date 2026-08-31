@@ -5,6 +5,7 @@ from scripts.r2_history_snapshot_backup import (
     copy_one,
     collect_copy_results,
     extract_snapshot_references,
+    iter_manifest_objects,
     normalize_snapshot_key,
 )
 from concurrent.futures import Future
@@ -122,3 +123,15 @@ def test_copy_batch_records_individual_failure_without_aborting_other_objects() 
 
     assert completed == [{"key": "history/ok.png", "status": "completed", "bytes": 3}]
     assert failures == {"FileNotFoundError": 1}
+
+
+def test_manifest_object_iterator_does_not_need_to_load_the_entire_plan(tmp_path) -> None:
+    manifest = build_manifest(
+        [{"id": 3, "input_file": "history/one.png|history/two.png", "output_file": None, "extra_outputs": {}}],
+        source_bucket="user-data-prod",
+        snapshot_label="snapshot-1",
+    )
+    path = tmp_path / "plan.json"
+    path.write_text(__import__("json").dumps(manifest, sort_keys=True, separators=(",", ":")))
+
+    assert [item["key"] for item in iter_manifest_objects(path)] == ["history/one.png", "history/two.png"]
