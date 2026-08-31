@@ -6,6 +6,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from observer_bot.domain import parse_datetime
+
 
 class StateRepository(Protocol):
     async def get_state(self, key: str) -> dict[str, Any]: ...
@@ -55,20 +57,18 @@ class CentralQueueClient:
         response.raise_for_status()
         return QueueSnapshot.from_payload(response.json())
 
+    async def fetch_worker_outcomes(self, *, window_seconds: int):
+        from observer_bot.worker_error_probe import WorkerOutcomeSnapshot
+
+        response = await self._client.get(
+            f"{self._base_url}/system/worker-outcomes",
+            params={"window_seconds": int(window_seconds)},
+        )
+        response.raise_for_status()
+        return WorkerOutcomeSnapshot.from_payload(response.json())
+
     async def close(self) -> None:
         await self._client.aclose()
-
-
-def _parse_time(raw: Any) -> datetime | None:
-    if not raw:
-        return None
-    try:
-        value = datetime.fromisoformat(str(raw))
-    except ValueError:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 class QueueMonitor:
@@ -160,7 +160,7 @@ class QueueMonitor:
             and state.get("congested")
         )
         is_congested = bool(reasons)
-        last_notification = _parse_time(state.get("last_notification_at"))
+        last_notification = parse_datetime(state.get("last_notification_at"))
         reminder_due = bool(
             is_congested
             and was_congested

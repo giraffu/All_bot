@@ -1,7 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any
+
+
+def parse_datetime(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        value = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 @dataclass(frozen=True)
@@ -16,4 +29,3 @@ class GroupMessage:
     content: str
     sent_at: datetime
     edited_at: datetime | None = None
-

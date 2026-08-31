@@ -232,6 +232,26 @@ class _FakeRedis:
             return sliced
         return [member for member, _score in sliced]
 
+    async def zrangebyscore(self, key, minimum, maximum, withscores=False):
+        minimum = float("-inf") if minimum == "-inf" else float(minimum)
+        maximum = float("inf") if maximum == "+inf" else float(maximum)
+        items = [
+            (member, score)
+            for member, score in sorted(
+                self.sorted_sets.get(key, {}).items(), key=lambda item: item[1]
+            )
+            if minimum <= float(score) <= maximum
+        ]
+        if withscores:
+            return items
+        return [member for member, _score in items]
+
+    async def zremrangebyscore(self, key, minimum, maximum):
+        members = await self.zrangebyscore(key, minimum, maximum)
+        for member in members:
+            self.sorted_sets.setdefault(key, {}).pop(member, None)
+        return len(members)
+
     async def zrem(self, key, member):
         bucket = self.sorted_sets.setdefault(key, {})
         existed = member in bucket
@@ -331,6 +351,10 @@ class _FlakyRedis(_FakeRedis):
     async def publish(self, *args, **kwargs):
         self._record_call("publish")
         return await super().publish(*args, **kwargs)
+
+    async def zadd(self, *args, **kwargs):
+        self._record_call("zadd")
+        return await super().zadd(*args, **kwargs)
 
     async def zpopmin(self, *args, **kwargs):
         self._record_call("zpopmin")
@@ -1570,6 +1594,77 @@ async def test_fail_task_marks_error_removes_running_and_publishes_error():
             }
         ),
     ) in redis.published
+
+
+@pytest.mark.asyncio
+async def test_terminal_tasks_feed_active_worker_outcome_window(monkeypatch):
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    monkeypatch.setattr(queue_manager_module.time, "time", lambda: 2_000.0)
+    heartbeat_key = manager._agent_heartbeat_key("worker-2")
+    await redis.hset(
+        heartbeat_key,
+        mapping={
+            "types": "img2img",
+            "status": "running",
+            "last_seen": 1_999.0,
+        },
+    )
+
+    for task_id, status in (("task-ok", "done"), ("task-bad", "error")):
+        task_key = f"{manager.task_prefix}{task_id}"
+        await redis.hset(
+            task_key,
+            mapping={
+                "status": TaskStatus.RUNNING,
+                "type": TaskType.IMG2IMG,
+                "worker_id": "worker-2",
+                "created_at": 1_900.0,
+            },
+        )
+        await redis.sadd(manager.running_key, task_id)
+        if status == "done":
+            await manager.complete_task(task_id, "outputs/result.png")
+        else:
+            await manager.fail_task(task_id, "boom")
+
+    stats = await manager.get_active_worker_outcome_stats(
+        window_seconds=3600,
+        now=2_001.0,
+    )
+
+    assert stats == [
+        {
+            "worker_id": "worker-2",
+            "status": "running",
+            "total_tasks": 2,
+            "failed_tasks": 1,
+            "failure_rate": 0.5,
+            "failures_by_type": {"img2img": 1},
+            "last_failure_at": 2_000.0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_outcome_telemetry_failure_does_not_reject_terminal_task():
+    redis = _FlakyRedis({"zadd": 3})
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-telemetry-failure"
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": TaskStatus.RUNNING,
+            "type": TaskType.IMG2IMG,
+            "worker_id": "worker-2",
+        },
+    )
+    await redis.sadd(manager.running_key, "task-telemetry-failure")
+
+    await manager.fail_task("task-telemetry-failure", "boom")
+
+    assert redis.hashes[task_key]["status"] == TaskStatus.ERROR
+    assert json.loads(redis.published[-1][1])["status"] == "error"
 
 
 @pytest.mark.asyncio

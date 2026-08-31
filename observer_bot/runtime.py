@@ -99,6 +99,21 @@ async def queue_monitor_job(context) -> None:
         logger.exception("observer queue monitor job failed")
 
 
+async def worker_error_probe_job(context) -> None:
+    settings = context.application.bot_data["settings"]
+    if not settings.worker_probe_enabled:
+        return
+    try:
+        await context.application.bot_data["worker_error_probe"].poll(
+            window_seconds=settings.worker_probe_window_seconds,
+            minimum_tasks=settings.worker_probe_minimum_tasks,
+            minimum_failures=settings.worker_probe_minimum_failures,
+            failure_rate_threshold=(settings.worker_probe_failure_rate_percent / 100.0),
+        )
+    except Exception:
+        logger.exception("observer worker error probe job failed")
+
+
 async def report_tick_job(context) -> None:
     settings = context.application.bot_data["settings"]
     windows = due_report_windows(

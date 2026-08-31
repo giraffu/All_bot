@@ -18,6 +18,7 @@ from app.main_bootstrap import (
 )
 from app.models import (
     SystemStatusResponse,
+    SystemWorkerOutcomesResponse,
     SystemWorkersResponse,
     T2ITaskResponse,
     TaskResponse,
@@ -26,6 +27,7 @@ from app.models import (
 )
 from app.main_response_helpers import (
     build_system_status_response as build_system_status_response_helper,
+    build_system_worker_outcomes_response as build_system_worker_outcomes_response_helper,
     build_system_workers_response as build_system_workers_response_helper,
     cancel_task_or_404 as cancel_task_or_404_helper,
 )
@@ -168,6 +170,17 @@ register_task_result_routes(
 @app.get("/system/workers", response_model=SystemWorkersResponse)
 async def get_system_workers(queue_manager: QueueManagerDep):
     return await build_system_workers_response_helper(queue_manager)
+
+
+@app.get("/system/worker-outcomes", response_model=SystemWorkerOutcomesResponse)
+async def get_system_worker_outcomes(
+    queue_manager: QueueManagerDep,
+    window_seconds: Annotated[int, Query(ge=300, le=86400)] = 3600,
+):
+    return await build_system_worker_outcomes_response_helper(
+        queue_manager,
+        window_seconds=window_seconds,
+    )
 
 
 @app.get("/system/status", response_model=SystemStatusResponse)

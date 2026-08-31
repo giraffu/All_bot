@@ -146,6 +146,22 @@ class SystemWorkersResponse(BaseModel):
     count: int
 
 
+class WorkerOutcomeStatsResponse(BaseModel):
+    worker_id: str
+    status: str
+    total_tasks: int
+    failed_tasks: int
+    failure_rate: float
+    failures_by_type: Dict[str, int] = Field(default_factory=dict)
+    last_failure_at: Optional[float] = None
+
+
+class SystemWorkerOutcomesResponse(BaseModel):
+    window_seconds: int
+    observed_at: float
+    workers: List[WorkerOutcomeStatsResponse]
+
+
 class SystemStatusResponse(BaseModel):
     queue_size: int
     queue_by_type: dict[str, int] = {}

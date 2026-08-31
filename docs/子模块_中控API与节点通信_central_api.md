@@ -79,6 +79,13 @@ sequenceDiagram
 - `/system/status.queue_by_type` 仍表示 Central pending 队列按执行类型的计数；`queue_by_type_details` 是同一 Central 视图的轻量补充，只读扫描 `comfy:queue:pending` 与 `comfy:task:{backend_task_id}` 中的 `type` / `created_at`，按任务类型返回 `pending_count` 与 `max_pending_wait_seconds`。这里的最长等待严格按 pending 任务的 `created_at` 计算，不查询用户订单、低信任免费层或 active registry，也不改变调度顺序。Dashboard `/api/system/status.queue_by_type_details` 仍是更高层聚合口径，包含 active count、低信任免费层与非低信任最长等待等字段。
 - `/system/status.queue_pressure_by_worker_profile` 按共享 Worker 执行池聚合 `supported_task_types`、`pending_count`、`accepting_worker_count` 及 RunPod/本地可接单数量。分母只统计 heartbeat 快照中 `status=idle|running` 且 `control_state=enabled` 的 Worker；同池多个执行类型的 pending 求和，公开和 legacy alias 先归一。该字段供低阶外门用户扣费前准入与 Dashboard “可接单服务器”展示复用。
 - `/system/workers` 会展示每个 worker 的 `control_state`、`control_reason`、`control_updated_at`；`/system/status` 会聚合 `workers_by_control_state`，用于排查“worker 健康但 pending 不被 pop”的场景。
+- `/system/worker-outcomes?window_seconds=3600` 是 Observer 的只读 Worker 失败率
+  聚合 seam。Central 仅在 task `done/error` CAS 首次成功后，按已绑定
+  `worker_id` 写入不含原始错误文本的短期 Redis ZSET 遥测；每个 Worker 最多保留
+  7 天。查询窗口限制为 300..86400 秒，只遍历当前 heartbeat 快照中的 Worker，
+  返回样本数、失败数、失败率、失败任务类型与最近失败时间，不扫描任务主库、
+  Dashboard `worker_logs` 或用户 History，也不参与调度和自动隔离。遥测写入失败是
+  best-effort，不得把已经提交的任务终态改成 Worker 完成回报失败。
 - `/system/status` 与 `/system/workers` 是短缓存快照，不是强一致调度入口。Central API 会对同一 Redis 连接参数与队列 key 组合的队列/worker 快照做约 10 秒短 TTL 缓存，并在刷新中返回短时 stale 快照，避免 Bot、Web 与 Dashboard 并发轮询时重复扫描 Redis 导致状态接口超时或触发 Bot 熔断。低阶外门用户的容量准入明确接受这一快照语义，不新增 Redis 原子预约，极端并发下可短暂越过理论阈值；实际任务分发、Worker `pop`、状态上报与完成回流仍走实时 Redis/HTTP 路径。
 - `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web API 粗状态、Web SSE 兼容路径、Dashboard active task 与 Bot polling 的重复轮询。Redis Pub/Sub 只作为进度快路径；Web SSE 订阅或读取 Pub/Sub 失败时，同一连接会继续用 `/status` 补偿轮询到终态。Central 默认 pending 响应里的 `queue_pos` 仍是全局 0-based 队列位置；调用方显式传 `include_type_position=true` 时，pending 响应会额外返回同任务类型内的 0-based `queue_type_pos`。用户侧展示已降级为低频粗状态：Web 通过 `/api/tasks/{registry_task_id}/status` 每约 15 秒查询并优先展示同任务类型位置，Bot 也默认每约 15 秒 HTTP polling 并优先展示同任务类型位置；二者都在缺少 `queue_type_pos` 时回退全局 `queue_pos`，running 不展示 progress 百分比、不按 progress 反复编辑。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。Redis client 必须通过 `src.services.redis_connection.build_redis_client(...)` 创建，默认带 `socket_connect_timeout=5`、`socket_timeout=5`、`health_check_interval=15`、`socket_keepalive=true` 与 `retry_on_timeout=true`，不要把 `get_redis()` 再改回每请求新建连接或裸 `Redis.from_url(...)` 模式。
@@ -142,6 +149,8 @@ sequenceDiagram
 - 覆盖同一 Worker 第 6 个 task heartbeat-lost 会进入临时 `disabled`，前 5 个和无 `worker_id` 的 legacy zombie 不误隔离其它实例
 - 覆盖未传 `preferred_types` 时旧顺序不变、preferred 优先于更早 fallback、无 preferred 时回退、非子集 422、并发领取不重复，以及 preferred `peek` 不修改队列
 - 覆盖 worker heartbeat GPU pool 元数据能在 `/system/workers` 解析展示
+- 覆盖同一 task 终态只记录一次 Worker outcome，窗口统计只返回当前有 heartbeat
+  的 Worker，并按任务类型聚合失败；遥测异常不能回滚终态
 - 覆盖双槽 worker 下旧任务终态 compare-clear 不会清掉新任务 `current_task_id`
 - 覆盖同一 task claim 重投时 Worker 只创建一个 execution、prompt、finalizer 和 complete，reserved prefetch 不缓存或重复执行活跃 task
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete

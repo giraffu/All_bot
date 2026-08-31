@@ -142,6 +142,8 @@ class QueueManager:
         self.agent_heartbeat_loss_quarantine_threshold = 6
         self.agent_heartbeat_loss_window_seconds = 3600
         self.agent_heartbeat_loss_quarantine_seconds = 1800
+        self.worker_outcome_prefix = "comfy:worker:outcomes:"
+        self.worker_outcome_retention_seconds = 7 * 24 * 60 * 60
         self.ttl = 86400  # 24 hours
 
     @staticmethod
@@ -197,6 +199,127 @@ class QueueManager:
 
     def _agent_heartbeat_loss_key(self, agent_id: str) -> str:
         return f"{self.agent_heartbeat_loss_prefix}{agent_id}"
+
+    def _worker_outcome_key(self, agent_id: str) -> str:
+        digest = hashlib.sha256(agent_id.encode("utf-8")).hexdigest()
+        return f"{self.worker_outcome_prefix}{digest}"
+
+    async def _record_worker_outcome(
+        self,
+        *,
+        task_id: str,
+        event_payload: dict[str, Any],
+    ) -> None:
+        worker_id = str(event_payload.get("worker_id") or "").strip()
+        status = str(event_payload.get("status") or "").strip()
+        if not worker_id or status not in {"done", "error"}:
+            return
+
+        observed_at = time.time()
+        key = self._worker_outcome_key(worker_id)
+        raw_task_type = event_payload.get("task_type") or "unknown"
+        task_type = str(getattr(raw_task_type, "value", raw_task_type))
+        member = json.dumps(
+            {
+                "task_id": task_id,
+                "status": status,
+                "task_type": task_type,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        try:
+            await self._retry_redis_call(
+                "record_worker_outcome_zadd",
+                self.redis.zadd,
+                key,
+                {member: observed_at},
+            )
+            await self._retry_redis_call(
+                "record_worker_outcome_prune",
+                self.redis.zremrangebyscore,
+                key,
+                "-inf",
+                observed_at - self.worker_outcome_retention_seconds,
+            )
+            await self._retry_redis_call(
+                "record_worker_outcome_expire",
+                self.redis.expire,
+                key,
+                self.worker_outcome_retention_seconds,
+            )
+        except Exception:
+            # Outcome telemetry must never turn an already-committed terminal task
+            # into a failed Worker acknowledgement.
+            logger.exception(
+                "Failed to record worker outcome telemetry task_id=%s worker_id=%s",
+                task_id,
+                worker_id,
+            )
+
+    async def get_active_worker_outcome_stats(
+        self,
+        *,
+        window_seconds: int,
+        now: float | None = None,
+    ) -> list[dict[str, Any]]:
+        window_seconds = max(300, min(int(window_seconds), 24 * 60 * 60))
+        observed_at = time.time() if now is None else float(now)
+        cutoff = observed_at - window_seconds
+        workers = await self.get_all_workers()
+        stats: list[dict[str, Any]] = []
+
+        for worker in workers:
+            worker_id = str(worker.get("agent_id") or "").strip()
+            if not worker_id:
+                continue
+            rows = await self._retry_redis_call(
+                "get_worker_outcomes",
+                self.redis.zrangebyscore,
+                self._worker_outcome_key(worker_id),
+                cutoff,
+                observed_at,
+                withscores=True,
+            )
+            failed_tasks = 0
+            failures_by_type: dict[str, int] = {}
+            last_failure_at: float | None = None
+            valid_rows = 0
+            for raw_member, raw_score in rows:
+                try:
+                    payload = json.loads(str(self._decode_redis_value(raw_member)))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                valid_rows += 1
+                if payload.get("status") != "error":
+                    continue
+                failed_tasks += 1
+                task_type = str(payload.get("task_type") or "unknown")
+                failures_by_type[task_type] = failures_by_type.get(task_type, 0) + 1
+                score = float(raw_score)
+                if last_failure_at is None or score > last_failure_at:
+                    last_failure_at = score
+
+            stats.append(
+                {
+                    "worker_id": worker_id,
+                    "status": str(worker.get("status") or "unknown"),
+                    "total_tasks": valid_rows,
+                    "failed_tasks": failed_tasks,
+                    "failure_rate": failed_tasks / valid_rows if valid_rows else 0.0,
+                    "failures_by_type": dict(
+                        sorted(
+                            failures_by_type.items(),
+                            key=lambda item: (-item[1], item[0]),
+                        )
+                    ),
+                    "last_failure_at": last_failure_at,
+                }
+            )
+        return stats
 
     async def _retry_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
         for attempt in range(1, REDIS_TRANSIENT_RETRY_ATTEMPTS + 1):
@@ -348,6 +471,11 @@ class QueueManager:
                     self.running_key,
                     task_id,
                 )
+        if is_terminal:
+            await self._record_worker_outcome(
+                task_id=task_id,
+                event_payload=enriched_event_payload,
+            )
         await self._publish_task_event(task_id, enriched_event_payload)
 
     async def _get_task_type(self, task_id: str) -> Optional[str]:
