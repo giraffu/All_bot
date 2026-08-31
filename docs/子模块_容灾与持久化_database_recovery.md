@@ -98,6 +98,9 @@ sequenceDiagram
 ## 8. 运维与回滚
 
 - 回滚数据库相关改动时，除了回滚 Alembic 版本，还要确认对应版本的恢复逻辑是否仍兼容当前 registry/task 数据。
+- 本地 cloud-prod shadow 每次成功切换后只保留当前数据库和一个 immediate
+  previous 数据库；更早的 previous 数据库不是长期备份。带日期的 dump 文件由
+  `SHADOW_SYNC_RETENTION_DAYS` 独立管理，不能用 previous 数据库替代可校验备份。
 - 若出现启动期迁移失败或恢复失败激增，应优先检查：
   - Alembic 迁移是否与目标代码版本匹配
   - registry 数据结构是否发生不兼容变化

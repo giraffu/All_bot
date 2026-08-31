@@ -108,6 +108,22 @@ def test_dry_run_preserves_local_analytics_tables_before_shadow_switch(tmp_path,
     assert commands.index("pg_restore") < commands.index("ALTER DATABASE")
 
 
+def test_dry_run_prunes_shadow_databases_older_than_immediate_previous(
+    tmp_path,
+    capsys,
+):
+    config = build_config(tmp_path)
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert "SHADOW_PREVIOUS_PREFIX" in commands
+    assert "old_previous_db" in commands
+    assert '"$old_previous_db" != "$SHADOW_PREVIOUS_DB"' in commands
+    assert 'dropdb --force --maintenance-db="$LOCAL_MAINTENANCE_DB" "$old_previous_db"' in commands
+    assert commands.rindex("old_previous_db") > commands.index("rclone sync")
+
+
 def test_local_analytics_preservation_can_be_disabled(tmp_path, capsys):
     config = build_config(
         tmp_path,
