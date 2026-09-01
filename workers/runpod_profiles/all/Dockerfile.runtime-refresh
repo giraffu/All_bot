@@ -1,4 +1,4 @@
-ARG RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
+ARG RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30
 FROM ${RUNTIME_BASE_IMAGE}
 
 ARG ALLBOT_GIT_SHA
@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.description="Dependency-closed baked worker refre
 LABEL allbot.lan.profile="all"
 LABEL allbot.lan.models="external-lan-manifests"
 LABEL allbot.lan.scope="gpu226-production-validation"
-LABEL allbot.lan.runtime-refresh-base="sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33"
+LABEL allbot.lan.runtime-refresh-base="sha256:3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30"
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
