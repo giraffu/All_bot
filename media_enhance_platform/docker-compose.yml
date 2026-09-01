@@ -58,6 +58,28 @@ services:
       retries: 20
     restart: unless-stopped
 
+  test-worker-bridge:
+    profiles: ["test-worker"]
+    build: ./backend
+    command: ["python", "-m", "app.test_worker_bridge"]
+    environment:
+      CLARITY_ENVIRONMENT: local
+      CLARITY_AGENT_TOKEN: ${CLARITY_AGENT_TOKEN}
+      CLARITY_TEST_WORKER_BRIDGE_ENABLED: "true"
+      CLARITY_TEST_WORKER_BRIDGE_PLATFORM_URL: http://backend:8000/api
+      CLARITY_TEST_WORKER_BRIDGE_WORKER_ID: ${CLARITY_TEST_WORKER_BRIDGE_WORKER_ID:-clarity-allbot-test-bridge}
+      CLARITY_TEST_CENTRAL_URL: ${CLARITY_TEST_CENTRAL_URL:-}
+      CLARITY_TEST_CENTRAL_API_TOKEN: ${CLARITY_TEST_CENTRAL_API_TOKEN:-}
+      CLARITY_TEST_INPUT_S3_ENDPOINT_URL: ${CLARITY_TEST_INPUT_S3_ENDPOINT_URL:-}
+      CLARITY_TEST_INPUT_S3_ACCESS_KEY: ${CLARITY_TEST_INPUT_S3_ACCESS_KEY:-}
+      CLARITY_TEST_INPUT_S3_SECRET_KEY: ${CLARITY_TEST_INPUT_S3_SECRET_KEY:-}
+      CLARITY_TEST_INPUT_S3_BUCKET: ${CLARITY_TEST_INPUT_S3_BUCKET:-user-data-test}
+      CLARITY_TEST_INPUT_S3_REGION: ${CLARITY_TEST_INPUT_S3_REGION:-us-east-1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:

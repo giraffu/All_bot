@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Image, LockKeyhole, ScanLine, Upload, Video, WandSparkles } from '@lucide/vue'
+import { ArrowRight, AudioLines, LockKeyhole, ScanLine, Upload, Video, WandSparkles } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -28,7 +28,7 @@ const { t } = useI18n()
         </div>
         <div class="stage-flow"><WandSparkles :size="28" /><b>AI</b></div>
         <div class="stage-card stage-result">
-          <span>4K</span>
+          <span>1080p</span>
           <div class="sharp-landscape"><i></i></div>
           <small>ENHANCED</small>
         </div>
@@ -42,30 +42,30 @@ const { t } = useI18n()
       <h2>{{ t('nav.product') }}</h2>
       <p>{{ t('home.subtitle') }}</p>
     </div>
-    <div class="feature-grid">
-      <article class="feature-card feature-image">
-        <div class="feature-icon"><Image :size="24" /></div>
-        <span class="feature-number">01</span>
-        <h3>{{ t('home.imageTitle') }}</h3>
-        <p>{{ t('home.imageDesc') }}</p>
-        <div class="feature-visual pixels">
-          <span v-for="index in 48" :key="index"></span>
-        </div>
-      </article>
+    <div class="feature-grid video-feature-grid">
       <article class="feature-card feature-video">
         <div class="feature-icon"><Video :size="24" /></div>
-        <span class="feature-number">02</span>
+        <span class="feature-number">01</span>
         <h3>{{ t('home.videoTitle') }}</h3>
         <p>{{ t('home.videoDesc') }}</p>
         <div class="feature-visual filmstrip">
           <i v-for="index in 5" :key="index"></i>
         </div>
       </article>
-      <article class="feature-card feature-frame">
+      <article class="feature-card feature-preserve">
         <div class="feature-icon"><ScanLine :size="24" /></div>
+        <span class="feature-number">02</span>
+        <h3>{{ t('home.preserveTitle') }}</h3>
+        <p>{{ t('home.preserveDesc') }}</p>
+        <div class="feature-visual pixels">
+          <span v-for="index in 48" :key="index"></span>
+        </div>
+      </article>
+      <article class="feature-card feature-audio">
+        <div class="feature-icon"><AudioLines :size="24" /></div>
         <span class="feature-number">03</span>
-        <h3>{{ t('home.frameTitle') }}</h3>
-        <p>{{ t('home.frameDesc') }}</p>
+        <h3>{{ t('home.audioTitle') }}</h3>
+        <p>{{ t('home.audioDesc') }}</p>
         <div class="feature-visual motion-lines">
           <i v-for="index in 7" :key="index"></i>
         </div>

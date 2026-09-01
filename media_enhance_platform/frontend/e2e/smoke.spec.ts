@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 test('public product, pricing and legal pages remain readable', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('让每一帧')
-  await expect(page.getByText('图片高清', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('视频高清', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('图片高清', { exact: true })).toHaveCount(0)
 
   await page.getByRole('button', { name: /EN/ }).click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Bring every frame')
@@ -21,7 +22,7 @@ test('unauthenticated admin route is guarded', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=\/admin$/)
 })
 
-test('register, upload and no-worker queue flow @desktop', async ({ page }) => {
+test('registered user sees the video-only worker contract @desktop', async ({ page }) => {
   await page.goto('/register')
   const email = `playwright-${Date.now()}@example.com`
   await page.getByLabel('邮箱').fill(email)
@@ -29,21 +30,15 @@ test('register, upload and no-worker queue flow @desktop', async ({ page }) => {
   await page.getByRole('button', { name: /注册/ }).click()
   await expect(page).toHaveURL(/\/workspace$/)
 
-  await page.locator('input[type=file]').setInputFiles({
-    name: 'tiny.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURYuk/////4oMRGEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcXFAAoKn+CJAAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAAABJRU5ErkJggg==',
-      'base64',
-    ),
-  })
-  await page.locator('.composer-card').first().getByRole('button', { name: '上传素材' }).click()
-  await expect(page.locator('.selected-file')).toContainText('tiny.png')
-  await page.locator('select').selectOption('4')
-  await expect(page.locator('.quote-row')).toContainText('4 点')
-  await page.getByRole('button', { name: '提交任务' }).click()
-  await expect(page.getByText('等待算力接入')).toBeVisible()
-  await expect(page.locator('.balance-card')).toContainText('96')
+  await expect(page.getByRole('heading', { name: '视频高清工作台' })).toBeVisible()
+  await expect(page.getByText('TEST WORKER', { exact: true })).toBeVisible()
+  await expect(page.getByText('≤ 5s')).toBeVisible()
+  await expect(page.getByText('≤ 40MB')).toBeVisible()
+  await expect(page.locator('input[type=file]')).toHaveAttribute(
+    'accept',
+    'video/mp4,video/quicktime,video/webm',
+  )
+  await expect(page.getByRole('button', { name: '开始视频高清化' })).toBeDisabled()
 })
 
 test('configured administrator can open operations console @desktop', async ({ page }) => {

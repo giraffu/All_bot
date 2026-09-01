@@ -1,6 +1,10 @@
 import pytest
 
-from app.pricing import quote_points
+from app.pricing import public_catalog, quote_points
+
+
+def test_public_catalog_exposes_video_upscale_only() -> None:
+    assert set(public_catalog()["services"]) == {"video_upscale"}
 
 
 def test_image_pricing_is_fixed_by_multiplier() -> None:

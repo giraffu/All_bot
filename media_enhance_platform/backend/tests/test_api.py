@@ -56,6 +56,88 @@ def upload_image(client: TestClient, token: str) -> dict:
     return response.json()
 
 
+def upload_video(
+    client: TestClient,
+    token: str,
+    monkeypatch,
+    *,
+    duration_seconds: float = 5.0,
+    size_bytes: int = 1024,
+) -> dict:
+    from app import api as api_module
+
+    monkeypatch.setattr(
+        api_module,
+        "_probe_video",
+        lambda _path: ("video/mp4", duration_seconds, 672, 384),
+    )
+    response = client.post(
+        "/api/uploads",
+        headers=auth_headers(token),
+        files={"file": ("source.mp4", b"v" * size_bytes, "video/mp4")},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_public_submission_is_video_upscale_only(monkeypatch) -> None:
+    with TestClient(app) as client:
+        token, _ = register(client, "video-only@example.com")
+        image = upload_image(client, token)
+        video = upload_video(client, token, monkeypatch)
+
+        requests = (
+            (image, "image_upscale", 2, "video_upscale_only"),
+            (video, "frame_interpolation", 2, "video_upscale_only"),
+            (video, "video_upscale", 4, "video_upscale_requires_2x"),
+        )
+        for source, task_type, multiplier, expected_detail in requests:
+            response = client.post(
+                "/api/tasks",
+                headers=auth_headers(token),
+                json={
+                    "source_file_id": source["id"],
+                    "task_type": task_type,
+                    "multiplier": multiplier,
+                },
+            )
+            assert response.status_code == 422
+            assert response.json()["detail"] == expected_detail
+
+
+def test_video_upscale_rejects_test_worker_limit_overruns(monkeypatch) -> None:
+    with TestClient(app) as client:
+        token, _ = register(client, "video-limits@example.com")
+        too_long = upload_video(
+            client,
+            token,
+            monkeypatch,
+            duration_seconds=5.01,
+        )
+        too_large = upload_video(
+            client,
+            token,
+            monkeypatch,
+            size_bytes=40 * 1024 * 1024 + 1,
+        )
+
+        for source, expected_detail in (
+            (too_long, "video_upscale_max_5_seconds"),
+            (too_large, "video_upscale_max_40_mb"),
+        ):
+            response = client.post(
+                "/api/tasks",
+                headers=auth_headers(token),
+                json={
+                    "source_file_id": source["id"],
+                    "task_type": "video_upscale",
+                    "multiplier": 2,
+                },
+            )
+            assert response.status_code == 422
+            assert response.json()["detail"] == expected_detail
+
+
 def test_registration_is_independent_and_duplicate_email_is_rejected() -> None:
     with TestClient(app) as client:
         token, user = register(client, "new-user@example.com")
@@ -73,17 +155,17 @@ def test_registration_is_independent_and_duplicate_email_is_rejected() -> None:
         assert duplicate.status_code == 409
 
 
-def test_no_worker_keeps_task_queued_and_cancel_releases_reservation() -> None:
+def test_no_worker_keeps_task_queued_and_cancel_releases_reservation(monkeypatch) -> None:
     with TestClient(app) as client:
         token, _ = register(client, "queued@example.com")
-        source = upload_image(client, token)
+        source = upload_video(client, token, monkeypatch)
         created = client.post(
             "/api/tasks",
             headers=auth_headers(token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
-                "multiplier": 4,
+                "task_type": "video_upscale",
+                "multiplier": 2,
             },
         )
         assert created.status_code == 201, created.text
@@ -91,7 +173,7 @@ def test_no_worker_keeps_task_queued_and_cancel_releases_reservation() -> None:
         assert task["status"] == "queued"
         assert task["status_reason"] == "no_worker_online"
         me = client.get("/api/auth/me", headers=auth_headers(token)).json()
-        assert (me["available_points"], me["reserved_points"]) == (96, 4)
+        assert (me["available_points"], me["reserved_points"]) == (95, 5)
 
         canceled = client.post(
             f"/api/tasks/{task['id']}/cancel", headers=auth_headers(token)
@@ -102,16 +184,16 @@ def test_no_worker_keeps_task_queued_and_cancel_releases_reservation() -> None:
         assert (me["available_points"], me["reserved_points"]) == (100, 0)
 
 
-def test_fake_worker_claim_progress_and_complete_captures_points_once() -> None:
+def test_fake_worker_claim_progress_and_complete_captures_points_once(monkeypatch) -> None:
     with TestClient(app) as client:
         token, _ = register(client, "worker-flow@example.com")
-        source = upload_image(client, token)
+        source = upload_video(client, token, monkeypatch)
         task = client.post(
             "/api/tasks",
             headers=auth_headers(token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
+                "task_type": "video_upscale",
                 "multiplier": 2,
             },
         ).json()
@@ -119,7 +201,7 @@ def test_fake_worker_claim_progress_and_complete_captures_points_once() -> None:
         heartbeat = client.post(
             "/api/worker/heartbeat",
             headers=agent_headers,
-            json={"worker_id": "fake-gpu-1", "capabilities": ["image_upscale"]},
+            json={"worker_id": "fake-gpu-1", "capabilities": ["video_upscale"]},
         )
         assert heartbeat.status_code == 200
         claim = client.post(
@@ -142,7 +224,7 @@ def test_fake_worker_claim_progress_and_complete_captures_points_once() -> None:
         complete = client.post(
             f"/api/worker/attempts/{attempt_id}/complete",
             headers=owned_headers,
-            files={"file": ("result.png", png_bytes((230, 230, 230)), "image/png")},
+            files={"file": ("result.mp4", b"enhanced-video", "video/mp4")},
         )
         assert complete.status_code == 200, complete.text
         result = client.get(
@@ -152,7 +234,7 @@ def test_fake_worker_claim_progress_and_complete_captures_points_once() -> None:
         assert result["progress"] == 100
         assert result["output_file_id"]
         me = client.get("/api/auth/me", headers=auth_headers(token)).json()
-        assert (me["available_points"], me["reserved_points"]) == (98, 0)
+        assert (me["available_points"], me["reserved_points"]) == (95, 0)
 
         admin_login = client.post(
             "/api/auth/login",
@@ -180,21 +262,21 @@ def test_fake_worker_claim_progress_and_complete_captures_points_once() -> None:
             f"/api/admin/tasks/{task['id']}/refund",
             headers=auth_headers(admin_login["access_token"]),
             json={
-                "points": 2,
+                "points": 5,
                 "idempotency_key": f"refund-too-much-{task['id']}",
                 "reason": "must not exceed charge",
             },
         )
         assert excessive.status_code == 409
         me = client.get("/api/auth/me", headers=auth_headers(token)).json()
-        assert (me["available_points"], me["reserved_points"]) == (99, 0)
+        assert (me["available_points"], me["reserved_points"]) == (96, 0)
 
 
-def test_refresh_logout_media_validation_and_ownership() -> None:
+def test_refresh_logout_media_validation_and_ownership(monkeypatch) -> None:
     with TestClient(app) as client:
         owner_token, _ = register(client, "owner@example.com")
         other_token, _ = register(client, "other@example.com")
-        source = upload_image(client, owner_token)
+        source = upload_video(client, owner_token, monkeypatch)
 
         forbidden_download = client.get(
             f"/api/uploads/{source['id']}/download",
@@ -205,7 +287,7 @@ def test_refresh_logout_media_validation_and_ownership() -> None:
             headers=auth_headers(other_token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
+                "task_type": "video_upscale",
                 "multiplier": 2,
             },
         )
@@ -217,7 +299,7 @@ def test_refresh_logout_media_validation_and_ownership() -> None:
             headers=auth_headers(owner_token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
+                "task_type": "video_upscale",
                 "multiplier": 2,
             },
         ).json()
@@ -259,18 +341,18 @@ def test_refresh_logout_media_validation_and_ownership() -> None:
         assert client.post("/api/auth/refresh").status_code == 401
 
 
-def test_expired_lease_gets_a_new_attempt_identity() -> None:
+def test_expired_lease_gets_a_new_attempt_identity(monkeypatch) -> None:
     from app import api as api_module
 
     with TestClient(app) as client:
         token, _ = register(client, "lease@example.com")
-        source = upload_image(client, token)
+        source = upload_video(client, token, monkeypatch)
         task = client.post(
             "/api/tasks",
             headers=auth_headers(token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
+                "task_type": "video_upscale",
                 "multiplier": 2,
             },
         ).json()
@@ -278,7 +360,7 @@ def test_expired_lease_gets_a_new_attempt_identity() -> None:
         client.post(
             "/api/worker/heartbeat",
             headers=agent_headers,
-            json={"worker_id": "lease-worker", "capabilities": ["image_upscale"]},
+            json={"worker_id": "lease-worker", "capabilities": ["video_upscale"]},
         )
         original_lease = api_module.settings.worker_lease_seconds
         try:
@@ -305,6 +387,127 @@ def test_expired_lease_gets_a_new_attempt_identity() -> None:
         assert [item["attempt_number"] for item in current["attempts"]] == [1, 2]
 
 
+def test_bound_provider_attempt_resumes_same_identity_after_lease_expiry(
+    monkeypatch,
+) -> None:
+    from app import api as api_module
+
+    with TestClient(app) as client:
+        token, _ = register(client, "provider-resume@example.com")
+        source = upload_video(client, token, monkeypatch)
+        task = client.post(
+            "/api/tasks",
+            headers=auth_headers(token),
+            json={
+                "source_file_id": source["id"],
+                "task_type": "video_upscale",
+                "multiplier": 2,
+            },
+        ).json()
+        agent_headers = {"X-Agent-Token": "test-agent-token"}
+        owned_headers = {**agent_headers, "X-Worker-Id": "bridge-resume"}
+        client.post(
+            "/api/worker/heartbeat",
+            headers=agent_headers,
+            json={
+                "worker_id": "bridge-resume",
+                "capabilities": ["video_upscale"],
+            },
+        )
+        first = client.post(
+            "/api/worker/tasks/claim",
+            headers=agent_headers,
+            json={"worker_id": "bridge-resume"},
+        ).json()
+        provider_task_id = f"clarity-{task['id']}-{first['attempt_id']}"
+        bound = client.post(
+            f"/api/worker/attempts/{first['attempt_id']}/provider",
+            headers=owned_headers,
+            json={
+                "provider": "allbot-test-central",
+                "provider_task_id": provider_task_id,
+            },
+        )
+        assert bound.status_code == 200, bound.text
+
+        original_lease = api_module.settings.worker_lease_seconds
+        try:
+            api_module.settings.worker_lease_seconds = -1
+            progress = client.post(
+                f"/api/worker/attempts/{first['attempt_id']}/progress",
+                headers=owned_headers,
+                json={"status": "running", "progress": 25},
+            )
+            assert progress.status_code == 200
+            api_module.settings.worker_lease_seconds = original_lease
+            resumed = client.post(
+                "/api/worker/tasks/claim",
+                headers=agent_headers,
+                json={"worker_id": "bridge-resume"},
+            ).json()
+        finally:
+            api_module.settings.worker_lease_seconds = original_lease
+
+        assert resumed["attempt_id"] == first["attempt_id"]
+        assert resumed["attempt_number"] == 1
+        assert resumed["provider_task_id"] == provider_task_id
+
+
+def test_running_bridge_task_can_be_canceled_without_late_resurrection(
+    monkeypatch,
+) -> None:
+    with TestClient(app) as client:
+        token, _ = register(client, "active-cancel@example.com")
+        source = upload_video(client, token, monkeypatch)
+        task = client.post(
+            "/api/tasks",
+            headers=auth_headers(token),
+            json={
+                "source_file_id": source["id"],
+                "task_type": "video_upscale",
+                "multiplier": 2,
+            },
+        ).json()
+        agent_headers = {"X-Agent-Token": "test-agent-token"}
+        owned_headers = {**agent_headers, "X-Worker-Id": "bridge-cancel"}
+        client.post(
+            "/api/worker/heartbeat",
+            headers=agent_headers,
+            json={
+                "worker_id": "bridge-cancel",
+                "capabilities": ["video_upscale"],
+            },
+        )
+        claim = client.post(
+            "/api/worker/tasks/claim",
+            headers=agent_headers,
+            json={"worker_id": "bridge-cancel"},
+        ).json()
+        client.post(
+            f"/api/worker/attempts/{claim['attempt_id']}/progress",
+            headers=owned_headers,
+            json={"status": "running", "progress": 30},
+        )
+
+        canceled = client.post(
+            f"/api/tasks/{task['id']}/cancel", headers=auth_headers(token)
+        )
+        assert canceled.status_code == 200
+        assert canceled.json()["status"] == "canceled"
+        late_progress = client.post(
+            f"/api/worker/attempts/{claim['attempt_id']}/progress",
+            headers=owned_headers,
+            json={"status": "running", "progress": 60},
+        )
+        assert late_progress.status_code == 409
+        current = client.get(
+            f"/api/tasks/{task['id']}", headers=auth_headers(token)
+        ).json()
+        assert current["status"] == "canceled"
+        me = client.get("/api/auth/me", headers=auth_headers(token)).json()
+        assert (me["available_points"], me["reserved_points"]) == (100, 0)
+
+
 def test_admin_role_is_enforced() -> None:
     with TestClient(app) as client:
         token, _ = register(client, "ordinary@example.com")
@@ -323,16 +526,16 @@ def test_admin_role_is_enforced() -> None:
         assert summary.json()["users"] >= 2
 
 
-def test_worker_failure_releases_points_and_admin_retry_reserves_once() -> None:
+def test_worker_failure_releases_points_and_admin_retry_reserves_once(monkeypatch) -> None:
     with TestClient(app) as client:
         token, _ = register(client, "retry@example.com")
-        source = upload_image(client, token)
+        source = upload_video(client, token, monkeypatch)
         task = client.post(
             "/api/tasks",
             headers=auth_headers(token),
             json={
                 "source_file_id": source["id"],
-                "task_type": "image_upscale",
+                "task_type": "video_upscale",
                 "multiplier": 2,
             },
         ).json()
@@ -340,7 +543,7 @@ def test_worker_failure_releases_points_and_admin_retry_reserves_once() -> None:
         client.post(
             "/api/worker/heartbeat",
             headers=agent_headers,
-            json={"worker_id": "fake-gpu-retry", "capabilities": ["image_upscale"]},
+            json={"worker_id": "fake-gpu-retry", "capabilities": ["video_upscale"]},
         )
         claim = client.post(
             "/api/worker/tasks/claim",
@@ -374,7 +577,7 @@ def test_worker_failure_releases_points_and_admin_retry_reserves_once() -> None:
         assert retried.status_code == 200, retried.text
         assert retried.json()["attempts"][-1]["attempt_number"] == 2
         me = client.get("/api/auth/me", headers=auth_headers(token)).json()
-        assert (me["available_points"], me["reserved_points"]) == (98, 2)
+        assert (me["available_points"], me["reserved_points"]) == (95, 5)
 
 
 def test_copyright_complaint_can_be_submitted_without_login() -> None:

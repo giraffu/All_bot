@@ -126,6 +126,11 @@ class WorkerProgressRequest(BaseModel):
     progress: int = Field(ge=0, le=99)
 
 
+class WorkerProviderBindingRequest(BaseModel):
+    provider: str = Field(min_length=2, max_length=80)
+    provider_task_id: str = Field(min_length=4, max_length=180)
+
+
 class WorkerFailureRequest(BaseModel):
     error_code: str = Field(min_length=1, max_length=100)
     error_detail: str = Field(default="", max_length=4000)
