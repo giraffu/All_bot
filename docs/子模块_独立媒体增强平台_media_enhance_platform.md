@@ -9,12 +9,19 @@
 PostgreSQL 数据、MinIO 对象存储和 Worker HTTP 契约。它不复用 AllBot
 主用户、灵石、任务队列、Telegram 对象或数据库表。
 
-本地唯一局域网入口是 `http://<LAN-IP>:8095`。Nginx 代理 `/api`，
-PostgreSQL、MinIO 和后端不发布 LAN 端口。V1 不部署云测试、云正式、
-Cloudflare、RunPod 或 LAN GPU，也不修改现有 Worker 支持列表。
+本地主机入口是 `http://<LAN-IP>:8095`，当前公开 HTTPS 入口是
+<https://wuhanzhenjing.cn/>。公网网关回源到 Nginx，由 Nginx 代理 `/api`；
+PostgreSQL、MinIO 和后端不直接发布 LAN 或公网端口。当前执行仍复用既有 test
+Central 的视频高清 consumer，不等同于建立了独立 cloud-test、cloud-prod、RunPod
+或 LAN GPU 环境，也不修改现有 Worker 支持列表。
 Compose 通过 `CLARITY_ALLOWED_ORIGINS` 接收严格 JSON Origin 白名单；
 本地默认只允许 `http://localhost:8095`，公网入口必须在忽略提交的
 `.env` 中显式列出 HTTPS 根域和 `www` 域名，禁止使用 `*`。
+
+某次发布的 Git SHA、镜像 digest、迁移版本、备份和健康检查属于运行态，保存在
+`/home/hfy/.local/state/allbot/media-enhance-releases/` 与公司运营保险库的网站证据中，
+不写成本文的永久当前值。阿里云 PNVS key、短信签名和模板只从受保护配置文件投影，
+其路径契约见 `docs/company_operations/05_本机私密资料与证据库.md`。
 
 ## 2. 目录与服务
 
@@ -100,8 +107,9 @@ V1 只校验 JSON、关键节点和参数注入，不宣称真实 GPU 画质验�
 
 定价由后端 catalog 下发；套餐购买在 V1 标记“暂未开放”，按钮转客服工单。
 站点页脚展示已核准的 `鄂ICP备2026044153号-1`，并链接工信部备案系统。
-协议与隐私页只是上线前结构草案，不是正式法律意见；公网发布前必须补齐
-运营主体、地址、客服/版权邮箱和审阅后的条款。
+协议与隐私页仍是结构草案，不是正式法律意见；站点虽已公开，运营主体、地址、
+客服/版权邮箱和经审阅条款仍是上线后的高优先级合规补项，不能因页面已存在就视为
+完成法律审阅。
 
 ## 6. 本地启动与验证
 
@@ -114,6 +122,17 @@ prod Central 或 prod bucket。健康检查：
 curl -fsS http://127.0.0.1:8095/health
 curl -fsS http://127.0.0.1:8095/api/health
 ```
+
+已获授权的公网只读验收可另外检查：
+
+```bash
+curl -fsS https://wuhanzhenjing.cn/health
+curl -fsS https://wuhanzhenjing.cn/api/health
+```
+
+健康入口成功只证明对应 Web/API 路由可达。手机号注册还必须使用授权号码完成 PNVS
+真实发送与校验 canary；视频链路还必须单独留存上传、Worker 执行、结果下载和失败退款
+证据。
 
 后端测试覆盖手机号注册、验证码消费/频控/重复绑定、历史邮箱登录、认证/RBAC、视频公开门禁、报价、媒体所有权与校验、账本、退款、
 Worker 租约、provider identity 恢复、bridge 成功/失败/取消、删除审计及无 Worker

@@ -26,6 +26,11 @@ identity-card real-name verification.
 4. Register a normal user by phone or read the legacy local administrator login from
    `.local-admin-credentials`.
 
+The currently operated public entry is `https://wuhanzhenjing.cn/`; it proxies
+to this platform's Nginx/API while PostgreSQL, MinIO and the backend remain
+unpublished. Public deployment records and backups are runtime evidence under
+`~/.local/state/allbot/media-enhance-*`, not stable defaults in this README.
+
 The initializer refuses to overwrite existing credentials. `.env.example`
 documents the required keys but its `CHANGE_ME` values must never be used for
 a shared LAN instance.
@@ -115,8 +120,8 @@ PYTHONPATH=. .venv/bin/python -c \
 
 ## Boundaries
 
-- No cloud-test, cloud-prod, Cloudflare, RunPod or LAN AIO deployment is part
-  of this module change. The optional bridge only consumes an already-operated
+- The public gateway does not turn this module into a cloud-test, cloud-prod,
+  RunPod or LAN AIO deployment. The optional bridge only consumes an already-operated
   test Central and test input bucket after explicit environment configuration.
 - `task_id` identifies the durable business request; `attempt_id` identifies a
   leased execution.
@@ -124,5 +129,6 @@ PYTHONPATH=. .venv/bin/python -c \
   deletes them.
 - Unverified accounts can inspect existing history but cannot upload new source
   media or submit a new task.
-- Terms and privacy pages are structural drafts and must be replaced with
-  reviewed operator-specific text before public launch.
+- Terms and privacy pages are structural drafts. Because the site is already
+  public, replacing them with reviewed operator-specific text is an outstanding
+  high-priority compliance task.
