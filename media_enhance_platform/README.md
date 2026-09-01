@@ -10,10 +10,12 @@ capability: one MP4/MOV/WebM video, at most five seconds and 40 MB. Image
 upscale and frame interpolation remain unavailable to users and are rejected
 again by the API.
 
-New accounts must verify a mainland China mobile number before uploading or
-submitting work. The database retains an HMAC identifier, masked number and
-verification timestamp rather than the plaintext number. This proves control
-of a phone number; it is not identity-card real-name verification.
+New accounts are created with a mainland China mobile number, an SMS code and
+a password; email registration is disabled. Existing email accounts and the
+environment-provisioned administrator retain legacy email login. The database
+stores an HMAC identifier, masked number and verification timestamp rather
+than the plaintext number. This proves control of a phone number; it is not
+identity-card real-name verification.
 
 ## Local LAN start
 
@@ -21,7 +23,7 @@ of a phone number; it is not identity-card real-name verification.
    ignored `.local-admin-credentials`, both with mode `0600`.
 2. Run `docker compose up --build -d`.
 3. Open `http://<this-host-LAN-IP>:8095`.
-4. Register a normal user or read the local administrator login from
+4. Register a normal user by phone or read the legacy local administrator login from
    `.local-admin-credentials`.
 
 The initializer refuses to overwrite existing credentials. `.env.example`
@@ -35,7 +37,10 @@ signature and binding template, then select `aliyun_pnvs`. Use the PNVS
 SMS signatures and templates are not interchangeable. Never commit these
 values. `CLARITY_PHONE_HASH_SECRET` is a separate durable secret: back it up
 and do not rotate it casually because it anchors phone uniqueness without
-storing plaintext numbers.
+storing plaintext numbers. Registration and legacy-account binding challenges
+have separate purposes and cannot be consumed across flows. The API enforces
+per-number/account cooldown and daily limits, a separate requester-IP daily
+limit, and a global daily ceiling to bound SMS cost during abuse.
 
 The site intentionally starts without a GPU worker. Submitted jobs remain
 `queued` with reason `no_worker_online`; reserved points are not captured.

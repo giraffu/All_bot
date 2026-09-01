@@ -22,26 +22,12 @@ test('unauthenticated admin route is guarded', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=\/admin$/)
 })
 
-test('registered user sees the phone gate and video-only worker contract', async ({ page }, testInfo) => {
+test('registration is phone-first and requires an SMS code', async ({ page }, testInfo) => {
   await page.goto('/register')
-  const email = `playwright-${Date.now()}@example.com`
-  await page.getByLabel('邮箱').fill(email)
-  await page.getByLabel('密码').fill('playwright-password-123')
-  await page.getByRole('button', { name: /注册/ }).click()
-  await expect(page).toHaveURL(/\/workspace$/)
-
-  await expect(page.getByRole('heading', { name: '视频高清工作台' })).toBeVisible()
-  await expect(page.getByText('TEST WORKER', { exact: true })).toBeVisible()
-  await expect(page.getByText('≤ 5s')).toBeVisible()
-  await expect(page.getByText('≤ 40MB')).toBeVisible()
-  await expect(page.getByText('验证手机号后开始处理')).toBeVisible()
-  await expect(page.getByPlaceholder('请输入中国大陆手机号')).toBeVisible()
-  await expect(page.locator('input[type=file]')).toHaveAttribute(
-    'accept',
-    'video/mp4,video/quicktime,video/webm',
-  )
-  await expect(page.locator('input[type=file]')).toBeDisabled()
-  await expect(page.getByRole('button', { name: '开始视频高清化' })).toBeDisabled()
+  await expect(page.getByLabel('手机号')).toBeVisible()
+  await expect(page.getByLabel('短信验证码')).toBeVisible()
+  await expect(page.getByRole('button', { name: '发送验证码' })).toBeVisible()
+  await expect(page.getByLabel('邮箱')).toHaveCount(0)
   if (process.env.CLARITY_E2E_SCREENSHOT_DIR) {
     await page.screenshot({
       path: `${process.env.CLARITY_E2E_SCREENSHOT_DIR}/security-${testInfo.project.name}.png`,
@@ -55,7 +41,7 @@ test('configured administrator can open operations console @desktop', async ({ p
   const password =
     process.env.CLARITY_E2E_ADMIN_PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD'
   await page.goto('/login')
-  await page.getByLabel('邮箱').fill(email)
+  await page.getByLabel('手机号或旧账号邮箱').fill(email)
   await page.getByLabel('密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/workspace$/)

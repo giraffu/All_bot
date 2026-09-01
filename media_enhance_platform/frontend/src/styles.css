@@ -240,6 +240,7 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
 .auth-card { padding:38px; border:1px solid var(--line); border-radius:30px; background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025)); box-shadow:0 35px 100px rgba(0,0,0,.35); }
 .auth-card h2 { margin:12px 0 30px; font-size:34px; letter-spacing:-.04em; }.auth-card label { display:flex; flex-direction:column; gap:9px; margin:17px 0; color:#aeb0b7; font-size:12px; }
 .microcopy { color:#757881; font-size:11px; line-height:1.6; }.microcopy a { color:#bdcfff; }.switch-auth { width:100%; margin-top:16px; color:#93969f; font-size:12px; }
+.verification-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }.verification-row label { margin:8px 0; }.code-button { min-width:130px; margin-bottom:8px; white-space:nowrap; }
 
 .narrow-page { width:min(970px,calc(100% - 40px)); }.support-grid { display:grid; grid-template-columns:.8fr 1.2fr; gap:12px; }.panel-card > svg { color:var(--accent); }.panel-card h2 { margin-top:0; }
 .ticket-row { padding:16px 0; border-bottom:1px solid var(--line); }.ticket-row h3 { margin:11px 0 5px; font-size:15px; }.ticket-row p { color:var(--muted); font-size:12px; line-height:1.6; }.ticket-row blockquote { margin:12px 0 0; padding:12px; border-left:2px solid var(--accent); background:rgba(255,255,255,.035); color:#c5c7ce; font-size:12px; }

@@ -7,6 +7,12 @@ interface AuthPayload {
   user: User
 }
 
+interface PhoneChallengePayload {
+  challenge_id: string
+  expires_in: number
+  resend_after: number
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null as User | null,
@@ -33,18 +39,35 @@ export const useAuthStore = defineStore('auth', {
         this.ready = true
       }
     },
-    async login(email: string, password: string) {
+    async login(identifier: string, password: string) {
       const data = await api<AuthPayload>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       })
       setAccessToken(data.access_token)
       this.user = data.user
     },
-    async register(email: string, password: string) {
+    async sendRegistrationCode(phoneNumber: string) {
+      return api<PhoneChallengePayload>('/auth/register/phone/send', {
+        method: 'POST',
+        body: JSON.stringify({ phone_number: phoneNumber }),
+      })
+    },
+    async register(
+      phoneNumber: string,
+      challengeId: string,
+      verifyCode: string,
+      password: string,
+    ) {
       const data = await api<AuthPayload>('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ email, password, accepted_terms: true }),
+        body: JSON.stringify({
+          phone_number: phoneNumber,
+          challenge_id: challengeId,
+          verify_code: verifyCode,
+          password,
+          accepted_terms: true,
+        }),
       })
       setAccessToken(data.access_token)
       this.user = data.user
