@@ -273,7 +273,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
-        "5a38d1e8d3937c5b88e5e85bf3e015a8d8b88bcdde91298749e60aa1b19b299c"
+        "3606bbcc11d8d40c07892b62e380fb4b523cbf7bc578758858295865027d1c8f"
     )
     # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
     # eligible catalog entries; this does not enable public task intake.
