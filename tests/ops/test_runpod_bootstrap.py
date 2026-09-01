@@ -505,7 +505,14 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
 
     assert (
         "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
-        "allbot-gpu-lan-all@sha256:" in dockerfile
+        "allbot-gpu-lan-all@sha256:"
+        "3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30"
+        in dockerfile
+    )
+    assert (
+        'allbot.lan.runtime-refresh-base="sha256:'
+        '3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30"'
+        in dockerfile
     )
     assert "ghcr.io/" not in dockerfile
     assert "docker.io/" not in dockerfile
