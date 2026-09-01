@@ -30,12 +30,12 @@
 | `docs/business/04_BIZ_用户修为与身份权限体系.md` | 用户身份与权限 | user/auth/quota | current | 身份权限 |
 | `docs/business/image_to_image_flow.md` | 图生图业务流 | task registry、FSM/Web、worker patcher | current | 图生图改动 |
 | `docs/business/image_to_video_flow.md` | 图生视频业务流 | registry、FSM/Web、Wan22/LTX worker | current | 视频生成改动 |
-| `docs/company_operations/00_INDEX.md` | 公司运营知识总览与月结闭环 | 专项文档、本机保险库契约、外部平台事实 | current | 公司管理导航 |
+| `docs/company_operations/00_INDEX.md` | 公司运营知识分层、月结闭环与运行日志边界 | 专项文档、本机保险库契约、外部平台事实 | current | 公司管理导航 |
 | `docs/company_operations/01_主体账户与备案.md` | 主体、门户、账号角色与备案登记簿 | 营业执照、平台账户、主管机关登记 | runtime-verification-required | 主体或账户资料 |
-| `docs/company_operations/02_税务申报与合规日历.md` | 税种、期限、申报与回执 | 电子税务局、税法、私密申报台账 | runtime-verification-required | 报税与征期 |
-| `docs/company_operations/03_资金银行与支付对账.md` | 银行、支付结算与四方对账 | 银行/渠道流水、产品订单、会计凭证 | runtime-verification-required | 收付款与对账 |
-| `docs/company_operations/04_会计账簿与成本凭证.md` | 账簿、成本、报销与档案 | 原始凭证、会计账、税务规则 | current | 记账与成本 |
-| `docs/company_operations/05_本机私密资料与证据库.md` | 凭据、证件与证据的本机保管契约 | XDG 私密目录、校验脚本 | runtime-verification-required | 秘密或证件 |
+| `docs/company_operations/02_税务申报与合规日历.md` | 税种、期限、月账季报衔接、申报与回执 | 电子税务局、税法、私密申报台账 | runtime-verification-required | 报税与征期 |
+| `docs/company_operations/03_资金银行与支付对账.md` | 银行、支付结算、提现在途与四方对账 | 银行/渠道流水、产品订单、会计凭证 | runtime-verification-required | 收付款与对账 |
+| `docs/company_operations/04_会计账簿与成本凭证.md` | 账套、分录、月结、成本与凭证档案 | 原始凭证、云会计账、税务规则 | current | 记账、月结与成本 |
+| `docs/company_operations/05_本机私密资料与证据库.md` | 凭据、证件、证据与账务操作日志的本机保管契约 | XDG 私密目录、校验脚本、云账事实 | runtime-verification-required | 秘密、证件或运行日志 |
 | `docs/company_operations/06_网站与AI服务合规.md` | ICP、隐私、算法/模型与 AI 标识 | 工信部/网信办规则、线上页面 | runtime-verification-required | 网站或 AI 合规 |
 
 ## 任务、Bot、Web 与社区
@@ -149,4 +149,4 @@
 | `.codex/skills/frontend-browser-preview/SKILL.md` | 浏览器预览 | Playwright workflow | current | UI 截图 |
 | `.codex/skills/ops-log-monitor/SKILL.md` | 日志监控 | env logs/diagnostics | current | 线上日志 |
 | `.codex/skills/allbot-code-analyzer/SKILL.md` | 静态分析 | analyzer workflow | current | 全局审查 |
-| `.codex/skills/allbot-company-operations/SKILL.md` | 公司运营、财税与私密资料路由 | 公司运营专项文档、XDG 保险库、主管机关 | current | 公司管理、报税、银行/商户或备案 |
+| `.codex/skills/allbot-company-operations/SKILL.md` | 公司运营、财税、账套月结与私密运行日志路由 | 公司运营专项文档、XDG 保险库、主管机关、云账 | current | 公司管理、报税、记账、银行/商户或备案 |
