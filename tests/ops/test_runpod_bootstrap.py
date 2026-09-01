@@ -500,7 +500,8 @@ def test_embedded_test_agent_allows_lan_provider_identity():
 
 def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     dockerfile = LAN_ALL_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
-    catalog = MODULE_CATALOG.read_text(encoding="utf-8")
+    catalog_text = MODULE_CATALOG.read_text(encoding="utf-8")
+    catalog = json.loads(catalog_text)["modules"]
 
     assert (
         "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
@@ -516,8 +517,11 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert 'allbot.lan.profile="all"' in dockerfile
     assert '"ltx25_video_upscale"' in dockerfile
     assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in dockerfile
-    assert '"lan_all_runtime_refresh"' in catalog
-    assert '"workers/runpod_profiles/all/Dockerfile.runtime-refresh"' in catalog
+    runtime_refresh = catalog["lan_all_runtime_refresh"]
+    assert runtime_refresh["dockerfile"] == (
+        "workers/runpod_profiles/all/Dockerfile.runtime-refresh"
+    )
+    assert runtime_refresh["external_base_arg"] == "RUNTIME_BASE_IMAGE"
 
 
 def test_gpu_runtime_refresh_modules_overlay_only_the_canonical_worker_package():
