@@ -44,9 +44,9 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
   扣减、入账、会员、affiliate 与审计同事务/锚点，外部 session 由调用方提交。
 - 取消退款使用根任务扣费事实与 `credit_idempotency_key`；多阶段只扣一次并按根
   身份收口。
-- 价格/权益以 registry/domain config、履约代码和测试为事实源，不从 workflow、
-  Worker override 或旧 History 推断。标准邀请只绑定本次真实新建用户，各阶段按
-  已有流水补到目标值。
+- 内置价格以 domain config 为准；可售卖目录以 `task_pricing_catalog.py` 为源，
+  registry 和 workflow 不是商品目录。
+- 标准邀请只绑定本次真实新建用户，各阶段按已有流水补到目标值。
 - 改密递增 `password_version` 并通知；金额、汇率、merchant、套餐/结算冲突时
   fail fast；Affiliate 缓存只在提交后失效。
 - TON / USDT-TON 游标仅在目标交易成功后前移；USDT 还校验官方 master、目标、

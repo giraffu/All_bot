@@ -58,7 +58,10 @@ export const getLabModeCost = ({
   let defaultCost: number
   if (mode.id === 'edit') {
     defaultCost = uploadedReferenceCount >= 2 ? 6 : 2
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    return getRuntimeTaskPrice(taskType, defaultCost, {
+      engine: taskType === 'img2img_lora' ? 'addon' : 'standard',
+      input_count: Math.max(1, Math.min(2, uploadedReferenceCount)),
+    })
   }
 
   if (mode.id === FREE_EDIT_V3_MODE_ID) {
@@ -67,17 +70,23 @@ export const getLabModeCost = ({
 
   if (mode.id === FREE_EDIT_V2_5_MODE_ID) {
     defaultCost = uploadedReferenceCount >= 2 ? 7 : 3
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    return getRuntimeTaskPrice(taskType, defaultCost, {
+      input_count: Math.max(1, Math.min(2, uploadedReferenceCount)),
+    })
   }
 
   if (mode.id === 'custom_video' || mode.id === 'wan22_video_v2') {
     defaultCost = getWan22VideoV2Cost(wan22ResolutionPreset, duration)
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    return getRuntimeTaskPrice(taskType, defaultCost, {
+      input_count: Math.max(1, Math.min(2, uploadedReferenceCount)),
+      resolution: wan22ResolutionPreset,
+      duration,
+    })
   }
 
   if (mode.id === 'face_video') {
     defaultCost = resolution === '1024' ? 36 : 18
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    return getRuntimeTaskPrice(taskType, defaultCost, { resolution })
   }
 
   if (isLtxLabModeId(mode.id)) {
@@ -88,12 +97,19 @@ export const getLabModeCost = ({
     defaultCost = mode.id === 'ltx_t2v' && hasCharacter
       ? 12 * multiplier
       : 10 * multiplier
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    const modeKey = mode.id === 'ltx_t2v'
+      ? (hasCharacter ? 'character' : 'standard')
+      : (uploadedReferenceCount >= 2 ? 'flf2v' : 'i2v')
+    return getRuntimeTaskPrice(taskType, defaultCost, {
+      mode: modeKey,
+      resolution,
+      duration,
+    })
   }
 
   if (isScail2ModeId(mode.id)) {
     defaultCost = getScail2VideoCost(duration || DEFAULT_VIDEO_DURATION, mode.id)
-    return getRuntimeTaskPrice(taskType, defaultCost)
+    return getRuntimeTaskPrice(taskType, defaultCost, { duration })
   }
 
   return getRuntimeTaskPrice(taskType, mode.baseCost)

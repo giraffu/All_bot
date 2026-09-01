@@ -334,13 +334,18 @@ class MainBotMenuConfigResponse(BaseModel):
 
 
 class TaskPricingConfigRequest(BaseModel):
-    overrides: Dict[str, StrictInt] = Field(default_factory=dict)
+    schema_version: int = 2
+    prices: Optional[Dict[str, StrictInt]] = None
+    # Kept only so an older dashboard bundle can save during a rolling deploy.
+    overrides: Optional[Dict[str, StrictInt]] = None
 
 
 class TaskPricingConfigResponse(BaseModel):
     key: str
+    schema_version: int
+    prices: Dict[str, int]
+    categories: List[Dict[str, Any]]
     overrides: Dict[str, int]
-    items: List[Dict[str, Any]]
     updated_at: Optional[datetime] = None
 
 

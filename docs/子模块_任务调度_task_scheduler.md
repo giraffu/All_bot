@@ -24,7 +24,11 @@
 - `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
-- `src/services/task_pricing_config_service.py`：Web/主 Bot 运行时定价 adapter；以 registry 为完整任务目录，在 `runtime_checkpoints.task_pricing_config:v1` 只保存显式覆盖价
+- `src/domain_config/task_pricing_catalog.py`：当前 Web/主 Bot 可售卖入口、用户条件维度与
+  默认价格变体目录；与包含内部步骤和兼容别名的执行 registry 分离
+- `src/domain_config/task_pricing_matcher.py`：把提交输入归一为价格条件并匹配唯一变体
+- `src/services/task_pricing_config_service.py`：Web/主 Bot 运行时定价 adapter；在
+  `runtime_checkpoints.task_pricing_config:v1` 的 schema v2 中只保存变体 ID 的显式覆盖价
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
 所有 Bot / Web / QQCC / Dashboard 任务都通过启动时显式构造的 `TaskApplication` + dependencies 边界进入调度链，不在上层直接 import 基础设施实现。旧 facade 只保留为必须显式传 dependencies 的测试/兼容适配器。
@@ -123,12 +127,15 @@ sequenceDiagram
 - 最终价随 submission intent、active registry 和账本进入任务快照；运行中任务不受
   后续改价影响，取消、失败与恢复必须按该快照幂等退款，不能重新查询当前价格。
 
-定价事实分为三层，禁止互相复制职责：
+定价事实分为四层，禁止互相复制职责：
 
 1. `task_type_registry.py` 和 dispatcher/domain config 提供版本化的内置默认价与动态算法；
-2. `task_pricing_config_service.py` 只校验、持久化和解析按精确 `task_type` 的固定覆盖价，
-   清空覆盖即恢复第一层，覆盖值 `0` 表示免费；
-3. `TaskApplication` 是唯一最终扣费裁决点。Web 公开入口只下发展示用覆盖值，前端
+2. `task_pricing_catalog.py` 只声明当前可售卖入口、条件维度和 task type 匹配，不把
+   退役功能、懒人 Bot 场景、内部执行步骤或全部 registry 暴露为商品；
+3. `task_pricing_config_service.py` 只校验、持久化和解析价格变体 ID 的固定覆盖价，
+   清空覆盖即恢复第一层，覆盖值 `0` 表示免费；旧 `overrides[task_type]` 只在读取时扩展
+   到仍在售的匹配变体，保存统一写 schema v2；
+4. `TaskApplication` 是唯一最终扣费裁决点。Web 公开入口只下发展示用目录与覆盖值，前端
    不成为计费事实源；Worker/workflow 不读取价格。
 
 默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。input builder 持有可替换的 staging promotion capability，生产 adapter

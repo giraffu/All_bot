@@ -63,10 +63,12 @@ sequenceDiagram
   Web“人物角色图”关闭时，高级图生视频 Pro 的 REF2V 人物图库选择器也随之隐藏；
   该联动不关闭 REF2V 的临时参考图上传能力。
 - “任务定价”通过认证接口 `GET/PUT /api/main-bot/task-pricing` 展示
-  `task_type_registry.py` 的全部任务，支持搜索、设置固定覆盖价或恢复系统价。配置只写
-  `runtime_checkpoints.task_pricing_config:v1` 的显式 overrides；不复制默认价格表，
-  不修改 Worker/workflow。覆盖同时用于 Web 与主 Bot 新任务，运行中任务继续使用提交
-  快照，私有 QQCC 不受该全局覆盖影响。
+  独立可售卖目录，以“总分类 → 用户功能入口 → 输入方式/分辨率/时长/参考素材”等条件
+  级联定位一个价格变体，再设置覆盖价或恢复系统价。页面不平铺 task registry，也不展示
+  退役功能、懒人 Bot 场景、兼容别名和内部执行步骤。配置只写
+  `runtime_checkpoints.task_pricing_config:v1` schema v2 的显式 `prices[variant_id]`；不复制
+  默认价格表，不修改 Worker/workflow。覆盖同时用于 Web 与主 Bot 新任务，运行中任务
+  继续使用提交快照，私有 QQCC 不受该全局覆盖影响。
 - Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
   查询、状态转换、Telegram 投递与事务提交已收口到
   `support_ticket_admin_service.py`。`private_bots.py` 与

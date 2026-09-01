@@ -161,32 +161,87 @@ const buildEntryVisibilityResponse = () => ({
 
 const buildTaskPricingResponse = () => ({
   key: 'task_pricing_config:v1',
+  schema_version: 2,
   updated_at: null,
+  prices: { txt2img: 9 },
   overrides: { txt2img: 9 },
-  items: [
+  categories: [
     {
-      task_type: 'txt2img',
-      public_type: 'txt2img',
-      execution_type: 'txt2img',
-      default_cost: 2,
-      override_cost: 9,
-      effective_cost: 9,
-      pricing_mode: 'fixed',
-      is_generation: true,
-      is_video: false,
-      legacy_alias_of: null,
+      id: 'image_generation',
+      label: '图片生成',
+      offers: [{
+        id: 'txt2img',
+        label: '文生图',
+        description: '文字生成图片',
+        dimensions: [],
+        variants: [{
+          variant_id: 'txt2img',
+          task_types: ['txt2img'],
+          conditions: {},
+          default_cost: 2,
+          override_cost: 9,
+          effective_cost: 9,
+        }],
+      }],
     },
     {
-      task_type: 'image',
-      public_type: 'img2img',
-      execution_type: 'img2img',
-      default_cost: null,
-      override_cost: null,
-      effective_cost: null,
-      pricing_mode: 'dynamic',
-      is_generation: true,
-      is_video: false,
-      legacy_alias_of: 'img2img',
+      id: 'image_editing',
+      label: '图片编辑',
+      offers: [{
+        id: 'free_edit_v2_5',
+        label: '自由 P 图 v2.5',
+        description: '单图编辑与双图融合分别定价',
+        dimensions: [{
+          key: 'input_count',
+          label: '输入图片',
+          options: [
+            { value: '1', label: '1 个输入' },
+            { value: '2', label: '2 个输入' },
+          ],
+        }],
+        variants: [
+          {
+            variant_id: 'free_edit_v2_5::input_count=1',
+            task_types: ['free_edit_v2_5'],
+            conditions: { input_count: '1' },
+            default_cost: 3,
+            override_cost: null,
+            effective_cost: 3,
+          },
+          {
+            variant_id: 'free_edit_v2_5::input_count=2',
+            task_types: ['free_edit_v2_5'],
+            conditions: { input_count: '2' },
+            default_cost: 7,
+            override_cost: null,
+            effective_cost: 7,
+          },
+        ],
+      }],
+    },
+    {
+      id: 'video_generation',
+      label: '视频生成',
+      offers: [{
+        id: 'advanced_video_pro',
+        label: '高级图生视频 Pro',
+        description: '按生成方式、清晰度、时长和参考音视频定价',
+        dimensions: [
+          { key: 'mode', label: '生成方式', options: [{ value: 'i2v', label: '首帧图生视频' }] },
+          { key: 'resolution', label: '清晰度', options: [{ value: 'preview', label: '极速' }] },
+          { key: 'duration', label: '时长', options: [{ value: '5', label: '5 秒' }] },
+          { key: 'reference_audio', label: '参考音频', options: [{ value: 'no', label: '无' }] },
+          { key: 'reference_video', label: '参考视频', options: [{ value: 'no', label: '无' }] },
+        ],
+        variants: [{
+          variant_id: 'advanced_video_pro::mode=i2v::resolution=preview::duration=5::reference_audio=no::reference_video=no',
+          task_types: ['minimax_h3_i2v'],
+          conditions: { mode: 'i2v', resolution: 'preview', duration: '5', reference_audio: 'no', reference_video: 'no' },
+          default_cost: 10,
+          override_cost: null,
+          effective_cost: 10,
+        }],
+      }],
     },
   ],
 })
@@ -207,11 +262,17 @@ describe('MainBotMenuSettings', () => {
     }))
     apiMocks.updateTaskPricingConfig.mockImplementation(async (payload) => ({
       ...buildTaskPricingResponse(),
-      overrides: payload.overrides,
-      items: buildTaskPricingResponse().items.map(item => ({
-        ...item,
-        override_cost: payload.overrides[item.task_type] ?? null,
-        effective_cost: payload.overrides[item.task_type] ?? item.default_cost,
+      prices: payload.prices,
+      categories: buildTaskPricingResponse().categories.map(category => ({
+        ...category,
+        offers: category.offers.map(offer => ({
+          ...offer,
+          variants: offer.variants.map(variant => ({
+            ...variant,
+            override_cost: payload.prices[variant.variant_id] ?? null,
+            effective_cost: payload.prices[variant.variant_id] ?? variant.default_cost,
+          })),
+        })),
       })),
     }))
   })
@@ -258,22 +319,28 @@ describe('MainBotMenuSettings', () => {
     expect(wrapper.find('[data-testid="advanced-video-pro-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="task-pricing-panel"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('文生图')
-    expect(wrapper.text()).toContain('动态计算')
+    expect(wrapper.text()).toContain('系统默认 2 灵石')
+    expect(wrapper.text()).not.toContain('口交黑人')
   })
 
-  it('saves fixed task prices and clears an override back to the system default', async () => {
+  it('selects a child condition and saves only that pricing variant', async () => {
     const wrapper = mount(MainBotMenuSettings)
     await flushPromises()
 
     await wrapper.get('[data-testid="scope-tab-pricing"]').trigger('click')
-    await wrapper.get('[data-testid="task-price-txt2img"]').setValue('12')
-    await wrapper.get('[data-testid="task-price-image"]').setValue('4')
-    await wrapper.get('[data-testid="clear-task-price-txt2img"]').trigger('click')
+    await wrapper.get('[data-testid="pricing-category-select"]').setValue('image_editing')
+    await wrapper.get('[data-testid="pricing-dimension-input_count"]').setValue('2')
+    expect(wrapper.text()).toContain('系统默认 7 灵石')
+    await wrapper.get('[data-testid="selected-task-price"]').setValue('11')
     await wrapper.get('[data-testid="save-task-pricing"]').trigger('click')
     await flushPromises()
 
     expect(apiMocks.updateTaskPricingConfig).toHaveBeenCalledWith({
-      overrides: { image: 4 },
+      schema_version: 2,
+      prices: {
+        txt2img: 9,
+        'free_edit_v2_5::input_count=2': 11,
+      },
     })
     expect(messageMocks.success).toHaveBeenCalledWith('任务定价已保存，Web 与主 Bot 新任务立即统一生效')
   })
