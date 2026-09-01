@@ -31,6 +31,8 @@ ACTIVE_STATUSES = {
     TaskStatus.RUNNING,
     TaskStatus.UPLOADING,
 }
+VIDEO_UPSCALE_MAX_BYTES = 40 * 1024 * 1024
+VIDEO_UPSCALE_MAX_SECONDS = 5.0
 
 
 async def apply_credit_entry(
@@ -89,6 +91,14 @@ async def create_task(
     source = await db.get(MediaFile, source_file_id)
     if user is None or source is None or source.owner_id != user_id or source.deleted_at:
         raise HTTPException(status_code=404, detail="source_not_found")
+    if task_type != TaskType.VIDEO_UPSCALE:
+        raise HTTPException(status_code=422, detail="video_upscale_only")
+    if multiplier != 2:
+        raise HTTPException(status_code=422, detail="video_upscale_requires_2x")
+    if (source.duration_seconds or 0) > VIDEO_UPSCALE_MAX_SECONDS:
+        raise HTTPException(status_code=422, detail="video_upscale_max_5_seconds")
+    if source.size_bytes > VIDEO_UPSCALE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="video_upscale_max_40_mb")
     expected_kind = (
         MediaKind.IMAGE
         if task_type == TaskType.IMAGE_UPSCALE

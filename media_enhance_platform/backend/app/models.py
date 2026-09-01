@@ -190,6 +190,10 @@ class TaskAttempt(Base):
         Enum(TaskStatus, native_enum=False), default=TaskStatus.QUEUED
     )
     worker_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_task_id: Mapped[str | None] = mapped_column(
+        String(180), nullable=True, index=True
+    )
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )

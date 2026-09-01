@@ -61,6 +61,7 @@ from .schemas import (
     WorkerFailureRequest,
     WorkerHeartbeatRequest,
     WorkerProgressRequest,
+    WorkerProviderBindingRequest,
 )
 from .security import (
     create_access_token,
@@ -500,7 +501,9 @@ async def cancel_task(
     )
     if task is None:
         raise HTTPException(status_code=404, detail="task_not_found")
-    if task.status not in {TaskStatus.QUEUED, TaskStatus.CLAIMED}:
+    if task.status not in (
+        {TaskStatus.QUEUED, TaskStatus.CLAIMED} | ACTIVE_STATUSES
+    ):
         raise HTTPException(status_code=409, detail="task_not_cancellable")
     await release_reservation(db, task, reason="user_cancel")
     task.status = TaskStatus.CANCELED
@@ -857,6 +860,13 @@ async def _recover_expired_leases(db: AsyncSession) -> None:
     for attempt in attempts:
         task = await db.get(Task, attempt.task_id)
         if task and task.current_attempt_id == attempt.id:
+            if attempt.provider_task_id:
+                attempt.status = TaskStatus.QUEUED
+                attempt.worker_id = None
+                attempt.lease_expires_at = None
+                task.status = TaskStatus.QUEUED
+                task.status_reason = "provider_recovery"
+                continue
             attempt.status = TaskStatus.FAILED
             attempt.error_code = "lease_expired"
             attempt.retryable = True
@@ -924,6 +934,9 @@ async def worker_claim(
     return {
         "task_id": task.id,
         "attempt_id": attempt.id,
+        "attempt_number": attempt.attempt_number,
+        "provider": attempt.provider,
+        "provider_task_id": attempt.provider_task_id,
         "task_type": task.task_type.value,
         "multiplier": task.multiplier,
         "source": {
@@ -950,11 +963,37 @@ async def _owned_attempt(
     task = await db.get(Task, attempt.task_id)
     if task is None or task.current_attempt_id != attempt.id:
         raise HTTPException(status_code=409, detail="stale_attempt")
+    if (
+        attempt.status not in ACTIVE_STATUSES
+        or task.status not in ACTIVE_STATUSES
+    ):
+        raise HTTPException(status_code=409, detail="attempt_not_active")
     if attempt.lease_expires_at and attempt.lease_expires_at.replace(
         tzinfo=timezone.utc
     ) < datetime.now(timezone.utc):
         raise HTTPException(status_code=409, detail="lease_expired")
     return attempt, task
+
+
+@router.post("/worker/attempts/{attempt_id}/provider")
+async def worker_bind_provider_task(
+    attempt_id: str,
+    payload: WorkerProviderBindingRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    attempt, _task = await _owned_attempt(attempt_id, request, db)
+    if attempt.provider_task_id:
+        if (
+            attempt.provider != payload.provider
+            or attempt.provider_task_id != payload.provider_task_id
+        ):
+            raise HTTPException(status_code=409, detail="provider_binding_conflict")
+        return {"accepted": True, "provider_task_id": attempt.provider_task_id}
+    attempt.provider = payload.provider
+    attempt.provider_task_id = payload.provider_task_id
+    await db.commit()
+    return {"accepted": True, "provider_task_id": attempt.provider_task_id}
 
 
 @router.get("/worker/files/{file_id}")

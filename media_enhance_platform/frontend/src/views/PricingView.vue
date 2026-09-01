@@ -23,9 +23,8 @@ onMounted(async () => (catalog.value = await api<Catalog>('/catalog')))
     </div>
     <div v-if="catalog" class="pricing-content">
       <div class="rate-grid">
-        <article class="rate-card"><span>{{ t('pricing.image') }}</span><h2>2–4 <small>{{ t('common.points') }}</small></h2><p>{{ t('workspace.types.image_upscale') }} · 2× / 4×</p><Check :size="19" /></article>
-        <article class="rate-card featured"><span>{{ t('pricing.duration') }}</span><h2>5 <small>/ 10s</small></h2><p>{{ t('workspace.types.video_upscale') }} · 2×</p><Check :size="19" /></article>
-        <article class="rate-card"><span>{{ t('pricing.duration') }}</span><h2>3–5 <small>/ 10s</small></h2><p>{{ t('workspace.types.frame_interpolation') }} · 2× / 4×</p><Check :size="19" /></article>
+        <article class="rate-card featured"><span>{{ t('pricing.image') }}</span><h2>5 <small>{{ t('common.points') }}</small></h2><p>{{ t('workspace.types.video_upscale') }} · 2×</p><Check :size="19" /></article>
+        <article class="rate-card"><span>{{ t('pricing.duration') }}</span><h2>5s <small>/ 40MB</small></h2><p>MP4 · MOV · WebM</p><Check :size="19" /></article>
       </div>
       <div class="package-section">
         <div class="section-heading"><span class="section-index">PACKS</span><h2>{{ t('pricing.packs') }}</h2><p>{{ t('pricing.unavailable') }}</p></div>

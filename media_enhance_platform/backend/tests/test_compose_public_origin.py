@@ -16,6 +16,8 @@ def test_compose_accepts_an_explicit_public_origin_allowlist() -> None:
             "compose",
             "--env-file",
             ".env.example",
+            "--profile",
+            "test-worker",
             "config",
             "--format",
             "json",
@@ -29,3 +31,7 @@ def test_compose_accepts_an_explicit_public_origin_allowlist() -> None:
 
     config = json.loads(result.stdout)
     assert config["services"]["backend"]["environment"]["CLARITY_ALLOWED_ORIGINS"] == expected
+    bridge = config["services"]["test-worker-bridge"]
+    assert bridge["profiles"] == ["test-worker"]
+    assert bridge["environment"]["CLARITY_TEST_WORKER_BRIDGE_ENABLED"] == "true"
+    assert bridge["environment"]["CLARITY_TEST_INPUT_S3_BUCKET"] == "user-data-test"

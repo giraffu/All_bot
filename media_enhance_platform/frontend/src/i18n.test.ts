@@ -9,14 +9,14 @@ describe('bilingual catalog', () => {
 
   it('switches the same product message between Chinese and English', () => {
     i18n.global.locale.value = 'zh'
-    expect(i18n.global.t('home.imageTitle')).toBe('图片高清')
+    expect(i18n.global.t('home.videoTitle')).toBe('视频高清')
     i18n.global.locale.value = 'en'
-    expect(i18n.global.t('home.imageTitle')).toBe('Image clarity')
+    expect(i18n.global.t('home.videoTitle')).toBe('Video clarity')
     i18n.global.locale.value = 'zh'
   })
 
   it('contains status copy for the no-worker V1 state', () => {
-    expect(i18n.global.t('workspace.noWorker')).toBe('等待算力接入')
+    expect(i18n.global.t('workspace.noWorker')).toBe('测试算力离线 · 已排队')
   })
 
   it('publishes the approved ICP filing number', () => {

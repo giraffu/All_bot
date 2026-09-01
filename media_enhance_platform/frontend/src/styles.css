@@ -176,6 +176,52 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
 .empty-state { padding:40px; text-align:center; border:1px dashed var(--line); border-radius:16px; color:#60636d; }
 .spin { animation:spin 1s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
 
+.video-workspace { max-width:1220px; }
+.video-workspace .app-heading { margin-bottom:26px; }
+.video-workspace .app-heading h1 { max-width:780px; }
+.worker-contract-bar { display:flex; align-items:center; gap:9px; margin-bottom:14px; padding:10px 12px; border:1px solid rgba(160,183,255,.13); border-radius:14px; background:rgba(139,163,233,.04); }
+.worker-contract-bar > span { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:9px; color:#b3b8c7; background:rgba(255,255,255,.035); font-size:10px; }
+.worker-contract-bar > span svg { color:var(--accent); }
+.worker-contract-bar > small { margin-left:auto; padding:7px 10px; border:1px solid rgba(164,190,255,.18); border-radius:20px; color:#aebfff; background:rgba(145,174,255,.07); font-size:9px; letter-spacing:.16em; }
+.video-composer-grid { grid-template-columns:minmax(0,1.08fr) minmax(380px,.92fr); align-items:stretch; }
+.source-composer, .processing-composer { min-height:510px; }
+.video-upload-zone { height:390px; border-color:rgba(175,193,255,.22); background:radial-gradient(circle at 50% 45%,rgba(148,172,238,.08),transparent 40%),rgba(255,255,255,.018); transition:.2s ease; }
+.video-upload-zone.dragging { border-color:#aebfff; background:rgba(145,174,255,.1); transform:scale(.995); }
+.video-upload-zone strong { font-size:16px; }
+.video-selection { display:flex; flex-direction:column; gap:12px; }
+.video-selection video { width:100%; height:286px; object-fit:contain; border:1px solid var(--line); border-radius:18px; background:#050608; }
+.video-file-summary { margin-top:0; padding:12px 14px; }
+.video-file-summary .icon-button { flex:0 0 auto; }
+.media-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.media-facts > span { display:flex; flex-direction:column; gap:5px; padding:12px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.025); }
+.media-facts small { color:#717680; font-size:9px; }
+.media-facts b { font-size:12px; font-weight:560; }
+.workspace-error { margin:14px 0 0; padding:11px 13px; border:1px solid rgba(255,100,115,.15); border-radius:11px; background:rgba(255,90,105,.05); }
+.active-method-card { display:flex; align-items:center; gap:13px; padding:18px; border:1px solid rgba(176,195,255,.38); border-radius:17px; background:linear-gradient(140deg,rgba(146,174,255,.13),rgba(180,157,255,.055)); }
+.active-method-card > span { width:42px; height:42px; display:grid; place-items:center; border-radius:12px; color:var(--accent); background:rgba(185,201,255,.08); }
+.active-method-card > div { flex:1; display:flex; flex-direction:column; gap:5px; }
+.active-method-card small { color:var(--muted); font-size:10px; }
+.active-method-card > svg { color:var(--success); }
+.processing-specs { margin:14px 0; border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+.processing-specs > div { display:flex; align-items:center; justify-content:space-between; padding:15px 16px; border-bottom:1px solid var(--line); }
+.processing-specs > div:last-child { border:0; background:rgba(255,255,255,.025); }
+.processing-specs span { color:var(--muted); font-size:11px; }
+.processing-specs b { font-size:13px; }
+.processing-composer .queue-notice { min-height:44px; margin:16px 0; padding:12px; border-radius:12px; background:rgba(255,255,255,.025); }
+.start-enhance-button { margin-top:auto; min-height:54px; }
+.submit-footnote { display:block; margin-top:11px; color:#70747e; font-size:9px; line-height:1.5; text-align:center; }
+.task-section { margin-top:65px; }
+.video-task-card { min-height:80px; }
+.task-progress-block { flex:1; display:flex; align-items:center; gap:9px; }
+.task-progress-block small { width:30px; }
+.download-action { padding-inline:11px; color:#c2d0ff; }
+.download-action span { font-size:10px; }
+.video-empty-state { display:flex; align-items:center; justify-content:center; gap:10px; min-height:120px; }
+.source-library { margin-top:42px; }
+.source-library .file-grid { grid-template-columns:repeat(2,1fr); }
+.compact-empty { padding:24px; }
+.pricing-content .rate-grid { grid-template-columns:repeat(2,minmax(0,1fr)); max-width:760px; margin:0 auto; }
+
 .page-hero { text-align:center; padding:150px 20px 80px; }
 .compact-hero h1 { font-size:clamp(52px,7vw,88px); }
 .pricing-content { width:min(1060px,100%); margin:0 auto; }
@@ -219,6 +265,7 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
   .file-grid, .rate-grid, .package-grid { grid-template-columns:1fr; }.rate-card.featured { transform:none; }.package-section { padding-top:70px; }
   .legal-frame { grid-template-columns:1fr; gap:10px; }.legal-frame aside { display:none; }
   .admin-table > article { grid-template-columns:1fr auto; }.admin-table > article > span:nth-of-type(2) { display:none; }.admin-table .row-actions { grid-column:1/-1; }
+  .worker-contract-bar { flex-wrap:wrap; }.worker-contract-bar > small { margin-left:0; }.video-composer-grid { grid-template-columns:1fr; }.source-composer,.processing-composer { min-height:0; }.video-upload-zone { height:310px; }
 }
 
 @media (max-width: 520px) {
@@ -228,4 +275,5 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
   .app-heading { display:block; }.balance-card { margin-top:25px; }.composer-card { padding:20px; }.upload-zone { height:190px; }.method-grid { grid-template-columns:1fr; }
   .file-grid { grid-template-columns:1fr; }.task-card { padding:14px; }.status-pill { order:4; }.task-main { min-width:65%; }
   .auth-card { padding:25px; }.page-hero { padding-left:0;padding-right:0; }.footer { flex-wrap:wrap; }.footer-links { order:3; width:100%; margin:0; }.icp-link { order:4; width:100%; }
+  .worker-contract-bar > span { flex:1 1 calc(50% - 6px); justify-content:center; }.worker-contract-bar > small { width:100%; text-align:center; }.video-upload-zone { height:250px; }.video-selection video { height:220px; }.media-facts { grid-template-columns:1fr; }.video-task-card { align-items:flex-start; }.task-progress-block { margin-top:12px; }.source-library .file-grid,.pricing-content .rate-grid { grid-template-columns:1fr; }.download-action span { display:none; }
 }

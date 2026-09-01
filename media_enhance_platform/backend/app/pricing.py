@@ -21,6 +21,8 @@ CATALOG = {
     },
 }
 
+PUBLIC_SERVICE_TYPES = ("video_upscale",)
+
 PACKAGES = [
     {"points": 100, "price_cny": 9.9},
     {"points": 600, "price_cny": 49},
@@ -48,7 +50,7 @@ def quote_points(
 
 def public_catalog() -> dict:
     return {
-        "services": CATALOG,
+        "services": {key: CATALOG[key] for key in PUBLIC_SERVICE_TYPES},
         "packages": PACKAGES,
         "purchases_enabled": False,
     }
