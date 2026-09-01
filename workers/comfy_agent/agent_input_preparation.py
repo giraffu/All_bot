@@ -141,6 +141,12 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
                 "0:v:0",
                 "-map",
                 "0:a:0" if has_audio else "1:a:0",
+                # A source audio stream that ends at exactly 5.000s must not
+                # make -shortest drop the padded 121st video frame. Extend the
+                # selected audio stream so the video frame cap remains the
+                # duration authority; -shortest still trims the mux cleanly.
+                "-af",
+                "apad",
                 "-vf",
                 (
                     "fps=24,"

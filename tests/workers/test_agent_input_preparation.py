@@ -1,5 +1,8 @@
+import json
 import logging
 from pathlib import Path
+import shutil
+import subprocess
 import time
 
 import pytest
@@ -47,7 +50,68 @@ def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div32(
     assert "round(ih/32)*32" in video_filter
     assert ffmpeg[ffmpeg.index("-map") + 1] == "0:v:0"
     assert "0:a:0" in ffmpeg
+    assert ffmpeg[ffmpeg.index("-af") + 1] == "apad"
     assert Path(result).read_bytes() == b"normalized-video"
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required for the media boundary regression",
+)
+def test_prepare_ltx25_upscale_keeps_boundary_frame_with_five_second_audio(
+    tmp_path,
+):
+    source = tmp_path / "five-seconds-with-audio.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=24:duration=5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:sample_rate=32000:duration=5",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(source),
+        ],
+        check=True,
+    )
+
+    normalized = prepare_ltx25_video_upscale_input("video", str(source))
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-count_frames",
+            "-show_entries",
+            "stream=codec_type,nb_read_frames",
+            "-of",
+            "json",
+            normalized,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    streams = json.loads(probe.stdout)["streams"]
+    video = next(item for item in streams if item["codec_type"] == "video")
+    audio = next(item for item in streams if item["codec_type"] == "audio")
+
+    assert video["nb_read_frames"] == "121"
+    assert int(audio["nb_read_frames"]) > 0
 
 
 def test_prepare_ltx25_upscale_video_rejects_more_than_five_seconds(
