@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     sms_challenge_seconds: int = 300
     sms_send_cooldown_seconds: int = 60
     sms_daily_send_limit: int = 5
+    sms_ip_daily_send_limit: int = 50
+    sms_global_daily_send_limit: int = 500
     sms_max_verify_attempts: int = 5
 
     storage_backend: str = "local"

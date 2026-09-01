@@ -1,26 +1,39 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from .models import TaskStatus, TaskType, TicketKind, TicketStatus, UserRole
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    challenge_id: str = Field(min_length=36, max_length=36)
+    phone_number: str = Field(min_length=11, max_length=18)
+    verify_code: str = Field(pattern=r"^[0-9]{4,8}$")
     password: str = Field(min_length=8, max_length=128)
     accepted_terms: bool
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    identifier: str | None = Field(default=None, min_length=3, max_length=320)
+    email: EmailStr | None = None
     password: str
+
+    @model_validator(mode="after")
+    def require_identifier(self) -> "LoginRequest":
+        if not self.identifier and not self.email:
+            raise ValueError("login identifier is required")
+        return self
+
+    @property
+    def login_identifier(self) -> str:
+        return self.identifier or str(self.email)
 
 
 class UserView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: str
+    email: str | None
     role: UserRole
     available_points: int
     reserved_points: int
@@ -122,7 +135,7 @@ class TicketView(BaseModel):
     task_id: str | None
     kind: TicketKind
     status: TicketStatus
-    email: str
+    email: str | None
     subject: str
     content: str
     admin_reply: str | None

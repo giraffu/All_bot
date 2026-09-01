@@ -22,6 +22,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -136,21 +137,76 @@ async def issue_auth(db: AsyncSession, user: User, response: Response) -> AuthRe
 @router.post("/auth/register", response_model=AuthResponse, status_code=201)
 async def register(
     payload: RegisterRequest,
+    request: Request,
     response: Response,
+    provider: SmsVerificationProvider = Depends(get_sms_provider),
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     if not payload.accepted_terms:
         raise HTTPException(status_code=422, detail="terms_required")
-    email = normalize_email(str(payload.email))
-    if await db.scalar(select(User.id).where(User.email == email)):
-        raise HTTPException(status_code=409, detail="email_exists")
+    phone_number = _normalize_phone_or_422(payload.phone_number)
+    digest = phone_digest(phone_number)
+    challenge = await db.scalar(
+        select(SmsVerificationChallenge)
+        .where(SmsVerificationChallenge.id == payload.challenge_id)
+        .with_for_update()
+    )
+    if (
+        challenge is None
+        or challenge.purpose != "registration"
+        or challenge.user_id is not None
+        or challenge.phone_hash != digest
+    ):
+        raise HTTPException(status_code=404, detail="sms_challenge_not_found")
+    if challenge.consumed_at is not None:
+        raise HTTPException(status_code=409, detail="sms_challenge_consumed")
+    expires_at = challenge.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= utcnow():
+        raise HTTPException(status_code=410, detail="sms_challenge_expired")
+    if challenge.verify_attempts >= settings.sms_max_verify_attempts:
+        raise HTTPException(status_code=429, detail="sms_verify_attempts_exceeded")
+
+    challenge.verify_attempts += 1
+    try:
+        passed = await provider.check_code(
+            phone_number, payload.verify_code, challenge.id
+        )
+    except SmsProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not passed:
+        add_audit(
+            db,
+            actor_id=None,
+            action="registration_phone_verification_failed",
+            target_type="sms_challenge",
+            target_id=challenge.id,
+            details={
+                "attempt": challenge.verify_attempts,
+                **_request_audit_details(request),
+            },
+        )
+        await db.commit()
+        raise HTTPException(status_code=422, detail="invalid_verify_code")
+    if await db.scalar(select(User.id).where(User.phone_hash == digest)):
+        raise HTTPException(status_code=409, detail="phone_already_bound")
+
+    now = utcnow()
     user = User(
-        email=email,
+        email=None,
         password_hash=hash_password(payload.password),
+        phone_hash=digest,
+        phone_masked=challenge.phone_masked,
+        phone_verified_at=now,
         available_points=settings.welcome_points,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="phone_already_bound") from exc
     db.add(
         CreditEntry(
             user_id=user.id,
@@ -159,6 +215,19 @@ async def register(
             reserved_delta=0,
             idempotency_key=f"welcome:{user.id}",
         )
+    )
+    challenge.consumed_at = now
+    add_audit(
+        db,
+        actor_id=user.id,
+        action="phone_registration_completed",
+        target_type="user",
+        target_id=user.id,
+        details={
+            "phone_masked": challenge.phone_masked,
+            "challenge_id": challenge.id,
+            **_request_audit_details(request),
+        },
     )
     return await issue_auth(db, user, response)
 
@@ -169,9 +238,17 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    user = await db.scalar(
-        select(User).where(User.email == normalize_email(str(payload.email)))
-    )
+    identifier = payload.login_identifier.strip()
+    try:
+        phone_number = normalize_mainland_phone(identifier)
+    except ValueError:
+        user = await db.scalar(
+            select(User).where(User.email == normalize_email(identifier))
+        )
+    else:
+        user = await db.scalar(
+            select(User).where(User.phone_hash == phone_digest(phone_number))
+        )
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid_credentials")
     return await issue_auth(db, user, response)
@@ -256,35 +333,41 @@ async def require_verified_phone(
     return user
 
 
-@router.post(
-    "/auth/phone/send", response_model=PhoneSendResponse, status_code=202
-)
-async def send_phone_verification(
-    payload: PhoneSendRequest,
+def _request_ip_digest(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    source = forwarded.split(",")[0].strip() if forwarded else ""
+    if not source and request.client:
+        source = request.client.host
+    return phone_digest(f"request-ip:{source or 'unknown'}")
+
+
+async def _send_phone_challenge(
+    *,
+    phone_number: str,
+    purpose: str,
     request: Request,
-    user: User = Depends(get_current_user),
-    provider: SmsVerificationProvider = Depends(get_sms_provider),
-    db: AsyncSession = Depends(get_db),
+    provider: SmsVerificationProvider,
+    db: AsyncSession,
+    user: User | None = None,
 ) -> PhoneSendResponse:
-    if user.phone_verified:
-        raise HTTPException(status_code=409, detail="phone_already_verified")
-    phone_number = _normalize_phone_or_422(payload.phone_number)
-    digest = phone_digest(phone_number)
-    existing_owner = await db.scalar(
-        select(User.id).where(User.phone_hash == digest, User.id != user.id)
-    )
-    if existing_owner:
+    normalized = _normalize_phone_or_422(phone_number)
+    digest = phone_digest(normalized)
+    owner_query = select(User.id).where(User.phone_hash == digest)
+    if user is not None:
+        owner_query = owner_query.where(User.id != user.id)
+    if await db.scalar(owner_query):
         raise HTTPException(status_code=409, detail="phone_already_bound")
 
+    requester_ip_hash = _request_ip_digest(request)
+    account_scope = [SmsVerificationChallenge.phone_hash == digest]
+    if user is not None:
+        account_scope.append(SmsVerificationChallenge.user_id == user.id)
     now = utcnow()
     cooldown_cutoff = now - timedelta(seconds=settings.sms_send_cooldown_seconds)
     latest = await db.scalar(
         select(SmsVerificationChallenge)
         .where(
-            or_(
-                SmsVerificationChallenge.user_id == user.id,
-                SmsVerificationChallenge.phone_hash == digest,
-            ),
+            or_(*account_scope),
             SmsVerificationChallenge.created_at >= cooldown_cutoff,
         )
         .order_by(SmsVerificationChallenge.created_at.desc())
@@ -301,37 +384,60 @@ async def send_phone_verification(
         select(func.count())
         .select_from(SmsVerificationChallenge)
         .where(
-            or_(
-                SmsVerificationChallenge.user_id == user.id,
-                SmsVerificationChallenge.phone_hash == digest,
-            ),
+            or_(*account_scope),
             SmsVerificationChallenge.created_at >= daily_cutoff,
         )
     )
     if (daily_count or 0) >= settings.sms_daily_send_limit:
         raise HTTPException(status_code=429, detail="sms_daily_limit_reached")
 
+    global_daily_count = await db.scalar(
+        select(func.count())
+        .select_from(SmsVerificationChallenge)
+        .where(SmsVerificationChallenge.created_at >= daily_cutoff)
+    )
+    if (global_daily_count or 0) >= settings.sms_global_daily_send_limit:
+        raise HTTPException(status_code=429, detail="sms_daily_limit_reached")
+
+    ip_daily_count = await db.scalar(
+        select(func.count())
+        .select_from(SmsVerificationChallenge)
+        .where(
+            SmsVerificationChallenge.requester_ip_hash == requester_ip_hash,
+            SmsVerificationChallenge.created_at >= daily_cutoff,
+        )
+    )
+    if (ip_daily_count or 0) >= settings.sms_ip_daily_send_limit:
+        raise HTTPException(status_code=429, detail="sms_daily_limit_reached")
+
     challenge = SmsVerificationChallenge(
         id=str(uuid.uuid4()),
-        user_id=user.id,
+        user_id=user.id if user else None,
+        purpose=purpose,
         phone_hash=digest,
-        phone_masked=mask_phone(phone_number),
+        phone_masked=mask_phone(normalized),
+        requester_ip_hash=requester_ip_hash,
         expires_at=now + timedelta(seconds=settings.sms_challenge_seconds),
     )
     try:
         challenge.provider_reference = await provider.send_code(
-            phone_number, challenge.id
+            normalized, challenge.id
         )
     except SmsProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     db.add(challenge)
     add_audit(
         db,
-        actor_id=user.id,
-        action="phone_verification_sent",
+        actor_id=user.id if user else None,
+        action=(
+            "registration_phone_verification_sent"
+            if purpose == "registration"
+            else "phone_verification_sent"
+        ),
         target_type="sms_challenge",
         target_id=challenge.id,
         details={
+            "purpose": purpose,
             "phone_masked": challenge.phone_masked,
             **_request_audit_details(request),
         },
@@ -341,6 +447,46 @@ async def send_phone_verification(
         challenge_id=challenge.id,
         expires_in=settings.sms_challenge_seconds,
         resend_after=settings.sms_send_cooldown_seconds,
+    )
+
+
+@router.post(
+    "/auth/register/phone/send", response_model=PhoneSendResponse, status_code=202
+)
+async def send_registration_phone_verification(
+    payload: PhoneSendRequest,
+    request: Request,
+    provider: SmsVerificationProvider = Depends(get_sms_provider),
+    db: AsyncSession = Depends(get_db),
+) -> PhoneSendResponse:
+    return await _send_phone_challenge(
+        phone_number=payload.phone_number,
+        purpose="registration",
+        request=request,
+        provider=provider,
+        db=db,
+    )
+
+
+@router.post(
+    "/auth/phone/send", response_model=PhoneSendResponse, status_code=202
+)
+async def send_phone_verification(
+    payload: PhoneSendRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    provider: SmsVerificationProvider = Depends(get_sms_provider),
+    db: AsyncSession = Depends(get_db),
+) -> PhoneSendResponse:
+    if user.phone_verified:
+        raise HTTPException(status_code=409, detail="phone_already_verified")
+    return await _send_phone_challenge(
+        phone_number=payload.phone_number,
+        purpose="binding",
+        request=request,
+        provider=provider,
+        db=db,
+        user=user,
     )
 
 
@@ -361,6 +507,7 @@ async def verify_phone_number(
         .where(
             SmsVerificationChallenge.id == payload.challenge_id,
             SmsVerificationChallenge.user_id == user.id,
+            SmsVerificationChallenge.purpose == "binding",
         )
         .with_for_update()
     )

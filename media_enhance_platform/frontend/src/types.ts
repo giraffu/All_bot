@@ -12,7 +12,7 @@ export type TaskStatus =
 
 export interface User {
   id: string
-  email: string
+  email: string | null
   role: Role
   available_points: number
   reserved_points: number
@@ -67,7 +67,7 @@ export interface Ticket {
   task_id: string | null
   kind: 'support' | 'copyright'
   status: 'open' | 'in_progress' | 'resolved'
-  email: string
+  email: string | null
   subject: string
   content: string
   admin_reply: string | null

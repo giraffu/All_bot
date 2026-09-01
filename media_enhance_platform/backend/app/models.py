@@ -73,7 +73,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(
+        String(320), unique=True, nullable=True, index=True
+    )
     password_hash: Mapped[str] = mapped_column(String(255))
     phone_hash: Mapped[str | None] = mapped_column(
         String(64), unique=True, nullable=True, index=True
@@ -102,9 +104,15 @@ class SmsVerificationChallenge(Base):
     __tablename__ = "sms_verification_challenges"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(24), default="binding", index=True)
     phone_hash: Mapped[str] = mapped_column(String(64), index=True)
     phone_masked: Mapped[str] = mapped_column(String(20))
+    requester_ip_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     provider_reference: Mapped[str | None] = mapped_column(
         String(180), nullable=True
     )
@@ -266,7 +274,7 @@ class Ticket(Base):
     status: Mapped[TicketStatus] = mapped_column(
         Enum(TicketStatus, native_enum=False), default=TicketStatus.OPEN, index=True
     )
-    email: Mapped[str] = mapped_column(String(320))
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     subject: Mapped[str] = mapped_column(String(180))
     content: Mapped[str] = mapped_column(Text)
     admin_reply: Mapped[str | None] = mapped_column(Text)

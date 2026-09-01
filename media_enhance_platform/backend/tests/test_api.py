@@ -1,3 +1,4 @@
+import asyncio
 import io
 import itertools
 import os
@@ -20,7 +21,10 @@ os.environ["CLARITY_AGENT_TOKEN"] = "test-agent-token"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models import CreditEntry, User  # noqa: E402
+from app.security import hash_password  # noqa: E402
 from app.sms_verification import SmsVerificationProvider, get_sms_provider  # noqa: E402
 
 
@@ -54,15 +58,32 @@ def auth_headers(token: str) -> dict[str, str]:
 
 
 def register_unverified(client: TestClient, email: str) -> tuple[str, dict]:
+    async def seed_legacy_user() -> None:
+        async with SessionLocal() as db:
+            user = User(
+                email=email.lower(),
+                password_hash=hash_password("strong-password-123"),
+                available_points=100,
+            )
+            db.add(user)
+            await db.flush()
+            db.add(
+                CreditEntry(
+                    user_id=user.id,
+                    kind="welcome",
+                    available_delta=100,
+                    reserved_delta=0,
+                    idempotency_key=f"welcome:{user.id}",
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_legacy_user())
     response = client.post(
-        "/api/auth/register",
-        json={
-            "email": email,
-            "password": "strong-password-123",
-            "accepted_terms": True,
-        },
+        "/api/auth/login",
+        json={"email": email, "password": "strong-password-123"},
     )
-    assert response.status_code == 201, response.text
+    assert response.status_code == 200, response.text
     body = response.json()
     return body["access_token"], body["user"]
 
@@ -88,9 +109,26 @@ def verify_phone(client: TestClient, token: str, phone_number: str) -> dict:
 
 
 def register(client: TestClient, email: str) -> tuple[str, dict]:
-    token, _user = register_unverified(client, email)
     phone_number = f"138{next(phone_sequence):08d}"
-    return token, verify_phone(client, token, phone_number)
+    sent = client.post(
+        "/api/auth/register/phone/send",
+        headers={"x-forwarded-for": f"203.0.113.{next(phone_sequence)}"},
+        json={"phone_number": phone_number},
+    )
+    assert sent.status_code == 202, sent.text
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "challenge_id": sent.json()["challenge_id"],
+            "phone_number": phone_number,
+            "verify_code": "246810",
+            "password": "strong-password-123",
+            "accepted_terms": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    return body["access_token"], body["user"]
 
 
 def upload_image(client: TestClient, token: str) -> dict:
@@ -268,21 +306,106 @@ def test_video_upscale_rejects_test_worker_limit_overruns(monkeypatch) -> None:
             assert response.json()["detail"] == expected_detail
 
 
-def test_registration_is_independent_and_duplicate_email_is_rejected() -> None:
+def test_registration_grants_welcome_credit_once() -> None:
     with TestClient(app) as client:
         token, user = register(client, "new-user@example.com")
         assert token
         assert user["available_points"] == 100
         assert user["reserved_points"] == 0
-        duplicate = client.post(
+
+
+def test_phone_registration_verifies_identity_and_rejects_email_signup() -> None:
+    with TestClient(app) as client:
+        phone_number = "13600136000"
+        sent = client.post(
+            "/api/auth/register/phone/send",
+            json={"phone_number": phone_number},
+        )
+        assert sent.status_code == 202, sent.text
+
+        registered = client.post(
             "/api/auth/register",
             json={
-                "email": "NEW-user@example.com",
-                "password": "another-password",
+                "challenge_id": sent.json()["challenge_id"],
+                "phone_number": phone_number,
+                "verify_code": "246810",
+                "password": "strong-password-123",
                 "accepted_terms": True,
             },
         )
+        assert registered.status_code == 201, registered.text
+        user = registered.json()["user"]
+        assert user["email"] is None
+        assert user["phone_verified"] is True
+        assert user["phone_masked"] == "136****6000"
+        assert user["available_points"] == 100
+
+        login = client.post(
+            "/api/auth/login",
+            json={
+                "identifier": "+86 13600136000",
+                "password": "strong-password-123",
+            },
+        )
+        assert login.status_code == 200, login.text
+        assert login.json()["user"]["id"] == user["id"]
+
+        duplicate = client.post(
+            "/api/auth/register/phone/send",
+            json={"phone_number": phone_number},
+        )
         assert duplicate.status_code == 409
+        assert duplicate.json()["detail"] == "phone_already_bound"
+
+        email_signup = client.post(
+            "/api/auth/register",
+            json={
+                "email": "new-email-signup@example.com",
+                "password": "strong-password-123",
+                "accepted_terms": True,
+            },
+        )
+        assert email_signup.status_code == 422
+
+
+def test_phone_registration_rejects_bad_code_and_consumed_challenge() -> None:
+    with TestClient(app) as client:
+        phone_number = "13500135000"
+        sent = client.post(
+            "/api/auth/register/phone/send",
+            headers={"x-forwarded-for": "203.0.113.135"},
+            json={"phone_number": phone_number},
+        )
+        assert sent.status_code == 202, sent.text
+        payload = {
+            "challenge_id": sent.json()["challenge_id"],
+            "phone_number": phone_number,
+            "password": "strong-password-123",
+            "accepted_terms": True,
+        }
+        failed = client.post(
+            "/api/auth/register", json={**payload, "verify_code": "000000"}
+        )
+        assert failed.status_code == 422
+        assert failed.json()["detail"] == "invalid_verify_code"
+
+        registered = client.post(
+            "/api/auth/register", json={**payload, "verify_code": "246810"}
+        )
+        assert registered.status_code == 201
+        replay = client.post(
+            "/api/auth/register", json={**payload, "verify_code": "246810"}
+        )
+        assert replay.status_code == 409
+        assert replay.json()["detail"] == "sms_challenge_consumed"
+
+
+def test_legacy_email_account_can_still_log_in() -> None:
+    with TestClient(app) as client:
+        token, user = register_unverified(client, "legacy-login@example.com")
+        assert token
+        assert user["email"] == "legacy-login@example.com"
+        assert user["phone_verified"] is False
 
 
 def test_no_worker_keeps_task_queued_and_cancel_releases_reservation(monkeypatch) -> None:

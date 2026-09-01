@@ -64,13 +64,13 @@ onMounted(load)
     <div v-if="tab === 'users'" class="admin-table">
       <div class="admin-controls"><input v-model.number="adjustment" type="number" /><input v-model="reason" /><span>{{ t('admin.reason') }}</span></div>
       <article v-for="user in users" :key="user.id">
-        <div><small>{{ user.role }}</small><b>{{ user.email }}</b></div><span>{{ user.available_points }} + {{ user.reserved_points }}</span>
+        <div><small>{{ user.role }}</small><b>{{ user.phone_masked || user.email || user.id }}</b></div><span>{{ user.available_points }} + {{ user.reserved_points }}</span>
         <button class="glass-button" @click="adjust(user)">{{ t('admin.adjust') }}</button>
       </article>
     </div>
     <div v-if="tab === 'tickets'" class="admin-table">
       <article v-for="ticket in tickets" :key="ticket.id">
-        <div><small>{{ ticket.kind }} · {{ ticket.email }}</small><b>{{ ticket.subject }}</b><p>{{ ticket.content }}</p></div>
+        <div><small>{{ ticket.kind }} · {{ ticket.email || '站内账号' }}</small><b>{{ ticket.subject }}</b><p>{{ ticket.content }}</p></div>
         <span class="status-pill" :class="ticket.status">{{ ticket.status }}</span>
         <button class="glass-button" @click="updateTicket(ticket)">{{ t('admin.reply') }}</button>
       </article>
