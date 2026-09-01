@@ -21,7 +21,11 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
+import shlex
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import threading
 import time
@@ -45,6 +49,90 @@ class LogicalReference:
     role: str
     ordinal: int
     reference: str
+
+
+@dataclass(frozen=True)
+class CopyErrorDetails:
+    error_class: str
+    error_code: str
+    http_status: int | None
+    operation: str | None
+    retryable: bool
+
+    @property
+    def summary_key(self) -> str:
+        if self.error_class == "r2_client":
+            disposition = "retryable" if self.retryable else "terminal"
+            return f"r2_client:{self.error_code}:{disposition}"
+        return self.error_code
+
+
+_R2_NOT_FOUND_CODES = {"404", "nosuchkey", "notfound", "nosuchobject"}
+_R2_RETRYABLE_CODES = {
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "internalerror",
+    "requesttimeout",
+    "requesttimeoutexception",
+    "serviceunavailable",
+    "slowdown",
+    "throttling",
+    "throttlingexception",
+}
+_RETRYABLE_EXCEPTION_NAMES = {
+    "ConnectionClosedError",
+    "ConnectTimeoutError",
+    "EndpointConnectionError",
+    "IncompleteReadError",
+    "ReadTimeoutError",
+}
+
+
+def classify_copy_error(exc: BaseException) -> CopyErrorDetails:
+    """Return a low-cardinality, secret-safe error classification."""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error")
+        metadata = response.get("ResponseMetadata")
+        code = str(error.get("Code") if isinstance(error, dict) else "Unknown")
+        raw_status = metadata.get("HTTPStatusCode") if isinstance(metadata, dict) else None
+        try:
+            http_status = int(raw_status) if raw_status is not None else None
+        except (TypeError, ValueError):
+            http_status = None
+        normalized = code.strip().lower()
+        retryable = (
+            normalized in _R2_RETRYABLE_CODES
+            or http_status == 429
+            or (http_status is not None and http_status >= 500)
+        )
+        if normalized in _R2_NOT_FOUND_CODES or http_status == 404:
+            retryable = False
+        return CopyErrorDetails(
+            error_class="r2_client",
+            error_code=code or "Unknown",
+            http_status=http_status,
+            operation=str(getattr(exc, "operation_name", "") or "") or None,
+            retryable=retryable,
+        )
+    name = type(exc).__name__
+    if isinstance(exc, FileNotFoundError):
+        retryable = False
+    elif name in _RETRYABLE_EXCEPTION_NAMES or isinstance(exc, RuntimeError):
+        retryable = True
+    else:
+        # Unknown local/provider failures remain eligible for bounded retry.
+        retryable = True
+    return CopyErrorDetails(
+        error_class="exception",
+        error_code=name,
+        http_status=None,
+        operation=None,
+        retryable=retryable,
+    )
 
 
 class BandwidthLimiter:
@@ -265,16 +353,90 @@ def _init_state(path: Path) -> sqlite3.Connection:
         """create table if not exists snapshot_objects(
              object_key text primary key, byte_size integer, etag text, sha256 text,
              status text not null, attempts integer not null default 0, error text,
-             completed_at text)"""
+             completed_at text, error_class text, error_code text,
+             error_http_status integer, error_operation text,
+             error_retryable integer, last_error_at text)"""
+    )
+    existing_columns = {
+        str(row[1]) for row in conn.execute("pragma table_info(snapshot_objects)")
+    }
+    migrations = {
+        "error_class": "text",
+        "error_code": "text",
+        "error_http_status": "integer",
+        "error_operation": "text",
+        "error_retryable": "integer",
+        "last_error_at": "text",
+    }
+    for column, column_type in migrations.items():
+        if column not in existing_columns:
+            conn.execute(f"alter table snapshot_objects add column {column} {column_type}")
+    conn.execute(
+        """create table if not exists snapshot_backup_batches(
+             batch_number integer primary key, status text not null,
+             started_at text not null, completed_at text,
+             object_count integer, byte_size integer,
+             local_inventory_sha256 text, remote_inventory_sha256 text,
+             error text)"""
+    )
+    conn.execute(
+        """create table if not exists snapshot_backup_batch_objects(
+             batch_number integer not null, object_key text not null,
+             primary key(batch_number,object_key))"""
+    )
+    conn.execute(
+        """create table if not exists snapshot_manifest_index(
+             manifest_sha256 text not null, sequence integer not null,
+             object_key text not null,
+             primary key(manifest_sha256,sequence),
+             unique(manifest_sha256,object_key))"""
+    )
+    conn.execute(
+        """create table if not exists snapshot_manifest_index_meta(
+             manifest_sha256 text primary key, imported_count integer not null,
+             completed integer not null default 0, updated_at text not null)"""
     )
     conn.commit()
     return conn
+
+
+def _load_credential_environment(config: dict[str, Any]) -> None:
+    env_file = config.get("credential_env_file")
+    if not env_file:
+        return
+    path = Path(str(env_file)).expanduser()
+    if path.stat().st_mode & 0o077:
+        raise PermissionError("credential_env_file must not be group/world accessible")
+    required = {
+        str(value)[4:]
+        for value in config.get("r2", {}).values()
+        if str(value).startswith("env:")
+    }
+    loaded: dict[str, str] = {}
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        if name not in required:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        loaded[name] = value
+    missing = sorted(name for name in required if not (os.getenv(name) or loaded.get(name)))
+    if missing:
+        raise ValueError(f"credential env file does not define required names: {','.join(missing)}")
+    for name, value in loaded.items():
+        os.environ.setdefault(name, value)
 
 
 def _build_r2_client(config: dict[str, Any]):
     import boto3
     from botocore.config import Config
 
+    _load_credential_environment(config)
     source = config["r2"]
     return boto3.client(
         "s3",
@@ -345,10 +507,29 @@ def copy_one(
         conn.commit()
         return {"key": key, "status": "completed", "bytes": copied}
     except Exception as exc:
+        details = classify_copy_error(exc)
         conn.execute(
-            """insert into snapshot_objects(object_key,status,attempts,error) values(?, 'failed',1,?)
-               on conflict(object_key) do update set status='failed',attempts=snapshot_objects.attempts+1,error=excluded.error""",
-            (key, type(exc).__name__),
+            """insert into snapshot_objects(
+                 object_key,status,attempts,error,error_class,error_code,
+                 error_http_status,error_operation,error_retryable,last_error_at)
+               values(?, 'failed',1,?,?,?,?,?,?,?)
+               on conflict(object_key) do update set
+                 status='failed',attempts=snapshot_objects.attempts+1,error=excluded.error,
+                 error_class=excluded.error_class,error_code=excluded.error_code,
+                 error_http_status=excluded.error_http_status,
+                 error_operation=excluded.error_operation,
+                 error_retryable=excluded.error_retryable,
+                 last_error_at=excluded.last_error_at""",
+            (
+                key,
+                details.summary_key,
+                details.error_class,
+                details.error_code,
+                details.http_status,
+                details.operation,
+                int(details.retryable),
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         raise
@@ -363,6 +544,478 @@ def load_verified_manifest(path: Path) -> dict[str, Any]:
     return manifest
 
 
+def should_attempt_copy(
+    state_row: tuple[str, int, int | None] | None, *, max_attempts: int
+) -> bool:
+    if state_row is None:
+        return True
+    status, attempts, retryable = state_row
+    if status == "completed":
+        return False
+    if status != "failed":
+        return True
+    if retryable == 0:
+        return False
+    return int(attempts) < max(1, max_attempts)
+
+
+def reserve_continuous_batch(
+    *,
+    manifest_path: Path,
+    state_path: Path,
+    batch_number: int,
+    limit: int,
+    max_attempts: int,
+    manifest_sha256: str,
+) -> list[str]:
+    """Freeze one resumable batch before downloading any object bodies."""
+    state = _init_state(state_path)
+    try:
+        existing = [
+            str(row[0])
+            for row in state.execute(
+                "select object_key from snapshot_backup_batch_objects where batch_number=? order by object_key",
+                (batch_number,),
+            )
+        ]
+        if existing:
+            return existing
+        indexed = state.execute(
+            "select completed from snapshot_manifest_index_meta where manifest_sha256=?",
+            (manifest_sha256,),
+        ).fetchone()
+        if not indexed or int(indexed[0]) != 1:
+            raise RuntimeError("manifest index is not complete")
+        selected = [
+            str(row[0])
+            for row in state.execute(
+                """select manifest.object_key
+                   from snapshot_manifest_index manifest
+                   left join snapshot_objects state
+                     on state.object_key=manifest.object_key
+                   where manifest.manifest_sha256=? and (
+                     state.object_key is null or state.status not in ('completed','failed') or
+                     (state.status='failed' and coalesce(state.error_retryable,1)=1
+                       and state.attempts < ?)
+                   )
+                   order by manifest.sequence limit ?""",
+                (manifest_sha256, max(1, max_attempts), max(1, limit)),
+            )
+        ]
+        if not selected:
+            return []
+        now = datetime.now(timezone.utc).isoformat()
+        state.execute(
+            """insert into snapshot_backup_batches(batch_number,status,started_at)
+               values(?, 'copying', ?)
+               on conflict(batch_number) do nothing""",
+            (batch_number, now),
+        )
+        state.executemany(
+            "insert into snapshot_backup_batch_objects(batch_number,object_key) values(?,?)",
+            [(batch_number, key) for key in selected],
+        )
+        state.commit()
+        return selected
+    finally:
+        state.close()
+
+
+def ensure_manifest_index(
+    *, manifest_path: Path, state_path: Path, manifest_sha256: str
+) -> int:
+    """Build a resumable SQLite key index so each batch does not rescan 2+ GiB."""
+    state = _init_state(state_path)
+    try:
+        row = state.execute(
+            """select imported_count,completed from snapshot_manifest_index_meta
+               where manifest_sha256=?""",
+            (manifest_sha256,),
+        ).fetchone()
+        imported_count = int(row[0]) if row else 0
+        if row and int(row[1]) == 1:
+            return imported_count
+        if not row:
+            state.execute(
+                """insert into snapshot_manifest_index_meta(
+                     manifest_sha256,imported_count,completed,updated_at)
+                   values(?,0,0,?)""",
+                (manifest_sha256, datetime.now(timezone.utc).isoformat()),
+            )
+            state.commit()
+        pending: list[tuple[str, int, str]] = []
+        sequence = -1
+        for sequence, item in enumerate(iter_manifest_objects(manifest_path)):
+            if sequence < imported_count:
+                continue
+            pending.append((manifest_sha256, sequence, str(item["key"])))
+            if len(pending) < 10000:
+                continue
+            state.executemany(
+                """insert or ignore into snapshot_manifest_index(
+                     manifest_sha256,sequence,object_key) values(?,?,?)""",
+                pending,
+            )
+            imported_count = sequence + 1
+            state.execute(
+                """update snapshot_manifest_index_meta
+                   set imported_count=?,updated_at=? where manifest_sha256=?""",
+                (imported_count, datetime.now(timezone.utc).isoformat(), manifest_sha256),
+            )
+            state.commit()
+            pending.clear()
+            if imported_count % 100000 == 0:
+                print(
+                    json.dumps(
+                        {"status": "indexing", "objects": imported_count}, sort_keys=True
+                    ),
+                    flush=True,
+                )
+        if pending:
+            state.executemany(
+                """insert or ignore into snapshot_manifest_index(
+                     manifest_sha256,sequence,object_key) values(?,?,?)""",
+                pending,
+            )
+            imported_count = sequence + 1
+        state.execute(
+            """update snapshot_manifest_index_meta
+               set imported_count=?,completed=1,updated_at=? where manifest_sha256=?""",
+            (imported_count, datetime.now(timezone.utc).isoformat(), manifest_sha256),
+        )
+        state.commit()
+        return imported_count
+    finally:
+        state.close()
+
+
+def directory_inventory(root: Path) -> dict[str, Any]:
+    """Hash relative path, size, and full content for a bounded batch directory."""
+    rows: list[list[Any]] = []
+    byte_size = 0
+    if root.exists():
+        for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+            if path.is_symlink():
+                raise ValueError("batch directory must not contain symlinks")
+            if not path.is_file():
+                continue
+            relative = path.relative_to(root).as_posix()
+            size = path.stat().st_size
+            rows.append([relative, size, _sha256_file(path)])
+            byte_size += size
+    digest = hashlib.sha256(_canonical_json(rows)).hexdigest()
+    return {"exists": root.exists(), "objects": len(rows), "bytes": byte_size, "sha256": digest}
+
+
+_REMOTE_INVENTORY_SCRIPT = """import hashlib,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+rows=[]
+total=0
+if root.exists():
+  for path in sorted(root.rglob('*'),key=lambda item:item.as_posix()):
+    if path.is_symlink(): raise SystemExit('symlink rejected')
+    if not path.is_file(): continue
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+      for chunk in iter(lambda:stream.read(8*1024*1024),b''): digest.update(chunk)
+    size=path.stat().st_size
+    rows.append([path.relative_to(root).as_posix(),size,digest.hexdigest()])
+    total+=size
+payload=json.dumps(rows,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+print(json.dumps({'exists':root.exists(),'objects':len(rows),'bytes':total,'sha256':hashlib.sha256(payload).hexdigest()},sort_keys=True))
+"""
+
+
+def _validated_remote_path(value: str) -> str:
+    path = PurePosixPath(value)
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("NAS path must be a safe home-relative path")
+    return path.as_posix()
+
+
+def _remote_inventory(ssh_alias: str, remote_path: str) -> dict[str, Any]:
+    command = " ".join(
+        ["python3", "-c", shlex.quote(_REMOTE_INVENTORY_SCRIPT), shlex.quote(remote_path)]
+    )
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", ssh_alias, command],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+def transfer_verified_batch(
+    *, local_root: Path, ssh_alias: str, nas_batches_root: str, batch_number: int
+) -> dict[str, Any]:
+    """Transfer through ordinary SSH, verify every file, then atomically publish."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", ssh_alias):
+        raise ValueError("invalid NAS SSH alias")
+    batches_root = _validated_remote_path(nas_batches_root)
+    batch_name = f"batch-{batch_number:06d}"
+    final_path = _validated_remote_path(f"{batches_root}/{batch_name}")
+    incoming_path = _validated_remote_path(f"{batches_root}/.incoming-{batch_name}")
+    local = directory_inventory(local_root)
+    existing = _remote_inventory(ssh_alias, final_path)
+    if existing["exists"]:
+        if existing != local:
+            raise RuntimeError("existing NAS batch inventory does not match local batch")
+        return existing
+    prepare = (
+        f"mkdir -p {shlex.quote(batches_root)} && "
+        f"rm -rf -- {shlex.quote(incoming_path)} && mkdir -p {shlex.quote(incoming_path)}"
+    )
+    subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", ssh_alias, prepare],
+        check=True,
+    )
+    tar_process = subprocess.Popen(
+        ["tar", "-C", str(local_root), "-cf", "-", "."], stdout=subprocess.PIPE
+    )
+    extract = f"tar -C {shlex.quote(incoming_path)} -xf -"
+    ssh_process = subprocess.Popen(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", ssh_alias, extract],
+        stdin=tar_process.stdout,
+    )
+    assert tar_process.stdout is not None
+    tar_process.stdout.close()
+    ssh_status = ssh_process.wait()
+    tar_status = tar_process.wait()
+    if tar_status or ssh_status:
+        raise RuntimeError(f"NAS tar transfer failed: tar={tar_status} ssh={ssh_status}")
+    remote = _remote_inventory(ssh_alias, incoming_path)
+    if remote != local:
+        raise RuntimeError("NAS incoming batch inventory verification failed")
+    publish = (
+        f"test ! -e {shlex.quote(final_path)} && "
+        f"mv -- {shlex.quote(incoming_path)} {shlex.quote(final_path)}"
+    )
+    subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", ssh_alias, publish],
+        check=True,
+    )
+    published = _remote_inventory(ssh_alias, final_path)
+    if published != local:
+        raise RuntimeError("published NAS batch inventory verification failed")
+    return published
+
+
+def _active_batch(state: sqlite3.Connection) -> tuple[int, str] | None:
+    row = state.execute(
+        """select batch_number,status from snapshot_backup_batches
+           where status in ('copying','transferring') order by batch_number limit 1"""
+    ).fetchone()
+    return (int(row[0]), str(row[1])) if row else None
+
+
+def _next_batch_number(state: sqlite3.Connection, first_batch_number: int) -> int:
+    row = state.execute("select max(batch_number) from snapshot_backup_batches").fetchone()
+    return max(first_batch_number, int(row[0] or 0) + 1)
+
+
+def _run_reserved_copy(
+    *,
+    config: dict[str, Any],
+    state_path: Path,
+    root: Path,
+    keys: list[str],
+) -> dict[str, Any]:
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    client = _build_r2_client(config)
+    workers = max(1, min(16, int(config.get("workers", 4))))
+    max_attempts = max(1, int(config.get("max_attempts", 5)))
+    limiter = BandwidthLimiter(
+        int(config.get("bandwidth_bytes_per_second", 30 * 1024 * 1024))
+    )
+    selected: list[str] = []
+    state = _init_state(state_path)
+    try:
+        for key in keys:
+            row = state.execute(
+                "select status,attempts,error_retryable from snapshot_objects where object_key=?",
+                (key,),
+            ).fetchone()
+            if row and row[0] == "completed":
+                # Re-enter copy_one so a restart verifies that this batch's local file still exists.
+                selected.append(key)
+            elif should_attempt_copy(row, max_attempts=max_attempts):
+                selected.append(key)
+    finally:
+        state.close()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(
+                copy_one,
+                client,
+                bucket=str(config["source_bucket"]),
+                root=root,
+                key=key,
+                state_path=state_path,
+                limiter=limiter,
+            )
+            for key in selected
+        ]
+        results, failures = collect_copy_results(futures)
+    return {
+        "attempted": len(selected),
+        "completed": len(results),
+        "bytes": sum(int(item["bytes"]) for item in results),
+        "failures": failures,
+    }
+
+
+def command_continuous(args: argparse.Namespace) -> None:
+    config_path = Path(args.config).expanduser()
+    if config_path.stat().st_mode & 0o077:
+        raise PermissionError("continuous config must be 0600")
+    config = json.loads(config_path.read_text())
+    manifest_path = Path(args.manifest).expanduser()
+    _verify_manifest_file(manifest_path, str(config["manifest_file_sha256"]))
+    state_path = Path(_resolve_env(str(config["state_path"]))).expanduser()
+    spool_root = Path(_resolve_env(str(config["spool_root"]))).expanduser()
+    spool_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    batch_size = max(1, min(10000, int(config.get("batch_size", 1000))))
+    first_batch_number = max(1, int(config.get("first_batch_number", 1)))
+    max_attempts = max(1, int(config.get("max_attempts", 5)))
+    pause_seconds = max(0.0, min(300.0, float(config.get("batch_pause_seconds", 2))))
+    ssh_alias = str(config["nas_ssh_alias"])
+    nas_batches_root = str(config["nas_batches_root"])
+    manifest_sha256 = str(config["manifest_sha256"])
+    indexed_count = ensure_manifest_index(
+        manifest_path=manifest_path,
+        state_path=state_path,
+        manifest_sha256=manifest_sha256,
+    )
+    print(
+        json.dumps(
+            {"status": "index_ready", "objects": indexed_count}, sort_keys=True
+        ),
+        flush=True,
+    )
+    while True:
+        state = _init_state(state_path)
+        try:
+            # A verified batch is safe to remove locally; its NAS inventory is in the ledger.
+            verified = [
+                int(row[0])
+                for row in state.execute(
+                    "select batch_number from snapshot_backup_batches where status='verified'"
+                )
+            ]
+            active = _active_batch(state)
+            batch_number = (
+                active[0]
+                if active
+                else _next_batch_number(state, first_batch_number)
+            )
+            phase = active[1] if active else "copying"
+        finally:
+            state.close()
+        for verified_batch in verified:
+            verified_root = spool_root / f"batch-{verified_batch:06d}"
+            if verified_root.exists():
+                shutil.rmtree(verified_root)
+        keys = reserve_continuous_batch(
+            manifest_path=manifest_path,
+            state_path=state_path,
+            batch_number=batch_number,
+            limit=batch_size,
+            max_attempts=max_attempts,
+            manifest_sha256=manifest_sha256,
+        )
+        if not keys:
+            print(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "reason": "no_eligible_manifest_objects",
+                        "manifest_sha256": config.get("manifest_sha256", ""),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            return
+        batch_root = spool_root / f"batch-{batch_number:06d}"
+        if phase == "copying":
+            summary = _run_reserved_copy(
+                config=config,
+                state_path=state_path,
+                root=batch_root,
+                keys=keys,
+            )
+            state = _init_state(state_path)
+            try:
+                state.execute(
+                    """update snapshot_backup_batches
+                       set status='transferring',error=null where batch_number=?""",
+                    (batch_number,),
+                )
+                state.commit()
+            finally:
+                state.close()
+            print(
+                json.dumps(
+                    {"status": "downloaded", "batch": batch_number, **summary},
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+        try:
+            remote = transfer_verified_batch(
+                local_root=batch_root,
+                ssh_alias=ssh_alias,
+                nas_batches_root=nas_batches_root,
+                batch_number=batch_number,
+            )
+        except Exception as exc:
+            state = _init_state(state_path)
+            try:
+                state.execute(
+                    "update snapshot_backup_batches set error=? where batch_number=?",
+                    (type(exc).__name__, batch_number),
+                )
+                state.commit()
+            finally:
+                state.close()
+            raise
+        state = _init_state(state_path)
+        try:
+            state.execute(
+                """update snapshot_backup_batches set status='verified',completed_at=?,
+                   object_count=?,byte_size=?,local_inventory_sha256=?,
+                   remote_inventory_sha256=?,error=null where batch_number=?""",
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    int(remote["objects"]),
+                    int(remote["bytes"]),
+                    str(remote["sha256"]),
+                    str(remote["sha256"]),
+                    batch_number,
+                ),
+            )
+            state.commit()
+        finally:
+            state.close()
+        shutil.rmtree(batch_root)
+        print(
+            json.dumps(
+                {
+                    "status": "nas_verified",
+                    "batch": batch_number,
+                    "objects": remote["objects"],
+                    "bytes": remote["bytes"],
+                    "inventory_sha256": remote["sha256"],
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        if pause_seconds:
+            time.sleep(pause_seconds)
+
+
 def collect_copy_results(futures: Iterable[Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Allow a frozen batch to finish when individual historical keys are absent."""
     completed: list[dict[str, Any]] = []
@@ -371,7 +1024,7 @@ def collect_copy_results(futures: Iterable[Any]) -> tuple[list[dict[str, Any]], 
         try:
             completed.append(future.result())
         except Exception as exc:
-            failures[type(exc).__name__] += 1
+            failures[classify_copy_error(exc).summary_key] += 1
     return completed, dict(sorted(failures.items()))
 
 
@@ -403,13 +1056,15 @@ def command_copy(args: argparse.Namespace) -> None:
     workers = max(1, min(16, int(config.get("workers", 4))))
     limiter = BandwidthLimiter(int(config.get("bandwidth_bytes_per_second", 30 * 1024 * 1024)))
     state = _init_state(state_path)
+    max_attempts = max(1, int(config.get("max_attempts", 5)))
     try:
         objects = []
         for item in iter_manifest_objects(manifest_path):
             status_row = state.execute(
-                "select status from snapshot_objects where object_key=?", (item["key"],)
+                "select status,attempts,error_retryable from snapshot_objects where object_key=?",
+                (item["key"],),
             ).fetchone()
-            if status_row and status_row[0] in {"completed", "failed"}:
+            if not should_attempt_copy(status_row, max_attempts=max_attempts):
                 continue
             objects.append(item)
             if len(objects) >= max(1, args.limit):
@@ -446,11 +1101,18 @@ def main() -> None:
     copy.add_argument("--config", required=True, help="0600 JSON; R2 credentials may use env:NAME")
     copy.add_argument("--manifest", required=True)
     copy.add_argument("--limit", type=int, default=1000)
+    continuous = commands.add_parser(
+        "continuous", help="run resumable copy, SSH transfer, and NAS verification batches"
+    )
+    continuous.add_argument("--config", required=True, help="0600 continuous runtime JSON")
+    continuous.add_argument("--manifest", required=True)
     args = parser.parse_args()
     if args.command == "plan":
         command_plan(args)
-    else:
+    elif args.command == "copy":
         command_copy(args)
+    else:
+        command_continuous(args)
 
 
 if __name__ == "__main__":
