@@ -15,6 +15,7 @@ postgres_password=$(openssl rand -hex 24)
 minio_password=$(openssl rand -hex 24)
 jwt_secret=$(openssl rand -hex 48)
 agent_token=$(openssl rand -hex 48)
+phone_hash_secret=$(openssl rand -hex 48)
 admin_password=$(openssl rand -base64 24 | tr -d '\n')
 admin_email=clarity-admin@example.com
 
@@ -25,6 +26,8 @@ admin_email=clarity-admin@example.com
   echo "MINIO_ROOT_PASSWORD=$minio_password"
   echo "CLARITY_JWT_SECRET=$jwt_secret"
   echo "CLARITY_AGENT_TOKEN=$agent_token"
+  echo "CLARITY_PHONE_HASH_SECRET=$phone_hash_secret"
+  echo "CLARITY_SMS_PROVIDER=disabled"
   echo "CLARITY_ADMIN_EMAIL=$admin_email"
   echo "CLARITY_ADMIN_PASSWORD=$admin_password"
 } > "$env_path"

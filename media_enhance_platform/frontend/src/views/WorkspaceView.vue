@@ -8,6 +8,7 @@ import {
   Gauge,
   HardDrive,
   LoaderCircle,
+  MessageSquareLock,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -43,6 +44,11 @@ const tasks = ref<Task[]>([])
 const dragActive = ref(false)
 const pendingStage = ref<'metadata' | 'upload' | 'submit' | null>(null)
 const error = ref('')
+const phoneNumber = ref('')
+const verifyCode = ref('')
+const phoneChallengeId = ref('')
+const phonePending = ref<'send' | 'verify' | null>(null)
+const phoneError = ref('')
 let timer: number | undefined
 
 const quote = computed(() =>
@@ -62,6 +68,63 @@ const predictedResolution = computed(() => {
   return `${selectedMetadata.value.width * 2} × ${selectedMetadata.value.height * 2}`
 })
 const isPending = computed(() => pendingStage.value !== null)
+const phoneVerified = computed(() => Boolean(auth.user?.phone_verified))
+
+function phoneErrorLabel(code: string) {
+  const known = [
+    'invalid_phone_number',
+    'sms_send_too_frequent',
+    'sms_daily_limit_reached',
+    'invalid_verify_code',
+    'sms_verify_attempts_exceeded',
+    'sms_challenge_expired',
+    'phone_already_bound',
+    'sms_provider_unavailable',
+  ]
+  return known.includes(code) ? t(`workspace.phoneErrors.${code}`) : t('workspace.phoneErrors.request_failed')
+}
+
+async function sendPhoneCode() {
+  phonePending.value = 'send'
+  phoneError.value = ''
+  try {
+    const result = await api<{ challenge_id: string }>('/auth/phone/send', {
+      method: 'POST',
+      body: JSON.stringify({ phone_number: phoneNumber.value }),
+    })
+    phoneChallengeId.value = result.challenge_id
+  } catch (cause) {
+    phoneError.value = phoneErrorLabel(cause instanceof Error ? cause.message : 'request_failed')
+  } finally {
+    phonePending.value = null
+  }
+}
+
+async function verifyPhone() {
+  phonePending.value = 'verify'
+  phoneError.value = ''
+  try {
+    await api('/auth/phone/verify', {
+      method: 'POST',
+      body: JSON.stringify({
+        challenge_id: phoneChallengeId.value,
+        phone_number: phoneNumber.value,
+        verify_code: verifyCode.value,
+      }),
+    })
+    await auth.refreshMe()
+  } catch (cause) {
+    phoneError.value = phoneErrorLabel(cause instanceof Error ? cause.message : 'request_failed')
+  } finally {
+    phonePending.value = null
+  }
+}
+
+function resetPhoneChallenge() {
+  phoneChallengeId.value = ''
+  verifyCode.value = ''
+  phoneError.value = ''
+}
 
 function releasePreview() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
@@ -257,6 +320,55 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <section v-if="!phoneVerified" class="phone-verification-card">
+      <div class="phone-verification-copy">
+        <span><MessageSquareLock :size="21" /></span>
+        <div>
+          <b>{{ t('workspace.phoneTitle') }}</b>
+          <p>{{ t('workspace.phoneDescription') }}</p>
+        </div>
+      </div>
+      <div class="phone-verification-form">
+        <input
+          v-model="phoneNumber"
+          inputmode="tel"
+          autocomplete="tel"
+          maxlength="18"
+          :disabled="Boolean(phoneChallengeId)"
+          :placeholder="t('workspace.phonePlaceholder')"
+        />
+        <button
+          v-if="!phoneChallengeId"
+          class="glass-button"
+          :disabled="phonePending !== null || phoneNumber.length < 11"
+          @click="sendPhoneCode"
+        >
+          {{ phonePending === 'send' ? t('common.loading') : t('workspace.sendCode') }}
+        </button>
+        <template v-else>
+          <input
+            v-model="verifyCode"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="8"
+            :placeholder="t('workspace.codePlaceholder')"
+          />
+          <button
+            class="primary-button compact"
+            :disabled="phonePending !== null || verifyCode.length < 4"
+            @click="verifyPhone"
+          >
+            {{ phonePending === 'verify' ? t('common.loading') : t('workspace.verifyPhone') }}
+          </button>
+        </template>
+      </div>
+      <small v-if="phoneChallengeId && !phoneError" class="phone-code-sent">{{ t('workspace.codeSent') }}</small>
+      <small v-if="phoneError" class="error-text">{{ phoneError }}</small>
+      <button v-if="phoneChallengeId" class="phone-restart" type="button" @click="resetPhoneChallenge">
+        {{ t('workspace.requestAnotherCode') }}
+      </button>
+    </section>
+
     <div class="worker-contract-bar">
       <span><Video :size="15" /> MP4 / MOV / WebM</span>
       <span><Clock3 :size="15" /> ≤ {{ VIDEO_UPSCALE_MAX_SECONDS }}s</span>
@@ -277,7 +389,7 @@ onBeforeUnmount(() => {
           @dragleave.prevent="dragActive = false"
           @drop.prevent="drop"
         >
-          <input type="file" accept="video/mp4,video/quicktime,video/webm" @change="choose" />
+          <input type="file" accept="video/mp4,video/quicktime,video/webm" :disabled="!phoneVerified" @change="choose" />
           <LoaderCircle v-if="pendingStage === 'metadata'" class="spin" :size="32" />
           <FileUp v-else :size="32" />
           <strong>{{ t('workspace.dropVideo') }}</strong>
@@ -312,7 +424,7 @@ onBeforeUnmount(() => {
           <div><span>{{ t('workspace.quote') }}</span><b>{{ quote }} {{ t('common.points') }}</b></div>
         </div>
         <p class="queue-notice"><Clock3 :size="15" />{{ t('workspace.queueNote') }}</p>
-        <button class="primary-button large full start-enhance-button" :disabled="!selectedFile || isPending" @click="submit">
+        <button class="primary-button large full start-enhance-button" :disabled="!phoneVerified || !selectedFile || isPending" @click="submit">
           <LoaderCircle v-if="isPending" class="spin" :size="18" />
           {{ pendingStage === 'upload' ? t('workspace.uploading') : pendingStage === 'submit' ? t('workspace.submitting') : t('workspace.startVideo') }}
         </button>

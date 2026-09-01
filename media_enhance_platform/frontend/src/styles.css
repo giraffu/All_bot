@@ -180,6 +180,9 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
 .video-workspace .app-heading { margin-bottom:26px; }
 .video-workspace .app-heading h1 { max-width:780px; }
 .worker-contract-bar { display:flex; align-items:center; gap:9px; margin-bottom:14px; padding:10px 12px; border:1px solid rgba(160,183,255,.13); border-radius:14px; background:rgba(139,163,233,.04); }
+.phone-verification-card { display:grid; grid-template-columns:minmax(280px,1fr) minmax(400px,.9fr); gap:12px 25px; align-items:center; margin-bottom:14px; padding:18px 20px; border:1px solid rgba(255,190,112,.2); border-radius:16px; background:linear-gradient(135deg,rgba(255,176,84,.07),rgba(151,174,246,.045)); }
+.phone-verification-copy { display:flex; align-items:center; gap:13px; }.phone-verification-copy > span { width:42px; height:42px; display:grid; place-items:center; flex:0 0 auto; border-radius:12px; color:#f0bd80; background:rgba(255,183,95,.08); }.phone-verification-copy div { min-width:0; }.phone-verification-copy b { font-size:13px; }.phone-verification-copy p { margin:5px 0 0; color:var(--muted); font-size:10px; line-height:1.5; }
+.phone-verification-form { display:grid; grid-template-columns:minmax(160px,1fr) minmax(110px,.65fr) auto; gap:8px; }.phone-verification-form input { min-width:0; }.phone-verification-card > small { grid-column:2; }.phone-code-sent { color:var(--success); }.phone-restart { grid-column:2; width:max-content; padding:0; color:#aebfff; background:transparent; font-size:10px; text-decoration:underline; }
 .worker-contract-bar > span { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:9px; color:#b3b8c7; background:rgba(255,255,255,.035); font-size:10px; }
 .worker-contract-bar > span svg { color:var(--accent); }
 .worker-contract-bar > small { margin-left:auto; padding:7px 10px; border:1px solid rgba(164,190,255,.18); border-radius:20px; color:#aebfff; background:rgba(145,174,255,.07); font-size:9px; letter-spacing:.16em; }
@@ -266,6 +269,7 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
   .legal-frame { grid-template-columns:1fr; gap:10px; }.legal-frame aside { display:none; }
   .admin-table > article { grid-template-columns:1fr auto; }.admin-table > article > span:nth-of-type(2) { display:none; }.admin-table .row-actions { grid-column:1/-1; }
   .worker-contract-bar { flex-wrap:wrap; }.worker-contract-bar > small { margin-left:0; }.video-composer-grid { grid-template-columns:1fr; }.source-composer,.processing-composer { min-height:0; }.video-upload-zone { height:310px; }
+  .phone-verification-card { grid-template-columns:1fr; }.phone-verification-card > small,.phone-restart { grid-column:1; }.phone-verification-form { grid-template-columns:1fr auto; }.phone-verification-form input:first-child { grid-column:1/-1; }
 }
 
 @media (max-width: 520px) {
@@ -276,4 +280,5 @@ input:focus, textarea:focus, select:focus { border-color:rgba(177,196,255,.48); 
   .file-grid { grid-template-columns:1fr; }.task-card { padding:14px; }.status-pill { order:4; }.task-main { min-width:65%; }
   .auth-card { padding:25px; }.page-hero { padding-left:0;padding-right:0; }.footer { flex-wrap:wrap; }.footer-links { order:3; width:100%; margin:0; }.icp-link { order:4; width:100%; }
   .worker-contract-bar > span { flex:1 1 calc(50% - 6px); justify-content:center; }.worker-contract-bar > small { width:100%; text-align:center; }.video-upload-zone { height:250px; }.video-selection video { height:220px; }.media-facts { grid-template-columns:1fr; }.video-task-card { align-items:flex-start; }.task-progress-block { margin-top:12px; }.source-library .file-grid,.pricing-content .rate-grid { grid-template-columns:1fr; }.download-action span { display:none; }
+  .phone-verification-form { grid-template-columns:1fr; }.phone-verification-form input:first-child { grid-column:auto; }
 }

@@ -1,4 +1,5 @@
 import io
+import itertools
 import os
 import tempfile
 import uuid
@@ -20,6 +21,26 @@ os.environ["CLARITY_AGENT_TOKEN"] = "test-agent-token"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.sms_verification import SmsVerificationProvider, get_sms_provider  # noqa: E402
+
+
+class FakeSmsVerificationProvider(SmsVerificationProvider):
+    def __init__(self) -> None:
+        self.codes: dict[str, str] = {}
+
+    async def send_code(self, phone_number: str, out_id: str) -> str:
+        self.codes[phone_number] = "246810"
+        return f"fake:{out_id}"
+
+    async def check_code(
+        self, phone_number: str, verify_code: str, out_id: str
+    ) -> bool:
+        return self.codes.get(phone_number) == verify_code
+
+
+fake_sms = FakeSmsVerificationProvider()
+app.dependency_overrides[get_sms_provider] = lambda: fake_sms
+phone_sequence = itertools.count(1)
 
 
 def png_bytes(color: tuple[int, int, int] = (24, 24, 24)) -> bytes:
@@ -32,7 +53,7 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def register(client: TestClient, email: str) -> tuple[str, dict]:
+def register_unverified(client: TestClient, email: str) -> tuple[str, dict]:
     response = client.post(
         "/api/auth/register",
         json={
@@ -44,6 +65,32 @@ def register(client: TestClient, email: str) -> tuple[str, dict]:
     assert response.status_code == 201, response.text
     body = response.json()
     return body["access_token"], body["user"]
+
+
+def verify_phone(client: TestClient, token: str, phone_number: str) -> dict:
+    sent = client.post(
+        "/api/auth/phone/send",
+        headers=auth_headers(token),
+        json={"phone_number": phone_number},
+    )
+    assert sent.status_code == 202, sent.text
+    verified = client.post(
+        "/api/auth/phone/verify",
+        headers=auth_headers(token),
+        json={
+            "challenge_id": sent.json()["challenge_id"],
+            "phone_number": phone_number,
+            "verify_code": "246810",
+        },
+    )
+    assert verified.status_code == 200, verified.text
+    return verified.json()
+
+
+def register(client: TestClient, email: str) -> tuple[str, dict]:
+    token, _user = register_unverified(client, email)
+    phone_number = f"138{next(phone_sequence):08d}"
+    return token, verify_phone(client, token, phone_number)
 
 
 def upload_image(client: TestClient, token: str) -> dict:
@@ -78,6 +125,89 @@ def upload_video(
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_phone_verification_is_required_before_upload(monkeypatch) -> None:
+    with TestClient(app) as client:
+        token, user = register_unverified(client, "phone-gate@example.com")
+        assert user["phone_verified"] is False
+        blocked = client.post(
+            "/api/uploads",
+            headers=auth_headers(token),
+            files={"file": ("source.mp4", b"video", "video/mp4")},
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["detail"] == "phone_verification_required"
+
+        verified = verify_phone(client, token, "13800138000")
+        assert verified["phone_verified"] is True
+        assert verified["phone_masked"] == "138****8000"
+        uploaded = upload_video(client, token, monkeypatch)
+        assert uploaded["media_kind"] == "video"
+
+
+def test_api_responses_include_browser_security_headers() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+        assert "camera=()" in response.headers["permissions-policy"]
+
+
+def test_phone_verification_throttles_sends_and_failed_checks() -> None:
+    with TestClient(app) as client:
+        token, _ = register_unverified(client, "phone-limits@example.com")
+        phone_number = "13900139000"
+        sent = client.post(
+            "/api/auth/phone/send",
+            headers=auth_headers(token),
+            json={"phone_number": phone_number},
+        )
+        assert sent.status_code == 202
+        repeated = client.post(
+            "/api/auth/phone/send",
+            headers=auth_headers(token),
+            json={"phone_number": phone_number},
+        )
+        assert repeated.status_code == 429
+        assert repeated.json()["detail"] == "sms_send_too_frequent"
+
+        payload = {
+            "challenge_id": sent.json()["challenge_id"],
+            "phone_number": phone_number,
+            "verify_code": "000000",
+        }
+        for _ in range(5):
+            failed = client.post(
+                "/api/auth/phone/verify",
+                headers=auth_headers(token),
+                json=payload,
+            )
+            assert failed.status_code == 422
+            assert failed.json()["detail"] == "invalid_verify_code"
+        blocked = client.post(
+            "/api/auth/phone/verify",
+            headers=auth_headers(token),
+            json={**payload, "verify_code": "246810"},
+        )
+        assert blocked.status_code == 429
+        assert blocked.json()["detail"] == "sms_verify_attempts_exceeded"
+
+
+def test_verified_phone_cannot_be_bound_to_another_account() -> None:
+    with TestClient(app) as client:
+        first_token, _ = register_unverified(client, "phone-owner@example.com")
+        verify_phone(client, first_token, "13700137000")
+        second_token, _ = register_unverified(client, "phone-other@example.com")
+        duplicate = client.post(
+            "/api/auth/phone/send",
+            headers=auth_headers(second_token),
+            json={"phone_number": "13700137000"},
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["detail"] == "phone_already_bound"
 
 
 def test_public_submission_is_video_upscale_only(monkeypatch) -> None:

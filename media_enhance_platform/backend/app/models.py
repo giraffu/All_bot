@@ -75,6 +75,13 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    phone_hash: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    phone_masked: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False), default=UserRole.USER, index=True
     )
@@ -85,6 +92,30 @@ class User(Base):
     )
 
     tasks: Mapped[list[Task]] = relationship(back_populates="user")
+
+    @property
+    def phone_verified(self) -> bool:
+        return self.phone_verified_at is not None
+
+
+class SmsVerificationChallenge(Base):
+    __tablename__ = "sms_verification_challenges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    phone_hash: Mapped[str] = mapped_column(String(64), index=True)
+    phone_masked: Mapped[str] = mapped_column(String(20))
+    provider_reference: Mapped[str | None] = mapped_column(
+        String(180), nullable=True
+    )
+    verify_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
 
 
 class RefreshToken(Base):

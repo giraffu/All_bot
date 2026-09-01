@@ -21,6 +21,18 @@ class Settings(BaseSettings):
     admin_email: str | None = None
     admin_password: str | None = None
     agent_token: str = "local-worker-token-change-me"
+    phone_hash_secret: str = "local-phone-hash-secret-change-me"
+
+    sms_provider: str = "disabled"
+    aliyun_access_key_id: str | None = None
+    aliyun_access_key_secret: str | None = None
+    aliyun_sms_sign_name: str | None = None
+    aliyun_sms_template_code: str | None = None
+    aliyun_sms_scheme_name: str = "clarity_phone"
+    sms_challenge_seconds: int = 300
+    sms_send_cooldown_seconds: int = 60
+    sms_daily_send_limit: int = 5
+    sms_max_verify_attempts: int = 5
 
     storage_backend: str = "local"
     local_storage_path: str = "./data"
@@ -59,15 +71,31 @@ class Settings(BaseSettings):
                 "local-development-secret-change-me",
                 "local-worker-token-change-me",
                 "clarity-local-change-me",
+                "local-phone-hash-secret-change-me",
             }
             if (
                 self.jwt_secret in forbidden
                 or self.agent_token in forbidden
                 or self.s3_secret_key in forbidden
+                or self.phone_hash_secret in forbidden
             ):
                 raise ValueError("non-local environments require explicit secrets")
         if bool(self.admin_email) != bool(self.admin_password):
             raise ValueError("admin email and password must be configured together")
+        if self.sms_provider not in {"disabled", "aliyun_pnvs"}:
+            raise ValueError("unsupported sms provider")
+        if self.sms_provider == "aliyun_pnvs":
+            required = {
+                "aliyun_access_key_id": self.aliyun_access_key_id,
+                "aliyun_access_key_secret": self.aliyun_access_key_secret,
+                "aliyun_sms_sign_name": self.aliyun_sms_sign_name,
+                "aliyun_sms_template_code": self.aliyun_sms_template_code,
+            }
+            missing = sorted(key for key, value in required.items() if not value)
+            if missing:
+                raise ValueError(
+                    "aliyun sms configuration is incomplete: " + ", ".join(missing)
+                )
         return self
 
     def require_test_worker_bridge(self) -> "Settings":
