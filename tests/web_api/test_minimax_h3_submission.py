@@ -45,7 +45,7 @@ async def test_minimax_h3_operator_canary_uses_existing_submission_saga(monkeypa
         get_balance=AsyncMock(return_value=90),
         operator_canary_authorized=True,
         advanced_video_profile_loader=AsyncMock(
-            return_value={"main_model": "10eros", "addon_items": []}
+            return_value={"main_model": "10eros_bf16", "addon_items": []}
         ),
     )
     assert response.task_id == "h3-canary"
@@ -72,17 +72,17 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
         env_enabled=lambda _name: True,
         advanced_video_profile_loader=AsyncMock(
             return_value={
-                "main_model": "official",
+                "main_model": "10eros_int8",
                 "addon_items": [
-                    {"name": "motion_booster", "strength": 0.7},
+                    {"name": "deepthroat", "strength": 0.7},
                 ],
             }
         ),
     )
 
-    assert prepared.inputs["main_model"] == "official"
+    assert prepared.inputs["main_model"] == "10eros_int8"
     assert prepared.inputs["lora_items"] == [
-        {"name": "motion_booster", "strength": 0.7},
+        {"name": "deepthroat", "strength": 0.7},
     ]
 
 
@@ -112,7 +112,7 @@ async def test_minimax_h3_extension_uses_server_video_reference_and_inherits_con
         operator_canary_authorized=True,
         env_enabled=lambda _name: True,
         advanced_video_profile_loader=AsyncMock(
-            return_value={"main_model": "official", "addon_items": []}
+            return_value={"main_model": "10eros_int8", "addon_items": []}
         ),
         prepare_h3_extension_func=prepare_extension,
     )
@@ -160,7 +160,7 @@ async def test_minimax_h3_ref2v_resolves_single_audio_ref_without_rewriting_prom
         operator_canary_authorized=True,
         env_enabled=lambda _name: True,
         advanced_video_profile_loader=AsyncMock(
-            return_value={"main_model": "10eros", "addon_items": []}
+            return_value={"main_model": "10eros_bf16", "addon_items": []}
         ),
     )
 
@@ -206,7 +206,7 @@ async def test_minimax_h3_template_can_reuse_gallery_reference_audio(monkeypatch
         operator_canary_authorized=True,
         env_enabled=lambda _name: True,
         advanced_video_profile_loader=AsyncMock(
-            return_value={"main_model": "10eros", "addon_items": []}
+            return_value={"main_model": "10eros_bf16", "addon_items": []}
         ),
     )
 
@@ -239,7 +239,7 @@ async def test_minimax_h3_rejects_audio_ref_outside_ref2v():
             operator_canary_authorized=True,
             env_enabled=lambda _name: True,
             advanced_video_profile_loader=AsyncMock(
-                return_value={"main_model": "10eros", "addon_items": []}
+                return_value={"main_model": "10eros_bf16", "addon_items": []}
             ),
         )
 
@@ -259,6 +259,6 @@ async def test_minimax_h3_rejects_client_supplied_reference_video_key():
             operator_canary_authorized=True,
             env_enabled=lambda _name: True,
             advanced_video_profile_loader=AsyncMock(
-                return_value={"main_model": "10eros", "addon_items": []}
+                return_value={"main_model": "10eros_bf16", "addon_items": []}
             ),
         )

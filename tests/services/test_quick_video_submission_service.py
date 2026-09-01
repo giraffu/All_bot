@@ -9,7 +9,6 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_IMAGE_TO_VIDEO,
-    MODE_LTX_VIDEO,
     MODE_WAN22_VIDEO_V2,
 )
 from src.services.qqcc_config_service import (
@@ -337,8 +336,8 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
                     "engine": "ltx_video",
                     "main_model": "official",
                     "lora_items": [
-                        {"name": "motion_booster", "strength": 0.73},
-                        {"name": "mystic_xxx"},
+                        {"name": "deepthroat", "strength": 0.73},
+                        {"name": "cumshot"},
                     ],
                 }
             ],
@@ -356,17 +355,17 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
     assert plan.resolution == "preview"
     assert plan.duration == "15s"
     assert plan.total_cost == 19
-    assert plan.main_model == "official"
+    assert plan.main_model == "10eros_int8"
     assert plan.negative_prompt == "blur, jitter"
     assert plan.lora_items == [
-        {"name": "motion_booster", "strength": 0.75},
-        {"name": "mystic_xxx", "strength": 0.9},
+        {"name": "deepthroat", "strength": 0.75},
+        {"name": "cumshot", "strength": 0.9},
     ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
 
 
 @pytest.mark.asyncio
-async def test_qqcc_ai_video_forwards_official_main_model_to_generation():
+async def test_qqcc_ai_video_migrates_official_main_model_to_int8():
     plan = build_quick_video_submission_plan(
         fsm_data={"scene_kind": "ai_video", "scene_id": "cinema"},
         qqcc_config=normalize_qqcc_config(
@@ -397,7 +396,7 @@ async def test_qqcc_ai_video_forwards_official_main_model_to_generation():
         process_generation_task_func=generation_task,
     )
 
-    assert generation_task.await_args.kwargs["main_model"] == "official"
+    assert generation_task.await_args.kwargs["main_model"] == "10eros_int8"
 
 
 def test_qqcc_video_chain_uses_each_scene_configured_resolution():
@@ -557,9 +556,7 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
                         "prompt": "smooth camera",
                         "negative_prompt": "   ",
                         "duration": 5,
-                        "lora_items": [
-                            {"name": "motion_booster", "strength": 0.7}
-                        ],
+                        "lora_items": [{"name": "deepthroat", "strength": 0.7}],
                     }
                 ],
             }
@@ -583,7 +580,7 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
     assert generation_task.await_args.kwargs["resolution_preset"] == "preview"
     assert generation_task.await_args.kwargs["images"] == ["/tmp/input.png"]
     assert generation_task.await_args.kwargs["lora_items"] == [
-        {"name": "motion_booster", "strength": 0.7}
+        {"name": "deepthroat", "strength": 0.7}
     ]
 
 
@@ -651,9 +648,15 @@ async def test_qqcc_ref2v_preserves_templates_replacements_and_custom_price():
         None,
         "/tmp/user-ref-c.png",
     ]
-    assert plan.result_meta["_qqcc_regenerate"]["selected_reference_image"] == references[2]
+    assert (
+        plan.result_meta["_qqcc_regenerate"]["selected_reference_image"]
+        == references[2]
+    )
     assert plan.result_meta["_qqcc_regenerate"]["selected_reference_name"] == "模板 C"
-    assert plan.result_meta["_qqcc_regenerate"]["selected_reference_source"] == "user_upload"
+    assert (
+        plan.result_meta["_qqcc_regenerate"]["selected_reference_source"]
+        == "user_upload"
+    )
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_ref2v"
     assert generation_task.await_args.kwargs["images"] == [
         "/tmp/subject.png",
@@ -1283,16 +1286,16 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
     plan = build_quick_video_submission_plan(
         fsm_data={
             "mode": MODE_CUSTOM_VIDEO,
-                "scene_id": "tail_video",
-                "resolution": "512p",
-                "duration": "5s",
-                "scene_version": "v1",
+            "scene_id": "tail_video",
+            "resolution": "512p",
+            "duration": "5s",
+            "scene_version": "v1",
         },
         qqcc_config=normalize_qqcc_config(
             {
                 "scene_preset_version": SCENE_PRESET_VERSION,
                 "main_buttons": {"video_edit_v1": True},
-                    "draw_scenes_v1": [
+                "draw_scenes_v1": [
                     {
                         "id": "tail_pose",
                         "name": "尾帧姿势",
@@ -1300,7 +1303,7 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
                         "negative_prompt": "tail blur",
                     }
                 ],
-                    "video_scenes_v1": [
+                "video_scenes_v1": [
                     {
                         "id": "tail_video",
                         "name": "首尾动图",
@@ -1455,9 +1458,7 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status(tm
                         "duration": 5,
                         "engine": "ltx_video",
                         "end_frame_draw_scene_id": "tail_pose",
-                        "lora_items": [
-                            {"name": "pov_missionary", "strength": 0.7}
-                        ],
+                        "lora_items": [{"name": "pov_missionary", "strength": 0.7}],
                     }
                 ],
             }
@@ -1485,7 +1486,10 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status(tm
     )
 
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_flf2v"
-    assert generation_task.await_args.kwargs["images"] == [str(input_path), str(end_path)]
+    assert generation_task.await_args.kwargs["images"] == [
+        str(input_path),
+        str(end_path),
+    ]
     assert generation_task.await_args.kwargs["aspect_ratio"] == "source"
     assert generation_task.await_args.kwargs["lora_items"] == [
         {"name": "pov_missionary", "strength": 0.7}
@@ -1514,8 +1518,8 @@ async def test_private_qqcc_ai_video_tail_stage_keeps_h3_addons(monkeypatch):
                         "duration": 5,
                         "end_frame_draw_scene_id": "tail_pose",
                         "lora_items": [
-                            {"name": "motion_booster", "strength": 0.7},
-                            {"name": "mystic_xxx", "strength": 0.75},
+                            {"name": "deepthroat", "strength": 0.7},
+                            {"name": "cumshot", "strength": 0.75},
                         ],
                     }
                 ],
@@ -1523,9 +1527,7 @@ async def test_private_qqcc_ai_video_tail_stage_keeps_h3_addons(monkeypatch):
         ),
         allowed_resolutions=[],
     )
-    create_checkpoint = AsyncMock(
-        return_value=SimpleNamespace(chain_id="chain-h3-1")
-    )
+    create_checkpoint = AsyncMock(return_value=SimpleNamespace(chain_id="chain-h3-1"))
     monkeypatch.setattr(
         quick_video_service, "create_private_qqcc_continuation", create_checkpoint
     )
@@ -1562,8 +1564,8 @@ async def test_private_qqcc_ai_video_tail_stage_keeps_h3_addons(monkeypatch):
     assert stages[-1]["executor"] == "generation"
     assert stages[-1]["task_kwargs"]["task_type"] == "minimax_h3_flf2v"
     assert stages[-1]["task_kwargs"]["lora_items"] == [
-        {"name": "motion_booster", "strength": 0.7},
-        {"name": "mystic_xxx", "strength": 0.75},
+        {"name": "deepthroat", "strength": 0.7},
+        {"name": "cumshot", "strength": 0.75},
     ]
 
 
@@ -1770,13 +1772,31 @@ async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_fai
 @pytest.mark.asyncio
 async def test_run_qqcc_video_scene_chain_reports_tail_frame_failure_after_success():
     plan = build_quick_video_submission_plan(
-        fsm_data={"scene_kind": "video", "scene_id": "first", "resolution": "720p", "duration": "5s"},
+        fsm_data={
+            "scene_kind": "video",
+            "scene_id": "first",
+            "resolution": "720p",
+            "duration": "5s",
+        },
         qqcc_config={
             "scene_preset_version": 1,
             "main_buttons": {"video_edit": True},
             "video_scenes": [
-                {"id": "first", "name": "First", "prompt": "one", "duration": "5s", "engine": "image_to_video", "next_scene_id": "second"},
-                {"id": "second", "name": "Second", "prompt": "two", "duration": "5s", "engine": "wan22_video_v2"},
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "one",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                    "next_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "Second",
+                    "prompt": "two",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
             ],
         },
         allowed_resolutions=["720p"],
@@ -1793,9 +1813,15 @@ async def test_run_qqcc_video_scene_chain_reports_tail_frame_failure_after_succe
         username="tester",
         image_path="/tmp/input.png",
         status_msg_id=77,
-        process_video_task_template_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
-        process_generation_task_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
-        extract_video_last_frame_func=AsyncMock(side_effect=RuntimeError("ffmpeg missing")),
+        process_video_task_template_func=AsyncMock(
+            return_value=(b"one", "history/one.mp4")
+        ),
+        process_generation_task_func=AsyncMock(
+            return_value=(b"one", "history/one.mp4")
+        ),
+        extract_video_last_frame_func=AsyncMock(
+            side_effect=RuntimeError("ffmpeg missing")
+        ),
         stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
         persist_chain_result_func=persist,
     )

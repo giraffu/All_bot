@@ -13,10 +13,11 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MAX_STRENGTH,
     MINIMAX_H3_ADDON_MIN_STRENGTH,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
     MINIMAX_H3_MAIN_MODELS,
     MINIMAX_H3_MAX_ADDON_ITEMS,
     MINIMAX_H3_MODES,
+    MiniMaxH3ValidationError,
+    normalize_minimax_h3_main_model,
 )
 
 
@@ -120,13 +121,11 @@ def _normalize_advanced_video_pro_config(raw: Any) -> dict[str, dict[str, Any]]:
     for mode in ADVANCED_VIDEO_PRO_MODES:
         profile = values.get(mode)
         profile = profile if isinstance(profile, dict) else {}
-        main_model = str(
-            profile.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
-        ).strip().lower()
-        if main_model not in MINIMAX_H3_MAIN_MODELS or (
-            main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
-            and mode != "ref2v"
-        ):
+        try:
+            main_model = normalize_minimax_h3_main_model(
+                profile.get("main_model"), migrate_retired=True
+            )
+        except MiniMaxH3ValidationError:
             main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
 
         raw_items = profile.get("addon_items")
@@ -135,9 +134,7 @@ def _normalize_advanced_video_pro_config(raw: Any) -> dict[str, dict[str, Any]]:
         else:
             legacy_addons = profile.get("addon_models")
             legacy_addons = (
-                legacy_addons
-                if isinstance(legacy_addons, (list, tuple))
-                else []
+                legacy_addons if isinstance(legacy_addons, (list, tuple)) else []
             )
             candidates = [{"name": value} for value in legacy_addons]
 
@@ -148,11 +145,7 @@ def _normalize_advanced_video_pro_config(raw: Any) -> dict[str, dict[str, Any]]:
                 continue
             model_id = str(raw_item.get("name") or "").strip()
             model = MINIMAX_H3_ADDON_MODELS.get(model_id)
-            if (
-                model is None
-                or mode not in model.supported_modes
-                or model_id in seen
-            ):
+            if model is None or mode not in model.supported_modes or model_id in seen:
                 continue
             try:
                 raw_strength = raw_item.get("strength")
@@ -203,9 +196,9 @@ def get_advanced_video_pro_profile(raw: Any, mode: str) -> dict[str, Any]:
     normalized_mode = str(mode or "").strip().lower()
     if normalized_mode not in ADVANCED_VIDEO_PRO_MODES:
         raise ValueError("未知高级图生视频 Pro 模式。")
-    profile = normalize_feature_entry_visibility_config(raw)[
-        "advanced_video_pro"
-    ][normalized_mode]
+    profile = normalize_feature_entry_visibility_config(raw)["advanced_video_pro"][
+        normalized_mode
+    ]
     return {
         "main_model": profile["main_model"],
         "addon_items": [dict(item) for item in profile["addon_items"]],
@@ -214,9 +207,8 @@ def get_advanced_video_pro_profile(raw: Any, mode: str) -> dict[str, Any]:
 
 def build_advanced_video_pro_admin_options() -> dict[str, Any]:
     main_model_labels = {
-        "10eros": "10Eros TURBO",
-        "official": "官方高保真",
-        "official_ref2v_turbo": "官方 REF2V 极速",
+        "10eros_bf16": "10Eros Beta4 BF16",
+        "10eros_int8": "10Eros Beta4 INT8 ConvRot",
     }
     return {
         "modes": [
@@ -232,10 +224,6 @@ def build_advanced_video_pro_admin_options() -> dict[str, Any]:
             mode: [
                 {"value": model_id, "label": main_model_labels[model_id]}
                 for model_id in MINIMAX_H3_MAIN_MODELS
-                if not (
-                    model_id == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
-                    and mode != "ref2v"
-                )
             ]
             for mode in ADVANCED_VIDEO_PRO_MODES
         },

@@ -44,7 +44,9 @@ def build_update(callback_data):
         edit_reply_markup=AsyncMock(),
     )
     return SimpleNamespace(
-        callback_query=SimpleNamespace(data=callback_data, message=message, answer=AsyncMock()),
+        callback_query=SimpleNamespace(
+            data=callback_data, message=message, answer=AsyncMock()
+        ),
         effective_user=SimpleNamespace(
             id=7007,
             username="alice",
@@ -71,7 +73,9 @@ async def test_result_action_requires_explicit_second_confirmation(monkeypatch):
     )
 
     text = update.callback_query.message.reply_text.await_args.args[0]
-    keyboard = update.callback_query.message.reply_text.await_args.kwargs["reply_markup"]
+    keyboard = update.callback_query.message.reply_text.await_args.kwargs[
+        "reply_markup"
+    ]
     assert "预计消耗：9 灵石" in text
     assert keyboard.inline_keyboard[0][0].callback_data == "avpopt_confirm:draft-token"
 
@@ -159,11 +163,13 @@ async def test_optimized_h3_generation_preserves_gallery_eligibility(
 @pytest.mark.asyncio
 async def test_optimized_h3_generation_preserves_admin_addon_strengths(monkeypatch):
     draft = build_draft(
-        addon_models=("motion_booster",),
-        addon_items=({"name": "motion_booster", "strength": 1.25},),
+        addon_models=("deepthroat",),
+        addon_items=({"name": "deepthroat", "strength": 1.25},),
     )
     submit = AsyncMock()
-    monkeypatch.setattr(callbacks, "_materialize_draft_images", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        callbacks, "_materialize_draft_images", AsyncMock(return_value=[])
+    )
     monkeypatch.setattr(callbacks, "submit_advanced_video_pro_plan", submit)
     monkeypatch.setattr(callbacks.advanced_video_prompt_task_store, "save", AsyncMock())
     monkeypatch.setattr(callbacks, "cleanup_prompt_draft_objects", AsyncMock())
@@ -175,6 +181,4 @@ async def test_optimized_h3_generation_preserves_admin_addon_strengths(monkeypat
     )
 
     plan = submit.await_args.args[0]
-    assert plan.addon_items == (
-        {"name": "motion_booster", "strength": 1.25},
-    )
+    assert plan.addon_items == ({"name": "deepthroat", "strength": 1.25},)

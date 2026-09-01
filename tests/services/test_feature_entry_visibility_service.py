@@ -26,8 +26,8 @@ def test_feature_entry_visibility_defaults_keep_pro_and_character_entries_hidden
             "random_faceswap": True,
             "ltx_video": True,
             "ltx_video_v2": True,
-                "ltx_t2v": True,
-                "ltx25_video_upscale": False,
+            "ltx_t2v": True,
+            "ltx25_video_upscale": False,
             "minimax_h3": False,
             "wan22_video_v2": True,
             "scail2_action_transfer": True,
@@ -50,7 +50,7 @@ def test_feature_entry_visibility_defaults_keep_pro_and_character_entries_hidden
             "scail2_face_swap_v2": True,
         },
         "advanced_video_pro": {
-            mode: {"main_model": "10eros", "addon_items": []}
+            mode: {"main_model": "10eros_bf16", "addon_items": []}
             for mode in ADVANCED_VIDEO_PRO_MODES
         },
     }
@@ -76,13 +76,11 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
             "advanced_video_pro": {
                 "i2v": {
                     "main_model": "official",
-                    "addon_models": ["motion_booster", "unknown", "motion_booster"],
+                    "addon_models": ["deepthroat", "unknown", "deepthroat"],
                 },
                 "ref2v": {
                     "main_model": "official_ref2v_turbo",
-                    "addon_items": [
-                        {"name": "motion_booster_ref2va", "strength": 1.25}
-                    ],
+                    "addon_items": [{"name": "pov_missionary", "strength": 1.25}],
                 },
             },
         }
@@ -100,8 +98,8 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
             "random_faceswap": True,
             "ltx_video": False,
             "ltx_video_v2": True,
-                "ltx_t2v": True,
-                "ltx25_video_upscale": False,
+            "ltx_t2v": True,
+            "ltx25_video_upscale": False,
             "minimax_h3": True,
             "wan22_video_v2": True,
             "scail2_action_transfer": True,
@@ -124,33 +122,27 @@ def test_feature_entry_visibility_normalizes_unknown_and_invalid_values_safely()
             "scail2_face_swap_v2": True,
         },
         "advanced_video_pro": {
-            "t2v": {"main_model": "10eros", "addon_items": []},
+            "t2v": {"main_model": "10eros_bf16", "addon_items": []},
             "i2v": {
-                "main_model": "official",
-                "addon_items": [
-                    {"name": "motion_booster", "strength": 0.7}
-                ],
+                "main_model": "10eros_int8",
+                "addon_items": [{"name": "deepthroat", "strength": 0.75}],
             },
-            "flf2v": {"main_model": "10eros", "addon_items": []},
+            "flf2v": {"main_model": "10eros_bf16", "addon_items": []},
             "ref2v": {
-                "main_model": "official_ref2v_turbo",
-                "addon_items": [
-                    {"name": "motion_booster_ref2va", "strength": 1.25}
-                ],
+                "main_model": "10eros_int8",
+                "addon_items": [{"name": "pov_missionary", "strength": 1.25}],
             },
         },
     }
 
     profile = get_advanced_video_pro_profile(config, "i2v")
     assert profile == {
-        "main_model": "official",
-        "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+        "main_model": "10eros_int8",
+        "addon_items": [{"name": "deepthroat", "strength": 0.75}],
     }
     assert get_advanced_video_pro_profile(config, "ref2v") == {
-        "main_model": "official_ref2v_turbo",
-        "addon_items": [
-            {"name": "motion_booster_ref2va", "strength": 1.25}
-        ],
+        "main_model": "10eros_int8",
+        "addon_items": [{"name": "pov_missionary", "strength": 1.25}],
     }
 
 

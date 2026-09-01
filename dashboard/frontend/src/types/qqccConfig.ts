@@ -14,7 +14,7 @@ export type AiVideoDurationKey = 5 | 10 | 15
 export type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 export type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 export type AiVideoSceneEngine = 'minimax_h3'
-export type AiVideoMainModel = '10eros' | 'official' | 'official_ref2v_turbo'
+export type AiVideoMainModel = '10eros_bf16' | '10eros_int8'
 export type AiVideoMode = 'i2v' | 'ref2v'
 export type AiVideoCreditCosts = Partial<Record<
   AiVideoMode,

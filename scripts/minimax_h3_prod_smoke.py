@@ -165,22 +165,16 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
             images=[image_key, end_image_key],
         ),
         task(
-            "minimax_h3_ref2v_10eros_5s_preview",
+            "minimax_h3_ref2v_10eros_bf16_5s_preview",
             "minimax_h3_ref2v",
             images=[image_key],
-            main_model="10eros",
+            main_model="10eros_bf16",
         ),
         task(
-            "minimax_h3_ref2v_official_5s_preview",
+            "minimax_h3_ref2v_10eros_int8_5s_preview",
             "minimax_h3_ref2v",
             images=[image_key],
-            main_model="official",
-        ),
-        task(
-            "minimax_h3_ref2v_official_turbo_5s_preview",
-            "minimax_h3_ref2v",
-            images=[image_key],
-            main_model="official_ref2v_turbo",
+            main_model="10eros_int8",
         ),
         task(
             "minimax_h3_t2v_10s_standard",
@@ -215,9 +209,7 @@ def _ffprobe(path: Path, *, expected_duration: int) -> dict[str, Any]:
     )
     if not video:
         raise MiniMaxH3SmokeError(f"{path.name}: missing video stream")
-    numerator, denominator = str(video.get("avg_frame_rate") or "0/1").split(
-        "/", 1
-    )
+    numerator, denominator = str(video.get("avg_frame_rate") or "0/1").split("/", 1)
     fps = float(numerator) / float(denominator)
     duration = float((payload.get("format") or {}).get("duration") or 0)
     if abs(fps - 24.0) > 0.1 or abs(duration - expected_duration) > 1.0:
@@ -258,9 +250,7 @@ def main() -> int:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(
-            os.getenv("XDG_STATE_HOME", str(Path.home() / ".local/state"))
-        )
+        default=Path(os.getenv("XDG_STATE_HOME", str(Path.home() / ".local/state")))
         / "allbot/minimax-h3-smoke",
     )
     args = parser.parse_args()

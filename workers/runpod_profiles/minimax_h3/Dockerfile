@@ -103,7 +103,6 @@ RUN set -euo pipefail; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
-    grep -q 'class ManualSigmas' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_custom_sampler.py"; \
     grep -q 'class BasicScheduler' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_custom_sampler.py"; \
     grep -R -q 'er_sde' "${COMFYUI_INSTALL_DIR}/comfy"; \
     grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
@@ -112,16 +111,15 @@ RUN set -euo pipefail; \
     grep -R -q 'DaSiWa_ResolutionScaleCalculator' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v","minimax_h3_ref2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
     python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json","MiniMax H3 REF2V.api.json"]; workflows=[json.loads((root/n).read_text()) for n in names]; ref=workflows[-1]; assert all(isinstance(item,dict) for item in workflows); assert ref["1"]["inputs"]["unet_name"].endswith("10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"); assert all(item["3"]["inputs"]["shift_video"]==12.0 and item["3"]["inputs"]["shift_audio"]==7.0 for item in workflows); assert all(item["33"]["inputs"]["sampler_name"]=="euler" for item in workflows); assert all(item["34"]["class_type"]=="BasicScheduler" and item["34"]["inputs"]["scheduler"]=="simple" and item["34"]["inputs"]["steps"]==8 for item in workflows)'; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import json; from pathlib import Path; from comfy_agent.workflow_task_patchers import patch_minimax_h3_workflow; ref=json.loads(Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows/MiniMax H3 REF2V.api.json").read_text()); patch_minimax_h3_workflow(ref,task_type="minimax_h3_ref2v",params={"prompt":"canary","main_model":"official","image":"one.png"}); assert ref["1"]["inputs"]["unet_name"].endswith("minimax_h3_ref2va_pruned_int8_convrot.safetensors"); assert ref["30"]["inputs"]["ref_image_size"]=="max"; assert ref["33"]["inputs"]["sampler_name"]=="res_multistep"; assert ref["34"]["class_type"]=="BasicScheduler" and ref["34"]["inputs"]["steps"]==20'; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import json; from pathlib import Path; from comfy_agent.workflow_task_patchers import patch_minimax_h3_workflow; ref=json.loads(Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows/MiniMax H3 REF2V.api.json").read_text()); patch_minimax_h3_workflow(ref,task_type="minimax_h3_ref2v",params={"prompt":"canary","main_model":"official_ref2v_turbo","image":"one.png"}); assert ref["9"]["inputs"]["lora_name"].endswith("minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"); assert ref["2"]["inputs"]["model"]==["9",0]; assert ref["3"]["inputs"]["shift_video"]==12.0 and ref["3"]["inputs"]["shift_audio"]==3.0; assert ref["30"]["inputs"]["ref_image_size"]=="match"; assert ref["33"]["inputs"]["sampler_name"]=="euler"; assert ref["34"]["class_type"]=="BasicScheduler" and ref["34"]["inputs"]["scheduler"]=="simple" and ref["34"]["inputs"]["steps"]==4'; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import json; from pathlib import Path; from comfy_agent.workflow_task_patchers import patch_minimax_h3_workflow; ref=json.loads(Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows/MiniMax H3 REF2V.api.json").read_text()); patch_minimax_h3_workflow(ref,task_type="minimax_h3_ref2v",params={"prompt":"canary","main_model":"10eros_int8","image":"one.png"}); assert ref["1"]["inputs"]["unet_name"].endswith("10Eros_Max_h3_TURBO-hybrid_beta4_int8_convrot.safetensors"); assert "8" not in ref and "9" not in ref; assert ref["3"]["inputs"]["shift_video"]==12.0 and ref["3"]["inputs"]["shift_audio"]==7.0; assert ref["30"]["inputs"]["ref_image_size"]=="match"; assert ref["33"]["inputs"]["sampler_name"]=="euler"; assert ref["34"]["class_type"]=="BasicScheduler" and ref["34"]["inputs"]["scheduler"]=="simple" and ref["34"]["inputs"]["steps"]==8'; \
     if find "${COMFYUI_INSTALL_DIR}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then \
       echo "MiniMax H3 model files must stay out of the image" >&2; exit 1; \
     fi; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
-      org.opencontainers.image.description="Selectable pinned 10Eros and official MiniMax H3 runtime with external model manifest" \
+LABEL org.opencontainers.image.title="AllBot MiniMax H3 10Eros profile" \
+      org.opencontainers.image.description="Selectable pinned 10Eros Beta4 BF16 and INT8 ConvRot runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \

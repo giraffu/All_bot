@@ -391,7 +391,7 @@ class AdvancedVideoProAddonItem(BaseModel):
 
 
 class AdvancedVideoProModeConfig(BaseModel):
-    main_model: str = "10eros"
+    main_model: str = "10eros_bf16"
     addon_items: Optional[List[AdvancedVideoProAddonItem]] = Field(
         default=None,
         max_length=13,

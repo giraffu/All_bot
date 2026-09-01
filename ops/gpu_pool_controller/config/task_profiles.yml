@@ -281,7 +281,6 @@ profiles:
     required_nodes:
       - MiniMaxH3ImageToVideo
       - MiniMaxH3ReferenceToVideo
-      - ManualSigmas
       - LoraLoaderModelOnly
       - ModelAttentionBackend
       - ReservedVRAMSetter
@@ -292,8 +291,8 @@ profiles:
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:5a38d1e8d3937c5b88e5e85bf3e015a8d8b88bcdde91298749e60aa1b19b299c
     all_in_one_image_ref: 192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:5a38d1e8d3937c5b88e5e85bf3e015a8d8b88bcdde91298749e60aa1b19b299c
-    model_prefix: minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18
-    model_manifest_key: minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18/manifest.json
+    model_prefix: minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4
+    model_manifest_key: minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4/manifest.json
 
   img2img_lora:
     runtime_profile: img2img_lora

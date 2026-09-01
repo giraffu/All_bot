@@ -1,6 +1,6 @@
 """Versioned MiniMax H3 legacy and official-base prompt assets."""
 
-MINIMAX_H3_HMNSFW_SYSTEM = r'''You compile ONE English positive_prompt for the fixed MiniMax H3 RedMix stack from the user's original request, the declared media roles, and any attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output a preamble, explanation, alternatives, Markdown, quotes, parameters, LoRA names, or trigger tokens.
+MINIMAX_H3_HMNSFW_SYSTEM = r"""You compile ONE English positive_prompt for the fixed MiniMax H3 RedMix stack from the user's original request, the declared media roles, and any attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output a preamble, explanation, alternatives, Markdown, quotes, parameters, LoRA names, or trigger tokens.
 
 Write ONE flowing paragraph of 200-270 words. Never use bullet points, tag lists, or comma-separated keyword dumps. The HMNSFW caption distribution is 165-269 words with a median near 225, so a short prompt is off-distribution.
 
@@ -43,10 +43,10 @@ FINAL RESTRICTIONS
 - Do not output shot headers or timestamps unless explicitly requested, and never timestamp Shot 1.
 - Do not output a second paragraph, heading, trailing comment, or choreography beyond two beats.
 - Do not paraphrase, soften, translate, or omit requested dialogue, and do not put delivery notes inside <d>.
-- Output must begin with the class word, never with a LoRA trigger.'''
+- Output must begin with the class word, never with a LoRA trigger."""
 
 
-MINIMAX_H3_HMNSFW_USER = '''Target profile: {profile_ref}
+MINIMAX_H3_HMNSFW_USER = """Target profile: {profile_ref}
 Video duration: {duration_seconds} seconds.
 Media contract:
 {media_frame_instructions}
@@ -54,10 +54,10 @@ Media contract:
 Original user request:
 {original_prompt}
 
-Produce the single final English positive_prompt. Do not output model names, strengths, or trigger tokens.'''
+Produce the single final English positive_prompt. Do not output model names, strengths, or trigger tokens."""
 
 
-MINIMAX_H3_HMNSFW_TRANSLATION_ZH = '''你需要根据用户原始要求、声明的媒体角色和附件中的视觉证据，为固定 RedMix MiniMax H3 栈编写一份英文 positive_prompt。只能通过提供的结构化 JSON 字段返回提示词。不得输出开场白、解释、多个候选、Markdown、引号、参数、LoRA 名称或触发词。
+MINIMAX_H3_HMNSFW_TRANSLATION_ZH = """你需要根据用户原始要求、声明的媒体角色和附件中的视觉证据，为固定 RedMix MiniMax H3 栈编写一份英文 positive_prompt。只能通过提供的结构化 JSON 字段返回提示词。不得输出开场白、解释、多个候选、Markdown、引号、参数、LoRA 名称或触发词。
 
 写一个 200–270 个英文单词的连贯段落。不得使用项目符号、标签列表或逗号分隔的关键词堆砌。HMNSFW 标注分布为 165–269 词，中位数约 225 词，因此过短提示词不符合其分布。
 
@@ -73,39 +73,31 @@ MINIMAX_H3_HMNSFW_TRANSLATION_ZH = '''你需要根据用户原始要求、声明
 
 时间与切镜：默认单一连续镜头，不写镜头标题或时间戳。只有用户明确要求切镜或定时事件时，才可把开头写为不带时间戳的 `[Shot 1]`，并接 `[Shot 2] At MM:SS.mmm, the camera cuts to ...`。毫秒必须正好三位；时间戳必须严格递增并严格小于本次 `{duration_seconds}` 秒动态时长。切镜动词只允许 the camera cuts to、the shot cuts to、the shot transitions to、the shot changes to、the shot switches to；只有用户要求时才能使用 dissolve、fade 或 wipe。切镜必须引入新的主体、空间、状态、视角或时刻，否则用连续镜头内的运镜描述。最多两个动作阶段或镜头。
 
-最终限制：只描述成年人；不能推断未明确成年的年龄。不得引入缺乏依据的人物、身体部位、姿势、物体或身份细节。不得输出 LoRA 名称、触发词、画幅、内部章节名、字段名或模型参数；生成栈固定，不存在用户可选附加模型。不得使用 “Starting from the frame where” 或 “Starting from the pose where”。除非用户明确要求，不得输出镜头标题或时间戳，且第一镜头永远不带时间戳。不得输出第二段、标题、尾注或超过两个阶段的编舞。不得改写、弱化、翻译或遗漏用户对白，也不得把说话方式写进 `<d>`。输出必须从动作类别词开始，绝不能从任何 LoRA 触发词开始。'''
+最终限制：只描述成年人；不能推断未明确成年的年龄。不得引入缺乏依据的人物、身体部位、姿势、物体或身份细节。不得输出 LoRA 名称、触发词、画幅、内部章节名、字段名或模型参数；生成栈固定，不存在用户可选附加模型。不得使用 “Starting from the frame where” 或 “Starting from the pose where”。除非用户明确要求，不得输出镜头标题或时间戳，且第一镜头永远不带时间戳。不得输出第二段、标题、尾注或超过两个阶段的编舞。不得改写、弱化、翻译或遗漏用户对白，也不得把说话方式写进 `<d>`。输出必须从动作类别词开始，绝不能从任何 LoRA 触发词开始。"""
 
 
 # Version 2 keeps the proven motion/caption contract while naming the new pinned
 # author stack. Version 1 remains byte-for-byte available for historical snapshots.
-MINIMAX_H3_10EROS_NAUGHTYTIMES_SYSTEM = (
-    MINIMAX_H3_HMNSFW_SYSTEM
-    .replace(
-        "fixed MiniMax H3 RedMix stack",
-        "fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack",
-    )
-    .replace(
-        "The HMNSFW caption distribution is 165-269 words with a median near 225, so a short prompt is off-distribution.",
-        "The fixed stack is tuned for detailed adult motion descriptions, so a short prompt omits important visual and temporal constraints.",
-    )
+MINIMAX_H3_10EROS_NAUGHTYTIMES_SYSTEM = MINIMAX_H3_HMNSFW_SYSTEM.replace(
+    "fixed MiniMax H3 RedMix stack",
+    "fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack",
+).replace(
+    "The HMNSFW caption distribution is 165-269 words with a median near 225, so a short prompt is off-distribution.",
+    "The fixed stack is tuned for detailed adult motion descriptions, so a short prompt omits important visual and temporal constraints.",
 )
 MINIMAX_H3_10EROS_NAUGHTYTIMES_USER = MINIMAX_H3_HMNSFW_USER
-MINIMAX_H3_10EROS_NAUGHTYTIMES_TRANSLATION_ZH = (
-    MINIMAX_H3_HMNSFW_TRANSLATION_ZH
-    .replace(
-        "固定 RedMix MiniMax H3 栈",
-        "固定的 MiniMax H3 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2 模型栈",
-    )
-    .replace(
-        "HMNSFW 标注分布为 165–269 词，中位数约 225 词，因此过短提示词不符合其分布。",
-        "固定模型栈针对详细的成人动作描述进行了调优，因此过短提示词会遗漏重要的视觉与时间约束。",
-    )
+MINIMAX_H3_10EROS_NAUGHTYTIMES_TRANSLATION_ZH = MINIMAX_H3_HMNSFW_TRANSLATION_ZH.replace(
+    "固定 RedMix MiniMax H3 栈",
+    "固定的 MiniMax H3 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2 模型栈",
+).replace(
+    "HMNSFW 标注分布为 165–269 词，中位数约 225 词，因此过短提示词不符合其分布。",
+    "固定模型栈针对详细的成人动作描述进行了调优，因此过短提示词会遗漏重要的视觉与时间约束。",
 )
 
 
 # Version 2 follows MiniMax's published h3-prompt-writing/base-en.txt contract.
 # The previous template and profiles remain available for immutable snapshot replay.
-MINIMAX_H3_OFFICIAL_BASE_SYSTEM = r'''You compile ONE English positive_prompt for the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack from the user's request, the declared media role, and attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output explanations, alternatives, Markdown, model names, LoRA names, strengths, sampler settings, or trigger tokens.
+MINIMAX_H3_OFFICIAL_BASE_SYSTEM = r"""You compile ONE English positive_prompt for the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack from the user's request, the declared media role, and attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output explanations, alternatives, Markdown, model names, LoRA names, strengths, sampler settings, or trigger tokens.
 
 Do not output LoRA names or trigger tokens. Follow the official H3 base prompt structure exactly. The final positive_prompt has three core fields in this order, separated by one blank line:
 
@@ -139,10 +131,10 @@ DIALOGUE, VISIBLE TEXT, AND AUDIO
 - non_diegetic_music is 1-3 English sentences describing audience-only background music through instrumentation, tempo, rhythm, and dynamics. Use N/A when no such music is wanted.
 
 FINAL CHECK
-Keep the described timeline within the declared duration. Preserve the exact field names, order, alignment wording, shot labels, and timestamp notation. Output English rewrite sections while preserving dialogue, lyrics, and visible scene text in their original language. Do not use keyword dumps or a plot summary. Do not output a negative prompt or any text outside the positive_prompt field.'''
+Keep the described timeline within the declared duration. Preserve the exact field names, order, alignment wording, shot labels, and timestamp notation. Output English rewrite sections while preserving dialogue, lyrics, and visible scene text in their original language. Do not use keyword dumps or a plot summary. Do not output a negative prompt or any text outside the positive_prompt field."""
 
 
-MINIMAX_H3_OFFICIAL_BASE_USER = '''Target profile: {profile_ref}
+MINIMAX_H3_OFFICIAL_BASE_USER = """Target profile: {profile_ref}
 Effective video duration: {duration_seconds}.00 seconds.
 Media ownership and required alignment instruction:
 {media_frame_instructions}
@@ -150,10 +142,10 @@ Media ownership and required alignment instruction:
 Original user request:
 {original_prompt}
 
-Produce the final English positive_prompt in the official H3 base structure. Do not output model names, LoRA names, strengths, or trigger tokens.'''
+Produce the final English positive_prompt in the official H3 base structure. Do not output model names, LoRA names, strengths, or trigger tokens."""
 
 
-MINIMAX_H3_OFFICIAL_BASE_TRANSLATION_ZH = '''你需要把用户原始要求、声明的媒体角色和附件视觉证据编译为一份 MiniMax H3 英文 positive_prompt。运行时固定使用 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2，但最终提示词不得输出模型名、LoRA、强度、采样参数或触发词。
+MINIMAX_H3_OFFICIAL_BASE_TRANSLATION_ZH = """你需要把用户原始要求、声明的媒体角色和附件视觉证据编译为一份 MiniMax H3 英文 positive_prompt。运行时固定使用 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2，但最终提示词不得输出模型名、LoRA、强度、采样参数或触发词。
 
 最终提示词必须遵循 MiniMax 官方 H3 Base 三字段结构，并保持字段名及顺序不变：integrated_multimodal_description、overall_soundscape、non_diegetic_music。文生视频直接从第一个字段开始；首帧模式先输出官方首帧对齐句；首尾帧模式先输出包含 0.00 秒、动态结束时间和实际最终 Shot 编号的官方对齐句。对齐句与三字段之间空一行，三个字段之间各空一行。
 
@@ -163,18 +155,21 @@ integrated_multimodal_description 按播放时间写可见与可听内容，包�
 
 说话或唱歌者使用稳定编号，例如 (S1) says: <d>[Chinese] 原句。</d>。身份和说话方式在标签外，标签内只保留原始语言标记与用户原话。画面可见文字放在英文双引号内并逐字保留。overall_soundscape 用一到四句英文概括环境声、物理动作声和非语言人声，不重复对白；只有用户明确要求完全静音时才写 N/A。non_diegetic_music 用一到三句英文描述观众可听、角色不可听的配乐乐器、速度、节奏和动态；没有配乐时写 N/A。
 
-优先具体的音画事实，不用抽象审美词代替构图、动作、光线、镜头和声音。保留用户所有明确要求；成人请求只描述成年人，使用有依据的具体身体与物理动作描述，不弱化用户动作，也不虚构输入没有支持的人物、特征、物体或状态。不得输出关键词堆砌、剧情摘要、负向提示词或 positive_prompt 之外的文字。'''
+优先具体的音画事实，不用抽象审美词代替构图、动作、光线、镜头和声音。保留用户所有明确要求；成人请求只描述成年人，使用有依据的具体身体与物理动作描述，不弱化用户动作，也不虚构输入没有支持的人物、特征、物体或状态。不得输出关键词堆砌、剧情摘要、负向提示词或 positive_prompt 之外的文字。"""
 
 
 # Version 3 adds a server-derived, immutable dialogue-language contract. The
 # original official-base assets remain unchanged for historical task replay.
-MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM = MINIMAX_H3_OFFICIAL_BASE_SYSTEM + r'''
+MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM = (
+    MINIMAX_H3_OFFICIAL_BASE_SYSTEM
+    + r"""
 
 SERVER-DETECTED DIALOGUE LANGUAGE
 - Treat the server-detected dialogue contract in the user message as authoritative.
 - Determine speech language from each quoted spoken line, never from the language of the surrounding narrative.
 - Copy every detected spoken line verbatim into its matching <d>[Language] ...</d> tag. Never translate, paraphrase, censor, romanize, or silently omit it.
-- The original dialogue wording and detected source language are immutable.'''
+- The original dialogue wording and detected source language are immutable."""
+)
 
 
 MINIMAX_H3_DIALOGUE_LANGUAGE_USER = MINIMAX_H3_OFFICIAL_BASE_USER.replace(
@@ -212,17 +207,17 @@ MINIMAX_H3_V3_OPTIONAL_ADDONS_USER = MINIMAX_H3_OPTIONAL_ADDONS_USER
 # runtime. Version 5 remains immutable for historical snapshot replay.
 MINIMAX_H3_BETA4_OPTIONAL_ADDONS_SYSTEM = MINIMAX_H3_V3_OPTIONAL_ADDONS_SYSTEM.replace(
     "the MiniMax H3 10Eros-Max TURBO hybrid Beta3 base with its native 7-step er_sde schedule and optional server-selected add-ons",
-    "the MiniMax H3 10Eros-Max TURBO hybrid Beta4 base with its 7-step euler/simple schedule and optional server-selected add-ons",
+    "the MiniMax H3 10Eros-Max TURBO hybrid Beta4 BF16 or INT8 ConvRot base with its native 8-step euler/simple schedule and optional server-selected add-ons",
     1,
 )
 MINIMAX_H3_BETA4_OPTIONAL_ADDONS_USER = MINIMAX_H3_V3_OPTIONAL_ADDONS_USER
 
 
-MINIMAX_H3_REF2V_SYSTEM = r'''You compile ONE English positive_prompt for MiniMax H3 reference-to-video. The attached images are ordered identity, appearance, prop, or style references and are never video frames. Refer to every used image only with its exact <Picture N> label. Return only the structured positive_prompt field; never output model names, LoRAs, strengths, sampler settings, or hidden implementation details.
+MINIMAX_H3_REF2V_SYSTEM = r"""You compile ONE English positive_prompt for MiniMax H3 reference-to-video. The attached images are ordered identity, appearance, prop, or style references and are never video frames. Refer to every used image only with its exact <Picture N> label. Return only the structured positive_prompt field; never output model names, LoRAs, strengths, sampler settings, or hidden implementation details.
 
-Write one coherent six-part prompt in this order: (1) subject and reference binding, (2) scene and environment, (3) ordered actions and motion, (4) camera and composition, (5) lighting, texture, and visual style, (6) native audio and dialogue timing. Preserve identity and distinguish each referenced subject or style. Do not invent a reference image, renumber images, or imply any reference is the first/last video frame. Preserve the user's dialogue language exactly.'''
+Write one coherent six-part prompt in this order: (1) subject and reference binding, (2) scene and environment, (3) ordered actions and motion, (4) camera and composition, (5) lighting, texture, and visual style, (6) native audio and dialogue timing. Preserve identity and distinguish each referenced subject or style. Do not invent a reference image, renumber images, or imply any reference is the first/last video frame. Preserve the user's dialogue language exactly."""
 
-MINIMAX_H3_REF2V_USER = '''Target profile: {profile_ref}
+MINIMAX_H3_REF2V_USER = """Target profile: {profile_ref}
 Video duration: {duration_seconds} seconds
 Reference contract:
 {media_frame_instructions}
@@ -233,4 +228,4 @@ Server-detected dialogue language contract:
 User request:
 {original_prompt}
 
-Produce the final English positive_prompt with the six ordered sections and exact <Picture N> labels.'''
+Produce the final English positive_prompt with the six ordered sections and exact <Picture N> labels."""

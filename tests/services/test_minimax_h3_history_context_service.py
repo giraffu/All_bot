@@ -15,8 +15,8 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
             "minimax_h3_resolution_preset": "standard",
             "minimax_h3_aspect_ratio": "source",
             "lora_items": [
-                {"name": "sex_pose", "strength": 0.5},
-                {"name": "naughty_times", "strength": 1.2},
+                {"name": "footjob", "strength": 0.5},
+                {"name": "deepthroat", "strength": 1.2},
             ],
         },
     )
@@ -28,8 +28,8 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
         "resolution_preset": "standard",
         "aspect_ratio": "source",
         "lora_items": [
-            {"name": "sex_pose", "strength": 0.5},
-            {"name": "naughty_times", "strength": 1.2},
+            {"name": "footjob", "strength": 0.5},
+            {"name": "deepthroat", "strength": 1.2},
         ],
     }
 

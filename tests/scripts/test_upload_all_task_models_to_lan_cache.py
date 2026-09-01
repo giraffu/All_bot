@@ -49,17 +49,26 @@ def test_ltx_unified_target_is_opt_in_and_uses_one_manifest():
 
     assert target in OPTIONAL_TARGETS
     assert target.prefix == "ltx_unified/2026-08-03-10eros-v14-runexx-msr"
-    assert target.manifest_key == ("ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json")
-    assert target.bundle_versions == (("ltx_unified_runtime", "2026-08-03-10eros-v14-runexx-msr"),)
+    assert target.manifest_key == (
+        "ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json"
+    )
+    assert target.bundle_versions == (
+        ("ltx_unified_runtime", "2026-08-03-10eros-v14-runexx-msr"),
+    )
 
 
 def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
     target = TARGETS_BY_NAME["minimax_h3"]
 
     assert target in OPTIONAL_TARGETS
-    assert target.prefix == "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"
-    assert target.manifest_key == "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18/manifest.json"
-    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"),)
+    assert target.prefix == "minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4"
+    assert (
+        target.manifest_key
+        == "minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4/manifest.json"
+    )
+    assert target.bundle_versions == (
+        ("minimax_h3_runtime", "2026-09-02-10eros-beta4-bf16-int8-addon4"),
+    )
 
 
 def test_target_manifest_preserves_exact_obsolete_file_cleanup(tmp_path: Path):
@@ -73,7 +82,7 @@ def test_target_manifest_preserves_exact_obsolete_file_cleanup(tmp_path: Path):
     target = TARGETS_BY_NAME["minimax_h3"]
     registry.write_bundle_manifest(
         bundle="minimax_h3_runtime",
-        version="2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18",
+        version="2026-09-02-10eros-beta4-bf16-int8-addon4",
         profiles=["minimax_h3"],
         source={"revision": "fixed"},
         files=[

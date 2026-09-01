@@ -91,40 +91,14 @@ export interface MiniMaxH3AddonOption {
 }
 
 export const MINIMAX_H3_ADDON_OPTIONS = [
-  { value: 'naughty_times', labelKey: 'lab.workbench.minimax_h3_addon_options.naughty_times', defaultStrength: 1.0 },
-  { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addon_options.sex_pose', defaultStrength: 0.5 },
-  { value: 'motion_booster', labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster', defaultStrength: 0.7 },
-  {
-    value: 'motion_booster_ref2va',
-    labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster_ref2va',
-    defaultStrength: 0.7,
-    supportedModes: ['ref2v'] as readonly MiniMaxH3Mode[],
-  },
-  {
-    value: 'video_reasoning',
-    labelKey: 'lab.workbench.minimax_h3_addon_options.video_reasoning',
-    defaultStrength: 1.0,
-    supportedModes: ['t2v', 'i2v'] as readonly MiniMaxH3Mode[],
-  },
-  { value: 'mystic_xxx', labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx', defaultStrength: 1.0 },
-  { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
-  { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
   { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },
   { value: 'pov_missionary', labelKey: 'lab.workbench.minimax_h3_addon_options.pov_missionary', defaultStrength: 0.7 },
   { value: 'footjob', labelKey: 'lab.workbench.minimax_h3_addon_options.footjob', defaultStrength: 0.5 },
-  { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addon_options.breasts', defaultStrength: 1.0 },
-  { value: 'vagassist', labelKey: 'lab.workbench.minimax_h3_addon_options.vagassist', defaultStrength: 1.0 },
-  { value: 'pussy', labelKey: 'lab.workbench.minimax_h3_addon_options.pussy', defaultStrength: 0.35 },
-  { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addon_options.penis', defaultStrength: 1.0 },
   { value: 'cumshot', labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot', defaultStrength: 0.9 },
-  { value: 'pussy_stills_v1', labelKey: 'lab.workbench.minimax_h3_addon_options.pussy_stills_v1', defaultStrength: 0.35 },
-  { value: 'titjob', labelKey: 'lab.workbench.minimax_h3_addon_options.titjob', defaultStrength: 0.75 },
 ] as const satisfies readonly MiniMaxH3AddonOption[]
 
-export const getMiniMaxH3AddonOptionsForMode = (mode: MiniMaxH3Mode) =>
-  MINIMAX_H3_ADDON_OPTIONS.filter(option => (
-    !('supportedModes' in option) || option.supportedModes.includes(mode)
-  ))
+export const getMiniMaxH3AddonOptionsForMode = (_mode: MiniMaxH3Mode) =>
+  MINIMAX_H3_ADDON_OPTIONS
 
 export const EDIT_LORA_OPTIONS = [
   { value: '', label: '无' },

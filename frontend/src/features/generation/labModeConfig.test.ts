@@ -24,65 +24,16 @@ describe('labModeConfig', () => {
     expect(mode).not.toHaveProperty('addonOptions')
   })
 
-  it('keeps the previously pinned MiniMax H3 add-ons and defaults', () => {
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'motion_booster',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster',
-      defaultStrength: 0.7,
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'motion_booster_ref2va',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster_ref2va',
-      defaultStrength: 0.7,
-      supportedModes: ['ref2v'],
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'video_reasoning',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.video_reasoning',
-      defaultStrength: 1.0,
-      supportedModes: ['t2v', 'i2v'],
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'mystic_xxx',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx',
-      defaultStrength: 1.0,
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'cumshot',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot',
-      defaultStrength: 0.9,
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'pussy_stills_v1',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.pussy_stills_v1',
-      defaultStrength: 0.35,
-    })
-    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
-      value: 'titjob',
-      labelKey: 'lab.workbench.minimax_h3_addon_options.titjob',
-      defaultStrength: 0.75,
-    })
-  })
-
-  it('offers the native REF2VA motion booster only in reference-to-video mode', () => {
-    expect(getMiniMaxH3AddonOptionsForMode('t2v').map(item => item.value))
-      .not.toContain('motion_booster_ref2va')
-    expect(getMiniMaxH3AddonOptionsForMode('i2v').map(item => item.value))
-      .not.toContain('motion_booster_ref2va')
-    expect(getMiniMaxH3AddonOptionsForMode('flf2v').map(item => item.value))
-      .not.toContain('motion_booster_ref2va')
-    expect(getMiniMaxH3AddonOptionsForMode('ref2v').map(item => item.value))
-      .toContain('motion_booster_ref2va')
-  })
-
-  it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {
-    expect(MINIMAX_H3_ADDON_OPTIONS.slice(6, 11)).toEqual([
-      { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
-      { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
+  it('offers only the four retained MiniMax H3 action add-ons in every mode', () => {
+    expect(MINIMAX_H3_ADDON_OPTIONS).toEqual([
       { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },
       { value: 'pov_missionary', labelKey: 'lab.workbench.minimax_h3_addon_options.pov_missionary', defaultStrength: 0.7 },
       { value: 'footjob', labelKey: 'lab.workbench.minimax_h3_addon_options.footjob', defaultStrength: 0.5 },
+      { value: 'cumshot', labelKey: 'lab.workbench.minimax_h3_addon_options.cumshot', defaultStrength: 0.9 },
     ])
+    for (const mode of ['t2v', 'i2v', 'flf2v', 'ref2v'] as const) {
+      expect(getMiniMaxH3AddonOptionsForMode(mode)).toEqual(MINIMAX_H3_ADDON_OPTIONS)
+    }
   })
 
   it('hides character reference and text-to-video modes when production LTX is disabled', () => {

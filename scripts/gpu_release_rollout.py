@@ -22,6 +22,7 @@ PROFILE_IMAGE_ENV = {
     "scail2": "RUNPOD_IMAGE_NAME_SCAIL2",
     "ltx_video": "RUNPOD_IMAGE_NAME_LTX_VIDEO",
     "ltx_t2v": "RUNPOD_IMAGE_NAME_LTX_T2V",
+    "minimax_h3": "RUNPOD_IMAGE_NAME_MINIMAX_H3",
     "pornmaster_flux2_edit": "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
     "pornmaster_flux2_edit_bf16": "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
 }
@@ -44,7 +45,9 @@ def resolve_gpu_artifact(artifact: str, *, profile: str) -> dict[str, Any]:
     }
 
 
-def rollout_plan(resolved: dict[str, Any], *, slot: str, operator: str) -> dict[str, Any]:
+def rollout_plan(
+    resolved: dict[str, Any], *, slot: str, operator: str
+) -> dict[str, Any]:
     if operator not in {"runpod", "lan"}:
         raise GPURolloutError("GPU rollout operator must be runpod or lan")
     if not slot.strip():

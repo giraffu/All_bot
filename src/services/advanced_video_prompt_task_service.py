@@ -66,7 +66,7 @@ async def start_advanced_video_prompt_task(
     addon_models: list[str],
     reference_descriptions: list[str],
     generation_cost: int,
-    main_model: str = "10eros",
+    main_model: str = "10eros_bf16",
     addon_items: list[dict[str, Any]] | None = None,
     save_draft=None,
     upload_object: Callable[[str, str], Awaitable[bool]] = _default_upload_object,
@@ -102,7 +102,7 @@ async def start_advanced_video_prompt_task(
         object_keys=object_keys,
         image_suffixes=tuple(Path(path).suffix or ".jpg" for path in image_paths),
         generation_cost=int(generation_cost),
-        main_model=str(main_model or "10eros"),
+        main_model=str(main_model or "10eros_bf16"),
         addon_items=tuple(dict(item) for item in (addon_items or [])),
         status="staging",
         created_at=timestamp,
@@ -173,12 +173,16 @@ async def deliver_advanced_video_prompt_result(
                 else f"\n\nElapsed {elapsed:.1f}s. This result remains available for 24 hours."
             )
             reply_markup = InlineKeyboardMarkup(
-                [[
-                    InlineKeyboardButton(
-                        "🎬 使用此提示词生成" if draft.language == "zh" else "🎬 Generate with this prompt",
-                        callback_data=f"avpopt_prepare:{draft.token}",
-                    )
-                ]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🎬 使用此提示词生成"
+                            if draft.language == "zh"
+                            else "🎬 Generate with this prompt",
+                            callback_data=f"avpopt_prepare:{draft.token}",
+                        )
+                    ]
+                ]
             )
         sent = await bot.send_message(
             chat_id=draft.chat_id,
@@ -209,7 +213,9 @@ async def process_advanced_video_prompt_draft(
 ) -> None:
     if draft.status in {"staging", "submitting"} or not draft.optimizer_task_id:
         if now() - draft.updated_at > 120:
-            failed = draft.with_updates(status="failed", error_code="interrupted_submission")
+            failed = draft.with_updates(
+                status="failed", error_code="interrupted_submission"
+            )
             await store.save(failed, monitor=False)
             await store.stop_monitoring(draft.token)
             await cleanup_prompt_draft_objects(draft.object_keys)
@@ -231,7 +237,9 @@ async def process_advanced_video_prompt_draft(
             else "Prompt optimization failed. The original prompt was preserved and the optimizer charge will be refunded automatically."
         )
         await bot.send_message(chat_id=draft.chat_id, text=text)
-        failed = draft.with_updates(status="failed", completed_at=now(), error_code="optimizer_failed")
+        failed = draft.with_updates(
+            status="failed", completed_at=now(), error_code="optimizer_failed"
+        )
         await store.save(failed, monitor=False)
         await store.stop_monitoring(draft.token)
         await cleanup_prompt_draft_objects(draft.object_keys)

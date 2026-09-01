@@ -13,9 +13,9 @@ from src.lora_catalog import LTX_VIDEO_LORA_MODELS
 from src.qqcc_ltx_lora_catalog import QQCC_LTX23_LIBRARY_MODELS
 from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 from src.services import qqcc_config_service as config_service_module
+from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-    AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
     build_qqcc_config_options,
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
@@ -158,11 +158,11 @@ def test_qqcc_ref2v_legacy_references_receive_stable_default_names():
     assert scene["reference_image_telegram_file_ids"] == [{}, {}]
 
 
-def test_qqcc_ref2v_only_addon_is_kept_for_ref2v_and_removed_from_i2v():
+def test_qqcc_retained_addon_is_kept_for_i2v_and_ref2v():
     common = {
         "name": "Motion",
         "prompt": "move",
-        "lora_items": [{"name": "motion_booster_ref2va", "strength": 0.7}],
+        "lora_items": [{"name": "pov_missionary", "strength": 0.7}],
     }
     config = normalize_qqcc_config(
         {
@@ -180,9 +180,11 @@ def test_qqcc_ref2v_only_addon_is_kept_for_ref2v_and_removed_from_i2v():
         }
     )
 
-    assert config["ai_video_scenes"][0]["lora_items"] == []
+    assert config["ai_video_scenes"][0]["lora_items"] == [
+        {"name": "pov_missionary", "strength": 0.7}
+    ]
     assert config["ai_video_scenes"][1]["lora_items"] == [
-        {"name": "motion_booster_ref2va", "strength": 0.7}
+        {"name": "pov_missionary", "strength": 0.7}
     ]
 
 
@@ -202,7 +204,6 @@ def test_qqcc_ref2v_scene_rejects_missing_or_excess_admin_references(reference_c
 
     with pytest.raises(QqccRef2vSceneError):
         validate_qqcc_ref2v_scenes(raw)
-from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 
 
 class _Result:
@@ -256,12 +257,12 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_menu_layout"] == {
         "buttons_per_row": None,
         "button_order": [
-                "quick_faceswap",
-                "ai_draw_v1",
-                "ai_draw_v2",
-                "ai_filter",
-                "video_edit_v1",
-                "video_edit_v2",
+            "quick_faceswap",
+            "ai_draw_v1",
+            "ai_draw_v2",
+            "ai_filter",
+            "video_edit_v1",
+            "video_edit_v2",
             "ai_video",
             "market",
             "queue",
@@ -382,9 +383,7 @@ def test_qqcc_scene_resolution_contract_defaults_and_options():
                     "duration": "8s",
                 },
             ],
-            "ai_video_scenes": [
-                {"id": "cinema", "name": "Cinema", "prompt": "orbit"}
-            ],
+            "ai_video_scenes": [{"id": "cinema", "name": "Cinema", "prompt": "orbit"}],
         }
     )
 
@@ -404,9 +403,9 @@ def test_qqcc_scene_resolution_contract_defaults_and_options():
     ]
     assert build_qqcc_config_options()["default_video_resolution"] == "720p"
     assert build_qqcc_config_options()["default_ai_video_resolution"] == "preview"
-    assert [item["value"] for item in build_qqcc_config_options()["ai_video_resolutions"]] == [
-        "preview", "small", "standard", "hd"
-    ]
+    assert [
+        item["value"] for item in build_qqcc_config_options()["ai_video_resolutions"]
+    ] == ["preview", "small", "standard", "hd"]
 
 
 @pytest.mark.parametrize("invalid_resolution", ["", "2048p", 720, True])
@@ -464,13 +463,13 @@ def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
     assert config["main_menu_layout"] == {
         "buttons_per_row": 3,
         "button_order": [
-                "market",
-                "quick_faceswap",
-                "ai_draw_v1",
-                "ai_draw_v2",
-                "ai_filter",
-                "video_edit_v1",
-                "video_edit_v2",
+            "market",
+            "quick_faceswap",
+            "ai_draw_v1",
+            "ai_draw_v2",
+            "ai_filter",
+            "video_edit_v1",
+            "video_edit_v2",
             "ai_video",
             "queue",
             "private_bot",
@@ -530,9 +529,9 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
                     "main_model": "official",
                     "end_frame_draw_scene_id": "tail_pose",
                     "lora_items": [
-                        {"name": "motion_booster", "strength": 0.73},
-                        {"name": "mystic_xxx"},
-                        {"name": "motion_booster", "strength": 1.5},
+                        {"name": "deepthroat", "strength": 0.73},
+                        {"name": "pov_missionary"},
+                        {"name": "deepthroat", "strength": 1.5},
                         {"name": "missing", "strength": 1},
                     ],
                 },
@@ -555,17 +554,17 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
             "id": "cinematic",
             "name": "Cinematic",
             "prompt": "move slowly",
-                "negative_prompt": "blur, jitter",
-                "duration": 10,
-                "resolution": "preview",
-                "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-                "main_model": "official",
-                "mode": "i2v",
-                "reference_images": [],
-                "aspect_ratio": "16:9",
+            "negative_prompt": "blur, jitter",
+            "duration": 10,
+            "resolution": "preview",
+            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+            "main_model": "10eros_int8",
+            "mode": "i2v",
+            "reference_images": [],
+            "aspect_ratio": "16:9",
             "lora_items": [
-                {"name": "motion_booster", "strength": 0.75},
-                {"name": "mystic_xxx", "strength": 1.0},
+                {"name": "deepthroat", "strength": 0.75},
+                {"name": "pov_missionary", "strength": 0.7},
             ],
             "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
@@ -575,14 +574,14 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
             "id": "fallbacks",
             "name": "Fallbacks",
             "prompt": "prompt",
-                "negative_prompt": "",
-                "duration": 5,
-                "resolution": "preview",
-                "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-                "main_model": "10eros",
-                "mode": "i2v",
-                "reference_images": [],
-                "aspect_ratio": "16:9",
+            "negative_prompt": "",
+            "duration": 5,
+            "resolution": "preview",
+            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+            "main_model": "10eros_bf16",
+            "mode": "i2v",
+            "reference_images": [],
+            "aspect_ratio": "16:9",
             "lora_items": [],
             "credit_cost": None,
             "end_frame_draw_scene_id": "",
@@ -620,7 +619,7 @@ def test_normalize_qqcc_config_round_trips_same_kind_video_scene_links():
     assert config["video_scenes"][1]["next_scene_id"] is None
 
 
-def test_normalize_qqcc_config_scopes_official_ref2v_turbo_to_ref_mode():
+def test_normalize_qqcc_config_migrates_retired_official_models_to_int8():
     config = normalize_qqcc_config(
         {
             "ai_video_scenes": [
@@ -645,8 +644,8 @@ def test_normalize_qqcc_config_scopes_official_ref2v_turbo_to_ref_mode():
         }
     )
 
-    assert config["ai_video_scenes"][0]["main_model"] == "official_ref2v_turbo"
-    assert config["ai_video_scenes"][1]["main_model"] == "10eros"
+    assert config["ai_video_scenes"][0]["main_model"] == "10eros_int8"
+    assert config["ai_video_scenes"][1]["main_model"] == "10eros_int8"
 
 
 def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
@@ -670,20 +669,21 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
 
     options = config_service_module.build_qqcc_config_options()
     assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
-    assert options["default_ai_video_main_model"] == "10eros"
+    assert options["default_ai_video_main_model"] == "10eros_bf16"
     assert options["ai_video_main_models"] == [
-        {"value": "10eros", "label": "10Eros Max H3 Beta4"},
-        {"value": "official", "label": "MiniMax H3 官方模型"},
         {
-            "value": "official_ref2v_turbo",
-            "label": "官方 REF2V 极速",
-            "supported_modes": ["ref2v"],
+            "value": "10eros_bf16",
+            "label": "10Eros Max H3 Beta4 BF16",
+        },
+        {
+            "value": "10eros_int8",
+            "label": "10Eros Max H3 Beta4 INT8 ConvRot",
         },
     ]
     assert options["ai_video_engines"] == [
         {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 7
+    assert options["ai_video_addon_models_version"] == 8
     assert options["ai_video_addon_models"] == [
         {
             "value": model.id,
@@ -694,36 +694,17 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
         for model in MINIMAX_H3_ADDON_MODELS.values()
     ]
     assert options["ai_video_addon_models"][-1] == {
-        "value": "titjob",
-        "label": "Better Titfuck v0.5（乳房夹持动作实验）",
-        "default_strength": 0.75,
+        "value": "cumshot",
+        "label": "HMCumshot v0.5（射精动作）",
+        "default_strength": 0.9,
         "supported_modes": ["t2v", "i2v", "flf2v", "ref2v"],
     }
-    assert next(
-        item
-        for item in options["ai_video_addon_models"]
-        if item["value"] == "motion_booster_ref2va"
-    )["supported_modes"] == ["ref2v"]
-    assert next(
-        item
-        for item in options["ai_video_addon_models"]
-        if item["value"] == "video_reasoning"
-    ) == {
-        "value": "video_reasoning",
-        "label": "VBVR H3 v1（提示词遵循与时序辅助）",
-        "default_strength": 1.0,
-        "supported_modes": ["t2v", "i2v"],
-    }
-    assert next(
-        item
-        for item in options["ai_video_addon_models"]
-        if item["value"] == "mystic_xxx"
-    ) == {
-        "value": "mystic_xxx",
-        "label": "Mystic XXX v4（人体结构增强）",
-        "default_strength": 1.0,
-        "supported_modes": ["t2v", "i2v", "flf2v", "ref2v"],
-    }
+    assert [item["value"] for item in options["ai_video_addon_models"]] == [
+        "deepthroat",
+        "pov_missionary",
+        "footjob",
+        "cumshot",
+    ]
 
 
 def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():
@@ -1332,7 +1313,10 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
     assert scenes[0]["prompt"] == "custom missionary prompt"
     assert scenes[0]["negative_prompt"] == ""
     assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
-    assert get_enabled_qqcc_video_scenes_v1(config)[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert (
+        get_enabled_qqcc_video_scenes_v1(config)[0]["engine"]
+        == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    )
     assert scenes[0]["lora_name"] == ""
     assert scenes[-1]["prompt"] == "custom closeup prompt"
     assert scenes[-1]["duration"] == "5s"
@@ -1376,9 +1360,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "kiss",
             "name": "亲吻",
             "prompt": "kissing prompt",
-                "negative_prompt": "blur, low quality",
-                "duration": "8s",
-                "resolution": "720p",
+            "negative_prompt": "blur, low quality",
+            "duration": "8s",
+            "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
@@ -1392,9 +1376,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "scene_2",
             "name": "重复 id",
             "prompt": "duplicate prompt",
-                "negative_prompt": "",
-                "duration": "10s",
-                "resolution": "720p",
+            "negative_prompt": "",
+            "duration": "10s",
+            "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
@@ -1408,9 +1392,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "scene_3",
             "name": "安全 id",
             "prompt": "safe id prompt",
-                "negative_prompt": "",
-                "duration": "5s",
-                "resolution": "720p",
+            "negative_prompt": "",
+            "duration": "5s",
+            "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
@@ -2557,10 +2541,10 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "id": "kiss",
             "name": "贴贴",
             "prompt": "custom kiss prompt",
-                "negative_prompt": "bad hands",
-                "duration": "8s",
-                "resolution": "720p",
-                "aspect_ratio": "source",
+            "negative_prompt": "bad hands",
+            "duration": "8s",
+            "resolution": "720p",
+            "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
@@ -2573,9 +2557,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "id": "missionary",
             "name": "自定义传教士",
             "prompt": "custom missionary prompt",
-                "negative_prompt": "",
-                "duration": "10s",
-                "resolution": "720p",
+            "negative_prompt": "",
+            "duration": "10s",
+            "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",
