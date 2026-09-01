@@ -312,7 +312,7 @@ def test_gpu_build_accepts_declared_exact_external_base_ref():
     digest = "sha256:" + "2" * 64
     base_ref = (
         "127.0.0.1:15000/allbot/comfyui-boot@sha256:"
-        "09c810dd10ee5185cd7ee6e7d5d1b108118d85965838ad8c5ee1be425de1d5c1"
+        "4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9"
     )
 
     def fake_run(command, **_kwargs):
