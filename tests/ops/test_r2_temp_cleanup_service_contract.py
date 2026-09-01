@@ -71,6 +71,8 @@ def test_cloud_cleanup_service_is_persistent_digest_pinned_and_cloud_only():
     assert "HTTP_PROXY=" in service
     assert "HTTPS_PROXY=" in service
     assert "ALL_PROXY=" in service
+    assert "ExecStop=-/usr/bin/docker stop --timeout 30 allbot-r2-full-cleanup-cloud" in service
+    assert "ExecStopPost=-/usr/bin/docker rm -f allbot-r2-full-cleanup-cloud" in service
     assert "%h" not in service
 
 

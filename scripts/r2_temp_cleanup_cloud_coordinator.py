@@ -201,6 +201,54 @@ class CloudCleanupCoordinator:
         state["pending"] = None
         atomic_private_json(self.state_path, state)
 
+    def _reconcile_probe_failed(self, state: dict[str, Any], receipt: dict) -> None:
+        """Defer exact pre-delete probe failures without deleting any R2 object."""
+        pending = state["pending"]
+        if (
+            receipt.get("status") != "probe_failed"
+            or receipt.get("mode") != "execute"
+            or receipt.get("approved_plan_sha256") != pending["plan_sha256"]
+            or int(receipt.get("delete_count", -1)) != 0
+            or list(receipt.get("objects") or [])
+            or "post_delete_verified_count" in receipt
+        ):
+            raise RuntimeError("probe-failed receipt is not a zero-delete receipt")
+        failures = list(receipt.get("probe_failures") or [])
+        failure_keys = [str(item.get("key") or "") for item in failures]
+        if not failure_keys or any(not key for key in failure_keys):
+            raise RuntimeError("probe-failed receipt has no exact failure rowset")
+        if len(failure_keys) != len(set(failure_keys)):
+            raise RuntimeError("probe-failed receipt contains duplicate keys")
+        plan = json.loads(Path(str(pending["plan"])).read_text(encoding="utf-8"))
+        plan_keys = {str(item.get("key") or "") for item in plan.get("objects") or []}
+        if not set(failure_keys).issubset(plan_keys):
+            raise RuntimeError("probe-failed rowset is outside the frozen plan")
+        if file_sha256(self.working_inventory) != pending["inventory_sha256_before"]:
+            raise RuntimeError("working inventory changed while a batch was pending")
+        removed, remaining, after_sha = remove_inventory_keys(
+            self.working_inventory, failure_keys
+        )
+        receipt_path = Path(str(pending["receipt"]))
+        state.setdefault("deferred", []).append(
+            {
+                "sequence": int(pending["sequence"]),
+                "stage": int(pending["stage"]),
+                "plan": str(pending["plan"]),
+                "plan_sha256": str(pending["plan_sha256"]),
+                "receipt": str(receipt_path),
+                "receipt_sha256": file_sha256(receipt_path),
+                "deferred_count": removed,
+                "reason": "execute_probe_failed",
+                "inventory_object_count_after": remaining,
+                "inventory_sha256_after": after_sha,
+            }
+        )
+        state["current_pass"]["deferred_count"] += removed
+        state["current_inventory_sha256"] = after_sha
+        state["next_sequence"] = int(pending["sequence"]) + 1
+        state["pending"] = None
+        atomic_private_json(self.state_path, state)
+
     async def _reconcile_pending(self, state: dict[str, Any]) -> None:
         pending = state.get("pending")
         if not isinstance(pending, dict):
@@ -231,7 +279,10 @@ class CloudCleanupCoordinator:
                 finally:
                     client.close()
                 atomic_private_json(receipt_path, receipt)
-        self._reconcile_completed(state, receipt)
+        if receipt.get("status") == "probe_failed":
+            self._reconcile_probe_failed(state, receipt)
+        else:
+            self._reconcile_completed(state, receipt)
 
     def _defer_blocked_frontier(self, state: dict[str, Any], plan: dict) -> None:
         connection = sqlite3.connect(self.working_inventory)

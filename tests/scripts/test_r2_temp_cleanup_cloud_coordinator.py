@@ -153,6 +153,90 @@ async def test_delete_started_recovery_fails_closed_on_new_reference(monkeypatch
         )
 
 
+@pytest.mark.asyncio
+async def test_pending_probe_drift_defers_only_failed_keys_and_releases_frontier(
+    tmp_path,
+):
+    state_root = tmp_path / "state"
+    state_root.mkdir(mode=0o700)
+    working = state_root / "working-inventory.sqlite3"
+    _inventory(working, ["drifted", "still-safe"])
+    plan = {
+        "mode": "dry-run",
+        "bucket": "user-data-prod",
+        "objects": [
+            {"key": "drifted", "durable_key": "durable-a"},
+            {"key": "still-safe", "durable_key": "durable-b"},
+        ],
+        "plan_sha256": "plan-82",
+    }
+    plan_path = state_root / "plan-000082-10000.json"
+    receipt_path = state_root / "execute-000082-10000.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    plan_path.chmod(0o600)
+    state = {
+        "schema": "allbot-r2-temp-cleanup-cloud-chain/v1",
+        "working_inventory": str(working),
+        "current_inventory_sha256": file_sha256(working),
+        "next_sequence": 82,
+        "pending": {
+            "sequence": 82,
+            "stage": 10000,
+            "plan": str(plan_path),
+            "plan_sha256": "plan-82",
+            "receipt": str(receipt_path),
+            "inventory_sha256_before": file_sha256(working),
+        },
+        "completed": [],
+        "deferred": [],
+        "current_pass": {
+            "number": 1,
+            "deleted_count": 10,
+            "deleted_bytes": 100,
+            "deferred_count": 0,
+        },
+        "finished": False,
+    }
+    (state_root / "chain-state.json").write_text(json.dumps(state), encoding="utf-8")
+    (state_root / "chain-state.json").chmod(0o600)
+
+    async def run_cleanup(args):
+        assert args.execute is True
+        receipt = {
+            "mode": "execute",
+            "status": "probe_failed",
+            "approved_plan_sha256": "plan-82",
+            "probe_failures": [{"key": "drifted", "error": "ClientError"}],
+            "objects": [],
+            "delete_count": 0,
+        }
+        Path(args.output).write_text(json.dumps(receipt), encoding="utf-8")
+        Path(args.output).chmod(0o600)
+        return receipt
+
+    coordinator = CloudCleanupCoordinator(
+        state_root=state_root,
+        authorization_path=tmp_path / "authorization.json",
+        cleanup_run_func=run_cleanup,
+    )
+
+    await coordinator._reconcile_pending(state)
+
+    updated = json.loads((state_root / "chain-state.json").read_text())
+    assert updated["pending"] is None
+    assert updated["next_sequence"] == 83
+    assert updated["completed"] == []
+    assert updated["current_pass"]["deferred_count"] == 1
+    assert updated["deferred"][-1]["reason"] == "execute_probe_failed"
+    connection = sqlite3.connect(working)
+    try:
+        assert connection.execute("select key from objects order by key").fetchall() == [
+            ("still-safe",)
+        ]
+    finally:
+        connection.close()
+
+
 def test_cloud_coordinator_advances_canaries_and_repeats_fresh_pass(tmp_path):
     state_root = tmp_path / "state"
     state_root.mkdir(mode=0o700)

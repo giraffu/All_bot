@@ -699,7 +699,22 @@ async def run(args) -> dict:
             plan_sha256=expected_plan_sha,
         )
         if failures:
-            raise SystemExit("execute rejected because at least one SHA probe failed")
+            # No delete has started. Persist a structured, zero-delete receipt so
+            # the cloud coordinator can defer only the drifted frontier keys and
+            # re-plan every still-verifiable object under a new exact token.
+            report["status"] = "probe_failed"
+            report["approved_plan"] = approved_plan_path
+            report["approved_plan_sha256"] = expected_plan_sha
+            report["delete_count"] = 0
+            report["delete_bytes"] = 0
+            report["objects"] = []
+            output = Path(args.output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            os.chmod(output, 0o600)
+            return report
         report["status"] = "delete_started"
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

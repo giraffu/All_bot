@@ -5,8 +5,11 @@ import threading
 import time
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+from scripts import r2_temp_cleanup as cleanup_module
 
 from scripts.r2_temp_cleanup import (
     Candidate,
@@ -254,6 +257,94 @@ def test_daily_delete_byte_cap_stops_before_crossing_limit():
     assert [item["key"] for item in selected] == ["one"]
     assert [item["key"] for item in blocked] == ["two", "three"]
     assert sum(item["byte_size"] for item in selected) == 30
+
+
+@pytest.mark.asyncio
+async def test_execute_probe_drift_writes_zero_delete_receipt_instead_of_exiting(
+    tmp_path, monkeypatch
+):
+    inventory = tmp_path / "inventory.sqlite3"
+    connection = sqlite3.connect(inventory)
+    connection.execute(
+        "create table objects(key text primary key,size integer,etag text,last_modified text)"
+    )
+    connection.executemany(
+        "insert into objects values(?,?,?,?)",
+        [
+            ("source", 10, "same", "2026-08-01T00:00:00Z"),
+            ("task-results/durable", 10, "same", "2026-08-01T00:00:00Z"),
+        ],
+    )
+    connection.commit()
+    connection.close()
+    inventory.chmod(0o600)
+    plan = seal_plan(
+        {
+            "mode": "dry-run",
+            "bucket": "user-data-prod",
+            "cutoff": "2026-08-05T00:00:00Z",
+            "objects": [
+                {
+                    "key": "source",
+                    "durable_key": "task-results/durable",
+                    "byte_size": 10,
+                    "etag": "same",
+                    "last_modified": "2026-08-01T00:00:00Z",
+                    "sha256": "before",
+                }
+            ],
+            "inventory": {"sha256": cleanup_module._file_sha256(inventory)},
+        }
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    output = tmp_path / "receipt.json"
+
+    async def no_references(_keys):
+        return set()
+
+    async def no_business_references(_keys):
+        return {}
+
+    async def drifted(*_args, **_kwargs):
+        return [], [{"key": "source", "error": "ClientError"}]
+
+    monkeypatch.setattr(cleanup_module, "_history_references", no_references)
+    monkeypatch.setattr(cleanup_module, "_active_task_references", no_references)
+    monkeypatch.setattr(
+        cleanup_module, "_business_references", no_business_references
+    )
+    monkeypatch.setattr(cleanup_module, "_r2_client", lambda: object())
+    monkeypatch.setattr(cleanup_module, "_verify_candidates", drifted)
+    monkeypatch.setattr(
+        cleanup_module,
+        "_delete_and_verify_candidates",
+        lambda *_args, **_kwargs: pytest.fail("probe drift must not enter delete"),
+    )
+    monkeypatch.setenv("R2_TEMP_CLEANUP_ENABLED", "true")
+    args = SimpleNamespace(
+        inventory=str(inventory),
+        output=str(output),
+        bucket="user-data-prod",
+        limit=10000,
+        min_age_hours=24,
+        verification_concurrency=8,
+        max_delete_bytes=50 * 1024**3,
+        execute=True,
+        approved_plan=str(plan_path),
+        plan_sha256=plan["plan_sha256"],
+        confirm=f"DELETE_VERIFIED_TEMP_R2_user-data-prod:{plan['plan_sha256']}",
+    )
+
+    receipt = await cleanup_module.run(args)
+
+    assert receipt["status"] == "probe_failed"
+    assert receipt["delete_count"] == 0
+    assert receipt["objects"] == []
+    assert receipt["probe_failures"] == [
+        {"key": "source", "error": "ClientError"}
+    ]
+    assert json.loads(output.read_text())["status"] == "probe_failed"
 
 
 def test_cleanup_plan_is_sealed_and_tampering_is_rejected(tmp_path):
