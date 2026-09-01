@@ -26,6 +26,7 @@ RUN set -euo pipefail; \
     rm -rf /opt/allbot/runtime/runpod_worker
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
 COPY src /opt/allbot/runtime/runpod_worker/src
 RUN test -n "$ALLBOT_GIT_SHA" && \
@@ -37,6 +38,7 @@ COPY shared /opt/allbot/runtime/runpod_worker/shared
 RUN set -euo pipefail; \
     echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c -; \
     chmod +x \
+      /opt/allbot/runpod_bootstrap_from_git.sh \
       /opt/allbot/runtime/runpod_worker/scripts/runpod_bootstrap_from_git.sh \
       /opt/allbot/runtime/runpod_worker/scripts/runpod_baked_runtime_entrypoint.sh; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import inspect; import comfy_agent.workflow_task_patchers as m; from comfy_agent.agent_result_reporting import upload_spooled_outputs_via_sidecar; from shared.character_reference_sheet import compose_ingredients_character_panel; assert inspect.signature(upload_spooled_outputs_via_sidecar).parameters["timeout_seconds"].default is None; assert "character_description" in inspect.getsource(m); assert callable(compose_ingredients_character_panel)'; \

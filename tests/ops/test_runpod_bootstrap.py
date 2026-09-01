@@ -511,6 +511,11 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert "docker.io/" not in dockerfile
     assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
     assert (
+        "COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh "
+        "/opt/allbot/runpod_bootstrap_from_git.sh" in dockerfile
+    )
+    assert dockerfile.count("/opt/allbot/runpod_bootstrap_from_git.sh") == 2
+    assert (
         "d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13" in dockerfile
     )
     assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
