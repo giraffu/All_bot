@@ -20,6 +20,8 @@ ExecStart=/usr/bin/docker run --rm --name allbot-r2-full-cleanup-cloud \
   -v /var/lib/allbot/r2-temp-cleanup-cloud/current:/var/lib/allbot-r2-temp-cleanup \
   --entrypoint python ${R2_TEMP_CLEANUP_CLOUD_IMAGE} \
   -m scripts.r2_temp_cleanup_cloud_coordinator
+ExecStop=-/usr/bin/docker stop --timeout 30 allbot-r2-full-cleanup-cloud
+ExecStopPost=-/usr/bin/docker rm -f allbot-r2-full-cleanup-cloud
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=300

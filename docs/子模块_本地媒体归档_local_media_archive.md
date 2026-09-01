@@ -273,6 +273,11 @@ inventory，在 0600 state 中记录每份冻结计划、精确确认、执行�
 引用；已消失源仅在 durable twin 仍匹配冻结 SHA-256 时计为完成，仍存在源重做双对象
 SHA 后继续删除。安全引用或对象级探测失败的候选保留并让后续 frontier 继续；每轮有
 删除时重新从云端刷新全桶 inventory，直到一份新鲜完整 pass 的删除数为 0 才结束。
+若 dry-run 后、DELETE 前的第二轮 SHA 探测出现对象漂移，执行器必须在任何删除发生前
+写入 `status=probe_failed` 的零删除回执；回执绑定原计划 SHA 并只列出失败 rowset。
+协调器验证 working inventory 未变、失败 key 属于冻结计划且回执没有删除结果后，只把
+这些失败 key 延后到后续 fresh pass，清空 pending 并为其余对象生成新的精确计划；禁止
+修改旧计划、执行部分旧计划或因单个漂移对象无限重启同一批次。
 宿主 systemd 只消费 digest-pinned migration image，清空大小写代理变量并挂载受限 state；
 本地旧 cleanup supervisor 必须保持 disabled，本地不得生成 inventory 或执行正文摘要。
 
