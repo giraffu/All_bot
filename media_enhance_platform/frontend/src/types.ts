@@ -16,6 +16,8 @@ export interface User {
   role: Role
   available_points: number
   reserved_points: number
+  phone_verified: boolean
+  phone_masked: string | null
 }
 
 export interface MediaFile {

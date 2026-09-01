@@ -24,12 +24,30 @@ class UserView(BaseModel):
     role: UserRole
     available_points: int
     reserved_points: int
+    phone_verified: bool
+    phone_masked: str | None
 
 
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserView
+
+
+class PhoneSendRequest(BaseModel):
+    phone_number: str = Field(min_length=11, max_length=18)
+
+
+class PhoneSendResponse(BaseModel):
+    challenge_id: str
+    expires_in: int
+    resend_after: int
+
+
+class PhoneVerifyRequest(BaseModel):
+    challenge_id: str = Field(min_length=36, max_length=36)
+    phone_number: str = Field(min_length=11, max_length=18)
+    verify_code: str = Field(pattern=r"^[0-9]{4,8}$")
 
 
 class TaskCreateRequest(BaseModel):

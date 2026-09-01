@@ -21,7 +21,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,7 @@ from .models import (
     MediaFile,
     MediaKind,
     RefreshToken,
+    SmsVerificationChallenge,
     Task,
     TaskAttempt,
     TaskStatus,
@@ -51,6 +52,9 @@ from .schemas import (
     CopyrightCreateRequest,
     LoginRequest,
     MediaView,
+    PhoneSendRequest,
+    PhoneSendResponse,
+    PhoneVerifyRequest,
     RegisterRequest,
     TaskCreateRequest,
     TaskView,
@@ -73,6 +77,14 @@ from .security import (
     require_admin,
     require_agent,
     verify_password,
+)
+from .sms_verification import (
+    SmsProviderError,
+    SmsVerificationProvider,
+    get_sms_provider,
+    mask_phone,
+    normalize_mainland_phone,
+    phone_digest,
 )
 from .services import (
     ACTIVE_STATUSES,
@@ -216,6 +228,199 @@ async def me(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def _normalize_phone_or_422(phone_number: str) -> str:
+    try:
+        return normalize_mainland_phone(phone_number)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid_phone_number") from exc
+
+
+def _request_audit_details(request: Request) -> dict:
+    client = request.client
+    return {
+        "peer_ip": client.host if client else None,
+        "peer_port": client.port if client else None,
+        "forwarded_for": request.headers.get("x-forwarded-for", "")[:500],
+        "destination_host": (request.url.hostname or "")[:255],
+        "destination_port": request.url.port,
+        "user_agent": request.headers.get("user-agent", "")[:500],
+        "path": request.url.path,
+    }
+
+
+async def require_verified_phone(
+    user: User = Depends(get_current_user),
+) -> User:
+    if not user.phone_verified:
+        raise HTTPException(status_code=403, detail="phone_verification_required")
+    return user
+
+
+@router.post(
+    "/auth/phone/send", response_model=PhoneSendResponse, status_code=202
+)
+async def send_phone_verification(
+    payload: PhoneSendRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    provider: SmsVerificationProvider = Depends(get_sms_provider),
+    db: AsyncSession = Depends(get_db),
+) -> PhoneSendResponse:
+    if user.phone_verified:
+        raise HTTPException(status_code=409, detail="phone_already_verified")
+    phone_number = _normalize_phone_or_422(payload.phone_number)
+    digest = phone_digest(phone_number)
+    existing_owner = await db.scalar(
+        select(User.id).where(User.phone_hash == digest, User.id != user.id)
+    )
+    if existing_owner:
+        raise HTTPException(status_code=409, detail="phone_already_bound")
+
+    now = utcnow()
+    cooldown_cutoff = now - timedelta(seconds=settings.sms_send_cooldown_seconds)
+    latest = await db.scalar(
+        select(SmsVerificationChallenge)
+        .where(
+            or_(
+                SmsVerificationChallenge.user_id == user.id,
+                SmsVerificationChallenge.phone_hash == digest,
+            ),
+            SmsVerificationChallenge.created_at >= cooldown_cutoff,
+        )
+        .order_by(SmsVerificationChallenge.created_at.desc())
+    )
+    if latest:
+        raise HTTPException(
+            status_code=429,
+            detail="sms_send_too_frequent",
+            headers={"Retry-After": str(settings.sms_send_cooldown_seconds)},
+        )
+
+    daily_cutoff = now - timedelta(days=1)
+    daily_count = await db.scalar(
+        select(func.count())
+        .select_from(SmsVerificationChallenge)
+        .where(
+            or_(
+                SmsVerificationChallenge.user_id == user.id,
+                SmsVerificationChallenge.phone_hash == digest,
+            ),
+            SmsVerificationChallenge.created_at >= daily_cutoff,
+        )
+    )
+    if (daily_count or 0) >= settings.sms_daily_send_limit:
+        raise HTTPException(status_code=429, detail="sms_daily_limit_reached")
+
+    challenge = SmsVerificationChallenge(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        phone_hash=digest,
+        phone_masked=mask_phone(phone_number),
+        expires_at=now + timedelta(seconds=settings.sms_challenge_seconds),
+    )
+    try:
+        challenge.provider_reference = await provider.send_code(
+            phone_number, challenge.id
+        )
+    except SmsProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    db.add(challenge)
+    add_audit(
+        db,
+        actor_id=user.id,
+        action="phone_verification_sent",
+        target_type="sms_challenge",
+        target_id=challenge.id,
+        details={
+            "phone_masked": challenge.phone_masked,
+            **_request_audit_details(request),
+        },
+    )
+    await db.commit()
+    return PhoneSendResponse(
+        challenge_id=challenge.id,
+        expires_in=settings.sms_challenge_seconds,
+        resend_after=settings.sms_send_cooldown_seconds,
+    )
+
+
+@router.post("/auth/phone/verify", response_model=UserView)
+async def verify_phone_number(
+    payload: PhoneVerifyRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    provider: SmsVerificationProvider = Depends(get_sms_provider),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    if user.phone_verified:
+        raise HTTPException(status_code=409, detail="phone_already_verified")
+    phone_number = _normalize_phone_or_422(payload.phone_number)
+    digest = phone_digest(phone_number)
+    challenge = await db.scalar(
+        select(SmsVerificationChallenge)
+        .where(
+            SmsVerificationChallenge.id == payload.challenge_id,
+            SmsVerificationChallenge.user_id == user.id,
+        )
+        .with_for_update()
+    )
+    if challenge is None or challenge.phone_hash != digest:
+        raise HTTPException(status_code=404, detail="sms_challenge_not_found")
+    if challenge.consumed_at is not None:
+        raise HTTPException(status_code=409, detail="sms_challenge_consumed")
+    expires_at = challenge.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= utcnow():
+        raise HTTPException(status_code=410, detail="sms_challenge_expired")
+    if challenge.verify_attempts >= settings.sms_max_verify_attempts:
+        raise HTTPException(status_code=429, detail="sms_verify_attempts_exceeded")
+
+    challenge.verify_attempts += 1
+    try:
+        passed = await provider.check_code(
+            phone_number, payload.verify_code, challenge.id
+        )
+    except SmsProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not passed:
+        add_audit(
+            db,
+            actor_id=user.id,
+            action="phone_verification_failed",
+            target_type="sms_challenge",
+            target_id=challenge.id,
+            details={"attempt": challenge.verify_attempts, **_request_audit_details(request)},
+        )
+        await db.commit()
+        raise HTTPException(status_code=422, detail="invalid_verify_code")
+
+    existing_owner = await db.scalar(
+        select(User.id).where(User.phone_hash == digest, User.id != user.id)
+    )
+    if existing_owner:
+        raise HTTPException(status_code=409, detail="phone_already_bound")
+    now = utcnow()
+    user.phone_hash = digest
+    user.phone_masked = challenge.phone_masked
+    user.phone_verified_at = now
+    challenge.consumed_at = now
+    add_audit(
+        db,
+        actor_id=user.id,
+        action="phone_verified",
+        target_type="user",
+        target_id=user.id,
+        details={
+            "phone_masked": challenge.phone_masked,
+            "challenge_id": challenge.id,
+            **_request_audit_details(request),
+        },
+    )
+    await db.commit()
+    return user
+
+
 @router.get("/catalog")
 async def catalog() -> dict:
     return public_catalog()
@@ -348,11 +553,25 @@ async def _save_upload(
 
 @router.post("/uploads", response_model=MediaView, status_code=201)
 async def upload_media(
+    request: Request,
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_verified_phone),
     db: AsyncSession = Depends(get_db),
 ) -> MediaFile:
     media = await _save_upload(file, user, db)
+    add_audit(
+        db,
+        actor_id=user.id,
+        action="media_uploaded",
+        target_type="media_file",
+        target_id=media.id,
+        details={
+            "mime_type": media.mime_type,
+            "size_bytes": media.size_bytes,
+            "media_kind": media.media_kind.value,
+            **_request_audit_details(request),
+        },
+    )
     await db.commit()
     return media
 
@@ -439,7 +658,7 @@ async def delete_media(
 @router.post("/tasks", response_model=TaskView, status_code=201)
 async def submit_task(
     payload: TaskCreateRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_verified_phone),
     db: AsyncSession = Depends(get_db),
 ) -> TaskView:
     task = await create_task(

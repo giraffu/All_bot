@@ -22,7 +22,7 @@ test('unauthenticated admin route is guarded', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=\/admin$/)
 })
 
-test('registered user sees the video-only worker contract @desktop', async ({ page }) => {
+test('registered user sees the phone gate and video-only worker contract', async ({ page }, testInfo) => {
   await page.goto('/register')
   const email = `playwright-${Date.now()}@example.com`
   await page.getByLabel('邮箱').fill(email)
@@ -34,11 +34,20 @@ test('registered user sees the video-only worker contract @desktop', async ({ pa
   await expect(page.getByText('TEST WORKER', { exact: true })).toBeVisible()
   await expect(page.getByText('≤ 5s')).toBeVisible()
   await expect(page.getByText('≤ 40MB')).toBeVisible()
+  await expect(page.getByText('验证手机号后开始处理')).toBeVisible()
+  await expect(page.getByPlaceholder('请输入中国大陆手机号')).toBeVisible()
   await expect(page.locator('input[type=file]')).toHaveAttribute(
     'accept',
     'video/mp4,video/quicktime,video/webm',
   )
+  await expect(page.locator('input[type=file]')).toBeDisabled()
   await expect(page.getByRole('button', { name: '开始视频高清化' })).toBeDisabled()
+  if (process.env.CLARITY_E2E_SCREENSHOT_DIR) {
+    await page.screenshot({
+      path: `${process.env.CLARITY_E2E_SCREENSHOT_DIR}/security-${testInfo.project.name}.png`,
+      fullPage: false,
+    })
+  }
 })
 
 test('configured administrator can open operations console @desktop', async ({ page }) => {

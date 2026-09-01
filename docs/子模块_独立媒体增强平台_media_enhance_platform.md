@@ -35,7 +35,17 @@ bridge 重启或租约过期时恢复同一个 provider task，不重复提交�
 
 认证采用 Argon2 密码哈希、短期 JWT access token 和 HttpOnly refresh
 cookie；管理员通过本地环境变量首次初始化，密码不得进入 Git。V1
-不发送验证或找回邮件。
+不发送验证或找回邮件。普通账号注册后还必须完成中国大陆手机号短信核验，才可
+上传源媒体或创建任务；查看历史任务、下载和删除自有文件不因后续门禁而失效。
+
+短信 adapter 位于 `backend/app/sms_verification.py`，正式配置仅支持阿里云号码
+认证服务 PNVS 的 `SendSmsVerifyCode` / `CheckSmsVerifyCode`，不得混用普通短信
+`SendSms`。默认 provider 为 `disabled` 并失败关闭；测试通过 FastAPI dependency
+override 注入 fake，不发送真实短信。发送间隔、24 小时次数、验证码有效期和失败
+核验次数均由服务端限制。手机号明文只在当次请求和 PNVS 调用期间使用，数据库长期
+保存独立 HMAC、脱敏号码和核验时间；`CLARITY_PHONE_HASH_SECRET` 必须独立、稳定
+备份，不能复用 JWT secret 或随意轮换。手机号控制权核验不等于身份证实名认证，
+合规材料中只能表述为“手机号真实性核验/账号追溯措施”。
 
 注册赠送 100 个测试点。提交时创建 `reserve` 流水，成功时 `capture`，
 失败或取消时 `release`。后台退款不能超过已扣点数，并以幂等键拒绝
@@ -47,6 +57,13 @@ JPG/PNG/WebP 与 MP4/MOV/WebM，但公开工作台只选择 MP4/MOV/WebM。公�
 前端预检只用于尽早反馈，不能替代服务端门禁。
 源文件和结果不自动过期；运行中不可删除，排队任务须先取消，删除后仅留
 不含媒体内容的审计记录。
+
+短信发送、短信核验成功/失败和源媒体上传写入审计表。请求元数据同时保存直接代理
+对端、转发链、端口、User-Agent 和 API 路径；在部署层完成可信代理边界配置前，
+转发链不能单独宣称为已验证的最终客户端 IP。API 与 SPA 均下发 CSP、禁止嵌套、
+MIME 嗅探防护、Referrer-Policy 和 Permissions-Policy；Nginx 对公开
+`POST /api/uploads` 单独限制 45 MB 请求体，Worker 结果上传仍走独立通用 API
+上限。
 
 ## 4. 任务与 Worker 契约
 
@@ -96,7 +113,7 @@ curl -fsS http://127.0.0.1:8095/health
 curl -fsS http://127.0.0.1:8095/api/health
 ```
 
-后端测试覆盖认证/RBAC、视频公开门禁、报价、媒体所有权与校验、账本、退款、
+后端测试覆盖认证/RBAC、手机号门禁/频控/重复绑定、视频公开门禁、报价、媒体所有权与校验、账本、退款、
 Worker 租约、provider identity 恢复、bridge 成功/失败/取消、删除审计及无 Worker
 行为。前端需通过 Vitest、类型检查、
 生产构建，并在 1440×900 与 390×844 视口做 Playwright 验收。

@@ -10,6 +10,11 @@ capability: one MP4/MOV/WebM video, at most five seconds and 40 MB. Image
 upscale and frame interpolation remain unavailable to users and are rejected
 again by the API.
 
+New accounts must verify a mainland China mobile number before uploading or
+submitting work. The database retains an HMAC identifier, masked number and
+verification timestamp rather than the plaintext number. This proves control
+of a phone number; it is not identity-card real-name verification.
+
 ## Local LAN start
 
 1. Run `sh scripts/init_local_env.sh`. It creates an ignored `.env` and an
@@ -22,6 +27,15 @@ again by the API.
 The initializer refuses to overwrite existing credentials. `.env.example`
 documents the required keys but its `CHANGE_ME` values must never be used for
 a shared LAN instance.
+
+SMS is fail-closed by default (`CLARITY_SMS_PROVIDER=disabled`). To enable it,
+configure a least-privilege RAM credential plus the system-provided PNVS
+signature and binding template, then select `aliyun_pnvs`. Use the PNVS
+`SendSmsVerifyCode` / `CheckSmsVerifyCode` product only; ordinary Alibaba Cloud
+SMS signatures and templates are not interchangeable. Never commit these
+values. `CLARITY_PHONE_HASH_SECRET` is a separate durable secret: back it up
+and do not rotate it casually because it anchors phone uniqueness without
+storing plaintext numbers.
 
 The site intentionally starts without a GPU worker. Submitted jobs remain
 `queued` with reason `no_worker_online`; reserved points are not captured.
@@ -103,5 +117,7 @@ PYTHONPATH=. .venv/bin/python -c \
   leased execution.
 - Source and result files are retained until a user or administrator explicitly
   deletes them.
+- Unverified accounts can inspect existing history but cannot upload new source
+  media or submit a new task.
 - Terms and privacy pages are structural drafts and must be replaced with
   reviewed operator-specific text before public launch.
