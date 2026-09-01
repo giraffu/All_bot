@@ -1555,22 +1555,22 @@ describe('QqccBotSettings', () => {
         ai_video_scenes: [{
           id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '  blur  ',
           duration: 15, engine: 'ltx_video', main_model: '10eros',
-          lora_items: [{ name: 'motion_booster', strength: 0.7 }],
+          lora_items: [{ name: 'deepthroat', strength: 0.75 }],
           end_frame_draw_scene_id: 'tail',
         }],
       },
       options: {
         default_ai_video_engine: 'minimax_h3',
-        default_ai_video_main_model: '10eros',
+        default_ai_video_main_model: '10eros_bf16',
         ai_video_main_models: [
-          { value: '10eros', label: '10Eros Max H3 Beta4' },
-          { value: 'official', label: 'MiniMax H3 官方模型' },
+          { value: '10eros_bf16', label: '10Eros Max H3 Beta4 BF16' },
+          { value: '10eros_int8', label: '10Eros Max H3 Beta4 INT8 ConvRot' },
         ],
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
         ai_video_addon_models_version: 3,
         ai_video_addon_models: [
-          { value: 'motion_booster', label: '成人动作强化', default_strength: 0.7 },
-          { value: 'mystic_xxx', label: '人体结构增强', default_strength: 0.75 },
+          { value: 'deepthroat', label: 'Daring Deepthroat v0.2', default_strength: 0.75 },
+          { value: 'cumshot', label: 'HMCumshot v0.5', default_strength: 0.9 },
         ],
       },
     })
@@ -1580,14 +1580,14 @@ describe('QqccBotSettings', () => {
     expect(wrapper.get('[data-testid="scene-tab-ai-video"]').text()).toContain('1')
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
     const mainModelSelector = wrapper.get('[data-testid="scene-ai-video-main-model-select"]')
-    expect(mainModelSelector.text()).toContain('MiniMax H3 官方模型')
-    await mainModelSelector.setValue('official')
+    expect(mainModelSelector.text()).toContain('10Eros Max H3 Beta4 INT8 ConvRot')
+    await mainModelSelector.setValue('10eros_int8')
     const selector = wrapper.findAllComponents(SelectStub)
       .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
     if (!selector) throw new Error('Missing AI video LoRA selector')
-    selector.vm.$emit('change', ['motion_booster', 'mystic_xxx'])
+    selector.vm.$emit('change', ['deepthroat', 'cumshot'])
     await flushPromises()
-    await wrapper.get('[data-testid="scene-ai-video-lora-strength-mystic_xxx"]')
+    await wrapper.get('[data-testid="scene-ai-video-lora-strength-cumshot"]')
       .setValue(0.85)
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
@@ -1600,16 +1600,16 @@ describe('QqccBotSettings', () => {
       negative_prompt: 'blur',
       duration: 15,
       engine: 'minimax_h3',
-      main_model: 'official',
+      main_model: '10eros_int8',
       end_frame_draw_scene_id: 'tail',
       lora_items: [
-        { name: 'motion_booster', strength: 0.7 },
-        { name: 'mystic_xxx', strength: 0.85 },
+        { name: 'deepthroat', strength: 0.75 },
+        { name: 'cumshot', strength: 0.85 },
       ],
     }))
   })
 
-  it('shows the native REF2VA add-on only for REF2V scenes', async () => {
+  it('shows both 10Eros precisions and only retained H3 add-ons', async () => {
     apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
       key: 'qqcc_lazy_bot_config:v1',
       config: {
@@ -1617,31 +1617,27 @@ describe('QqccBotSettings', () => {
         ai_video_scenes: [{
           id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '',
           duration: 5, resolution: 'preview', engine: 'minimax_h3', mode: 'i2v',
-          lora_items: [{ name: 'motion_booster_ref2va', strength: 0.7 }],
+          lora_items: [{ name: 'pov_missionary', strength: 0.7 }],
           end_frame_draw_scene_id: '', next_scene_id: null,
         }],
         video_scenes: [], draw_scenes: [], filter_scenes: [],
       },
       options: {
         default_ai_video_engine: 'minimax_h3',
-        default_ai_video_main_model: '10eros',
+        default_ai_video_main_model: '10eros_bf16',
         ai_video_main_models: [
-          { value: '10eros', label: '10Eros Max H3 Beta4' },
-          { value: 'official', label: 'MiniMax H3 官方模型' },
-          {
-            value: 'official_ref2v_turbo', label: '官方 REF2V 极速',
-            supported_modes: ['ref2v'],
-          },
+          { value: '10eros_bf16', label: '10Eros Max H3 Beta4 BF16' },
+          { value: '10eros_int8', label: '10Eros Max H3 Beta4 INT8 ConvRot' },
         ],
         ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
         ai_video_addon_models_version: 5,
         ai_video_addon_models: [
-          { value: 'motion_booster', label: '成人动作强化', default_strength: 0.7 },
+          { value: 'deepthroat', label: 'Daring Deepthroat v0.2', default_strength: 0.75 },
           {
-            value: 'motion_booster_ref2va',
-            label: '参考人物动作强化实验',
+            value: 'pov_missionary',
+            label: 'H3 POV Missionary v0.7',
             default_strength: 0.7,
-            supported_modes: ['ref2v'],
+            supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
           },
         ],
       },
@@ -1651,24 +1647,24 @@ describe('QqccBotSettings', () => {
 
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
     const mainModelSelector = () => wrapper.get('[data-testid="scene-ai-video-main-model-select"]')
-    expect(mainModelSelector().text()).not.toContain('官方 REF2V 极速')
+    expect(mainModelSelector().text()).toContain('10Eros Max H3 Beta4 INT8 ConvRot')
     const addonSelector = () => wrapper.findAllComponents(SelectStub)
       .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
     expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
-      .toEqual(['motion_booster'])
-    expect(wrapper.find('[data-testid="scene-ai-video-lora-strength-motion_booster_ref2va"]').exists())
-      .toBe(false)
+      .toEqual(['deepthroat', 'pov_missionary'])
+    expect(wrapper.find('[data-testid="scene-ai-video-lora-strength-pov_missionary"]').exists())
+      .toBe(true)
 
     await wrapper.get('[data-testid="scene-config-ai-video-mode"]').setValue('ref2v')
     await flushPromises()
-    expect(mainModelSelector().text()).toContain('官方 REF2V 极速')
+    expect(mainModelSelector().text()).toContain('10Eros Max H3 Beta4 INT8 ConvRot')
     expect(addonSelector()!.findAll('option').map(option => option.attributes('value')))
-      .toEqual(['motion_booster', 'motion_booster_ref2va'])
-    await mainModelSelector().setValue('official_ref2v_turbo')
+      .toEqual(['deepthroat', 'pov_missionary'])
+    await mainModelSelector().setValue('10eros_int8')
     await wrapper.get('[data-testid="scene-config-ai-video-mode"]').setValue('i2v')
     await flushPromises()
-    expect((mainModelSelector().element as HTMLSelectElement).value).toBe('10eros')
-    expect(mainModelSelector().text()).not.toContain('官方 REF2V 极速')
+    expect((mainModelSelector().element as HTMLSelectElement).value).toBe('10eros_int8')
+    expect(mainModelSelector().text()).toContain('10Eros Max H3 Beta4 BF16')
   })
 
   it('configures a video scene end-frame draw source in the save payload', async () => {

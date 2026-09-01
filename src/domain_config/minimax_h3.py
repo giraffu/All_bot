@@ -79,27 +79,22 @@ MINIMAX_H3_ASPECT_RATIOS = {
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
 MINIMAX_H3_MODEL_FL = "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4.safetensors"
 MINIMAX_H3_MODEL_REF = MINIMAX_H3_MODEL_FL
-MINIMAX_H3_MAIN_MODEL_10EROS = "10eros"
-MINIMAX_H3_MAIN_MODEL_OFFICIAL = "official"
-MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO = "official_ref2v_turbo"
-MINIMAX_H3_DEFAULT_MAIN_MODEL = MINIMAX_H3_MAIN_MODEL_10EROS
+MINIMAX_H3_MODEL_INT8 = (
+    "MiniMaxH3/10Eros_Max_h3_TURBO-hybrid_beta4_int8_convrot.safetensors"
+)
+MINIMAX_H3_MAIN_MODEL_BF16 = "10eros_bf16"
+MINIMAX_H3_MAIN_MODEL_INT8 = "10eros_int8"
+MINIMAX_H3_LEGACY_MAIN_MODEL_10EROS = "10eros"
+MINIMAX_H3_DEFAULT_MAIN_MODEL = MINIMAX_H3_MAIN_MODEL_BF16
 MINIMAX_H3_MAIN_MODELS = (
-    MINIMAX_H3_MAIN_MODEL_10EROS,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
+    MINIMAX_H3_MAIN_MODEL_BF16,
+    MINIMAX_H3_MAIN_MODEL_INT8,
 )
-MINIMAX_H3_OFFICIAL_MODEL_FL = (
-    "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
-)
-MINIMAX_H3_OFFICIAL_MODEL_REF = (
-    "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
-)
+MINIMAX_H3_RETIRED_MAIN_MODEL_ALIASES = frozenset({"official", "official_ref2v_turbo"})
 MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
 MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
 MINIMAX_H3_MODES = ("t2v", "i2v", "flf2v", "ref2v")
-# The catalog may grow without forcing an API/control-plane rollout. Requests
-# remain capped at the already deployed transport contract.
-MINIMAX_H3_MAX_ADDON_ITEMS = 13
+MINIMAX_H3_MAX_ADDON_ITEMS = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,67 +118,6 @@ class MiniMaxH3AddonSelection:
 # avoids loading the same physical LoRA twice when users combine options and
 # makes each Web strength control unambiguous.
 MINIMAX_H3_ADDON_MODELS = {
-    "naughty_times": MiniMaxH3AddonModel(
-        "naughty_times",
-        "NaughtyTimes v2（成人动作测试一）",
-        "NaughtyTimes v2 (adult action test 1)",
-        "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
-        1.0,
-    ),
-    "sex_pose": MiniMaxH3AddonModel(
-        "sex_pose",
-        "HMNSFW AIO v2.5（成人动作测试二）",
-        "HMNSFW AIO v2.5 (adult action test 2)",
-        "MiniMaxH3/HMNSFW-AIO-V2.5.safetensors",
-        0.5,
-    ),
-    "motion_booster": MiniMaxH3AddonModel(
-        "motion_booster",
-        "H3 Motion Booster v2（成人动作强化）",
-        "H3 Motion Booster v2 (adult motion boost)",
-        "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
-        0.7,
-        "dynv2",
-    ),
-    "motion_booster_ref2va": MiniMaxH3AddonModel(
-        "motion_booster_ref2va",
-        "H3 Motion Booster V0.2 REF2VA（参考人物动作强化实验）",
-        "H3 Motion Booster V0.2 REF2VA (reference-character motion experiment)",
-        "MiniMaxH3/ref2VA_Motion_v2.safetensors",
-        0.7,
-        "dynv2",
-        ("ref2v",),
-    ),
-    "video_reasoning": MiniMaxH3AddonModel(
-        "video_reasoning",
-        "VBVR H3 v1（提示词遵循与时序辅助）",
-        "VBVR H3 v1 (prompt-following and temporal aid)",
-        "MiniMaxH3/VBVR_H3_attn_only.safetensors",
-        1.0,
-        supported_modes=("t2v", "i2v"),
-    ),
-    "mystic_xxx": MiniMaxH3AddonModel(
-        "mystic_xxx",
-        "Mystic XXX v4（人体结构增强）",
-        "Mystic XXX v4 (anatomy enhancement)",
-        "MiniMaxH3/MysticXXX_MMH3-V4.safetensors",
-        1.0,
-    ),
-    "breast_play": MiniMaxH3AddonModel(
-        "breast_play",
-        "Breast Play & Jiggle v1（乳房动态）",
-        "Breast Play & Jiggle v1 (breast motion)",
-        "MiniMaxH3/breastplayjiggle_h3_v1.safetensors",
-        0.75,
-    ),
-    "innie": MiniMaxH3AddonModel(
-        "innie",
-        "HMInnie v1（阴道形态）",
-        "HMInnie v1 (vaginal shape)",
-        "MiniMaxH3/HMInnie_v1_e50.safetensors",
-        0.8,
-        "inniepussy",
-    ),
     "deepthroat": MiniMaxH3AddonModel(
         "deepthroat",
         "Daring Deepthroat v0.2（深喉动作）",
@@ -206,38 +140,6 @@ MINIMAX_H3_ADDON_MODELS = {
         0.5,
         "fj.",
     ),
-    "breasts": MiniMaxH3AddonModel(
-        "breasts",
-        "HMBreasts（乳房）",
-        "HMBreasts",
-        "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
-        1.0,
-        "HMBreasts",
-    ),
-    "vagassist": MiniMaxH3AddonModel(
-        "vagassist",
-        "VagAssist（阴道/肛门辅助）",
-        "VagAssist (vagina/anus assist)",
-        "MiniMaxH3/vagassist_e40.safetensors",
-        1.0,
-        "Vagina, anus",
-    ),
-    "pussy": MiniMaxH3AddonModel(
-        "pussy",
-        "HMPussy v6（阴道）",
-        "HMPussy v6",
-        "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
-        0.35,
-        "Vagina",
-    ),
-    "penis": MiniMaxH3AddonModel(
-        "penis",
-        "HMPenis v2（阴茎）",
-        "HMPenis v2",
-        "MiniMaxH3/PenisV2_minimax-h3_epoch60.safetensors",
-        1.0,
-        "HMPenis",
-    ),
     "cumshot": MiniMaxH3AddonModel(
         "cumshot",
         "HMCumshot v0.5（射精动作）",
@@ -246,27 +148,26 @@ MINIMAX_H3_ADDON_MODELS = {
         0.9,
         "hmcumshot3",
     ),
-    "pussy_stills_v1": MiniMaxH3AddonModel(
-        "pussy_stills_v1",
-        "HMPussy V1 Stills（私密部位静帧实验）",
-        "HMPussy V1 Stills (intimate anatomy still-frame experiment)",
-        "MiniMaxH3/Vagina_minimax-h3_epoch20.safetensors",
-        0.35,
-        "pussy",
-    ),
-    "titjob": MiniMaxH3AddonModel(
-        "titjob",
-        "Better Titfuck v0.5（乳房夹持动作实验）",
-        "Better Titfuck v0.5 (breast-intercourse motion experiment)",
-        "MiniMaxH3/Titjob_Titfuck_V1-MiniMaxh3_ComfyTinker.safetensors",
-        0.75,
-        "titjob",
-    ),
 }
 
 
 class MiniMaxH3ValidationError(ValueError):
     pass
+
+
+def normalize_minimax_h3_main_model(
+    raw: Any,
+    *,
+    migrate_retired: bool = False,
+) -> str:
+    main_model = str(raw or MINIMAX_H3_DEFAULT_MAIN_MODEL).strip().lower()
+    if main_model == MINIMAX_H3_LEGACY_MAIN_MODEL_10EROS:
+        return MINIMAX_H3_MAIN_MODEL_BF16
+    if migrate_retired and main_model in MINIMAX_H3_RETIRED_MAIN_MODEL_ALIASES:
+        return MINIMAX_H3_MAIN_MODEL_INT8
+    if main_model not in MINIMAX_H3_MAIN_MODELS:
+        raise MiniMaxH3ValidationError("不支持该 MiniMax H3 主模型。")
+    return main_model
 
 
 PRODUCT_NAME = "高级图生视频pro"
@@ -452,16 +353,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         inputs,
         mode=task_type.removeprefix("minimax_h3_"),
     )
-    main_model = (
-        str(inputs.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL).strip().lower()
-    )
-    if main_model not in MINIMAX_H3_MAIN_MODELS:
-        raise MiniMaxH3ValidationError("不支持该 MiniMax H3 主模型。")
-    if (
-        main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
-        and task_type != MINIMAX_H3_REF2V
-    ):
-        raise MiniMaxH3ValidationError("官方 REF2V 极速主模型仅支持参考图生视频。")
+    main_model = normalize_minimax_h3_main_model(inputs.get("main_model"))
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -541,15 +433,8 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         reference_audio=reference_audio,
         main_model=main_model,
         model_name=(
-            MINIMAX_H3_OFFICIAL_MODEL_REF
-            if main_model
-            in {
-                MINIMAX_H3_MAIN_MODEL_OFFICIAL,
-                MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
-            }
-            and task_type == MINIMAX_H3_REF2V
-            else MINIMAX_H3_OFFICIAL_MODEL_FL
-            if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL
+            MINIMAX_H3_MODEL_INT8
+            if main_model == MINIMAX_H3_MAIN_MODEL_INT8
             else MINIMAX_H3_MODEL_REF
             if task_type == MINIMAX_H3_REF2V
             else MINIMAX_H3_MODEL_FL

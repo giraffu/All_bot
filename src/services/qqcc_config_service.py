@@ -12,15 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import IMAGE_LORA_MODELS
 from src.domain_config.minimax_h3 import (
+    MiniMaxH3ValidationError,
     MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_MAX_ADDON_ITEMS,
     MINIMAX_H3_ASPECT_RATIOS,
-    MINIMAX_H3_REF2V,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
-    MINIMAX_H3_MAIN_MODELS,
     MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
     MINIMAX_H3_REF2V_PRICE_BY_DURATION,
+    normalize_minimax_h3_main_model,
 )
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
@@ -177,7 +176,16 @@ def _normalize_scene_credit_cost(raw_cost: Any) -> int | None:
 def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
     if not isinstance(raw_config, dict):
         return
-    for section in ("video_scenes", "video_scenes_v1", "video_scenes_v2", "ai_video_scenes", "draw_scenes", "draw_scenes_v1", "draw_scenes_v2", "filter_scenes"):
+    for section in (
+        "video_scenes",
+        "video_scenes_v1",
+        "video_scenes_v2",
+        "ai_video_scenes",
+        "draw_scenes",
+        "draw_scenes_v1",
+        "draw_scenes_v2",
+        "filter_scenes",
+    ):
         raw_scenes = raw_config.get(section)
         if not isinstance(raw_scenes, list):
             continue
@@ -223,8 +231,7 @@ def validate_qqcc_ref2v_scenes(raw_config: Any) -> None:
             not isinstance(raw_names, list)
             or len(raw_names) != len(references)
             or any(
-                not isinstance(value, str) or not value.strip()
-                for value in raw_names
+                not isinstance(value, str) or not value.strip() for value in raw_names
             )
         ):
             raise QqccRef2vSceneError(
@@ -242,9 +249,7 @@ def validate_qqcc_ref2v_scenes(raw_config: Any) -> None:
             "reference_audios",
         }
         if forbidden.intersection(raw_scene):
-            raise QqccRef2vSceneError(
-                "QQCC REF2V accepts reference images only"
-            )
+            raise QqccRef2vSceneError("QQCC REF2V accepts reference images only")
 
 
 def validate_qqcc_scene_resolutions(raw_config: Any) -> None:
@@ -902,15 +907,12 @@ def _normalize_ai_video_scene(
         duration = AI_VIDEO_DURATION_KEYS[0]
 
     mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
-    main_model = str(
-        raw_scene.get("main_model") or MINIMAX_H3_DEFAULT_MAIN_MODEL
-    ).strip().lower()
-    if main_model not in MINIMAX_H3_MAIN_MODELS:
-        main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
-    if (
-        main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO
-        and mode != "ref2v"
-    ):
+    try:
+        main_model = normalize_minimax_h3_main_model(
+            raw_scene.get("main_model"),
+            migrate_retired=True,
+        )
+    except MiniMaxH3ValidationError:
         main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
     lora_items: list[dict[str, Any]] = []
     seen_loras: set[str] = set()
@@ -940,9 +942,7 @@ def _normalize_ai_video_scene(
                 strength = model.default_strength
             if not math.isfinite(strength):
                 strength = model.default_strength
-            strength = float(
-                round(round(min(2.0, max(0.1, strength)) * 20) / 20, 2)
-            )
+            strength = float(round(round(min(2.0, max(0.1, strength)) * 20) / 20, 2))
             lora_items.append({"name": lora_name, "strength": strength})
             if len(lora_items) >= AI_VIDEO_MAX_LORA_ITEMS:
                 break
@@ -983,9 +983,7 @@ def _normalize_ai_video_scene(
             for raw_bot_id, raw_file_id in raw_file_ids.items():
                 bot_id = str(raw_bot_id).strip()
                 file_id = (
-                    str(raw_file_id).strip()
-                    if isinstance(raw_file_id, str)
-                    else ""
+                    str(raw_file_id).strip() if isinstance(raw_file_id, str) else ""
                 )
                 if bot_id.isdigit() and file_id:
                     normalized_file_ids[bot_id] = file_id[:512]
@@ -1045,9 +1043,7 @@ def _normalize_ai_video_scene(
     )
     if mode == "ref2v":
         scene["reference_image_names"] = reference_image_names
-        scene["reference_image_telegram_file_ids"] = (
-            reference_image_telegram_file_ids
-        )
+        scene["reference_image_telegram_file_ids"] = reference_image_telegram_file_ids
     if not scene["jump_draw_scene_id"]:
         scene.pop("jump_draw_scene_id")
     return scene
@@ -1465,9 +1461,7 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
                 config["main_buttons"]["ai_draw_v2"] = raw_main_buttons["ai_draw"]
         if isinstance(raw_main_buttons.get("video_edit"), bool):
             if "video_edit_v2" not in raw_main_buttons:
-                config["main_buttons"]["video_edit_v2"] = raw_main_buttons[
-                    "video_edit"
-                ]
+                config["main_buttons"]["video_edit_v2"] = raw_main_buttons["video_edit"]
     config["main_menu_layout"] = _normalize_main_menu_layout(
         raw.get("main_menu_layout")
     )
@@ -1545,10 +1539,29 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     # collections are independently editable.
     legacy_draw_scenes = config["draw_scenes"]
     legacy_video_scenes = config["video_scenes"]
-    migration_draw_source = _normalize_draw_scenes(raw.get("draw_scenes"), raw_prompts=raw_prompts, seed_presets=seed_scene_presets, allowed_filter_scene_ids=allowed_filter_scene_ids) if "draw_scenes" in raw else legacy_draw_scenes
+    migration_draw_source = (
+        _normalize_draw_scenes(
+            raw.get("draw_scenes"),
+            raw_prompts=raw_prompts,
+            seed_presets=seed_scene_presets,
+            allowed_filter_scene_ids=allowed_filter_scene_ids,
+        )
+        if "draw_scenes" in raw
+        else legacy_draw_scenes
+    )
     config["draw_scenes_v2"] = (
-        _normalize_versioned_draw_scenes(raw["draw_scenes_v2"], engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5, raw_prompts=raw_prompts, seed_presets=False, allowed_filter_scene_ids=allowed_filter_scene_ids, scene_kind="draw")
-        if "draw_scenes_v2" in raw else _force_scene_engine(migration_draw_source, engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5, draw=True)
+        _normalize_versioned_draw_scenes(
+            raw["draw_scenes_v2"],
+            engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
+            raw_prompts=raw_prompts,
+            seed_presets=False,
+            allowed_filter_scene_ids=allowed_filter_scene_ids,
+            scene_kind="draw",
+        )
+        if "draw_scenes_v2" in raw
+        else _force_scene_engine(
+            migration_draw_source, engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5, draw=True
+        )
     )
     config["draw_scenes_v1"] = _normalize_versioned_draw_scenes(
         raw.get("draw_scenes_v1", migration_draw_source),
@@ -1558,12 +1571,35 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         allowed_filter_scene_ids=allowed_filter_scene_ids,
         scene_kind="draw_v1",
     )
-    v2_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v2"])
-    v1_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v1"])
-    migration_video_source = _normalize_video_scenes(raw.get("video_scenes"), allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids, raw_prompts=raw_prompts, seed_presets=seed_scene_presets) if "video_scenes" in raw else legacy_video_scenes
+    v2_draw_ids = frozenset(
+        str(scene.get("id") or "") for scene in config["draw_scenes_v2"]
+    )
+    v1_draw_ids = frozenset(
+        str(scene.get("id") or "") for scene in config["draw_scenes_v1"]
+    )
+    migration_video_source = (
+        _normalize_video_scenes(
+            raw.get("video_scenes"),
+            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+            raw_prompts=raw_prompts,
+            seed_presets=seed_scene_presets,
+        )
+        if "video_scenes" in raw
+        else legacy_video_scenes
+    )
     config["video_scenes_v2"] = (
-        _normalize_versioned_video_scenes(raw["video_scenes_v2"], engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2, allowed_end_frame_draw_scene_ids=v2_draw_ids, raw_prompts=raw_prompts, seed_presets=False, scene_kind="video")
-        if "video_scenes_v2" in raw else _force_scene_engine(migration_video_source, engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2)
+        _normalize_versioned_video_scenes(
+            raw["video_scenes_v2"],
+            engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+            allowed_end_frame_draw_scene_ids=v2_draw_ids,
+            raw_prompts=raw_prompts,
+            seed_presets=False,
+            scene_kind="video",
+        )
+        if "video_scenes_v2" in raw
+        else _force_scene_engine(
+            migration_video_source, engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+        )
     )
     config["video_scenes_v1"] = _normalize_versioned_video_scenes(
         raw.get("video_scenes_v1", migration_video_source),
@@ -1573,8 +1609,12 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         seed_presets=False,
         scene_kind="video_v1",
     )
-    config["video_scenes_v1"] = _force_scene_engine(config["video_scenes_v1"], engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO)
-    config["video_scenes_v2"] = _force_scene_engine(config["video_scenes_v2"], engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2)
+    config["video_scenes_v1"] = _force_scene_engine(
+        config["video_scenes_v1"], engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    )
+    config["video_scenes_v2"] = _force_scene_engine(
+        config["video_scenes_v2"], engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    )
     normalize_qqcc_video_scene_links(config["video_scenes_v1"])
     normalize_qqcc_video_scene_links(config["video_scenes_v2"])
     # Existing call sites and persisted callbacks continue to resolve V2.
@@ -1906,12 +1946,13 @@ def build_qqcc_config_options() -> dict[str, Any]:
             }
         ],
         "ai_video_main_models": [
-            {"value": "10eros", "label": "10Eros Max H3 Beta4"},
-            {"value": "official", "label": "MiniMax H3 官方模型"},
             {
-                "value": "official_ref2v_turbo",
-                "label": "官方 REF2V 极速",
-                "supported_modes": ["ref2v"],
+                "value": "10eros_bf16",
+                "label": "10Eros Max H3 Beta4 BF16",
+            },
+            {
+                "value": "10eros_int8",
+                "label": "10Eros Max H3 Beta4 INT8 ConvRot",
             },
         ],
         "video_lora_models": [
@@ -1923,7 +1964,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ai_video_addon_models_version": 7,
+        "ai_video_addon_models_version": 8,
         "ai_video_addon_models": [
             {
                 "value": model.id,
@@ -2001,7 +2042,16 @@ def _merge_qqcc_demo_telegram_caches(
     config: dict[str, Any],
     existing_config: dict[str, Any],
 ) -> None:
-    for section in ("video_scenes", "video_scenes_v1", "video_scenes_v2", "ai_video_scenes", "draw_scenes", "draw_scenes_v1", "draw_scenes_v2", "filter_scenes"):
+    for section in (
+        "video_scenes",
+        "video_scenes_v1",
+        "video_scenes_v2",
+        "ai_video_scenes",
+        "draw_scenes",
+        "draw_scenes_v1",
+        "draw_scenes_v2",
+        "filter_scenes",
+    ):
         existing_by_id = {
             str(scene.get("id") or ""): scene
             for scene in existing_config.get(section, [])
@@ -2082,10 +2132,9 @@ async def save_qqcc_config_payload(
         db.add(checkpoint)
     else:
         existing_config = normalize_qqcc_config(checkpoint.value or {})
-        stale_reference_keys = (
-            _qqcc_ref2v_object_keys(existing_config)
-            - _qqcc_ref2v_object_keys(config)
-        )
+        stale_reference_keys = _qqcc_ref2v_object_keys(
+            existing_config
+        ) - _qqcc_ref2v_object_keys(config)
         _merge_qqcc_demo_telegram_caches(
             config,
             existing_config,
@@ -2126,7 +2175,9 @@ async def save_qqcc_generated_demo_output_media(
         "draw_v1": "draw_scenes_v1",
         "filter": "filter_scenes",
     }.get(scene_kind)
-    output_media_type = "video" if scene_kind in {"video", "video_v1", "ai_video"} else "image"
+    output_media_type = (
+        "video" if scene_kind in {"video", "video_v1", "ai_video"} else "image"
+    )
     if (
         section is None
         or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id)

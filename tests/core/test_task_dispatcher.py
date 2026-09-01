@@ -269,8 +269,8 @@ async def test_minimax_h3_forwards_normalized_optional_loras_and_metadata(monkey
     inputs = {
         "prompt": "An adult couple in a bedroom.",
         "lora_items": [
-            {"name": "sex_pose", "strength": 0.7},
-            {"name": "naughty_times"},
+            {"name": "footjob", "strength": 0.7},
+            {"name": "deepthroat"},
         ],
     }
 
@@ -279,12 +279,12 @@ async def test_minimax_h3_forwards_normalized_optional_loras_and_metadata(monkey
 
     assert result == "backend-h3"
     assert metadata["lora_items"] == [
-        {"name": "sex_pose", "strength": 0.7},
-        {"name": "naughty_times", "strength": 1.0},
+        {"name": "footjob", "strength": 0.7},
+        {"name": "deepthroat", "strength": 0.75},
     ]
     assert submit.await_args.kwargs["lora_items"] == (
-        {"name": "sex_pose", "strength": 0.7},
-        {"name": "naughty_times", "strength": 1.0},
+        {"name": "footjob", "strength": 0.7},
+        {"name": "deepthroat", "strength": 0.75},
     )
 
 

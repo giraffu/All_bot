@@ -3,9 +3,9 @@
 MiniMax H3 使用独立 `minimax_h3` profile。RunPod profile 已加入 autoscaler，并以
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、
 `minimax_h3_ref2v` 四类 execution task 的聚合积压做扩缩容和 Worker 拉取；默认工时
-只用于容量估算，可由 Dashboard autoscaler 设置覆盖。当前 26 文件模型包为
-114,101,302,207 bytes，并要求至少 110GiB 空闲模型卷；它同时包含默认 10Eros Beta4
-TURBO 与官方 INT8 ConvRot FL2VA/Ref2VA checkpoint。GPU allowlist 仍为 RTX 5090。
+只用于容量估算，可由 Dashboard autoscaler 设置覆盖。当前九文件模型包为
+84,223,835,375 bytes，并要求至少 90GiB 空闲模型卷；它只包含 10Eros Beta4 BF16、
+10Eros Beta4 INT8 ConvRot、共享编码器/VAE 和四个保留 LoRA。GPU allowlist 仍为 RTX 5090。
 `gpu-177-gpu1-minimax_h3_test` LAN 测试候选仍不声明 REF2V；正式 LAN 候选只能在
 canonical 镜像 digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。
 
@@ -166,7 +166,8 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   通过 exact image pin、asset-contract canary allowlist、固定模型 manifest/prefix
   和 RTX 5090 门禁；代码进入 autoscaler catalog 不等于已有 artifact、canary 或正式
   运行态，缺任一证据均 fail closed。
-- `minimax_h3` RunPod request 必须写入
+- 新建 `minimax_h3` RunPod request 必须消费当前九文件 manifest 和新的精确镜像 digest，
+  现有 RunPod 不因 LAN 验证被重建或拉取。request 必须写入
   `MINIMAX_H3_FORCE_PYTORCH_ATTENTION=true`；H3 镜像只安装已校验的
   `comfy-kitchen 0.2.31` pure-Python wheel，禁止让 CUDA 13.0 编译的 manylinux
   扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该兼容门禁不改变 LAN 当前 artifact。

@@ -100,13 +100,13 @@ def test_build_plan_preserves_selected_addons_and_defaults_to_none():
         mode="t2v",
         prompt="scene",
         addon_items=[
-            {"name": "naughty_times", "strength": 0.7},
-            {"name": "pussy"},
+            {"name": "deepthroat", "strength": 0.7},
+            {"name": "cumshot"},
         ],
     )
     assert plan.addon_items == (
-        {"name": "naughty_times", "strength": 0.7},
-        {"name": "pussy", "strength": 0.35},
+        {"name": "deepthroat", "strength": 0.7},
+        {"name": "cumshot", "strength": 0.9},
     )
 
 
@@ -222,7 +222,7 @@ async def test_submit_forwards_selected_addons():
     plan = build_advanced_video_pro_submission_plan(
         mode="t2v",
         prompt="motion",
-        addon_items=[{"name": "naughty_times", "strength": 0.65}],
+        addon_items=[{"name": "deepthroat", "strength": 0.65}],
     )
     await submit_advanced_video_pro_plan(
         plan,
@@ -233,13 +233,13 @@ async def test_submit_forwards_selected_addons():
         process_task_func=process,
     )
     assert process.await_args.kwargs["lora_items"] == [
-        {"name": "naughty_times", "strength": 0.65}
+        {"name": "deepthroat", "strength": 0.65}
     ]
     assert process.await_args.kwargs["result_meta"] == {
         "minimax_h3_mode": "t2v",
         "requested_duration": 5,
         "minimax_h3_resolution_preset": "preview",
         "minimax_h3_aspect_ratio": "16:9",
-        "minimax_h3_main_model": "10eros",
-        "lora_items": [{"name": "naughty_times", "strength": 0.65}],
+        "minimax_h3_main_model": "10eros_bf16",
+        "lora_items": [{"name": "deepthroat", "strength": 0.65}],
     }

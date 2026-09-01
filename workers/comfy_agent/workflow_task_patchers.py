@@ -19,8 +19,6 @@ from src.domain_config.scail2_video import (
 )
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_ADDON_MODELS,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL,
-    MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
     normalize_minimax_h3_addon_items,
@@ -509,9 +507,7 @@ def patch_ltx25_video_upscale_workflow(
     source_video = str(params.get("video") or "").strip()
     if not source_video:
         raise ValueError("LTX-2.5 视频高清化缺少输入视频。")
-    normalize_ltx25_video_upscale_duration(
-        params.get("length", params.get("duration"))
-    )
+    normalize_ltx25_video_upscale_duration(params.get("length", params.get("duration")))
     prompt = normalize_ltx25_video_upscale_prompt(params.get("prompt"))
     negative_prompt = str(
         params.get("negative_prompt") or LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT
@@ -532,9 +528,9 @@ def patch_ltx25_video_upscale_workflow(
             value=value,
         )
 
-    safe_execution_id = re.sub(
-        r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")
-    ).strip("_")
+    safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip(
+        "_"
+    )
     output_prefix = "ltx25_video_upscale"
     if safe_execution_id:
         output_prefix = f"{output_prefix}_{safe_execution_id}"
@@ -544,6 +540,8 @@ def patch_ltx25_video_upscale_workflow(
         input_name="filename_prefix",
         value=output_prefix,
     )
+
+
 def _patch_ltx_t2v_workflow(
     workflow: dict[str, Any],
     *,
@@ -1479,48 +1477,6 @@ _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
     "shift_video": 12.0,
     "shift_audio": 7.0,
 }
-_MINIMAX_H3_TEN_EROS_REF2VA_EXECUTION_PROFILE = {
-    **_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE,
-    "steps": 8,
-    "shift_video": 12.0,
-    "shift_audio": 7.0,
-}
-_MINIMAX_H3_FL2VA_TURBO_LORA = (
-    "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
-)
-_MINIMAX_H3_REF2VA_TURBO_LORA = (
-    "MiniMaxH3/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
-)
-_MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE = {
-    "model_input": ["8", 0],
-    "base_lora_node_id": "8",
-    "base_lora_name": _MINIMAX_H3_FL2VA_TURBO_LORA,
-    "sampler_name": "euler",
-    "scheduler": "simple",
-    "steps": 8,
-    "shift_video": 12.0,
-    "shift_audio": 3.0,
-}
-_MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE = {
-    "model_input": ["1", 0],
-    "sampler_name": "res_multistep",
-    "scheduler": "simple",
-    "steps": 20,
-    "ref_image_size": "max",
-    "shift_video": 12.0,
-    "shift_audio": 3.0,
-}
-_MINIMAX_H3_OFFICIAL_REF2VA_TURBO_EXECUTION_PROFILE = {
-    "model_input": ["9", 0],
-    "base_lora_node_id": "9",
-    "base_lora_name": _MINIMAX_H3_REF2VA_TURBO_LORA,
-    "sampler_name": "euler",
-    "scheduler": "simple",
-    "steps": 4,
-    "ref_image_size": "match",
-    "shift_video": 12.0,
-    "shift_audio": 3.0,
-}
 
 
 def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
@@ -1545,61 +1501,29 @@ def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
 def _apply_minimax_h3_execution_profile(
     workflow: dict[str, Any],
     *,
-    main_model: str,
     task_type: str,
 ) -> list[Any]:
+    workflow.pop("8", None)
     workflow.pop("9", None)
-    if main_model == MINIMAX_H3_MAIN_MODEL_OFFICIAL_REF2V_TURBO:
-        profile = _MINIMAX_H3_OFFICIAL_REF2VA_TURBO_EXECUTION_PROFILE
-    elif main_model != MINIMAX_H3_MAIN_MODEL_OFFICIAL:
-        profile = (
-            _MINIMAX_H3_TEN_EROS_REF2VA_EXECUTION_PROFILE
-            if task_type == "minimax_h3_ref2v"
-            else _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
-        )
-    elif task_type == "minimax_h3_ref2v":
-        profile = _MINIMAX_H3_OFFICIAL_REF2VA_EXECUTION_PROFILE
-    else:
-        profile = _MINIMAX_H3_OFFICIAL_FL2VA_EXECUTION_PROFILE
-
-    base_lora_node_id = profile.get("base_lora_node_id")
-    if base_lora_node_id is not None:
-        workflow[base_lora_node_id] = {
-            "inputs": {
-                "model": ["1", 0],
-                "lora_name": profile["base_lora_name"],
-                "strength_model": 1.0,
-            },
-            "class_type": "LoraLoaderModelOnly",
-        }
-    if "shift_video" in profile:
-        workflow["3"]["inputs"]["shift_video"] = profile["shift_video"]
-        workflow["3"]["inputs"]["shift_audio"] = profile["shift_audio"]
+    profile = _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
+    workflow["3"]["inputs"]["shift_video"] = profile["shift_video"]
+    workflow["3"]["inputs"]["shift_audio"] = profile["shift_audio"]
 
     workflow["33"] = {
         "inputs": {"sampler_name": profile["sampler_name"]},
         "class_type": "KSamplerSelect",
     }
-    sigmas = profile.get("sigmas")
-    if sigmas is not None:
-        workflow["34"] = {
-            "inputs": {"sigmas": sigmas},
-            "class_type": "ManualSigmas",
-        }
-    else:
-        workflow["34"] = {
-            "inputs": {
-                "model": ["7", 0],
-                "scheduler": profile["scheduler"],
-                "steps": profile["steps"],
-                "denoise": 1.0,
-            },
-            "class_type": "BasicScheduler",
-        }
+    workflow["34"] = {
+        "inputs": {
+            "model": ["7", 0],
+            "scheduler": profile["scheduler"],
+            "steps": profile["steps"],
+            "denoise": 1.0,
+        },
+        "class_type": "BasicScheduler",
+    }
     if task_type == "minimax_h3_ref2v":
-        workflow["30"]["inputs"]["ref_image_size"] = profile.get(
-            "ref_image_size", "match"
-        )
+        workflow["30"]["inputs"]["ref_image_size"] = "match"
     return list(profile["model_input"])
 
 
@@ -1670,7 +1594,6 @@ def patch_minimax_h3_workflow(
         attention_node.setdefault("inputs", {})["attention"] = "pytorch attention"
     model_input = _apply_minimax_h3_execution_profile(
         workflow,
-        main_model=spec.main_model,
         task_type=task_type,
     )
     prompt_parts: list[str] = []

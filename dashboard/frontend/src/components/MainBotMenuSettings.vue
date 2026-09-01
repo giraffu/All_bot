@@ -214,10 +214,10 @@ const emptyEntryConfig = (): FeatureEntryVisibilityConfig => ({
     scail2_face_swap_v2: true,
   },
   advanced_video_pro: {
-    t2v: { main_model: '10eros', addon_items: [] },
-    i2v: { main_model: '10eros', addon_items: [] },
-    flf2v: { main_model: '10eros', addon_items: [] },
-    ref2v: { main_model: '10eros', addon_items: [] },
+    t2v: { main_model: '10eros_bf16', addon_items: [] },
+    i2v: { main_model: '10eros_bf16', addon_items: [] },
+    flf2v: { main_model: '10eros_bf16', addon_items: [] },
+    ref2v: { main_model: '10eros_bf16', addon_items: [] },
   },
 })
 
@@ -229,13 +229,25 @@ const emptyAdvancedVideoProOptions = (): AdvancedVideoProOptions => ({
     { value: 'ref2v', label: '参考图生视频' },
   ],
   main_models: {
-    t2v: [{ value: '10eros', label: '10Eros TURBO' }],
-    i2v: [{ value: '10eros', label: '10Eros TURBO' }],
-    flf2v: [{ value: '10eros', label: '10Eros TURBO' }],
-    ref2v: [{ value: '10eros', label: '10Eros TURBO' }],
+    t2v: [
+      { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+      { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
+    ],
+    i2v: [
+      { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+      { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
+    ],
+    flf2v: [
+      { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+      { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
+    ],
+    ref2v: [
+      { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+      { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
+    ],
   },
   addon_models: [],
-  max_addon_items: 13,
+  max_addon_items: 4,
   strength_min: 0.1,
   strength_max: 2,
 })

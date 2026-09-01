@@ -942,24 +942,10 @@
       "minimax_h3_addons": "效果增强（可多选）",
       "minimax_h3_addon_strength": "效果强度",
       "minimax_h3_addon_options": {
-        "naughty_times": "成人动作测试一",
-        "sex_pose": "成人动作测试二",
-        "motion_booster": "成人动作强化",
-        "motion_booster_ref2va": "参考人物动作强化实验",
-        "video_reasoning": "提示词遵循与时序辅助",
-        "mystic_xxx": "人体结构增强",
-        "breast_play": "乳房动态",
-        "innie": "阴道形态",
         "deepthroat": "深喉动作",
         "pov_missionary": "POV 传教士动作",
         "footjob": "足交动作",
-        "breasts": "乳房细节",
-        "vagassist": "阴道/肛门辅助",
-        "pussy": "阴道细节",
-        "penis": "阴茎细节",
-        "cumshot": "射精动作",
-        "pussy_stills_v1": "私密部位静帧实验",
-        "titjob": "乳房夹持动作实验"
+        "cumshot": "射精动作"
       },
       "upload_slots": {
         "face_image": "脸部图片",

@@ -19,8 +19,12 @@ RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX = "runpod_prod_ltx_video_manual_"
 RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-video-manual-"
 RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX = "runpod_prod_ltx_t2v_manual_"
 RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-t2v-manual-"
-RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX = "runpod_prod_ltx25_video_upscale_manual_"
-RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX = "allbot-runpod-prod-ltx25-video-upscale-manual-"
+RUNPOD_PROD_LTX25_VIDEO_UPSCALE_AGENT_ID_PREFIX = (
+    "runpod_prod_ltx25_video_upscale_manual_"
+)
+RUNPOD_PROD_LTX25_VIDEO_UPSCALE_POD_NAME_PREFIX = (
+    "allbot-runpod-prod-ltx25-video-upscale-manual-"
+)
 RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX = "runpod_prod_minimax_h3_manual_"
 RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX = "allbot-runpod-prod-minimax-h3-manual-"
 RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX = (
@@ -51,9 +55,7 @@ RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
 RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video"
 )
-RUNPOD_RELEASE_WAN22_AIO_VIDEO_REPOSITORY = (
-    "ghcr.io/giraffu/allbot-gpu-wan22-aio-video"
-)
+RUNPOD_RELEASE_WAN22_AIO_VIDEO_REPOSITORY = "ghcr.io/giraffu/allbot-gpu-wan22-aio-video"
 RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX = (
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY + ":"
 )
@@ -205,14 +207,12 @@ RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
     "NVIDIA RTX PRO 6000 Blackwell Server Edition",
 )
-RUNPOD_MINIMAX_H3_MODEL_PREFIX = (
-    "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18"
-)
+RUNPOD_MINIMAX_H3_MODEL_PREFIX = "minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4"
 RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY = (
-    "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18/manifest.json"
+    "minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4/manifest.json"
 )
 RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB = 100
-RUNPOD_MINIMAX_H3_VOLUME_GB = 140
+RUNPOD_MINIMAX_H3_VOLUME_GB = 120
 RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",

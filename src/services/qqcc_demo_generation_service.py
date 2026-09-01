@@ -187,7 +187,7 @@ async def _submit_scene(
                     if mode == "ref2v"
                     else "source"
                 ),
-                "main_model": str(scene.get("main_model") or "10eros"),
+                "main_model": str(scene.get("main_model") or "10eros_bf16"),
                 "lora_items": scene.get("lora_items") or [],
             },
         )

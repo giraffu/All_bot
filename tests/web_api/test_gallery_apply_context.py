@@ -236,8 +236,8 @@ async def test_minimax_h3_apply_context_returns_locked_parameters_without_inputs
                 "resolution_preset": "standard",
                 "aspect_ratio": "source",
                 "lora_items": [
-                    {"name": "sex_pose", "strength": 0.5},
-                    {"name": "naughty_times", "strength": 1.2},
+                    {"name": "footjob", "strength": 0.5},
+                    {"name": "deepthroat", "strength": 1.2},
                 ],
             }
         },
@@ -259,8 +259,8 @@ async def test_minimax_h3_apply_context_returns_locked_parameters_without_inputs
     assert response.resolution_preset == "standard"
     assert response.aspect_ratio == "source"
     assert response.lora_items == [
-        {"name": "sex_pose", "strength": 0.5},
-        {"name": "naughty_times", "strength": 1.2},
+        {"name": "footjob", "strength": 0.5},
+        {"name": "deepthroat", "strength": 1.2},
     ]
     assert response.input_file is None
     assert response.input_file_url is None

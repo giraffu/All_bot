@@ -59,7 +59,8 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
         "load_advanced_video_pro_profiles",
         AsyncMock(
             return_value={
-                mode: {"main_model": "10eros", "addon_items": []} for mode in fsm.MODES
+                mode: {"main_model": "10eros_bf16", "addon_items": []}
+                for mode in fsm.MODES
             }
         ),
     )
@@ -73,7 +74,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     assert context.user_data["in_conversation"] == fsm.TAG
     assert context.user_data[fsm.DATA_KEY]["mode"] is None
     assert context.user_data[fsm.DATA_KEY]["runtime_profiles"]["i2v"] == {
-        "main_model": "10eros",
+        "main_model": "10eros_bf16",
         "addon_items": [],
     }
     assert "高级图生视频pro" in reply.await_args.args[1]
@@ -87,17 +88,21 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_entry_opens_video_reference_settings_without_mode_choice(monkeypatch):
+async def test_h3_extension_entry_opens_video_reference_settings_without_mode_choice(
+    monkeypatch,
+):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
     monkeypatch.setattr(
         fsm,
         "load_advanced_video_pro_profiles",
-        AsyncMock(return_value={
-            "i2v": {"main_model": "official", "addon_items": []},
-            "flf2v": {"main_model": "10eros", "addon_items": []},
-            "ref2v": {"main_model": "official", "addon_items": []},
-        }),
+        AsyncMock(
+            return_value={
+                "i2v": {"main_model": "10eros_int8", "addon_items": []},
+                "flf2v": {"main_model": "10eros_bf16", "addon_items": []},
+                "ref2v": {"main_model": "10eros_int8", "addon_items": []},
+            }
+        ),
     )
     seed_data = {
         "mode": "ref2v",
@@ -171,7 +176,7 @@ async def test_h3_extension_legacy_first_last_callback_falls_back_to_video_refer
         "extension_start_frame": "/tmp/owned-tail.png",
         "is_extension": True,
         "runtime_profiles": {
-            "ref2v": {"main_model": "official", "addon_items": []},
+            "ref2v": {"main_model": "10eros_int8", "addon_items": []},
         },
     }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
@@ -211,7 +216,7 @@ async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
         "extension_start_frame": "/tmp/owned-tail.png",
         "is_extension": True,
         "runtime_profiles": {
-            "ref2v": {"main_model": "official", "addon_items": []},
+            "ref2v": {"main_model": "10eros_int8", "addon_items": []},
         },
     }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
@@ -389,7 +394,7 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_mode(
+async def test_pro_settings_hide_model_internals_and_apply_mode_presets(
     monkeypatch,
 ):
     edit = AsyncMock()
@@ -402,13 +407,13 @@ async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_
         "aspect": "16:9",
         "runtime_profiles": {
             "t2v": {
-                "main_model": "official",
-                "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+                "main_model": "10eros_bf16",
+                "addon_items": [{"name": "deepthroat", "strength": 0.7}],
             },
             "ref2v": {
-                "main_model": "official_ref2v_turbo",
+                "main_model": "10eros_int8",
                 "addon_items": [
-                    {"name": "motion_booster_ref2va", "strength": 0.7},
+                    {"name": "cumshot", "strength": 0.9},
                 ],
             },
         },
@@ -450,16 +455,16 @@ async def test_pro_settings_hide_model_internals_and_scope_ref2va_effect_to_ref_
     callbacks = [button.callback_data for row in keyboard for button in row]
     assert not any(callback.startswith("avp_addon_") for callback in callbacks)
     assert "avp_settings_done" not in callbacks
-    assert data["main_model"] == "official"
+    assert data["main_model"] == "10eros_bf16"
     assert data["addon_items"] == [
-        {"name": "motion_booster", "strength": 0.7},
+        {"name": "deepthroat", "strength": 0.7},
     ]
 
     query.data = "avp_mode_ref2v"
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
-    assert data["main_model"] == "official_ref2v_turbo"
+    assert data["main_model"] == "10eros_int8"
     assert data["addon_items"] == [
-        {"name": "motion_booster_ref2va", "strength": 0.7},
+        {"name": "cumshot", "strength": 0.9},
     ]
 
 
@@ -475,8 +480,8 @@ async def test_pro_switching_mode_applies_that_modes_admin_profile(monkeypatch):
         "reference_descriptions": [],
         "runtime_profiles": {
             "i2v": {
-                "main_model": "official",
-                "addon_items": [{"name": "motion_booster", "strength": 0.7}],
+                "main_model": "10eros_int8",
+                "addon_items": [{"name": "deepthroat", "strength": 0.7}],
             }
         },
     }
@@ -487,9 +492,9 @@ async def test_pro_switching_mode_applies_that_modes_admin_profile(monkeypatch):
         SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh"),
     )
 
-    assert data["main_model"] == "official"
+    assert data["main_model"] == "10eros_int8"
     assert data["addon_items"] == [
-        {"name": "motion_booster", "strength": 0.7},
+        {"name": "deepthroat", "strength": 0.7},
     ]
 
 

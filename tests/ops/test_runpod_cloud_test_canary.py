@@ -96,8 +96,8 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     assert ic_case["payload"]["inputs"]["duration"] == 20
     assert ic_case["payload"]["inputs"]["duration_seconds"] == 20
     assert ic_case["payload"]["inputs"]["character_sheet"] == image_key
-    assert "adult Asian woman" in (
-        ic_case["payload"]["inputs"]["character_description"]
+    assert (
+        "adult Asian woman" in (ic_case["payload"]["inputs"]["character_description"])
     )
     assert "adult Asian woman" in ic_case["payload"]["prompt"]
     assert "Hard cut at 5s" in ic_case["payload"]["prompt"]
@@ -115,13 +115,12 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     ]
     assert all(case["payload"]["inputs"]["duration"] == 5 for case in h3_cases)
     assert all(
-        case["payload"]["inputs"]["resolution_preset"] == "preview"
-        for case in h3_cases
+        case["payload"]["inputs"]["resolution_preset"] == "preview" for case in h3_cases
     )
     assert h3_cases[0]["payload"]["inputs"].get("images") is None
     assert h3_cases[1]["payload"]["inputs"]["images"] == [image_key]
     assert h3_cases[2]["payload"]["inputs"]["images"] == [image_key, image_key]
-    assert h3_cases[3]["payload"]["inputs"]["main_model"] == "official_ref2v_turbo"
+    assert h3_cases[3]["payload"]["inputs"]["main_model"] == "10eros_int8"
 
     upscale_cases = RunPodCloudTestCanaryCaseBuilder(
         _config(tmp_path, task_type="ltx25_video_upscale")

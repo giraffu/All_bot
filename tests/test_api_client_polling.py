@@ -548,8 +548,8 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         fps=24,
         seed=123,
         lora_items=(
-            {"name": "naughty_times", "strength": 0.8},
-            {"name": "sex_pose", "strength": 0.45},
+            {"name": "deepthroat", "strength": 0.8},
+            {"name": "footjob", "strength": 0.45},
         ),
         priority=2,
     )
@@ -560,10 +560,10 @@ async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
         api_client_module.MINIMAX_H3_ENDPOINTS["minimax_h3_t2v"],
     )
     assert request.await_args.kwargs["json"]["lora_items"] == [
-        {"name": "naughty_times", "strength": 0.8},
-        {"name": "sex_pose", "strength": 0.45},
+        {"name": "deepthroat", "strength": 0.8},
+        {"name": "footjob", "strength": 0.45},
     ]
-    assert request.await_args.kwargs["json"]["main_model"] == "10eros"
+    assert request.await_args.kwargs["json"]["main_model"] == "10eros_bf16"
     assert request.await_args.kwargs["json"]["reference_audio"] == "voice.m4a"
     assert request.await_args.kwargs["json"]["reference_video"] == "previous-tail.mp4"
 

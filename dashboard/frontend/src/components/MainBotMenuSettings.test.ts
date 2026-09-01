@@ -101,10 +101,10 @@ const buildEntryVisibilityResponse = () => ({
       scail2_face_swap_v2: true,
     },
     advanced_video_pro: {
-      t2v: { main_model: '10eros', addon_items: [] },
-      i2v: { main_model: '10eros', addon_items: [] },
-      flf2v: { main_model: '10eros', addon_items: [] },
-      ref2v: { main_model: '10eros', addon_items: [] },
+      t2v: { main_model: '10eros_bf16', addon_items: [] },
+      i2v: { main_model: '10eros_bf16', addon_items: [] },
+      flf2v: { main_model: '10eros_bf16', addon_items: [] },
+      ref2v: { main_model: '10eros_bf16', addon_items: [] },
     },
   },
   options: {
@@ -116,44 +116,49 @@ const buildEntryVisibilityResponse = () => ({
     ],
     main_models: {
       t2v: [
-        { value: '10eros', label: '10Eros TURBO' },
-        { value: 'official', label: '官方高保真' },
+        { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+        { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
       ],
       i2v: [
-        { value: '10eros', label: '10Eros TURBO' },
-        { value: 'official', label: '官方高保真' },
+        { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+        { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
       ],
       flf2v: [
-        { value: '10eros', label: '10Eros TURBO' },
-        { value: 'official', label: '官方高保真' },
+        { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+        { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
       ],
       ref2v: [
-        { value: '10eros', label: '10Eros TURBO' },
-        { value: 'official', label: '官方高保真' },
-        { value: 'official_ref2v_turbo', label: '官方 REF2V 极速' },
+        { value: '10eros_bf16', label: '10Eros Beta4 BF16' },
+        { value: '10eros_int8', label: '10Eros Beta4 INT8 ConvRot' },
       ],
     },
     addon_models: [
       {
-        value: 'motion_booster',
-        label: '动作强化',
+        value: 'deepthroat',
+        label: 'Daring Deepthroat v0.2（深喉动作）',
         supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
         default_strength: 0.7,
       },
       {
-        value: 'naughty_times',
-        label: '成人动作测试一',
+        value: 'pov_missionary',
+        label: 'H3 POV Missionary v0.7（POV 传教士动作）',
         supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
-        default_strength: 1,
+        default_strength: 0.7,
       },
       {
-        value: 'motion_booster_ref2va',
-        label: '参考人物动作强化',
-        supported_modes: ['ref2v'],
-        default_strength: 0.7,
+        value: 'footjob',
+        label: 'H3 Footjobs Type B v1（足交动作）',
+        supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
+        default_strength: 0.5,
+      },
+      {
+        value: 'cumshot',
+        label: 'HMCumshot v0.5（射精动作）',
+        supported_modes: ['t2v', 'i2v', 'flf2v', 'ref2v'],
+        default_strength: 0.9,
       },
     ],
-    max_addon_items: 13,
+    max_addon_items: 4,
     strength_min: 0.1,
     strength_max: 2,
   },
@@ -393,10 +398,10 @@ describe('MainBotMenuSettings', () => {
         scail2_face_swap_v2: true,
       },
       advanced_video_pro: {
-        t2v: { main_model: '10eros', addon_items: [] },
-        i2v: { main_model: '10eros', addon_items: [] },
-        flf2v: { main_model: '10eros', addon_items: [] },
-        ref2v: { main_model: '10eros', addon_items: [] },
+        t2v: { main_model: '10eros_bf16', addon_items: [] },
+        i2v: { main_model: '10eros_bf16', addon_items: [] },
+        flf2v: { main_model: '10eros_bf16', addon_items: [] },
+        ref2v: { main_model: '10eros_bf16', addon_items: [] },
       },
     })
     expect(apiMocks.updateMainBotMenuConfig).not.toHaveBeenCalled()
@@ -409,19 +414,19 @@ describe('MainBotMenuSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
-    await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('official')
-    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-motion_booster"]').setValue(true)
-    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-naughty_times"]').setValue(true)
-    await wrapper.get('[data-testid="avp-addon-strength-i2v-motion_booster"]').setValue('1.25')
+    await wrapper.get('[data-testid="avp-main-model-i2v"]').setValue('10eros_int8')
+    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-deepthroat"]').setValue(true)
+    await wrapper.get('[data-testid="avp-addon-checkbox-i2v-pov_missionary"]').setValue(true)
+    await wrapper.get('[data-testid="avp-addon-strength-i2v-deepthroat"]').setValue('1.25')
     await wrapper.get('[data-testid="save-advanced-video-pro-config"]').trigger('click')
     await flushPromises()
 
     const payload = apiMocks.updateFeatureEntryVisibilityConfig.mock.calls[0][0]
     expect(payload.advanced_video_pro.i2v).toEqual({
-      main_model: 'official',
+      main_model: '10eros_int8',
       addon_items: [
-        { name: 'motion_booster', strength: 1.25 },
-        { name: 'naughty_times', strength: 1 },
+        { name: 'deepthroat', strength: 1.25 },
+        { name: 'pov_missionary', strength: 0.7 },
       ],
     })
     expect(messageMocks.success).toHaveBeenCalledWith('Pro 模型预设已保存')
@@ -432,7 +437,7 @@ describe('MainBotMenuSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="scope-tab-models"]').trigger('click')
-    const checkbox = wrapper.get('[data-testid="avp-addon-checkbox-t2v-motion_booster"]')
+    const checkbox = wrapper.get('[data-testid="avp-addon-checkbox-t2v-deepthroat"]')
     await checkbox.setValue(true)
     await checkbox.setValue(false)
     await wrapper.get('[data-testid="save-advanced-video-pro-config"]').trigger('click')

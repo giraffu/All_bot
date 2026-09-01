@@ -98,9 +98,7 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.pornmaster_flux2_edit_bf16_task_cases(image_object_key)
         return self.img2img_task_cases(image_object_key)
 
-    def minimax_h3_task_cases(
-        self, image_object_key: str
-    ) -> list[dict[str, Any]]:
+    def minimax_h3_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         def task(
             label: str,
             task_type: str,
@@ -149,10 +147,10 @@ class RunPodCloudTestCanaryCaseBuilder:
                 images=[image_object_key, image_object_key],
             ),
             task(
-                "minimax_h3_ref2v_official_turbo_5s_preview",
+                "minimax_h3_ref2v_10eros_int8_5s_preview",
                 "minimax_h3_ref2v",
                 images=[image_object_key],
-                main_model="official_ref2v_turbo",
+                main_model="10eros_int8",
             ),
         ]
 

@@ -41,7 +41,7 @@ class AdvancedVideoPromptDraft:
     completed_at: float | None = None
     delivered_message_ids: tuple[int, ...] = ()
     error_code: str | None = None
-    main_model: str = "10eros"
+    main_model: str = "10eros_bf16"
     addon_items: tuple[dict[str, Any], ...] = ()
     schema_version: str = PROMPT_DRAFT_SCHEMA_VERSION
 
@@ -105,7 +105,9 @@ class AdvancedVideoPromptTaskStore:
         tokens = await self.redis.zrange(self._pending_key, 0, -1)
         drafts: list[AdvancedVideoPromptDraft] = []
         for raw_token in tokens:
-            token = raw_token.decode() if isinstance(raw_token, bytes) else str(raw_token)
+            token = (
+                raw_token.decode() if isinstance(raw_token, bytes) else str(raw_token)
+            )
             draft = await self.get(token)
             if draft is None:
                 await self.stop_monitoring(token)

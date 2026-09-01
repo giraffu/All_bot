@@ -941,24 +941,10 @@
       "minimax_h3_addons": "Enhancements (multi-select)",
       "minimax_h3_addon_strength": "Effect strength",
       "minimax_h3_addon_options": {
-        "naughty_times": "Adult action test 1",
-        "sex_pose": "Adult action test 2",
-        "motion_booster": "Adult motion boost",
-        "motion_booster_ref2va": "Reference-character motion experiment",
-        "video_reasoning": "Prompt-following and temporal aid",
-        "mystic_xxx": "Anatomy enhancement",
-        "breast_play": "Breast motion",
-        "innie": "Vaginal shape",
         "deepthroat": "Deep-throat motion",
         "pov_missionary": "POV missionary motion",
         "footjob": "Footjob motion",
-        "breasts": "Breast detail",
-        "vagassist": "Vaginal/anal assistance",
-        "pussy": "Vaginal detail",
-        "penis": "Penile detail",
-        "cumshot": "Ejaculation motion",
-        "pussy_stills_v1": "Intimate anatomy still-frame experiment",
-        "titjob": "Breast-intercourse motion experiment"
+        "cumshot": "Ejaculation motion"
       },
       "upload_slots": {
         "face_image": "Face Image",

@@ -189,7 +189,7 @@ async def process_standard_generation_task(
             reference_descriptions=reference_descriptions or [],
             reference_video=reference_video,
             reference_audio=reference_audio,
-            main_model=main_model or "10eros",
+            main_model=main_model or "10eros_bf16",
             seed=seed,
         )
         if lora_items is not None:

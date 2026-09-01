@@ -34,12 +34,19 @@ def test_rollout_rejects_mutable_tag():
         module.resolve_gpu_artifact("ghcr.io/giraffu/gpu:latest", profile="i2i_pro")
 
 
+def test_minimax_h3_resolves_the_future_runpod_image_environment_key():
+    module = _load_module()
+    artifact = "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "2" * 64
+
+    resolved = module.resolve_gpu_artifact(artifact, profile="minimax_h3")
+
+    assert resolved["runpod_image_env"] == "RUNPOD_IMAGE_NAME_MINIMAX_H3"
+
+
 def test_operator_command_targets_one_slot():
     module = _load_module()
     resolved = module.resolve_gpu_artifact(ARTIFACT, profile="i2i_pro")
-    command = module.operator_command(
-        resolved, slot="07", operator="lan", execute=True
-    )
+    command = module.operator_command(resolved, slot="07", operator="lan", execute=True)
 
     assert "--slot" in command
     assert command[command.index("--slot") + 1] == "07"

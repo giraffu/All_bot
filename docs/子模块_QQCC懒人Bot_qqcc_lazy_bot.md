@@ -9,7 +9,7 @@ H3 FLF2V。REF2V 场景由管理员维护 1–4 张可命名模板图；用户�
 `<Picture 2>...<Picture N>`；用户替换只覆盖对应槽位，其余槽位继续使用管理员模板。
 固定画幅由场景配置；`credit_cost` 可由管理员设置为大于等于 1 的固定价格，留空时
 才按服务端分辨率/时长价格矩阵派生。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
-清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 17 个可选附加模型及模式范围，配置
+清空；`ai_video_addon_models` 由 MiniMax H3 领域目录只下发四个保留附加模型，配置
 后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
 值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
@@ -20,10 +20,10 @@ AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280
 图库与选中图直接复用，失效时才回退 R2 并刷新。“生成示例”使用当前 demo input 作为
 `<Picture 1>` 并读取最新参考图，不扣费、不写 History。
 
-`ai_video_scenes[].main_model` 通用值为 `10eros|official`，REF2V 额外允许
-`official_ref2v_turbo`，缺失或旧配置默认 `10eros`。场景配置弹窗的“主模型”选择由
-GET options 下发 `10Eros Max H3 Beta4`、`MiniMax H3 官方模型`，并仅在 REF2V 下显示
-`官方 REF2V 极速`；切回 I2V 时极速值重置为默认。未知值不得变成任意 checkpoint 路径。
+`ai_video_scenes[].main_model` 只允许 `10eros_bf16|10eros_int8`，缺失时默认 BF16。
+旧 `10eros` 读取为 BF16，旧 `official*` 读取为 INT8；保存后只写新值。场景配置弹窗由
+GET options 为四种模式统一下发 `10Eros Max H3 Beta4 BF16` 和
+`10Eros Max H3 Beta4 INT8 ConvRot`。未知值不得变成任意 checkpoint 路径。
 
 ## 1. 范围与定位
 
@@ -154,7 +154,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, main_model, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`main_model` 通用值为 `10eros|official`，REF2V 额外允许 `official_ref2v_turbo`，默认 `10eros`；极速值出现在 I2V 时归一回默认。`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`credit_cost` 接受大于等于 1 的管理员固定价，留空时 I2V/FLF2V/REF2V 都按当前模式、分辨率和时长读取 H3 动态模型价格。17 个候选中 `lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。`motion_booster_ref2va` 只在 REF2V 场景显示和保留，I2V 场景会自动清理。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, main_model, mode, duration, resolution, lora_items, reference_images, reference_image_names, reference_image_telegram_file_ids, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。REF2V 的三个 `reference_*` 数组严格同位：对象 key、管理员显示名、按 Bot ID 保存的 Telegram `file_id` map；旧配置缺显示名时稳定补为“模板 N”。`engine` 固定 `minimax_h3`，`main_model` 只允许 `10eros_bf16|10eros_int8`，默认 BF16。`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`credit_cost` 接受大于等于 1 的管理员固定价，留空时 I2V/FLF2V/REF2V 都按当前模式、分辨率和时长读取 H3 动态模型价格。四个候选中 `lora_items` 使用最多四个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数，缺失字段统一按
@@ -185,7 +185,7 @@ AI动图模型配置中，每个已选 Wan22 附加模型的强度行提供说�
 
 关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。`quick_faceswap` 关闭后，旧 `random_faceswap_again` 也必须拒绝继续提交。AI 动图每个场景的时长由后台固定，用户在 Bot 中只选择画质；画质只受用户权限过滤，仍保持 `1024p` 与 `10s` 不能同时选择。QQCC draw/filter/video 场景正负提示词只来自场景自身 `prompt` / `negative_prompt`，只作用于 QQCC Bot，主 Bot 不受影响。无尾帧来源时，动图 `image_to_video` 无模型提交 `custom_video`，带模型提交 `video_lora`；动图 `wan22_video_v2` 提交 `wan22_video_v2`。两者都透传场景最多 5 项有序 `lora_items`，旧 `lora_name/lora_strength` 只作首项兼容。配置尾帧来源时，用户仍只发送 1 张图；Bot 会先按被引用 AI绘图场景的完整后处理链串行提交隐藏绘图或滤镜任务，每步使用该场景自己的 `negative_prompt`，链内每个开启 `original_face_swap_enabled` 的步骤都会在本步生成后插入内部原图换脸，成功后下载最终图作为尾帧，再以用户原图和生成尾帧提交首尾帧视频；最终视频仍只使用视频场景自己的 `negative_prompt`。旧 `custom_video` / `video_lora` 传两张图并写入 `use_end_frame=true`；`wan22_video_v2` 传 `images=[start,end]`。官方、私有 durable continuation、示范生成与重新生成必须使用同一模型列表，`_wan22_context` 保存完整列表。提交前按“绘图/滤镜链 + 每步原图换脸 + 视频”做合计额度预检，尾帧链任一步生成/换脸失败都不提交视频，视频失败只按视频任务现有退款策略处理，已成功生成的前置隐藏任务历史不回滚且不可投稿。QQCC 链式生成只把第一个真实子任务按普通 Central 队列规则提交并允许 pending 取消；第 2 个及以后子任务都是同一链路的 continuation，统一以 `base_priority=100` 入队，不展示取消按钮，active task registry 写入 `user_cancel_allowed=false`。用户点旧消息上的取消按钮时，`cancel_user_task(...)` 会返回 `not_cancellable`，不调用 Central cancel，也不触发退款。单任务快速换脸、无尾帧 AI动图、单步 AI绘图和单步 AI滤镜保持普通 pending 可取消。`free_edit_v2` 提交 `pornmaster_flux2_single_edit`，旧 `free_edit` 无模型提交 `edit`，带模型提交 `img2img_lora` 并透传 catalog 默认强度；绘图/滤镜任务透传每步自身 `negative_prompt`，为空时保持空负向。QQCC 直接生成链路中，快速换脸、AI绘图、AI滤镜和 AI动图最终可见结果都提交 `allow_contribute=false`，结果按钮不展示投稿或公开入口；旧消息上的 `submit_gallery_*` / `public_share*` 在 QQCC callback 入口回复 `功能暂未开放`。最终可见结果的完成文案使用 QQCC 实际功能名或场景名，避免显示嵌套链路最后一个底层任务；直接 AI滤镜显示滤镜场景名，AI绘图套滤镜后处理仍显示原 AI绘图场景名。结果 metadata 通过 `_qqcc_regenerate` 写入 History `extra_outputs`，展示层据此追加 `qqcc_regenerate:<task_id>` 的 `重新生成` 按钮；metadata 新增 `scene_kind=draw|filter`，旧历史缺失时按 `draw` 兼容。QQCC 重生成 callback 会校验本人历史、下载原始用户输入、按当前配置重建 quick image/video 提交计划并重新做额度检查；场景禁用/删除或历史缺少原图时只回复失败，不进入 worker。中间绘图、原图换脸和视频尾帧链路也均隐藏且不可投稿。新增配置仍复用 `runtime_checkpoints` 的 `qqcc_lazy_bot_config:v1`，不新增 workflow、RunPod profile 或数据库表。
 
-AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 MiniMax H3 I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 H3 FLF2V。额度预检为尾帧链费用加 H3 档位与时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `generation` executor 保存原图、当前尾帧、H3 `lora_items` 和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。H3 附加模型实际生效依赖目标 Worker 镜像、workflow 与 13 模型 bundle 同一轮发布和 canary。
+AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 MiniMax H3 I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 H3 FLF2V。额度预检为尾帧链费用加 H3 档位与时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `generation` executor 保存原图、当前尾帧、H3 `lora_items` 和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。H3 附加模型实际生效依赖目标 Worker 镜像、workflow 与九文件模型 bundle 同一轮发布和 LAN 真实任务验证。
 
 QQCC 的 H3 结果还可通过共享 `h3_extend:<task_id>` 进入场景选择器。选择器只展示
 当前有效的 `engine=minimax_h3, mode=i2v` 场景，排除 REF2V；紧凑 callback 为
@@ -196,7 +196,7 @@ QQCC 的 H3 结果还可通过共享 `h3_extend:<task_id>` 进入场景选择器
 因此还能再次扩展或与父段整链拼接。官方写 `bot:qqcc`，私有实例仍写
 `bot:qqcc-private:<private_bot_id>`，不得互相恢复。
 
-QQCC Config 的“可配置”和 H3 Worker 的“运行时可加载”是两个门禁。控制面合入后，认证后台会显示领域目录并允许保存稳定 `{name,strength}`；目标 H3 Worker 只有在同一版本的 13 模型 bundle 已进入 ComfyUI 模型目录、workflow 动态链可解析对应 ID 且 GPU canary 通过后才能正式执行。完整物理路径、触发词、默认强度、大小与 SHA-256 由 MiniMax H3 文档、领域目录和 model bundle manifest 共同约束，QQCC 配置不得复制这些物理事实。
+QQCC Config 的“可配置”和 H3 Worker 的“运行时可加载”是两个门禁。控制面合入后，认证后台会显示领域目录并允许保存稳定 `{name,strength}`；目标 H3 Worker 只有在同一版本的九文件 bundle 已进入 ComfyUI 模型目录、workflow 动态链可解析对应 ID 且 LAN 真实正式任务成功后才能正式切换。完整物理路径、触发词、默认强度、大小与 SHA-256 由 MiniMax H3 文档、领域目录和 model bundle manifest 共同约束，QQCC 配置不得复制这些物理事实。
 
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。
 

@@ -37,19 +37,26 @@ SCAIL2_BAKED_LAN_IMAGE = (
 
 def test_release_target_ref_allows_exact_trusted_lan_mirror():
     target = "192.168.1.115:5000/allbot/wan@sha256:" + "1" * 64
-    assert _release_target_ref(
-        current_repository="ghcr.io/giraffu/wan",
-        target_ref=target,
-        digest="sha256:" + "1" * 64,
-    ) == target
+    assert (
+        _release_target_ref(
+            current_repository="ghcr.io/giraffu/wan",
+            target_ref=target,
+            digest="sha256:" + "1" * 64,
+        )
+        == target
+    )
 
 
 def test_release_target_ref_rewrites_untrusted_repository_to_current():
-    assert _release_target_ref(
-        current_repository="192.168.1.115:5000/allbot/wan",
-        target_ref="ghcr.io/giraffu/wan@sha256:" + "1" * 64,
-        digest="sha256:" + "1" * 64,
-    ) == "192.168.1.115:5000/allbot/wan@sha256:" + "1" * 64
+    assert (
+        _release_target_ref(
+            current_repository="192.168.1.115:5000/allbot/wan",
+            target_ref="ghcr.io/giraffu/wan@sha256:" + "1" * 64,
+            digest="sha256:" + "1" * 64,
+        )
+        == "192.168.1.115:5000/allbot/wan@sha256:" + "1" * 64
+    )
+
 
 LAN_ALL_TASK_TYPES = (
     "img2img",
@@ -138,9 +145,7 @@ def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
     )
     assert slot.target_task_types == SCAIL2_FLEX_TASK_TYPES
     assert slot.legacy_worker_id == "lan_aio_prod_gpu002_gpu0_scail2_01"
-    assert slot.old_runtime_container == (
-        "allbot-lan-aio-gpu-002-gpu0-scail2-prod"
-    )
+    assert slot.old_runtime_container == ("allbot-lan-aio-gpu-002-gpu0-scail2-prod")
 
     ops = LanAioProdOps(
         config_root=None,
@@ -162,10 +167,7 @@ def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
     assert environment["PREFETCH_RESERVE_TASK"] == "true"
     assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
     assert environment["POOL_RUNTIME_PROFILE"] == "scail2_flex"
-    assert (
-        environment["PIPELINE_PROFILE_POLICY"]
-        == "media_claim2_comfy1_delivery1_v1"
-    )
+    assert environment["PIPELINE_PROFILE_POLICY"] == "media_claim2_comfy1_delivery1_v1"
     assert json.loads(environment["RUNPOD_MODEL_MANIFEST_KEYS"]) == list(
         profile.model_manifest_keys
     )
@@ -242,9 +244,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     compose = yaml.safe_load(ops.render_compose(slot))
     service = compose["services"][slot.container_name]
     environment = service["environment"]
-    assert environment["SUPPORTED_TASK_TYPES"] == ",".join(
-        LTX_UNIFIED_TASK_TYPES
-    )
+    assert environment["SUPPORTED_TASK_TYPES"] == ",".join(LTX_UNIFIED_TASK_TYPES)
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES
     )
@@ -252,9 +252,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert "--reserve-vram 5" in environment["COMFY_EXTRA_ARGS"]
     assert "--use-pytorch-cross-attention" in environment["COMFY_EXTRA_ARGS"]
     model_mount = next(
-        mount
-        for mount in service["volumes"]
-        if mount.endswith(":/opt/ComfyUI/models")
+        mount for mount in service["volumes"] if mount.endswith(":/opt/ComfyUI/models")
     )
     assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
 
@@ -270,7 +268,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-30-10eros-beta4-official-int8-h3-turbo-profiles-addon18/manifest.json"
+        "minimax_h3/2026-09-02-10eros-beta4-bf16-int8-addon4/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
@@ -308,15 +306,12 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
         LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
     )
     model_mount = next(
-        mount
-        for mount in service["volumes"]
-        if mount.endswith(":/opt/ComfyUI/models")
+        mount for mount in service["volumes"] if mount.endswith(":/opt/ComfyUI/models")
     )
     assert "/profiles/minimax_h3/workspace/ComfyUI/models:" in model_mount
 
 
 def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
-    config = load_controller_config()
     slots = load_lan_aio_prod_slots(include_disabled=True)
     slot = slots["gpu-177-gpu1-minimax_h3_test"]
 
@@ -337,7 +332,9 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     compose = yaml.safe_load(ops.render_compose(slot))
     environment = compose["services"][slot.container_name]["environment"]
     assert environment["RUNPOD_ENVIRONMENT"] == "cloud-test"
-    assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
+    assert (
+        environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
+    )
     assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
 
     current = slots["gpu-177-gpu1-ltx_unified"]
@@ -499,14 +496,9 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     assert environment["RUNPOD_TEST_SUPPORTED_TASK_TYPES"] == "ltx25_video_upscale"
     assert environment["RUNPOD_TEST_RUNTIME_PROFILE"] == "ltx25_video_upscale"
     assert environment["RUNPOD_TEST_POOL_PROVIDER"] == "lan_ssh"
-    workflow_overrides = json.loads(
-        environment["TASK_TYPE_WORKFLOW_OVERRIDES"]
-    )
+    workflow_overrides = json.loads(environment["TASK_TYPE_WORKFLOW_OVERRIDES"])
     assert workflow_overrides["ltx_video"] == "LTX 2.3 I2V 10Eros LoRA.json"
-    assert (
-        workflow_overrides["ltx_video_flf2v"]
-        == "LTX 2.3 FLF2V 10Eros LoRA.json"
-    )
+    assert workflow_overrides["ltx_video_flf2v"] == "LTX 2.3 FLF2V 10Eros LoRA.json"
     assert (
         workflow_overrides["ltx_video_v2v_audio"]
         == "LTX 2.3 V2V Audio 10Eros LoRA.json"
@@ -576,7 +568,7 @@ def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
         "i2i_pro/workspace/ComfyUI/models:/workspace/ComfyUI/models"
     ) in rendered
     assert (
-        'TASK_TYPE_WORKFLOW_OVERRIDES: '
+        "TASK_TYPE_WORKFLOW_OVERRIDES: "
         '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
     ) in rendered
 
@@ -744,9 +736,7 @@ def test_lan_aio_fleet_render_uses_baked_runpod_worker_for_gpu_252():
     assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
     assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
-    assert (
-        "SUPPORTED_TASK_TYPES: img2img,img2img_lora"
-    ) in rendered
+    assert ("SUPPORTED_TASK_TYPES: img2img,img2img_lora") in rendered
     assert "POOL_RUNTIME_PROFILE: img2img_lora" in rendered
     assert "host_port: 8191" in rendered
     assert "--disable-dynamic-vram" not in rendered
@@ -879,9 +869,7 @@ def test_lan_aio_fleet_render_uses_rocm_devices_for_local_max395():
     assert service["environment"]["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert "--lowvram" in service["environment"]["COMFY_EXTRA_ARGS"]
     assert "--disable-pinned-memory" in service["environment"]["COMFY_EXTRA_ARGS"]
-    assert any(
-        mount.endswith(":/opt/ComfyUI/models") for mount in service["volumes"]
-    )
+    assert any(mount.endswith(":/opt/ComfyUI/models") for mount in service["volumes"])
 
 
 def test_lan_aio_local_transport_executes_without_self_ssh(tmp_path):
@@ -968,10 +956,7 @@ def test_fast_image_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
-    assert (
-        environment["PIPELINE_PROFILE_POLICY"]
-        == "image_claim3_comfy2_delivery1_v1"
-    )
+    assert environment["PIPELINE_PROFILE_POLICY"] == "image_claim3_comfy2_delivery1_v1"
     assert environment["PIPELINE_TASK_TYPES"] == (
         "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
     )
@@ -994,10 +979,7 @@ def test_i2i_lan_aio_uses_fast_image_pipeline_policy():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
-    assert (
-        environment["PIPELINE_PROFILE_POLICY"]
-        == "image_claim3_comfy2_delivery1_v1"
-    )
+    assert environment["PIPELINE_PROFILE_POLICY"] == "image_claim3_comfy2_delivery1_v1"
 
 
 def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
@@ -1437,9 +1419,9 @@ def test_ltx_video_workflow_uses_baked_sageattention():
 
         assert workflow["257"]["inputs"]["sage_attention"] == "auto"
 
-    dockerfile = Path(
-        "workers/runpod_profiles/ltx_video/Dockerfile"
-    ).read_text(encoding="utf-8")
+    dockerfile = Path("workers/runpod_profiles/ltx_video/Dockerfile").read_text(
+        encoding="utf-8"
+    )
     assert "sageattention==" in dockerfile
 
 
@@ -1470,9 +1452,7 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
 
 def test_lan_aio_prod_compose_assertion_rejects_test_storage():
     config = load_controller_config()
-    slot = load_lan_aio_prod_slots(include_disabled=True)[
-        "gpu-252-gpu0-img2img_lora"
-    ]
+    slot = load_lan_aio_prod_slots(include_disabled=True)["gpu-252-gpu0-img2img_lora"]
     rendered = RuntimePlanner(config).render_compose(
         slot.assignment_id,
         target_profile_id=slot.target_profile_id,
@@ -1851,9 +1831,7 @@ def test_lan_aio_retire_legacy_keeps_active_aio_running_and_disables_old_persist
         "slot": "gpu-177-gpu0-image_to_video",
         "legacy_agent_id": "lan_aio_prod_gpu177_gpu0_wan22_video_v2_01",
         "legacy_control": "disabled",
-        "old_runtime_container": (
-            "allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"
-        ),
+        "old_runtime_container": ("allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"),
         "old_runtime_restart_policy": "no",
     }
     assert ops.events == [
@@ -1888,9 +1866,7 @@ def test_node_storage_gc_rejects_current_container_before_remote_mutation():
     with pytest.raises(RuntimeError, match="protected current container"):
         ops.node_storage_gc(
             node_id="gpu-177",
-            remove_containers=[
-                "allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"
-            ],
+            remove_containers=["allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"],
             remove_workspaces=[],
             prune_unused_images=False,
             prune_dangling_volumes=False,
@@ -2009,7 +1985,10 @@ def test_node_storage_gc_requires_explicit_builders_for_build_cache_pruning():
 
     assert result["build_cache_builders"] == ["allbot-lan-insecure"]
     assert '"prune_build_cache_builders": ["allbot-lan-insecure"]' in ops.script
-    assert 'run("docker", "buildx", "prune", "--builder", builder, "-a", "-f")' in ops.script
+    assert (
+        'run("docker", "buildx", "prune", "--builder", builder, "-a", "-f")'
+        in ops.script
+    )
 
 
 def test_node_storage_gc_rejects_unsafe_build_cache_builder_name():
@@ -2263,8 +2242,7 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
     ops = RecordingOps()
     slot = ops.slots["gpu-177-gpu0-image_to_video"]
     rollback_ref = (
-        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
-        + "9" * 64
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:" + "9" * 64
     )
     resolved = {
         "profile": "image_to_video",
@@ -2280,8 +2258,7 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
 
     assert ops.verified_rollback_ref == rollback_ref
     expected_target_ref = (
-        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
-        + "1" * 64
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:" + "1" * 64
     )
     assert ops.pulled_refs == [rollback_ref, expected_target_ref]
     assert ops.verified_target_ref == expected_target_ref
@@ -2324,9 +2301,7 @@ def test_lan_release_rollout_accepts_img2img_artifact_for_lora_slot():
 
     ops = RecordingOps()
     slot = ops.slots["gpu-252-gpu1-img2img_lora"]
-    rollback_ref = (
-        "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "9" * 64
-    )
+    rollback_ref = "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "9" * 64
     resolved = {
         "profile": "img2img",
         "ref": "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:" + "1" * 64,
@@ -3772,9 +3747,7 @@ def test_lan_aio_recover_recreates_exited_candidate_with_current_image():
             }
 
         def _remote_target_container_image_ref(self, slot):
-            return self.config.profiles[
-                slot.target_profile_id
-            ].all_in_one_image_ref
+            return self.config.profiles[slot.target_profile_id].all_in_one_image_ref
 
         def _wait_container_health(self, slot):
             return None

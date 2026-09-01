@@ -55,8 +55,8 @@ async def test_feature_entry_visibility_routes_are_authenticated_and_persist_sco
                     "random_faceswap": True,
                     "ltx_video": True,
                     "ltx_video_v2": True,
-                        "ltx_t2v": True,
-                        "ltx25_video_upscale": False,
+                    "ltx_t2v": True,
+                    "ltx25_video_upscale": False,
                     "minimax_h3": False,
                     "wan22_video_v2": True,
                     "scail2_action_transfer": True,
@@ -113,16 +113,14 @@ async def test_feature_entry_visibility_routes_are_authenticated_and_persist_sco
         },
         "advanced_video_pro": {
             "t2v": {
-                "main_model": "official",
-                "addon_items": [{"name": "motion_booster", "strength": 1.15}],
+                "main_model": "10eros_int8",
+                "addon_items": [{"name": "deepthroat", "strength": 1.15}],
             },
-            "i2v": {"main_model": "10eros", "addon_items": []},
-            "flf2v": {"main_model": "10eros", "addon_items": []},
+            "i2v": {"main_model": "10eros_bf16", "addon_items": []},
+            "flf2v": {"main_model": "10eros_bf16", "addon_items": []},
             "ref2v": {
-                "main_model": "official_ref2v_turbo",
-                "addon_items": [
-                    {"name": "motion_booster_ref2va", "strength": 0.85}
-                ],
+                "main_model": "10eros_int8",
+                "addon_items": [{"name": "pov_missionary", "strength": 0.85}],
             },
         },
     }

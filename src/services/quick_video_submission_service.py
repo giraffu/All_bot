@@ -140,7 +140,7 @@ class QqccVideoChainSegment:
     lora_items: list[dict[str, Any]] = field(default_factory=list)
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
-    main_model: str = "10eros"
+    main_model: str = "10eros_bf16"
 
 
 @dataclass(frozen=True)
@@ -164,7 +164,7 @@ class QuickVideoSubmissionPlan:
     scene_kind: str = "video"
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
     aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
-    main_model: str = "10eros"
+    main_model: str = "10eros_bf16"
     qqcc_chain_segments: tuple[QqccVideoChainSegment, ...] = ()
     reference_images: list[str] = field(default_factory=list)
     reference_image_paths: list[str | None] = field(default_factory=list)
@@ -441,22 +441,25 @@ def _build_qqcc_ai_video_chain_segment(
         kind=(
             QuickVideoSubmissionKind.H3_REF2V
             if scene_mode == "ref2v"
-            else
-            QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
+            else QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
             if tail_draw_chain
             else QuickVideoSubmissionKind.LTX_VIDEO
         ),
         mode=(
             MINIMAX_H3_REF2V
             if scene_mode == "ref2v"
-            else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V
+            else MINIMAX_H3_FLF2V
+            if tail_draw_chain
+            else MINIMAX_H3_I2V
         ),
         resolution=str(scene.get("resolution") or "preview"),
         duration=f"{duration_seconds}s",
         cost=get_minimax_h3_cost(
             MINIMAX_H3_REF2V
             if scene_mode == "ref2v"
-            else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+            else MINIMAX_H3_FLF2V
+            if tail_draw_chain
+            else MINIMAX_H3_I2V,
             duration=duration_seconds,
             resolution_preset=str(scene.get("resolution") or "preview"),
         )
@@ -468,15 +471,23 @@ def _build_qqcc_ai_video_chain_segment(
         display_mode_name=display_name,
         result_meta=build_qqcc_regenerate_result_meta(
             kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-            mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
+            mode=(
+                MINIMAX_H3_REF2V
+                if scene_mode == "ref2v"
+                else MINIMAX_H3_FLF2V
+                if tail_draw_chain
+                else MINIMAX_H3_I2V
+            ),
             scene_id=scene_id,
             scene_kind="ai_video",
             display_mode_name=display_name,
         ),
         lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
-        aspect_ratio=str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE,
-        main_model=str(scene.get("main_model") or "10eros"),
+        aspect_ratio=str(scene.get("aspect_ratio") or "16:9")
+        if scene_mode == "ref2v"
+        else QQCC_VIDEO_ASPECT_SOURCE,
+        main_model=str(scene.get("main_model") or "10eros_bf16"),
     )
 
 
@@ -671,12 +682,17 @@ def build_quick_video_submission_plan(
             kind=(
                 QuickVideoSubmissionKind.H3_REF2V
                 if scene_mode == "ref2v"
-                else
-                QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
+                else QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
                 if tail_draw_chain
                 else QuickVideoSubmissionKind.LTX_VIDEO
             ),
-            mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
+            mode=(
+                MINIMAX_H3_REF2V
+                if scene_mode == "ref2v"
+                else MINIMAX_H3_FLF2V
+                if tail_draw_chain
+                else MINIMAX_H3_I2V
+            ),
             resolution=str(scene.get("resolution") or "preview"),
             duration=duration,
             total_cost=(
@@ -692,7 +708,13 @@ def build_quick_video_submission_plan(
             display_mode_name=display_mode_name,
             result_meta=build_qqcc_regenerate_result_meta(
                 kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-                mode=(MINIMAX_H3_REF2V if scene_mode == "ref2v" else MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V),
+                mode=(
+                    MINIMAX_H3_REF2V
+                    if scene_mode == "ref2v"
+                    else MINIMAX_H3_FLF2V
+                    if tail_draw_chain
+                    else MINIMAX_H3_I2V
+                ),
                 scene_id=scene_id,
                 scene_kind="ai_video",
                 display_mode_name=display_mode_name,
@@ -713,12 +735,14 @@ def build_quick_video_submission_plan(
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
             fixed_credit_cost=fixed_credit_cost,
-            reference_images=(
-                scene_reference_images if scene_mode == "ref2v" else []
-            ),
+            reference_images=(scene_reference_images if scene_mode == "ref2v" else []),
             reference_image_paths=reference_image_paths,
-            aspect_ratio=(str(scene.get("aspect_ratio") or "16:9") if scene_mode == "ref2v" else QQCC_VIDEO_ASPECT_SOURCE),
-            main_model=str(scene.get("main_model") or "10eros"),
+            aspect_ratio=(
+                str(scene.get("aspect_ratio") or "16:9")
+                if scene_mode == "ref2v"
+                else QQCC_VIDEO_ASPECT_SOURCE
+            ),
+            main_model=str(scene.get("main_model") or "10eros_bf16"),
         )
 
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
@@ -729,7 +753,11 @@ def build_quick_video_submission_plan(
             if fsm_data.get("scene_version") == "v1"
             else "video_edit_v2",
         )
-        or not (get_enabled_qqcc_video_scenes_v1(qqcc_config) if fsm_data.get("scene_version") == "v1" else has_enabled_qqcc_video_scenes(qqcc_config))
+        or not (
+            get_enabled_qqcc_video_scenes_v1(qqcc_config)
+            if fsm_data.get("scene_version") == "v1"
+            else has_enabled_qqcc_video_scenes(qqcc_config)
+        )
         or scene is None
     ):
         return QuickVideoSubmissionReject(
@@ -912,7 +940,9 @@ def _build_private_qqcc_video_chain_stages(
             task_kwargs = {
                 "prompt": segment.prompt_override or segment.default_prompt_text,
                 "is_video": True,
-                "task_type": MINIMAX_H3_FLF2V if segment.tail_draw_chain else MINIMAX_H3_I2V,
+                "task_type": MINIMAX_H3_FLF2V
+                if segment.tail_draw_chain
+                else MINIMAX_H3_I2V,
                 "resolution_preset": segment.resolution,
                 "aspect_ratio": "source",
                 "duration": segment.duration,
@@ -1792,8 +1822,7 @@ async def _run_qqcc_video_scene_chain(
             )
         else:
             failure_message = (
-                f"第 {failed_index + 1} 段生成失败，"
-                f"已返回前 {len(video_segments)} 段。"
+                f"第 {failed_index + 1} 段生成失败，已返回前 {len(video_segments)} 段。"
             )
         await robust_send_message(
             context.bot,

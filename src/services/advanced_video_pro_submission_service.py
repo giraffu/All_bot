@@ -69,7 +69,7 @@ def build_advanced_video_pro_submission_plan(
     duration: int | str = 5,
     resolution_preset: str = "preview",
     aspect_ratio: str = "16:9",
-    main_model: str = "10eros",
+    main_model: str = "10eros_bf16",
     addon_model: str | None = None,
     addon_strength: float | None = None,
     addon_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,

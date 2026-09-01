@@ -102,7 +102,7 @@ def _mode_keyboard(context) -> InlineKeyboardMarkup:
 
 def _apply_runtime_profile(data: dict) -> None:
     profile = data.get("runtime_profiles", {}).get(data.get("mode"), {})
-    data["main_model"] = str(profile.get("main_model") or "10eros")
+    data["main_model"] = str(profile.get("main_model") or "10eros_bf16")
     data["addon_items"] = [
         dict(item) for item in profile.get("addon_items", []) if isinstance(item, dict)
     ]
@@ -337,9 +337,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return AdvancedVideoProState.WAIT_SETTINGS
 
 
-async def start_extension(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def start_extension(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     if context.user_data.get("in_conversation"):
@@ -355,7 +353,11 @@ async def start_extension(
     if not task_id:
         await robust_reply_text(
             query.message,
-            _text(context, "记录已失效，请重新生成后再试。", "This record expired. Generate it again."),
+            _text(
+                context,
+                "记录已失效，请重新生成后再试。",
+                "This record expired. Generate it again.",
+            ),
         )
         return ConversationHandler.END
     try:
@@ -372,7 +374,11 @@ async def start_extension(
         logger.exception("Failed to prepare H3 extension")
         await robust_reply_text(
             query.message,
-            _text(context, "扩展参考加载失败，请稍后重试。", "Failed to load the extension reference. Try again later."),
+            _text(
+                context,
+                "扩展参考加载失败，请稍后重试。",
+                "Failed to load the extension reference. Try again later.",
+            ),
         )
         return ConversationHandler.END
     data = seed.fsm_data
@@ -738,7 +744,7 @@ async def _submit_generation(
             aspect_ratio=(
                 "source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]
             ),
-            main_model=data.get("main_model", "10eros"),
+            main_model=data.get("main_model", "10eros_bf16"),
             addon_items=list(data.get("addon_items", [])),
         )
     except AdvancedVideoProSubmissionError as exc:

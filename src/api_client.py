@@ -756,7 +756,7 @@ class APIClient:
         duration: int,
         resolution_preset: str,
         aspect_ratio: str,
-        main_model: str = "10eros",
+        main_model: str = "10eros_bf16",
         width: int,
         height: int,
         frame_count: int,

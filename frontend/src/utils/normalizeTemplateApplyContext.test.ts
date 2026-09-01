@@ -228,8 +228,8 @@ describe('normalizeTemplateApplyContext', () => {
         resolution_preset: 'standard',
         aspect_ratio: 'source',
         lora_items: [
-          { name: 'sex_pose', strength: 0.5 },
-          { name: 'naughty_times', strength: 1.2 },
+          { name: 'footjob', strength: 0.5 },
+          { name: 'deepthroat', strength: 1.2 },
           { name: 'ltx2.3/not-allowed.safetensors', strength: 1 },
         ],
         reference_audio_ref: { source: 'gallery_post', post_id: '31' },
@@ -247,8 +247,8 @@ describe('normalizeTemplateApplyContext', () => {
       resolutionPreset: 'standard',
       aspectRatio: 'source',
       loraItems: [
-        { name: 'sex_pose', strength: 0.5 },
-        { name: 'naughty_times', strength: 1.2 },
+        { name: 'footjob', strength: 0.5 },
+        { name: 'deepthroat', strength: 1.2 },
       ],
       referenceAudioRef: { source: 'gallery_post', post_id: 31 },
       referenceAudioUrl: 'https://example.com/voice.m4a',

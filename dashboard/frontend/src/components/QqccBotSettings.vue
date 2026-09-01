@@ -48,7 +48,7 @@ type AiVideoDurationKey = 5 | 10 | 15
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'minimax_h3'
-type AiVideoMainModel = '10eros' | 'official' | 'official_ref2v_turbo'
+type AiVideoMainModel = '10eros_bf16' | '10eros_int8'
 type AiVideoMode = 'i2v' | 'ref2v'
 type AiVideoCreditCosts = Partial<Record<
   AiVideoMode,
@@ -297,25 +297,21 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   scene_preset_version: 1,
   default_video_engine: 'image_to_video',
   default_ai_video_engine: 'minimax_h3',
-  default_ai_video_main_model: '10eros',
+  default_ai_video_main_model: '10eros_bf16',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
   video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ai_video_addon_models_version: 7,
+  ai_video_addon_models_version: 8,
   ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],
   ai_video_resolutions: [],
   ai_video_main_models: [
-    { value: '10eros', label: '10Eros Max H3 Beta4' },
-    { value: 'official', label: 'MiniMax H3 官方模型' },
-    {
-      value: 'official_ref2v_turbo', label: '官方 REF2V 极速',
-      supported_modes: ['ref2v'],
-    },
+    { value: '10eros_bf16', label: '10Eros Max H3 Beta4 BF16' },
+    { value: '10eros_int8', label: '10Eros Max H3 Beta4 INT8 ConvRot' },
   ],
   default_video_resolution: '720p',
   default_ai_video_resolution: 'preview',
@@ -605,7 +601,7 @@ const sceneConfig = reactive({
   duration: '5s' as DurationKey | AiVideoDurationKey,
   resolution: '720p' as ResolutionKey | AiVideoResolutionKey,
   engine: 'image_to_video',
-  main_model: '10eros' as AiVideoMainModel,
+  main_model: '10eros_bf16' as AiVideoMainModel,
   mode: 'i2v' as AiVideoMode,
   aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
@@ -722,7 +718,9 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'minimax_h3'
 const normalizeAiVideoMainModel = (value: unknown): AiVideoMainModel =>
-  value === 'official' || value === 'official_ref2v_turbo' ? value : '10eros'
+  value === '10eros_int8' || value === 'official' || value === 'official_ref2v_turbo'
+    ? '10eros_int8'
+    : '10eros_bf16'
 const normalizeAiVideoMode = (value: unknown): AiVideoMode => value === 'ref2v' ? 'ref2v' : 'i2v'
 const normalizeAiVideoAspectRatio = (value: unknown): AiVideoAspectRatio =>
   value === '9:16' || value === '1:1' ? value : '16:9'
@@ -1042,9 +1040,7 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (Array.isArray(raw.ai_video_main_models)) {
     const mainModels = raw.ai_video_main_models.filter(
       (item): item is AiVideoMainModelOption =>
-        (item?.value === '10eros'
-          || item?.value === 'official'
-          || item?.value === 'official_ref2v_turbo')
+        (item?.value === '10eros_bf16' || item?.value === '10eros_int8')
         && typeof item?.label === 'string',
     )
     if (mainModels.length > 0) merged.ai_video_main_models = mainModels

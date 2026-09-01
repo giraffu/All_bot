@@ -13,7 +13,9 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
     submit = AsyncMock(return_value={"task_id": "optimizer-1"})
     get_result = AsyncMock(return_value={"result_text": "optimized prompt"})
     remove = AsyncMock()
-    uploads = iter(["staging/user-uploads/7/start.png", "staging/user-uploads/7/end.png"])
+    uploads = iter(
+        ["staging/user-uploads/7/start.png", "staging/user-uploads/7/end.png"]
+    )
 
     result = await optimize_advanced_video_prompt(
         internal_user_id=7,
@@ -35,11 +37,13 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
     request = submit.await_args.kwargs["request"]
     assert request.target_task_type == "minimax_h3_flf2v"
     assert request.template.id == "minimax_h3_10eros_naughtytimes"
-    assert request.template.version == 4
+    assert request.template.version == 6
     assert [item.role for item in request.media] == ["start_image", "end_image"]
     assert request.context == {"duration_seconds": 10}
     assert request.lora_items == []
-    assert submit.await_args.kwargs["current_user"] == SimpleNamespace(id=7, username="alice")
+    assert submit.await_args.kwargs["current_user"] == SimpleNamespace(
+        id=7, username="alice"
+    )
     assert remove.await_count == 2
 
 
@@ -73,7 +77,9 @@ async def test_bot_optimizer_preserves_staged_media_until_terminal_result():
 @pytest.mark.asyncio
 async def test_bot_optimizer_uses_ordered_ref2v_media_roles():
     submit = AsyncMock(return_value={"task_id": "optimizer-ref"})
-    get_result = AsyncMock(return_value={"result_text": "<Picture 1> meets <Picture 2>"})
+    get_result = AsyncMock(
+        return_value={"result_text": "<Picture 1> meets <Picture 2>"}
+    )
     uploads = iter(["staging/ref1.png", "staging/ref2.png"])
 
     await optimize_advanced_video_prompt(
