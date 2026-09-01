@@ -25,6 +25,17 @@ describe('runtime entry visibility hydration', () => {
           image: 0,
           invalid: -1,
         },
+        task_pricing: {
+          prices: {
+            'free_edit_v2_5::input_count=2': 11,
+            invalid: -1,
+          },
+          variants: [{
+            variant_id: 'free_edit_v2_5::input_count=2',
+            task_types: ['free_edit_v2_5'],
+            conditions: { input_count: '2' },
+          }],
+        },
         flags: {
           enable_edit_entry: false,
           enable_custom_video_entry: false,
@@ -52,6 +63,14 @@ describe('runtime entry visibility hydration', () => {
     expect(window.__ALLBOT_TASK_PRICE_OVERRIDES__).toEqual({
       txt2img: 9,
       image: 0,
+    })
+    expect(window.__ALLBOT_TASK_PRICING__).toEqual({
+      prices: { 'free_edit_v2_5::input_count=2': 11 },
+      variants: [{
+        variant_id: 'free_edit_v2_5::input_count=2',
+        task_types: ['free_edit_v2_5'],
+        conditions: { input_count: '2' },
+      }],
     })
   })
 

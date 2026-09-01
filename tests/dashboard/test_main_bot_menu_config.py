@@ -123,7 +123,7 @@ async def test_main_bot_menu_config_route_rejects_all_hidden_main_items():
 
 
 @pytest.mark.asyncio
-async def test_task_pricing_routes_cover_all_tasks_and_persist_overrides():
+async def test_task_pricing_routes_publish_sellable_catalog_and_persist_variants():
     fake_db = _FakeSession()
 
     async def override_get_db():
@@ -143,10 +143,18 @@ async def test_task_pricing_routes_cover_all_tasks_and_persist_overrides():
             get_response = await client.get(
                 "/api/main-bot/task-pricing", headers=headers
             )
+            categories = get_response.json()["categories"]
+            txt2img_variant = next(
+                variant["variant_id"]
+                for category in categories
+                for offer in category["offers"]
+                if offer["id"] == "txt2img"
+                for variant in offer["variants"]
+            )
             put_response = await client.put(
                 "/api/main-bot/task-pricing",
                 headers=headers,
-                json={"overrides": {"txt2img": 9, "face_swap": 0}},
+                json={"schema_version": 2, "prices": {txt2img_variant: 9}},
             )
     finally:
         dashboard_main.app.dependency_overrides.pop(main_bot_menu_router.get_db, None)
@@ -154,14 +162,16 @@ async def test_task_pricing_routes_cover_all_tasks_and_persist_overrides():
     assert unauthenticated.status_code == 401
     assert get_response.status_code == 200
     assert get_response.json()["key"] == TASK_PRICING_CONFIG_KEY
-    assert len(get_response.json()["items"]) >= 50
+    assert get_response.json()["schema_version"] == 2
+    assert len(get_response.json()["categories"]) == 5
+    assert "blowjob" not in str(get_response.json()["categories"])
     assert put_response.status_code == 200
-    assert put_response.json()["overrides"] == {"txt2img": 9, "face_swap": 0}
+    assert put_response.json()["prices"] == {txt2img_variant: 9}
     assert fake_db.committed is True
 
 
 @pytest.mark.asyncio
-async def test_task_pricing_route_rejects_unknown_task_type():
+async def test_task_pricing_route_rejects_unknown_variant():
     fake_db = _FakeSession()
 
     async def override_get_db():
@@ -179,7 +189,7 @@ async def test_task_pricing_route_rejects_unknown_task_type():
             response = await client.put(
                 "/api/main-bot/task-pricing",
                 headers={"Authorization": f"Bearer {token}"},
-                json={"overrides": {"not-a-task": 5}},
+                json={"schema_version": 2, "prices": {"not-a-variant": 5}},
             )
     finally:
         dashboard_main.app.dependency_overrides.pop(main_bot_menu_router.get_db, None)

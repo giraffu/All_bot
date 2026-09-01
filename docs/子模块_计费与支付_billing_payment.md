@@ -81,7 +81,8 @@ sequenceDiagram
   - `details` 中落地 `current_credits` 与 `available_balance_usdt` 快照，供重放时稳定返回首次成功结果。
 - `runtime_checkpoints`
   - 保存跨进程运行时游标和小型运行时配置；任务定价使用
-    `task_pricing_config:v1`，只保存按 registry `task_type` 的显式覆盖值，不复制完整默认价格表。
+    `task_pricing_config:v1`，其中 schema v2 只保存可售卖价格变体 ID 的显式覆盖值，
+    不复制完整默认价格表。
   - TON key 形如 `ton:<merchant_address>:last_lt`，`value` 保存 JSON 快照并记录 `updated_at`。
 - `rmb_payment_reconciliation_jobs`
   - 仅在新建 RMB PENDING 订单时同事务创建，不自动回填历史漏单。
@@ -92,16 +93,21 @@ sequenceDiagram
 
 ### 4.1 任务定价与扣费边界
 
-- Dashboard 的认证接口 `/api/main-bot/task-pricing` 读取完整任务 registry，并只写
-  `task_pricing_config:v1.overrides`。允许 `0–100000` 整数；未知任务、布尔值、负数和
-  超上限值必须拒绝，清空字段表示恢复系统默认或动态算法。
+- Dashboard 的认证接口 `/api/main-bot/task-pricing` 读取独立的可售卖价格目录，并只写
+  `task_pricing_config:v1.prices`。价格目录不等于执行任务 registry：前者只列当前
+  Web/主 Bot 用户入口及有效条件组合，后者仍可保留内部步骤、兼容别名和懒人 Bot
+  场景。允许 `0–100000` 整数；未知变体、布尔值、负数和超上限值必须拒绝，清空字段
+  表示恢复 dispatcher/domain config 的系统默认价。
 - Web 与主 Bot 的任务默认价仍由 dispatcher/domain config 按 task type、图片数、
-  时长、清晰度等参数计算；`TaskApplication` 通过显式
+  时长、清晰度和参考素材等参数计算；每个可售卖价格变体保存稳定 ID、匹配 task type
+  与规范化条件向量。`TaskApplication` 通过显式
   `TaskCoreProcessDependencies.resolve_task_cost_func` 在扣费前应用覆盖。该 provider
   是最终计费 seam，入口展示、前端静态常量和 Worker workflow 都不是账本事实源。
-- 公共 Web `/api/app/entry-visibility` 可同时下发只读 `task_price_overrides` 供价格展示；
-  即使展示缓存失效，服务端最终扣费仍重新读取当前配置。主 Bot/QQCC 的场景预检不得
-  取代该裁决点。
+- 公共 Web `/api/app/entry-visibility` 同时下发只读 `task_pricing` 目录与覆盖值供价格
+  展示，并在滚动发布期间保留固定单价的 `task_price_overrides` 兼容字段；即使展示缓存
+  失效，服务端最终扣费仍重新读取当前配置。主 Bot 条件未收齐时的余额预检只按可配置
+  最低价防止误拦，完整输入进入 `TaskApplication` 后必须再次按精确变体裁决；QQCC 场景
+  预检不得取代该裁决点。
 - 覆盖只作用于 `client_type=web|bot`。私有 QQCC、官方场景固定总价和内部
   `deduct_quota=false` 阶段保持原契约，避免租户定价被全局后台静默改写。
 - 价格在扣费时固化到提交、账本和恢复记录；配置更新只影响新任务。退款只读取根任务

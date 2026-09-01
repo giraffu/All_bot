@@ -42,6 +42,43 @@ describe('lab workbench mode helpers', () => {
     })).toBe(23)
     window.__ALLBOT_TASK_PRICE_OVERRIDES__ = undefined
   })
+
+  it('uses the condition-specific runtime price for double-image fusion', () => {
+    window.__ALLBOT_TASK_PRICING__ = {
+      prices: Object.freeze({
+        'free_edit_v2_5::input_count=1': 4,
+        'free_edit_v2_5::input_count=2': 11,
+      }),
+      variants: Object.freeze([
+        {
+          variant_id: 'free_edit_v2_5::input_count=1',
+          task_types: ['free_edit_v2_5'],
+          conditions: { input_count: '1' },
+        },
+        {
+          variant_id: 'free_edit_v2_5::input_count=2',
+          task_types: ['free_edit_v2_5'],
+          conditions: { input_count: '2' },
+        },
+      ]),
+    }
+
+    expect(getLabModeCost({
+      mode: getLabModeConfig('edit_v2_5'),
+      uploadedReferenceCount: 1,
+      resolution: '512',
+      duration: '5',
+      wan22ResolutionPreset: 'preview',
+    })).toBe(4)
+    expect(getLabModeCost({
+      mode: getLabModeConfig('edit_v2_5'),
+      uploadedReferenceCount: 2,
+      resolution: '512',
+      duration: '5',
+      wan22ResolutionPreset: 'preview',
+    })).toBe(11)
+    window.__ALLBOT_TASK_PRICING__ = undefined
+  })
   it('identifies grouped video modes', () => {
     expect(isScail2ModeId('scail2_action_transfer')).toBe(true)
     expect(isScail2ModeId('scail2_video_replacement')).toBe(true)

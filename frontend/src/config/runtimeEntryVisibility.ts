@@ -38,6 +38,14 @@ type EntryVisibilityKey = typeof ENTRY_VISIBILITY_KEYS[number]
 interface EntryVisibilityResponse {
   flags?: Partial<Record<EntryVisibilityKey, unknown>>
   task_price_overrides?: Record<string, unknown>
+  task_pricing?: {
+    prices?: Record<string, unknown>
+    variants?: Array<{
+      variant_id?: unknown
+      task_types?: unknown
+      conditions?: unknown
+    }>
+  }
 }
 
 export const hydrateRuntimeEntryVisibility = async (
@@ -80,7 +88,39 @@ export const hydrateRuntimeEntryVisibility = async (
       )),
     )
     window.__ALLBOT_TASK_PRICE_OVERRIDES__ = Object.freeze(safeTaskPrices)
-    return Object.keys(safeFlags).length > 0 || Object.keys(safeTaskPrices).length > 0
+    const safeVariantPrices = Object.fromEntries(
+      Object.entries(payload.task_pricing?.prices ?? {}).flatMap(([key, value]) => (
+        typeof value === 'number'
+        && Number.isInteger(value)
+        && value >= 0
+        && value <= 100000
+          ? [[key, value]]
+          : []
+      )),
+    )
+    const safeVariants = (payload.task_pricing?.variants ?? []).flatMap(variant => {
+      if (
+        typeof variant.variant_id !== 'string'
+        || !Array.isArray(variant.task_types)
+        || !variant.task_types.every(value => typeof value === 'string')
+        || !variant.conditions
+        || typeof variant.conditions !== 'object'
+        || Array.isArray(variant.conditions)
+        || !Object.values(variant.conditions).every(value => typeof value === 'string')
+      ) return []
+      return [{
+        variant_id: variant.variant_id,
+        task_types: variant.task_types as string[],
+        conditions: variant.conditions as Record<string, string>,
+      }]
+    })
+    window.__ALLBOT_TASK_PRICING__ = Object.freeze({
+      prices: Object.freeze(safeVariantPrices),
+      variants: Object.freeze(safeVariants),
+    })
+    return Object.keys(safeFlags).length > 0
+      || Object.keys(safeTaskPrices).length > 0
+      || Object.keys(safeVariantPrices).length > 0
   } catch {
     return false
   } finally {

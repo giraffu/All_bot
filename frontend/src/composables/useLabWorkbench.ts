@@ -406,6 +406,16 @@ export function useLabWorkbench() {
           minimaxH3ResolutionPreset.value,
           Number(duration.value),
         ),
+        {
+          mode: minimaxH3Mode.value,
+          resolution: minimaxH3ResolutionPreset.value,
+          duration: duration.value,
+          reference_audio: Boolean(h3ReferenceAudio.referenceAudio.value),
+          // The current Web UI has reference images and optional audio. Keep
+          // the video condition explicit so Bot/future Web inputs share the
+          // same catalog contract without guessing.
+          reference_video: false,
+        },
       )
     : cost.value)
 

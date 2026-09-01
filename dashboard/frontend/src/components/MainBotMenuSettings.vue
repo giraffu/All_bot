@@ -10,7 +10,6 @@ import {
   updateMainBotMenuConfig,
   updateTaskPricingConfig,
 } from '../api/api'
-import { getTaskTypeLabel } from '../constants/taskTypes'
 
 interface MenuItemConfig {
   key: string
@@ -108,23 +107,41 @@ interface FeatureEntryVisibilityConfigResponse {
   updated_at?: string | null
 }
 
-interface TaskPricingItem {
-  task_type: string
-  public_type: string
-  execution_type: string
-  default_cost: number | null
+interface TaskPricingVariant {
+  variant_id: string
+  task_types: string[]
+  conditions: Record<string, string>
+  default_cost: number
   override_cost: number | null
-  effective_cost: number | null
-  pricing_mode: 'fixed' | 'dynamic'
-  is_generation: boolean
-  is_video: boolean
-  legacy_alias_of: string | null
+  effective_cost: number
+}
+
+interface TaskPricingDimension {
+  key: string
+  label: string
+  options: SelectOption[]
+}
+
+interface TaskPricingOffer {
+  id: string
+  label: string
+  description: string
+  dimensions: TaskPricingDimension[]
+  variants: TaskPricingVariant[]
+}
+
+interface TaskPricingCategory {
+  id: string
+  label: string
+  offers: TaskPricingOffer[]
 }
 
 interface TaskPricingConfigResponse {
   key: string
+  schema_version: number
+  prices: Record<string, number>
+  categories: TaskPricingCategory[]
   overrides: Record<string, number>
-  items: TaskPricingItem[]
   updated_at?: string | null
 }
 
@@ -290,9 +307,11 @@ const advancedVideoProOptions = ref<AdvancedVideoProOptions>(
   emptyAdvancedVideoProOptions(),
 )
 const activeScope = ref<EntryScope>('web')
-const pricingItems = ref<TaskPricingItem[]>([])
-const pricingOverrides = ref<Record<string, number | string | null>>({})
-const pricingSearch = ref('')
+const pricingCategories = ref<TaskPricingCategory[]>([])
+const pricingPrices = ref<Record<string, number | string | null>>({})
+const selectedPricingCategoryId = ref('')
+const selectedPricingOfferId = ref('')
+const pricingSelection = ref<Record<string, string>>({})
 
 const visibleMainCount = computed(() =>
   config.value.main_menu.items.filter((item) => item.visible).length
@@ -347,27 +366,124 @@ const applyEntryResponse = (payload: FeatureEntryVisibilityConfigResponse) => {
 }
 
 const applyPricingResponse = (payload: TaskPricingConfigResponse) => {
-  pricingItems.value = payload.items.map(item => ({ ...item }))
-  pricingOverrides.value = Object.fromEntries(
-    payload.items.map(item => [item.task_type, item.override_cost]),
+  const previousSelection = { ...pricingSelection.value }
+  pricingCategories.value = payload.categories.map(category => ({
+    ...category,
+    offers: category.offers.map(offer => ({
+      ...offer,
+      dimensions: offer.dimensions.map(dimension => ({
+        ...dimension,
+        options: dimension.options.map(option => ({ ...option })),
+      })),
+      variants: offer.variants.map(variant => ({
+        ...variant,
+        conditions: { ...variant.conditions },
+      })),
+    })),
+  }))
+  pricingPrices.value = Object.fromEntries(
+    payload.categories.flatMap(category => category.offers.flatMap(offer => (
+      offer.variants.map(variant => [variant.variant_id, variant.override_cost])
+    ))),
   )
+  if (!pricingCategories.value.some(category => category.id === selectedPricingCategoryId.value)) {
+    selectedPricingCategoryId.value = pricingCategories.value[0]?.id ?? ''
+  }
+  selectFirstPricingOffer(false)
+  const offer = selectedPricingOffer.value
+  const canRestoreSelection = offer?.variants.some(variant => (
+    offer.dimensions.every(dimension => (
+      variant.conditions[dimension.key] === previousSelection[dimension.key]
+    ))
+  ))
+  pricingSelection.value = canRestoreSelection
+    ? previousSelection
+    : { ...(offer?.variants[0]?.conditions ?? {}) }
   pricingUpdatedAt.value = payload.updated_at ?? null
 }
 
-const filteredPricingItems = computed(() => {
-  const query = pricingSearch.value.trim().toLowerCase()
-  if (!query) return pricingItems.value
-  return pricingItems.value.filter(item => (
-    item.task_type.toLowerCase().includes(query)
-    || item.public_type.toLowerCase().includes(query)
-    || getTaskTypeLabel(item.task_type).toLowerCase().includes(query)
-  ))
+const selectedPricingCategory = computed(() => (
+  pricingCategories.value.find(category => category.id === selectedPricingCategoryId.value)
+  ?? null
+))
+const selectedPricingOffer = computed(() => (
+  selectedPricingCategory.value?.offers.find(offer => offer.id === selectedPricingOfferId.value)
+  ?? null
+))
+const selectedPricingVariant = computed(() => {
+  const offer = selectedPricingOffer.value
+  if (!offer) return null
+  return offer.variants.find(variant => (
+    offer.dimensions.every(dimension => (
+      variant.conditions[dimension.key] === pricingSelection.value[dimension.key]
+    ))
+  )) ?? null
 })
+const pricingVariantCount = computed(() => pricingCategories.value.reduce(
+  (total, category) => total + category.offers.reduce(
+    (offerTotal, offer) => offerTotal + offer.variants.length,
+    0,
+  ),
+  0,
+))
 
-const taskPriceLabel = (item: TaskPricingItem) => getTaskTypeLabel(item.task_type)
-const taskPriceInputId = (taskType: string) => taskType.replaceAll('.', '-')
-const clearTaskPrice = (taskType: string) => {
-  pricingOverrides.value[taskType] = null
+function selectFirstPricingOffer(resetSelection = true) {
+  const category = selectedPricingCategory.value
+  if (!category) {
+    selectedPricingOfferId.value = ''
+    pricingSelection.value = {}
+    return
+  }
+  if (!category.offers.some(offer => offer.id === selectedPricingOfferId.value)) {
+    selectedPricingOfferId.value = category.offers[0]?.id ?? ''
+  }
+  if (resetSelection) resetPricingSelection()
+}
+
+function resetPricingSelection() {
+  const offer = selectedPricingOffer.value
+  const firstVariant = offer?.variants[0]
+  pricingSelection.value = firstVariant ? { ...firstVariant.conditions } : {}
+}
+
+const changePricingCategory = () => {
+  selectedPricingOfferId.value = ''
+  selectFirstPricingOffer()
+}
+
+const changePricingOffer = () => resetPricingSelection()
+
+const pricingOptionsFor = (dimensionIndex: number) => {
+  const offer = selectedPricingOffer.value
+  if (!offer) return []
+  const dimension = offer.dimensions[dimensionIndex]
+  const earlierDimensions = offer.dimensions.slice(0, dimensionIndex)
+  const available = new Set(
+    offer.variants
+      .filter(variant => earlierDimensions.every(previous => (
+        variant.conditions[previous.key] === pricingSelection.value[previous.key]
+      )))
+      .map(variant => variant.conditions[dimension.key]),
+  )
+  return dimension.options.filter(option => available.has(option.value))
+}
+
+const changePricingDimension = (dimensionIndex: number) => {
+  const offer = selectedPricingOffer.value
+  if (!offer) return
+  for (let index = dimensionIndex + 1; index < offer.dimensions.length; index += 1) {
+    const dimension = offer.dimensions[index]
+    const options = pricingOptionsFor(index)
+    if (!options.some(option => option.value === pricingSelection.value[dimension.key])) {
+      pricingSelection.value[dimension.key] = options[0]?.value ?? ''
+    }
+  }
+}
+
+const clearSelectedTaskPrice = () => {
+  if (selectedPricingVariant.value) {
+    pricingPrices.value[selectedPricingVariant.value.variant_id] = null
+  }
 }
 
 const addonOptionsForMode = (mode: AdvancedVideoProMode) => (
@@ -461,20 +577,20 @@ const reloadAll = async () => {
 }
 
 const saveTaskPricing = async () => {
-  const overrides: Record<string, number> = {}
-  for (const item of pricingItems.value) {
-    const rawValue = pricingOverrides.value[item.task_type]
+  const prices: Record<string, number> = {}
+  for (const category of pricingCategories.value) for (const offer of category.offers) for (const variant of offer.variants) {
+    const rawValue = pricingPrices.value[variant.variant_id]
     if (rawValue === null || rawValue === undefined || rawValue === '') continue
     const normalized = Number(rawValue)
     if (!Number.isInteger(normalized) || normalized < 0 || normalized > 100000) {
-      message.error(`${taskPriceLabel(item)}价格必须是 0–100000 的整数`)
+      message.error(`${offer.label}价格必须是 0–100000 的整数`)
       return
     }
-    overrides[item.task_type] = normalized
+    prices[variant.variant_id] = normalized
   }
   pricingSaving.value = true
   try {
-    applyPricingResponse(await updateTaskPricingConfig({ overrides }))
+    applyPricingResponse(await updateTaskPricingConfig({ schema_version: 2, prices }))
     message.success('任务定价已保存，Web 与主 Bot 新任务立即统一生效')
   } catch {
     message.error('保存任务定价失败')
@@ -586,9 +702,9 @@ onMounted(() => {
     >
       <div class="section-heading">
         <div>
-          <h3 class="text-base font-semibold text-slate-900">所有任务统一定价</h3>
+          <h3 class="text-base font-semibold text-slate-900">用户入口统一定价</h3>
           <p class="mt-1 text-sm text-slate-500">
-            覆盖价同时用于 Web 与主 Bot 的新任务；留空会恢复系统默认或按时长、清晰度动态计算。
+            先选择用户看到的入口，再按输入方式、分辨率和时长配置；Web 与主 Bot 共用一套价格。
           </p>
           <p class="mt-1 text-xs text-slate-400">{{ formatUpdatedAt(pricingUpdatedAt) }}</p>
         </div>
@@ -603,61 +719,105 @@ onMounted(() => {
         </button>
       </div>
 
-      <p class="mt-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        设置覆盖价后，该任务的所有参数组合按固定灵石数计费；0 表示免费。运行中任务继续使用提交时已记录的价格。
+      <p class="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        目录只展示当前 Web / 主 Bot 可售卖入口，不包含懒人 Bot 场景、退役功能和内部执行任务。0 表示免费，运行中任务继续使用提交时已记录的价格。
       </p>
 
-      <div class="pricing-toolbar mt-4">
-        <input
-          v-model="pricingSearch"
-          type="search"
-          placeholder="搜索任务名称或 task_type"
-          data-testid="task-pricing-search"
-        />
-        <span>{{ filteredPricingItems.length }} / {{ pricingItems.length }} 个任务</span>
+      <div class="pricing-path mt-4">
+        <label class="pricing-select-field">
+          <span>总分类</span>
+          <select
+            v-model="selectedPricingCategoryId"
+            data-testid="pricing-category-select"
+            @change="changePricingCategory"
+          >
+            <option v-for="category in pricingCategories" :key="category.id" :value="category.id">
+              {{ category.label }}
+            </option>
+          </select>
+        </label>
+        <span class="pricing-path-arrow" aria-hidden="true">›</span>
+        <label class="pricing-select-field">
+          <span>功能入口</span>
+          <select
+            v-model="selectedPricingOfferId"
+            data-testid="pricing-offer-select"
+            @change="changePricingOffer"
+          >
+            <option v-for="offer in selectedPricingCategory?.offers ?? []" :key="offer.id" :value="offer.id">
+              {{ offer.label }}
+            </option>
+          </select>
+        </label>
       </div>
 
-      <div class="pricing-list mt-3">
-        <article
-          v-for="item in filteredPricingItems"
-          :key="item.task_type"
-          class="pricing-item"
-        >
-          <div class="pricing-identity">
-            <div class="text-sm font-medium text-slate-800">{{ taskPriceLabel(item) }}</div>
-            <div class="text-xs text-slate-400">{{ item.task_type }}</div>
-            <div class="mt-1 text-xs text-slate-500">
-              系统价：
-              <span v-if="item.default_cost !== null">{{ item.default_cost }} 灵石</span>
-              <span v-else>动态计算</span>
-              <span v-if="item.legacy_alias_of"> · 兼容入口 → {{ item.legacy_alias_of }}</span>
+      <article v-if="selectedPricingOffer" class="pricing-editor mt-4">
+        <div class="pricing-editor-heading">
+          <div>
+            <h4>{{ selectedPricingOffer.label }}</h4>
+            <p>{{ selectedPricingOffer.description }}</p>
+          </div>
+          <span class="pricing-variant-count">共 {{ selectedPricingOffer.variants.length }} 种价格组合</span>
+        </div>
+
+        <div v-if="selectedPricingOffer.dimensions.length" class="pricing-dimensions">
+          <label
+            v-for="(dimension, dimensionIndex) in selectedPricingOffer.dimensions"
+            :key="dimension.key"
+            class="pricing-select-field"
+          >
+            <span>{{ dimension.label }}</span>
+            <select
+              v-model="pricingSelection[dimension.key]"
+              :data-testid="`pricing-dimension-${dimension.key}`"
+              @change="changePricingDimension(dimensionIndex)"
+            >
+              <option
+                v-for="option in pricingOptionsFor(dimensionIndex)"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <div v-if="selectedPricingVariant" class="pricing-result-card">
+          <div>
+            <div class="pricing-result-label">当前组合</div>
+            <div class="pricing-result-default">
+              系统默认 {{ selectedPricingVariant.default_cost }} 灵石
+              <span>· {{ selectedPricingVariant.task_types.join(' / ') }}</span>
             </div>
           </div>
           <div class="pricing-actions">
             <label>
-              <span>覆盖价</span>
+              <span>自定义价格（灵石）</span>
               <input
-                v-model.number="pricingOverrides[item.task_type]"
+                v-model.number="pricingPrices[selectedPricingVariant.variant_id]"
                 type="number"
                 min="0"
                 max="100000"
                 step="1"
-                placeholder="留空"
-                :data-testid="`task-price-${taskPriceInputId(item.task_type)}`"
+                placeholder="使用系统价"
+                data-testid="selected-task-price"
               />
             </label>
             <button
               type="button"
               class="secondary-button"
-              :disabled="pricingOverrides[item.task_type] === null"
-              :data-testid="`clear-task-price-${taskPriceInputId(item.task_type)}`"
-              @click="clearTaskPrice(item.task_type)"
+              :disabled="pricingPrices[selectedPricingVariant.variant_id] === null"
+              data-testid="clear-selected-task-price"
+              @click="clearSelectedTaskPrice"
             >
               恢复系统价
             </button>
           </div>
-        </article>
-      </div>
+        </div>
+        <p v-else class="pricing-empty">当前条件没有可售卖的价格组合，请调整前面的选项。</p>
+      </article>
+      <p class="mt-3 text-xs text-slate-400">已建模 {{ pricingVariantCount }} 个有效价格组合。</p>
     </section>
 
     <section
@@ -1015,15 +1175,24 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .submenu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .submenu-card { border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: 1rem; }
 .web-entry-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-.pricing-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: #64748b; font-size: .8rem; }
-.pricing-toolbar input { width: min(28rem, 100%); border: 1px solid #cbd5e1; border-radius: .55rem; padding: .55rem .7rem; color: #334155; }
-.pricing-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-.pricing-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #e2e8f0; border-radius: .65rem; padding: .8rem; }
-.pricing-identity { min-width: 0; }
-.pricing-identity .text-xs { overflow-wrap: anywhere; }
+.pricing-path { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: .75rem; border: 1px solid #dbeafe; border-radius: .8rem; background: #f8fbff; padding: 1rem; }
+.pricing-path-arrow { align-self: center; color: #94a3b8; font-size: 1.5rem; }
+.pricing-select-field { display: flex; min-width: 0; flex-direction: column; gap: .35rem; color: #475569; font-size: .75rem; font-weight: 600; }
+.pricing-select-field select { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: .55rem; background: white; padding: .58rem .7rem; color: #1e293b; font-weight: 500; }
+.pricing-editor { border: 1px solid #e2e8f0; border-radius: .8rem; padding: 1rem; }
+.pricing-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.pricing-editor-heading h4 { color: #0f172a; font-size: .95rem; font-weight: 700; }
+.pricing-editor-heading p { margin-top: .2rem; color: #64748b; font-size: .78rem; }
+.pricing-variant-count { flex: 0 0 auto; border-radius: 999px; background: #eff6ff; padding: .25rem .65rem; color: #2563eb; font-size: .72rem; font-weight: 600; }
+.pricing-dimensions { margin-top: 1rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.pricing-result-card { margin-top: 1rem; display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; border-radius: .7rem; background: #f8fafc; padding: .9rem; }
+.pricing-result-label { color: #334155; font-size: .8rem; font-weight: 700; }
+.pricing-result-default { margin-top: .25rem; color: #64748b; font-size: .75rem; }
+.pricing-result-default span { color: #94a3b8; overflow-wrap: anywhere; }
 .pricing-actions { display: flex; align-items: flex-end; gap: .5rem; flex: 0 0 auto; }
 .pricing-actions label { display: flex; flex-direction: column; gap: .25rem; color: #64748b; font-size: .72rem; }
-.pricing-actions input { width: 6.5rem; border: 1px solid #cbd5e1; border-radius: .5rem; padding: .48rem .55rem; color: #334155; }
+.pricing-actions input { width: 9rem; border: 1px solid #cbd5e1; border-radius: .5rem; padding: .48rem .55rem; color: #334155; }
+.pricing-empty { margin-top: 1rem; border: 1px dashed #f59e0b; border-radius: .6rem; padding: .8rem; color: #92400e; font-size: .78rem; }
 .fixed-back-item { border: 1px dashed #cbd5e1; border-radius: .6rem; padding: .65rem .8rem; color: #64748b; font-size: .8rem; text-align: center; }
 .advanced-video-pro-config { border: 1px solid #bfdbfe; border-radius: .75rem; background: #f8fbff; padding: 1rem; }
 .advanced-video-pro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -1051,8 +1220,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .submenu-grid { grid-template-columns: 1fr; }
   .web-entry-grid { grid-template-columns: 1fr; }
   .advanced-video-pro-grid { grid-template-columns: 1fr; }
-  .pricing-list { grid-template-columns: 1fr; }
-  .pricing-toolbar, .pricing-item, .pricing-actions { align-items: stretch; flex-direction: column; }
+  .pricing-path { grid-template-columns: 1fr; }
+  .pricing-path-arrow { display: none; }
+  .pricing-dimensions { grid-template-columns: 1fr; }
+  .pricing-editor-heading, .pricing-result-card, .pricing-actions { align-items: stretch; flex-direction: column; }
   .pricing-actions input { width: 100%; }
   .scope-tab { flex: 1 0 auto; padding-inline: .8rem; text-align: center; }
 }
