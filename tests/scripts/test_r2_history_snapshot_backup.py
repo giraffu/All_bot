@@ -43,14 +43,18 @@ class _Client:
         return {"ContentLength": len(self.payload), "ETag": '"stable"'}
 
     def get_object(self, **_kwargs):
-        return {"Body": _Body(self.payload)}
+        return {
+            "Body": _Body(self.payload),
+            "ContentLength": len(self.payload),
+            "ETag": '"stable"',
+        }
 
 
 class _FailingClient:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    def head_object(self, **_kwargs):
+    def get_object(self, **_kwargs):
         raise self.error
 
 
@@ -377,7 +381,7 @@ def test_copy_preserves_key_and_resumes_only_after_local_sha_verification(tmp_pa
     assert first == {"key": "history/task-1/result.png", "status": "completed", "bytes": 14}
     assert second == {"key": "history/task-1/result.png", "status": "already_verified", "bytes": 14}
     assert (root / "history/task-1/result.png").read_bytes() == b"snapshot-media"
-    assert client.head_calls == 2
+    assert client.head_calls == 1
 
 
 def test_copy_batch_records_individual_failure_without_aborting_other_objects() -> None:

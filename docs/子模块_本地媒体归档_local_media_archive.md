@@ -798,8 +798,8 @@ PostgreSQL dump 恢复到隔离的临时数据库，再用 `plan` 读取其 `His
 `output_file` 与 `extra_outputs.*.path`，生成 0600 的冻结 manifest。`copy` 只消费该
 manifest：按 R2 key 原样写入独立 NAS 根目录，用 SQLite 断点状态保存大小、ETag、SHA-256
 和低基数失败分类；R2 ClientError 另存 provider code、HTTP status、operation 与是否可重试，
-不把 provider message、对象 key 或凭据写入汇总日志。下载前后均 HEAD，流式 SHA-256 后以
-`.part` 原子改名。它绝不写业务数据库、
+不把 provider message、对象 key 或凭据写入汇总日志。GET 响应先冻结 ContentLength/ETag，
+下载后再以 HEAD 复核对象身份，正文流式计算 SHA-256 并以 `.part` 原子改名。它绝不写业务数据库、
 不修改 R2、也不将 NAS 回执视为删除授权。
 
 配置、manifest 和 state 均须放在受限目录，R2 凭据只用 `env:NAME` 引用。首次运行固定

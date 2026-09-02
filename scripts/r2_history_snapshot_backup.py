@@ -491,16 +491,16 @@ def _copy_without_state(
                     state_update=None,
                     error=None,
                 )
-        head = client.head_object(Bucket=bucket, Key=key)
-        expected_size = int(head["ContentLength"])
-        etag = str(head.get("ETag", "")).strip('"')
         destination.parent.mkdir(parents=True, exist_ok=True)
+        response = client.get_object(Bucket=bucket, Key=key)
+        expected_size = int(response["ContentLength"])
+        etag = str(response.get("ETag", "")).strip('"')
         with tempfile.NamedTemporaryFile(prefix=".r2-part-", dir=destination.parent, delete=False) as temporary:
             temporary_path = Path(temporary.name)
             digest = hashlib.sha256()
             copied = 0
             try:
-                body = client.get_object(Bucket=bucket, Key=key)["Body"]
+                body = response["Body"]
                 for chunk in iter(lambda: body.read(CHUNK_SIZE), b""):
                     limiter.account(len(chunk))
                     temporary.write(chunk)
