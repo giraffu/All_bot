@@ -1,6 +1,7 @@
 from scripts.r2_history_snapshot_backup import (
     BandwidthLimiter,
     MANIFEST_SCHEMA,
+    _build_r2_client,
     build_manifest,
     classify_copy_error,
     copy_many,
@@ -82,6 +83,27 @@ def test_r2_error_classification_distinguishes_terminal_missing_from_retryable_p
     assert throttled.http_status == 429
     assert throttled.operation == "GetObject"
     assert throttled.retryable is True
+
+
+def test_r2_client_uses_explicit_pool_and_bounded_network_timeouts() -> None:
+    client = _build_r2_client(
+        {
+            "workers": 32,
+            "r2_connect_timeout_seconds": 10,
+            "r2_read_timeout_seconds": 30,
+            "r2": {
+                "endpoint": "https://example.invalid",
+                "access_key": "test-access",
+                "secret_key": "test-secret",
+                "region": "auto",
+            },
+        }
+    )
+
+    assert client.meta.config.max_pool_connections == 32
+    assert client.meta.config.connect_timeout == 10
+    assert client.meta.config.read_timeout == 30
+    assert client.meta.config.retries["total_max_attempts"] == 1
 
 
 def test_copy_selection_retries_legacy_and_transient_failures_but_not_terminal_or_exhausted_rows() -> None:
