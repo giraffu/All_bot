@@ -276,6 +276,7 @@ RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = (
     "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
 )
 RUNPOD_PROD_WORKER_CENTRAL_URL = "https://worker-central.aivison.it.com"
+RUNPOD_IN_PLACE_MUTABLE_ENV_KEYS = frozenset({"COMFY_EXTRA_ARGS"})
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -1409,6 +1410,119 @@ class RunPodProvider:
             existing_pods=existing_pods or [],
             execute=execute,
         )
+
+    def update_pod_env(
+        self,
+        *,
+        pod_id: str,
+        task_type: str,
+        env_updates: dict[str, str],
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        invalid_keys = sorted(set(env_updates) - RUNPOD_IN_PLACE_MUTABLE_ENV_KEYS)
+        if invalid_keys:
+            return {
+                "ok": False,
+                "dry_run": not execute,
+                "action": "update_env",
+                "error": "unsupported in-place env keys: " + ", ".join(invalid_keys),
+            }
+        guard = self._mutation_guard(
+            action="update_env",
+            task_type=self._profile_for_task_type(task_type).task_type,
+            existing_pods=[],
+            projected_new_cost_per_hr=0.0,
+        )
+        request_summary = {
+            "method": "PATCH",
+            "url": f"{self.settings.base_url}/pods/{pod_id}",
+            "env_updates": dict(env_updates),
+        }
+        if not execute or not guard["allowed"]:
+            return {
+                "ok": False if execute and not guard["allowed"] else True,
+                "dry_run": True,
+                "action": "update_env",
+                "execute": execute,
+                "guard": guard,
+                "request": request_summary,
+            }
+
+        fetched = self.get_pod(pod_id=pod_id, redact=False)
+        if not fetched.get("ok"):
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": str(fetched.get("error") or "runpod get-pod failed"),
+            }
+        pod = dict(fetched.get("pod") or {})
+        fetched_id = str(pod.get("id") or pod.get("podId") or "")
+        if fetched_id != pod_id or not self.is_managed_pod(pod):
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": "refusing to update an unverified managed Pod",
+            }
+        env = pod.get("env")
+        if not isinstance(env, dict):
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": "managed Pod env is unavailable",
+            }
+        current_task_type = str(env.get("RUNPOD_TASK_TYPE") or "")
+        profile = self._profile_for_task_type(task_type)
+        if current_task_type != profile.task_type:
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": "managed Pod task type does not match requested profile",
+            }
+        merged_env = {str(key): str(value) for key, value in env.items()}
+        merged_env.update({str(key): str(value) for key, value in env_updates.items()})
+        if all(str(env.get(key) or "") == str(value) for key, value in env_updates.items()):
+            return {
+                "ok": True,
+                "dry_run": False,
+                "action": "update_env",
+                "pod_id": pod_id,
+                "skipped": True,
+                "reason": "already_current",
+                "env_updates": dict(env_updates),
+            }
+        try:
+            response = self._request(
+                "PATCH",
+                f"/pods/{pod_id}",
+                json_body={"env": merged_env},
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": self._safe_error(exc),
+            }
+        response_id = str(response.get("id") or response.get("podId") or "")
+        if response_id and response_id != pod_id:
+            return {
+                "ok": False,
+                "dry_run": False,
+                "action": "update_env",
+                "error": "RunPod update returned a different Pod id",
+            }
+        return {
+            "ok": True,
+            "dry_run": False,
+            "action": "update_env",
+            "pod_id": pod_id,
+            "env_updates": dict(env_updates),
+            "response": redact_payload(response),
+        }
 
     def delete_pod(
         self,

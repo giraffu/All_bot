@@ -98,6 +98,7 @@ class FakeRunPodProvider:
         start_log: list[dict] | None = None,
         stop_log: list[dict] | None = None,
         restart_log: list[dict] | None = None,
+        update_env_log: list[dict] | None = None,
     ) -> None:
         self.settings = settings or RunPodSettings(api_key="rp_test_key")
         self.pods = pods if pods is not None else []
@@ -106,6 +107,7 @@ class FakeRunPodProvider:
         self.start_log = start_log if start_log is not None else []
         self.stop_log = stop_log if stop_log is not None else []
         self.restart_log = restart_log if restart_log is not None else []
+        self.update_env_log = update_env_log if update_env_log is not None else []
         self.list_calls = 0
 
     @property
@@ -127,6 +129,10 @@ class FakeRunPodProvider:
     @property
     def restart_calls(self) -> int:
         return len(self.restart_log)
+
+    @property
+    def update_env_calls(self) -> int:
+        return len(self.update_env_log)
 
     def validate_key(self):
         return {"ok": True}
@@ -232,6 +238,19 @@ class FakeRunPodProvider:
         )
         return {"ok": True}
 
+    def update_pod_env(self, *, pod_id, task_type, env_updates, execute):
+        self.update_env_log.append(
+            {
+                "pod_id": pod_id,
+                "agent_id": self.settings.prod_agent_id,
+                "env_updates": dict(env_updates),
+            }
+        )
+        for pod in self.pods:
+            if str(pod.get("id") or pod.get("podId") or "") == pod_id:
+                pod.setdefault("env", {}).update(env_updates)
+        return {"ok": True, "pod_id": pod_id}
+
     def pod_readiness(self, *, pod_id):
         return {"ok": True, "readiness": {"infrastructure_ready": True}}
 
@@ -244,6 +263,7 @@ class FakeRunPodProvider:
             start_log=self.start_log,
             stop_log=self.stop_log,
             restart_log=self.restart_log,
+            update_env_log=self.update_env_log,
         )
 
 
@@ -404,6 +424,7 @@ def _prod_pod(
         "i2i_pro": "i2i_pro",
         "scail2": "scail2",
         "ltx_video": "ltx_video",
+        "minimax_h3": "minimax_h3",
         "pornmaster_flux2_edit": "pornmaster_flux2_edit",
     }.get(profile, "img2img_lora")
     return {
@@ -441,6 +462,7 @@ def _worker(
         "i2i_pro": ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES),
         "scail2": ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES),
         "ltx_video": ",".join(RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES),
+        "minimax_h3": ",".join(RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES),
         "pornmaster_flux2_edit": ",".join(
             RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
         ),
@@ -451,6 +473,7 @@ def _worker(
         "i2i_pro": "i2i_pro",
         "scail2": "scail2_action_transfer",
         "ltx_video": "ltx_video",
+        "minimax_h3": "minimax_h3_i2v",
         "pornmaster_flux2_edit": "pornmaster_flux2_single_edit",
     }.get(profile, "img2img_lora")
     return {
@@ -1878,6 +1901,63 @@ def test_prod_worker_restart_execute_uses_native_restart_and_enables():
     assert _control_posts(runner) == [
         ("runpod_prod_wan22_video_v2_manual_03", "disabled"),
         ("runpod_prod_wan22_video_v2_manual_03", "enabled"),
+    ]
+
+
+def test_prod_worker_refresh_runtime_env_updates_same_h3_pod_after_drain():
+    agent_id = prod_agent_id_from_slot("01", profile="minimax_h3")
+    pod = _prod_pod("01", profile="minimax_h3")
+    pod["image"] = PUBLIC_MINIMAX_H3_GHCR_IMAGE
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_agent_id=agent_id,
+            image_name_minimax_h3=PUBLIC_MINIMAX_H3_GHCR_IMAGE,
+        ),
+        pods=[pod],
+    )
+    options = RunPodProdWorkerOptions(
+        action="refresh-runtime-env",
+        execute=True,
+        profile="minimax_h3",
+        task_type="minimax_h3",
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    worker = _worker("01", profile="minimax_h3")
+    worker.update({"image_ref": PUBLIC_MINIMAX_H3_GHCR_IMAGE, "last_seen": 101.0})
+
+    def advance_heartbeat(_seconds):
+        worker["last_seen"] = 102.0
+
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[worker],
+        sleep_func=advance_heartbeat,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+    assert provider.stop_calls == 0
+    assert provider.start_calls == 0
+    assert provider.restart_calls == 0
+    assert provider.update_env_log == [
+        {
+            "pod_id": "pod-prod-01",
+            "agent_id": "runpod_prod_minimax_h3_manual_01",
+            "env_updates": {"COMFY_EXTRA_ARGS": RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS},
+        }
+    ]
+    assert payload["pod_runtime_env_update"]["pod_id"] == "pod-prod-01"
+    assert _control_posts(runner) == [
+        ("runpod_prod_minimax_h3_manual_01", "disabled"),
+        ("runpod_prod_minimax_h3_manual_01", "enabled"),
     ]
 
 

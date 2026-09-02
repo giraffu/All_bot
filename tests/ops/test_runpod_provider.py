@@ -235,6 +235,47 @@ def test_get_pod_uses_rest_pod_id_and_redacts_env_secrets():
     assert "agent_secret_token" not in rendered
 
 
+def test_update_pod_env_patches_same_pod_and_preserves_existing_env():
+    pod = {
+        "id": "pod-1",
+        "name": "allbot-runpod-prod-minimax-h3-manual-01",
+        "desiredStatus": "RUNNING",
+        "image": "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "a" * 64,
+        "env": {
+            "RUNPOD_MANAGED": "true",
+            "RUNPOD_TASK_TYPE": "minimax_h3",
+            "AGENT_ID": "runpod_prod_minimax_h3_manual_01",
+            "AGENT_SECRET_TOKEN": "agent_secret_token",
+        },
+    }
+    fake = FakeRunPodApi(pod)
+    provider = RunPodProvider(
+        _settings(autoscaler_enabled=True, dry_run=False),
+        request_func=fake,
+    )
+
+    payload = provider.update_pod_env(
+        pod_id="pod-1",
+        task_type="minimax_h3",
+        env_updates={"COMFY_EXTRA_ARGS": "--enable-triton-backend"},
+        execute=True,
+    )
+
+    assert payload["ok"] is True
+    assert [call["method"] for call in fake.calls] == ["GET", "PATCH"]
+    assert fake.calls[1]["path"] == "/pods/pod-1"
+    assert fake.calls[1]["json_body"] == {
+        "env": {
+            "RUNPOD_MANAGED": "true",
+            "RUNPOD_TASK_TYPE": "minimax_h3",
+            "AGENT_ID": "runpod_prod_minimax_h3_manual_01",
+            "AGENT_SECRET_TOKEN": "agent_secret_token",
+            "COMFY_EXTRA_ARGS": "--enable-triton-backend",
+        }
+    }
+    assert "agent_secret_token" not in json.dumps(payload, ensure_ascii=False)
+
+
 def test_pod_readiness_reports_initializing_when_port_mappings_are_empty():
     fake = FakeRunPodApi(
         {
