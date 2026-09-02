@@ -809,6 +809,8 @@ manifest 的小批 canary，限速和并发从配置读取；完成基线后，�
 `continuous` 模式先在 SQLite 预留固定批次，随后下载到批次独占 spool，通过普通 SSH/tar
 写入 NAS 的 `.incoming-<batch>`，对相对路径、大小和每个文件 SHA-256 生成聚合 inventory；
 本地与 NAS 完全一致后才原子发布正式批次并清理本地 spool。进程中断会恢复同一预留批次；
+恢复下载前只清理该批次目录内下载器拥有的 `.r2-part-*` 普通文件，匹配到目录或符号链接时
+失败关闭，避免把未完成正文纳入 NAS inventory。
 404/`NoSuchKey` 等终止错误不循环重试，429、5xx、连接和读取超时在配置的最大次数内重试，
 旧版笼统 `ClientError` 行会先重新探测并补齐分类。持续服务只备份、不删除或切换任何 R2 key。
 大量历史路径与标准持久路径混合时，配置可用 `priority_prefixes` 只改变冻结 manifest 的

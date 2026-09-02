@@ -12,6 +12,7 @@ from scripts.r2_history_snapshot_backup import (
     extract_snapshot_references,
     iter_manifest_objects,
     normalize_snapshot_key,
+    remove_stale_part_files,
     resolve_snapshot_primary_key,
     reserve_continuous_batch,
     should_attempt_copy,
@@ -293,6 +294,23 @@ def test_batch_inventory_changes_when_content_changes(tmp_path) -> None:
 
     assert before["objects"] == after["objects"] == 1
     assert before["sha256"] != after["sha256"]
+
+
+def test_restart_removes_only_unpublished_r2_part_files(tmp_path) -> None:
+    root = tmp_path / "batch"
+    nested = root / "task-results" / "run-1"
+    nested.mkdir(parents=True)
+    stale = nested / ".r2-part-abcd"
+    completed = nested / "primary.png"
+    unrelated = nested / ".r2-partial-metadata"
+    stale.write_bytes(b"partial")
+    completed.write_bytes(b"complete")
+    unrelated.write_bytes(b"keep")
+
+    assert remove_stale_part_files(root) == 1
+    assert not stale.exists()
+    assert completed.read_bytes() == b"complete"
+    assert unrelated.read_bytes() == b"keep"
 
 
 def test_snapshot_manifest_uses_input_output_and_nested_extra_paths() -> None:
