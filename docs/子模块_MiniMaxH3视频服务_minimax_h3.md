@@ -120,7 +120,9 @@ backend 执行；构建检查 `triton` backend 已注册 `int8_linear`，运行�
 `scripts/runpod_prod_ops.sh refresh-runtime-env --profile minimax_h3 --slot <NN>`；该命令只
 允许更新白名单键 `COMFY_EXTRA_ARGS`，会合并保留 Pod 的全部既有环境变量，并要求更新前后
 Pod ID 和镜像引用完全相同。RunPod 配置更新会重启容器并清除 `/workspace` 之外的容器盘
-数据，因此模型和结果仍必须位于既有持久卷契约内。
+数据，因此模型和结果仍必须位于既有持久卷契约内。Dashboard autoscaler 必须把
+`runpod_prod_worker_*` control reason 识别为 operator maintenance hold；自然排空、
+配置更新和新 heartbeat 验证完成前不得自动 enable、restart 或 down 该 Pod。
 
 生产 mutation 必须使用完整 SHA、digest-pinned artifact 和精确 manifest key。禁止
 mutable tag、目标机 build、源码 bind mount、手工 Compose 或绕过 fleet helper。LAN

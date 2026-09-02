@@ -945,6 +945,15 @@ def _worker_control_state(worker: dict[str, Any]) -> str:
     return str(worker.get("control_state") or "enabled").strip().lower()
 
 
+def _worker_operator_held(worker: dict[str, Any]) -> bool:
+    return (
+        _worker_control_state(worker) in RUNPOD_PAUSED_CONTROL_STATES
+        and str(worker.get("control_reason") or "")
+        .strip()
+        .startswith("runpod_prod_worker_")
+    )
+
+
 def _worker_runpod_locked(worker: dict[str, Any]) -> bool:
     value = worker.get("runpod_locked", worker.get("locked", False))
     try:
@@ -977,6 +986,8 @@ def _runpod_restart_recovery_candidate(
     heartbeat_max_age_seconds: int,
     fault_restart_seconds: int,
 ) -> tuple[int, str, dict[str, Any]] | None:
+    if _worker_operator_held(worker):
+        return None
     if not _worker_seen_recently(
         worker,
         now=now,
@@ -999,6 +1010,8 @@ def _runpod_enable_recovery_candidate(
     now: float,
     heartbeat_max_age_seconds: int,
 ) -> tuple[int, str, dict[str, Any]] | None:
+    if _worker_operator_held(worker):
+        return None
     if not _worker_seen_recently(
         worker,
         now=now,
@@ -1039,7 +1052,8 @@ def _worker_idle_delete_candidate(
     heartbeat_max_age_seconds: int,
 ) -> bool:
     return (
-        _worker_seen_recently(
+        not _worker_operator_held(worker)
+        and _worker_seen_recently(
             worker,
             now=now,
             heartbeat_max_age_seconds=heartbeat_max_age_seconds,

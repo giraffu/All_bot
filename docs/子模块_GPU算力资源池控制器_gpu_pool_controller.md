@@ -179,7 +179,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   它先 disabled 并等待 `current_task_id` 清空，再通过 RunPod PATCH 更新同一 Pod 的
   `COMFY_EXTRA_ARGS`，验证 Pod ID、镜像、readiness 和新 heartbeat 均未漂移后恢复接单。
   该路径不得调用 delete、rollout-artifact 或换镜像；失败时保留 Pod 并保持 disabled，
-  由操作者核对后再恢复。
+  由操作者核对后再恢复。Central worker 的 `control_reason` 以
+  `runpod_prod_worker_` 开头时表示 operator maintenance hold；Dashboard autoscaler
+  不得把该 worker 放入自动 enable、restart 或 idle down 候选，避免与外部安全操作竞争。
 - profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
   已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
   变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。
