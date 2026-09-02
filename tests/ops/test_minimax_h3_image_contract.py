@@ -43,6 +43,8 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "comfy_kitchen-0.2.31-py3-none-any.whl" in dockerfile
     assert "5117946c30f308cfc73b9c26f723ae3918308bd090e57a8eae298406934aabd6" in dockerfile
     assert "assert not (root / 'backends/cuda/_C.abi3.so').exists()" in dockerfile
+    assert "ENV COMFY_EXTRA_ARGS=--enable-triton-backend" in dockerfile
+    assert "'int8_linear' in triton._build_constraints()" in dockerfile
     assert "--index-url \"${PIP_INDEX_URL}\"" in dockerfile
     assert "pip_install_with_retry -r" in dockerfile
     assert "rm -rf /tmp/allbot-pip-cache" in dockerfile

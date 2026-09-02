@@ -140,8 +140,8 @@ def test_minimax_h3_render_reserves_volume_for_full_immutable_bundle():
         redact=False,
     )["json"]
 
-    assert RUNPOD_MINIMAX_H3_VOLUME_GB == 140
-    assert body["volumeInGb"] == 140
+    assert RUNPOD_MINIMAX_H3_VOLUME_GB == 120
+    assert body["volumeInGb"] == 120
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
 
 

@@ -35,6 +35,7 @@ from .providers.runpod import (
     RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
@@ -1820,6 +1821,8 @@ class RunPodProdWorkerRunner:
             expected_env["COMFY_EXTRA_ARGS"] = (
                 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
             )
+        if spec["runpod_task_type"] == PROD_MINIMAX_H3_TASK_TYPE:
+            expected_env["COMFY_EXTRA_ARGS"] = RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
         if spec["runpod_task_type"] == PROD_LTX25_VIDEO_UPSCALE_TASK_TYPE:
             expected_env.update(
                 {

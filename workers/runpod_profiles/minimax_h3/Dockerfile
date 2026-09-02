@@ -25,6 +25,7 @@ ARG COMFY_KITCHEN_PURE_WHEEL_SIZE=180907
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
+ENV COMFY_EXTRA_ARGS=--enable-triton-backend
 
 COPY workers/runpod_profiles/minimax_h3/download_pinned_file.py /tmp/download_pinned_file.py
 
@@ -100,6 +101,7 @@ RUN set -euo pipefail; \
     pip_install_with_retry --force-reinstall --no-deps "$comfy_kitchen_wheel"; \
     rm -f "$comfy_kitchen_wheel"; \
     python3 -c "from pathlib import Path; import comfy_kitchen; root=Path(comfy_kitchen.__file__).parent; assert not (root / 'backends/cuda/_C.abi3.so').exists()"; \
+    python3 -c "from comfy_kitchen.backends import triton; assert 'int8_linear' in triton._build_constraints()"; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
