@@ -297,6 +297,19 @@ def _safe_destination(root: Path, key: str) -> Path:
     return path
 
 
+def remove_stale_part_files(root: Path) -> int:
+    """Remove only downloader-owned temporary files before a batch resumes."""
+    if not root.exists():
+        return 0
+    removed = 0
+    for path in root.rglob(".r2-part-*"):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("stale R2 part path must be a regular file")
+        path.unlink()
+        removed += 1
+    return removed
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -1150,6 +1163,7 @@ def _run_reserved_copy(
     keys: list[str],
 ) -> dict[str, Any]:
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    remove_stale_part_files(root)
     client = _build_r2_client(config)
     workers = max(1, min(16, int(config.get("workers", 4))))
     max_attempts = max(1, int(config.get("max_attempts", 5)))
