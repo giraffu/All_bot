@@ -32,6 +32,7 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert html.index('data-tab="generation-history"') > html.index('data-tab="generation"')
     assert html.index('data-tab="generation-history"') < html.index('data-tab="prompts"')
     assert 'id="generationHistoryTaskTypeSelect"' in html
+    assert 'id="generationHistoryH3MainModelSelect"' in html
     assert 'id="generationHistorySortSelect"' in html
     assert 'id="generationHistoryRows"' in html
     assert 'id="generationHistoryPagination"' in html
@@ -47,6 +48,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "generationHistoryPage" in app_js
     assert 'value="type_count_desc"' in html
     assert 'class="generation-history-prompt-text"' in app_js
+    assert 'h3_main_model' in app_js
+    assert 'H3 主模型' in html
     assert 'escapeHtml(row.user_id ?? "-")' in app_js
     assert "-webkit-line-clamp: 4" in styles
     assert "提示词向量化" in html

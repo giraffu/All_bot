@@ -91,6 +91,11 @@ Bot、Web、QQCC、Gallery apply-context 和 History 必须持久化归一后的
 强度。Central 只接收领域参数；Worker 才把稳定 ID 映射为模型路径。Prompt Optimizer
 不得输出模型名、LoRA 名、强度、采样器或触发词；触发词由领域/Worker 注入。
 
+H3 成功 History 的 `extra_outputs._minimax_h3_context` 当前为 version 3，除既有模式、
+时长、分辨率、比例与 LoRA 外，还必须写入已归一的 `main_model`。本地分析平台用该字段
+显示与筛选 H3 主模型；version 1/2 的旧记录没有该字段，必须显示为“未记录”，不得按默认
+BF16 回填或推测。
+
 ## 不可变发布和运维
 
 H3 发布顺序固定为：

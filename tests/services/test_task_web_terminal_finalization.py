@@ -84,10 +84,11 @@ async def test_web_success_persists_versioned_minimax_h3_context():
         saved_inputs=["start.png"],
         metadata={
             "minimax_h3_mode": "i2v",
+            "minimax_h3_main_model": "10eros_bf16",
             "requested_duration": 15,
             "minimax_h3_resolution_preset": "hd",
             "minimax_h3_aspect_ratio": "source",
-            "lora_items": [{"name": "pussy", "strength": 0.35}],
+            "lora_items": [{"name": "footjob", "strength": 0.35}],
         },
         allow_contribute=True,
         final_priority=0,
@@ -107,12 +108,13 @@ async def test_web_success_persists_versioned_minimax_h3_context():
     )
 
     assert persist_mock.await_args.kwargs["extra_outputs"]["_minimax_h3_context"] == {
-        "version": 2,
+        "version": 3,
         "mode": "i2v",
+        "main_model": "10eros_bf16",
         "requested_duration": 15,
         "resolution_preset": "hd",
         "aspect_ratio": "source",
-        "lora_items": [{"name": "pussy", "strength": 0.35}],
+        "lora_items": [{"name": "footjob", "strength": 0.35}],
     }
 
 
