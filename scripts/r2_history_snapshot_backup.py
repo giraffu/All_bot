@@ -466,13 +466,24 @@ def _build_r2_client(config: dict[str, Any]):
 
     _load_credential_environment(config)
     source = config["r2"]
+    connect_timeout = max(
+        1.0, min(60.0, float(config.get("r2_connect_timeout_seconds", 10)))
+    )
+    read_timeout = max(
+        5.0, min(120.0, float(config.get("r2_read_timeout_seconds", 30)))
+    )
     return boto3.client(
         "s3",
         endpoint_url=_resolve_env(str(source["endpoint"])),
         aws_access_key_id=_resolve_env(str(source["access_key"])),
         aws_secret_access_key=_resolve_env(str(source["secret_key"])),
         region_name=str(source.get("region", "auto")),
-        config=Config(max_pool_connections=max(1, int(config.get("workers", 4))), retries={"max_attempts": 5, "mode": "standard"}),
+        config=Config(
+            max_pool_connections=max(1, int(config.get("workers", 4))),
+            connect_timeout=connect_timeout,
+            read_timeout=read_timeout,
+            retries={"total_max_attempts": 1, "mode": "standard"},
+        ),
     )
 
 
@@ -1165,7 +1176,7 @@ def _run_reserved_copy(
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     remove_stale_part_files(root)
     client = _build_r2_client(config)
-    workers = max(1, min(16, int(config.get("workers", 4))))
+    workers = max(1, min(32, int(config.get("workers", 4))))
     max_attempts = max(1, int(config.get("max_attempts", 5)))
     limiter = BandwidthLimiter(
         int(config.get("bandwidth_bytes_per_second", 30 * 1024 * 1024))
@@ -1416,7 +1427,7 @@ def command_copy(args: argparse.Namespace) -> None:
     state_path = Path(_resolve_env(str(config["state_path"]))).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     client = _build_r2_client(config)
-    workers = max(1, min(16, int(config.get("workers", 4))))
+    workers = max(1, min(32, int(config.get("workers", 4))))
     limiter = BandwidthLimiter(int(config.get("bandwidth_bytes_per_second", 30 * 1024 * 1024)))
     state = _init_state(state_path)
     max_attempts = max(1, int(config.get("max_attempts", 5)))

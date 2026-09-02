@@ -812,7 +812,10 @@ manifest 的小批 canary，限速和并发从配置读取；完成基线后，�
 恢复下载前只清理该批次目录内下载器拥有的 `.r2-part-*` 普通文件，匹配到目录或符号链接时
 失败关闭，避免把未完成正文纳入 NAS inventory。
 404/`NoSuchKey` 等终止错误不循环重试，429、5xx、连接和读取超时在配置的最大次数内重试，
-旧版笼统 `ClientError` 行会先重新探测并补齐分类。持续服务只备份、不删除或切换任何 R2 key。
+旧版笼统 `ClientError` 行会先重新探测并补齐分类。R2 client 的连接池跟随 worker 数，连接与
+读取超时由 `r2_connect_timeout_seconds`、`r2_read_timeout_seconds` 显式限定；SDK 每次任务只做
+一次网络尝试，瞬时失败由 SQLite 的对象级 `max_attempts` 跨批次重试，避免隐藏重试长期占满
+连接池。持续服务只备份、不删除或切换任何 R2 key。
 大量历史路径与标准持久路径混合时，配置可用 `priority_prefixes` 只改变冻结 manifest 的
 领取顺序，不能增加、删除或改写 manifest 对象。并发下载线程不直接写 SQLite；主线程按
 `state_commit_batch_size` 批量提交成功和低基数失败回执，避免每个远端请求触发独立连接与
