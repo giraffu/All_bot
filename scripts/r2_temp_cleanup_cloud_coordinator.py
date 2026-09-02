@@ -175,9 +175,16 @@ class CloudCleanupCoordinator:
             raise RuntimeError("cleanup receipt post-delete verification is incomplete")
         if file_sha256(self.working_inventory) != pending["inventory_sha256_before"]:
             raise RuntimeError("working inventory changed while a batch was pending")
+        object_keys = [str(item["key"]) for item in objects]
+        plan = json.loads(Path(str(pending["plan"])).read_text(encoding="utf-8"))
+        plan_failure_keys = self._plan_probe_failure_keys(plan)
+        if set(object_keys) & set(plan_failure_keys):
+            raise RuntimeError("completed and plan-probe-failed rowsets overlap")
         removed, remaining, after_sha = remove_inventory_keys(
-            self.working_inventory, [str(item["key"]) for item in objects]
+            self.working_inventory, [*object_keys, *plan_failure_keys]
         )
+        if removed != len(object_keys) + len(plan_failure_keys):
+            raise RuntimeError("completed cleanup rowset removal is incomplete")
         receipt_path = Path(str(pending["receipt"]))
         state["completed"].append(
             {
@@ -187,19 +194,45 @@ class CloudCleanupCoordinator:
                 "plan_sha256": str(pending["plan_sha256"]),
                 "receipt": str(receipt_path),
                 "receipt_sha256": file_sha256(receipt_path),
-                "deleted_count": removed,
+                "deleted_count": len(object_keys),
                 "deleted_bytes": int(receipt.get("delete_bytes") or 0),
                 "inventory_object_count_after": remaining,
                 "inventory_sha256_after": after_sha,
             }
         )
+        if plan_failure_keys:
+            state.setdefault("deferred", []).append(
+                {
+                    "sequence": int(pending["sequence"]),
+                    "stage": int(pending["stage"]),
+                    "plan": str(pending["plan"]),
+                    "plan_sha256": str(pending["plan_sha256"]),
+                    "receipt": str(receipt_path),
+                    "receipt_sha256": file_sha256(receipt_path),
+                    "deferred_count": len(plan_failure_keys),
+                    "reason": "plan_probe_failed",
+                    "inventory_object_count_after": remaining,
+                    "inventory_sha256_after": after_sha,
+                }
+            )
         current_pass = state["current_pass"]
-        current_pass["deleted_count"] += removed
+        current_pass["deleted_count"] += len(object_keys)
         current_pass["deleted_bytes"] += int(receipt.get("delete_bytes") or 0)
+        current_pass["deferred_count"] += len(plan_failure_keys)
         state["current_inventory_sha256"] = after_sha
         state["next_sequence"] = int(pending["sequence"]) + 1
         state["pending"] = None
         atomic_private_json(self.state_path, state)
+
+    @staticmethod
+    def _plan_probe_failure_keys(plan: dict[str, Any]) -> list[str]:
+        failures = list(plan.get("probe_failures") or [])
+        failure_keys = [str(item.get("key") or "") for item in failures]
+        if any(not key for key in failure_keys):
+            raise RuntimeError("cleanup plan probe failure has no exact key")
+        if len(failure_keys) != len(set(failure_keys)):
+            raise RuntimeError("cleanup plan probe failures contain duplicate keys")
+        return failure_keys
 
     def _reconcile_probe_failed(self, state: dict[str, Any], receipt: dict) -> None:
         """Defer exact pre-delete probe failures without deleting any R2 object."""
@@ -223,10 +256,13 @@ class CloudCleanupCoordinator:
         plan_keys = {str(item.get("key") or "") for item in plan.get("objects") or []}
         if not set(failure_keys).issubset(plan_keys):
             raise RuntimeError("probe-failed rowset is outside the frozen plan")
+        plan_failure_keys = self._plan_probe_failure_keys(plan)
+        if set(failure_keys) & set(plan_failure_keys):
+            raise RuntimeError("plan and execute probe-failed rowsets overlap")
         if file_sha256(self.working_inventory) != pending["inventory_sha256_before"]:
             raise RuntimeError("working inventory changed while a batch was pending")
         removed, remaining, after_sha = remove_inventory_keys(
-            self.working_inventory, failure_keys
+            self.working_inventory, [*failure_keys, *plan_failure_keys]
         )
         receipt_path = Path(str(pending["receipt"]))
         state.setdefault("deferred", []).append(
@@ -238,7 +274,13 @@ class CloudCleanupCoordinator:
                 "receipt": str(receipt_path),
                 "receipt_sha256": file_sha256(receipt_path),
                 "deferred_count": removed,
-                "reason": "execute_probe_failed",
+                "plan_probe_failed_count": len(plan_failure_keys),
+                "execute_probe_failed_count": len(failure_keys),
+                "reason": (
+                    "plan_and_execute_probe_failed"
+                    if plan_failure_keys
+                    else "execute_probe_failed"
+                ),
                 "inventory_object_count_after": remaining,
                 "inventory_sha256_after": after_sha,
             }
@@ -332,8 +374,6 @@ class CloudCleanupCoordinator:
         plan = await self.cleanup_run(args)
         if plan.get("mode") != "dry-run" or not plan.get("plan_sha256"):
             raise RuntimeError("cleanup plan is invalid")
-        if plan.get("probe_failures") and int(plan.get("delete_count") or 0) > 0:
-            raise RuntimeError("mixed successful and failed probes cannot be executed")
         delete_count = int(plan.get("delete_count") or 0)
         candidate_count = int(plan.get("candidate_count") or 0)
         if delete_count == 0:
