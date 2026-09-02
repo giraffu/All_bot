@@ -174,6 +174,12 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   disabled。H3 镜像只安装已校验的
   `comfy-kitchen 0.2.31` pure-Python wheel，禁止让 CUDA 13.0 编译的 manylinux
   扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该参数不改变 BF16 模型的执行图。
+- 已有 H3 Pod 的参数同步使用
+  `scripts/runpod_prod_ops.sh refresh-runtime-env --profile minimax_h3 --slot <NN>`：
+  它先 disabled 并等待 `current_task_id` 清空，再通过 RunPod PATCH 更新同一 Pod 的
+  `COMFY_EXTRA_ARGS`，验证 Pod ID、镜像、readiness 和新 heartbeat 均未漂移后恢复接单。
+  该路径不得调用 delete、rollout-artifact 或换镜像；失败时保留 Pod 并保持 disabled，
+  由操作者核对后再恢复。
 - profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
   已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
   变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。

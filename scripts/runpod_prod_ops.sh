@@ -35,6 +35,9 @@ Actions:
   enable    Enable the selected prod manual worker.
   disable   Disable the selected prod manual worker.
   restart   Disable, call RunPod native restart for the selected Pod, then enable it.
+  refresh-runtime-env
+            Drain and update the selected H3 Pod's runtime args in place. The
+            Pod id and image stay unchanged; no Pod is deleted or recreated.
   down      Disable, wait for no current_task_id, then delete the selected Pod.
   scale     Scale one prod manual profile to --desired N.
   canary    Run a real prod canary and leave the target worker disabled.
@@ -406,6 +409,10 @@ dry_run_plan() {
       echo "[dry-run] Would set control disabled, call RunPod native restart, wait for healthy heartbeat, then enable it."
       print_shell_command restart --execute
       ;;
+    refresh-runtime-env)
+      echo "[dry-run] Would drain the selected H3 worker, update COMFY_EXTRA_ARGS on the same Pod id, verify a fresh heartbeat, then enable it."
+      print_shell_command refresh-runtime-env --execute
+      ;;
     down)
       echo "[dry-run] Would disable the worker, wait until current_task_id is empty, then delete the selected Pod."
       print_shell_command down --execute
@@ -463,7 +470,7 @@ run_mutation() {
     add)
       run_controller_with_unavailable_retry add --count "$COUNT" --execute
       ;;
-    enable|disable|restart|down|canary)
+    enable|disable|restart|refresh-runtime-env|down|canary)
       run_controller "$ACTION" --execute
       ;;
     scale)
@@ -490,7 +497,7 @@ run_mutation() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-artifact)
+    status|up|add|enable|disable|restart|refresh-runtime-env|down|scale|canary|rollback|rollout-artifact)
       ACTION="$1"
       shift
       ;;
@@ -582,7 +589,7 @@ case "$ACTION" in
   status)
     status
     ;;
-  up|add|enable|disable|restart|down|scale|canary|rollback)
+  up|add|enable|disable|restart|refresh-runtime-env|down|scale|canary|rollback)
     run_mutation
     ;;
   rollout-artifact)

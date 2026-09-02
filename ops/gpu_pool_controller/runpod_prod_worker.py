@@ -488,6 +488,8 @@ class RunPodProdWorkerRunner:
                 self._run_control(summary, state="disabled")
             elif action == "restart":
                 self._run_profile_locked_mutation(summary, self._run_restart)
+            elif action == "refresh_runtime_env":
+                self._run_slot_locked_mutation(summary, self._run_refresh_runtime_env)
             elif action == "down":
                 self._run_profile_locked_mutation(summary, self._run_down)
             elif action == "canary":
@@ -779,6 +781,110 @@ class RunPodProdWorkerRunner:
         summary["pod_restart"] = {
             "pod_id": pod_id,
             "restart": {"ok": True},
+        }
+        summary["control"] = {
+            "disabled": disable_control,
+            "enabled": enable_control,
+        }
+        summary["worker"] = _worker_summary(worker)
+        summary["ok"] = True
+
+    def _run_refresh_runtime_env(self, summary: dict[str, Any]) -> None:
+        if self.options.profile != "minimax_h3":
+            raise RunPodProdWorkerError(
+                "refresh-runtime-env is currently limited to minimax_h3"
+            )
+        self._run_preflight(
+            summary,
+            allow_existing_prod_pod=True,
+            require_create_render=False,
+        )
+        if not self.options.execute:
+            summary["ok"] = True
+            summary["would_execute"] = [
+                f"set Central control for {self.options.agent_id} to disabled",
+                "wait until the existing worker has no current_task_id",
+                "PATCH only COMFY_EXTRA_ARGS on the same RunPod Pod id",
+                "wait for Pod readiness and a fresh disabled worker heartbeat",
+                f"set Central control for {self.options.agent_id} to enabled",
+            ]
+            return
+        self._require_runpod_mutation_gates()
+        self._require_agent_token()
+        disable_control = self._set_agent_control(
+            "disabled",
+            reason="runpod_prod_worker_refresh_runtime_env_disable",
+        )
+        worker_before = self._wait_worker_drained(summary)
+        heartbeat_baseline = _optional_float((worker_before or {}).get("last_seen"))
+        pod = self._single_prod_pod(summary)
+        if pod is None:
+            raise RunPodProdWorkerError(
+                "refusing runtime env refresh: prod RunPod pod not found"
+            )
+        pod_id = str(pod.get("id") or pod.get("podId") or "")
+        image_ref = str(pod.get("image") or pod.get("imageName") or "")
+        if not pod_id or not image_ref:
+            raise RunPodProdWorkerError(
+                "refusing runtime env refresh: existing Pod identity is incomplete"
+            )
+        self._phase(
+            summary,
+            "runpod_update_runtime_env",
+            "running",
+            {"pod_id": pod_id},
+        )
+        update_payload = self.provider.update_pod_env(
+            pod_id=pod_id,
+            task_type=self.options.task_type,
+            env_updates={"COMFY_EXTRA_ARGS": RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS},
+            execute=True,
+        )
+        self._require_ok(update_payload, "runpod update-pod-env failed")
+        self._phase(
+            summary,
+            "runpod_update_runtime_env",
+            "ok",
+            {"pod_id": pod_id},
+        )
+        self._wait_pod_readiness(pod_id, summary)
+        worker = self._wait_prod_worker(
+            summary,
+            require_disabled=True,
+            expected_image_ref=image_ref,
+            after_last_seen=heartbeat_baseline,
+        )
+        current_pod = self._single_prod_pod(summary)
+        current_id = str(
+            (current_pod or {}).get("id") or (current_pod or {}).get("podId") or ""
+        )
+        current_image = str(
+            (current_pod or {}).get("image")
+            or (current_pod or {}).get("imageName")
+            or ""
+        )
+        current_env = (current_pod or {}).get("env") or {}
+        if current_id != pod_id or current_image != image_ref:
+            raise RunPodProdWorkerError(
+                "runtime env refresh changed the existing Pod identity or image"
+            )
+        if str(current_env.get("COMFY_EXTRA_ARGS") or "") != (
+            RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
+        ):
+            raise RunPodProdWorkerError(
+                "runtime env refresh did not persist COMFY_EXTRA_ARGS"
+            )
+        enable_control = self._set_agent_control(
+            "enabled",
+            reason="runpod_prod_worker_refresh_runtime_env_enable",
+        )
+        summary["pod_runtime_env_update"] = {
+            "pod_id": pod_id,
+            "image": image_ref,
+            "same_pod": True,
+            "env": {
+                "COMFY_EXTRA_ARGS": RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
+            },
         }
         summary["control"] = {
             "disabled": disable_control,
