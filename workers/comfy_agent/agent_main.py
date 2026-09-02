@@ -104,10 +104,17 @@ TRUE_ENV_VALUES = {
 }
 
 CONTROL_PLANE_RECOVERY_EXIT_CODE = 75
+COMFY_PROCESS_RECOVERY_EXIT_CODE = 76
 
 
 class ControlPlaneRecoveryExit(BaseException):
     """Raised when the agent should exit and let Docker restart it."""
+
+    pass
+
+
+class ComfyProcessRecoveryExit(BaseException):
+    """Raised when ComfyUI stays unresponsive and the container must restart."""
 
     pass
 
@@ -206,6 +213,16 @@ COMFY_UPLOAD_RETRY_ATTEMPTS = int(os.getenv("COMFY_UPLOAD_RETRY_ATTEMPTS", "3"))
 COMFY_UPLOAD_TIMEOUT_SECONDS = float(os.getenv("COMFY_UPLOAD_TIMEOUT_SECONDS", "300"))
 COMFY_HEALTH_FAILURE_THRESHOLD = int(os.getenv("COMFY_HEALTH_FAILURE_THRESHOLD", "3"))
 COMFY_HEALTH_RECOVERY_THRESHOLD = int(os.getenv("COMFY_HEALTH_RECOVERY_THRESHOLD", "2"))
+COMFY_PROCESS_RECOVERY_ENABLED = (
+    os.getenv("COMFY_PROCESS_RECOVERY_ENABLED", "false").strip().lower()
+    in TRUE_ENV_VALUES
+)
+COMFY_PROCESS_RECOVERY_MIN_FAILURES = int(
+    os.getenv("COMFY_PROCESS_RECOVERY_MIN_FAILURES", "3")
+)
+COMFY_PROCESS_RECOVERY_SECONDS = float(
+    os.getenv("COMFY_PROCESS_RECOVERY_SECONDS", "60")
+)
 COMFY_ERROR_POLL_SECONDS = float(os.getenv("COMFY_ERROR_POLL_SECONDS", "15"))
 COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD = int(
     os.getenv("COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD", "2")
@@ -489,6 +506,8 @@ class ComfyAgent:
         self.control_plane_failure_started_at: float | None = None
         self.control_plane_last_error = ""
         self.control_plane_recovery_requested = False
+        self.comfy_failure_started_at: float | None = None
+        self.comfy_process_recovery_requested = False
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
         self._reserved_prefetch_task: dict[str, Any] | None = None
@@ -632,17 +651,42 @@ class ComfyAgent:
         return await self._reporting_client.master_post(path, **kwargs)
 
     def _record_health_failure(self, *, reason: str, error: str) -> None:
+        now = self._now()
+        if reason == "comfy_probe_failed" and self.comfy_failure_started_at is None:
+            self.comfy_failure_started_at = now
         self._health_manager.record_health_failure(
             reason=reason,
             error=error,
             failure_threshold=COMFY_HEALTH_FAILURE_THRESHOLD,
             agent_id=AGENT_ID,
         )
+        if reason != "comfy_probe_failed" or not COMFY_PROCESS_RECOVERY_ENABLED:
+            return
+        failed_seconds = now - (self.comfy_failure_started_at or now)
+        if (
+            self.consecutive_failures < COMFY_PROCESS_RECOVERY_MIN_FAILURES
+            or failed_seconds < COMFY_PROCESS_RECOVERY_SECONDS
+        ):
+            return
+        self.comfy_process_recovery_requested = True
+        self.running = False
+        logger.error(
+            "Agent %s ComfyUI recovery threshold reached after %s failed probes "
+            "over %.1fs; exiting with code %s for container restart",
+            AGENT_ID,
+            self.consecutive_failures,
+            failed_seconds,
+            COMFY_PROCESS_RECOVERY_EXIT_CODE,
+        )
+        raise ComfyProcessRecoveryExit(error)
 
     def _record_health_success(self) -> None:
         self._health_manager.record_health_success(
             recovery_threshold=COMFY_HEALTH_RECOVERY_THRESHOLD
         )
+        if not self.is_error_state:
+            self.comfy_failure_started_at = None
+            self.comfy_process_recovery_requested = False
 
     def _is_quarantined(self) -> bool:
         return self._health_manager.is_quarantined()
@@ -1729,6 +1773,9 @@ if __name__ == "__main__":
     except ControlPlaneRecoveryExit:
         loop.run_until_complete(agent.shutdown(report_interrupted_tasks=False))
         sys.exit(CONTROL_PLANE_RECOVERY_EXIT_CODE)
+    except ComfyProcessRecoveryExit:
+        loop.run_until_complete(agent.shutdown(report_interrupted_tasks=True))
+        sys.exit(COMFY_PROCESS_RECOVERY_EXIT_CODE)
     except asyncio.CancelledError:
         pass
     except KeyboardInterrupt:
