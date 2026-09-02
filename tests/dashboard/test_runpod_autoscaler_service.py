@@ -154,6 +154,7 @@ def _runpod_worker(
     *,
     status: str = "idle",
     control_state: str = "enabled",
+    control_reason: str = "",
     runpod_locked: bool = False,
     last_seen: float = 1000.0,
     current_task_id: str | None = None,
@@ -198,6 +199,7 @@ def _runpod_worker(
         "types": profile_types[profile],
         "status": status,
         "control_state": control_state,
+        "control_reason": control_reason,
         "runpod_locked": runpod_locked,
         "last_seen": last_seen,
         "current_task_id": current_task_id,
@@ -949,6 +951,116 @@ async def test_autoscaler_enables_paused_runpod_worker_for_backlog():
         }
     ]
     assert payload["executed_operations"][0]["action"] == "enable"
+
+
+async def test_autoscaler_does_not_enable_operator_held_runpod_for_backlog():
+    calls = []
+
+    async def start_enable(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("operator-held runpod must not be auto-enabled")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="minimax_h3", pending=1, wait=10),
+        workers_payload=_workers(
+            _runpod_worker(
+                "minimax_h3",
+                "01",
+                status="running",
+                control_state="disabled",
+                control_reason="runpod_prod_worker_refresh_runtime_env_disable",
+                current_task_id="task-in-flight",
+                current_task_type="minimax_h3_i2v",
+            ),
+            *(
+                _runpod_worker("minimax_h3", f"{slot:02d}", status="running")
+                for slot in range(2, 6)
+            ),
+        ),
+        operations_payload={"operations": []},
+        start_enable_func=start_enable,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "minimax_h3"
+    ]
+    assert decision["action"] == "hold"
+    assert calls == []
+
+
+async def test_autoscaler_does_not_delete_idle_operator_held_runpod():
+    delete_calls = []
+
+    async def start_delete(**kwargs):
+        delete_calls.append(kwargs)
+        raise AssertionError("operator-held runpod must not be auto-deleted")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="minimax_h3", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker(
+                "minimax_h3",
+                "01",
+                status="idle",
+                control_state="disabled",
+                control_reason="runpod_prod_worker_refresh_runtime_env_disable",
+            )
+        ),
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "minimax_h3"
+    ]
+    assert decision["action"] == "hold"
+    assert delete_calls == []
+
+
+async def test_autoscaler_does_not_restart_faulted_operator_held_runpod():
+    restart_calls = []
+
+    async def start_restart(**kwargs):
+        restart_calls.append(kwargs)
+        raise AssertionError("operator-held runpod must not be auto-restarted")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="minimax_h3", pending=1, wait=10),
+        workers_payload=_workers(
+            _runpod_worker(
+                "minimax_h3",
+                "01",
+                status="error",
+                control_state="disabled",
+                control_reason="runpod_prod_worker_refresh_runtime_env_disable",
+                last_error_at=650.0,
+            ),
+            *(
+                _runpod_worker("minimax_h3", f"{slot:02d}", status="running")
+                for slot in range(2, 6)
+            ),
+        ),
+        operations_payload={"operations": []},
+        start_restart_func=start_restart,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "minimax_h3"
+    ]
+    assert decision["action"] == "hold"
+    assert restart_calls == []
 
 
 async def test_autoscaler_releases_paused_runpod_instead_of_enabling_without_backlog():
