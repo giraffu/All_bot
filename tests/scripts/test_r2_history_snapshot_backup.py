@@ -3,10 +3,12 @@ from scripts.r2_history_snapshot_backup import (
     MANIFEST_SCHEMA,
     build_manifest,
     classify_copy_error,
+    copy_many,
     copy_one,
     collect_copy_results,
     directory_inventory,
     ensure_manifest_index,
+    ensure_inventory_filter,
     extract_snapshot_references,
     iter_manifest_objects,
     normalize_snapshot_key,
@@ -16,6 +18,7 @@ from scripts.r2_history_snapshot_backup import (
 )
 from concurrent.futures import Future
 import json
+import hashlib
 import sqlite3
 
 import pytest
@@ -112,6 +115,32 @@ def test_copy_failure_persists_low_cardinality_r2_fields(tmp_path) -> None:
     )
 
 
+def test_copy_many_persists_worker_results_through_one_batch_writer(tmp_path) -> None:
+    state_path = tmp_path / "state.sqlite3"
+
+    summary = copy_many(
+        _FailingClient(_R2ClientError("NoSuchKey", 404)),
+        bucket="user-data-prod",
+        root=tmp_path / "spool",
+        keys=["history/missing-1.png", "history/missing-2.png"],
+        state_path=state_path,
+        limiter=BandwidthLimiter(1024 * 1024),
+        workers=2,
+        state_commit_batch_size=2,
+    )
+
+    assert summary == {
+        "attempted": 2,
+        "completed": 0,
+        "bytes": 0,
+        "failures": {"r2_client:NoSuchKey:terminal": 2},
+    }
+    with sqlite3.connect(state_path) as state:
+        assert state.execute(
+            "select count(*) from snapshot_objects where error_code='NoSuchKey'"
+        ).fetchone() == (2,)
+
+
 def test_continuous_batch_reservation_is_stable_across_restart(tmp_path) -> None:
     manifest = build_manifest(
         [
@@ -154,6 +183,99 @@ def test_continuous_batch_reservation_is_stable_across_restart(tmp_path) -> None
 
     assert first == resumed
     assert len(first) == 2
+
+
+def test_continuous_batch_prioritizes_persistent_prefixes(tmp_path) -> None:
+    manifest = build_manifest(
+        [
+            {
+                "id": 3,
+                "task_id": "task-3",
+                "input_file": "3/input_images/old.png|task-inputs/run-3/0.png",
+                "output_file": "task-results/run-3/primary.png",
+                "extra_outputs": {},
+            }
+        ],
+        source_bucket="user-data-prod",
+        snapshot_label="snapshot-1",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")))
+    state_path = tmp_path / "state.sqlite3"
+    ensure_manifest_index(
+        manifest_path=manifest_path,
+        state_path=state_path,
+        manifest_sha256=manifest["manifest_sha256"],
+    )
+
+    selected = reserve_continuous_batch(
+        manifest_path=manifest_path,
+        state_path=state_path,
+        batch_number=1,
+        limit=2,
+        max_attempts=5,
+        manifest_sha256=manifest["manifest_sha256"],
+        priority_prefixes=("task-inputs/", "task-results/"),
+    )
+
+    assert selected == [
+        "task-inputs/run-3/0.png",
+        "task-results/run-3/primary.png",
+    ]
+
+
+def test_verified_inventory_filters_absent_manifest_keys_without_remote_heads(tmp_path) -> None:
+    manifest = build_manifest(
+        [
+            {
+                "id": 3,
+                "task_id": "task-3",
+                "input_file": "3/input_images/deleted.png|task-inputs/run-3/0.png",
+                "output_file": None,
+                "extra_outputs": {},
+            }
+        ],
+        source_bucket="user-data-prod",
+        snapshot_label="snapshot-1",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")))
+    state_path = tmp_path / "state.sqlite3"
+    ensure_manifest_index(
+        manifest_path=manifest_path,
+        state_path=state_path,
+        manifest_sha256=manifest["manifest_sha256"],
+    )
+    inventory_path = tmp_path / "inventory.sqlite3"
+    with sqlite3.connect(inventory_path) as inventory:
+        inventory.execute(
+            "create table objects(key text primary key,size integer not null,etag text not null,last_modified text not null) without rowid"
+        )
+        inventory.execute(
+            "insert into objects values('task-inputs/run-3/0.png',3,'etag','2026-09-02T00:00:00Z')"
+        )
+    inventory_file_sha256 = hashlib.sha256(inventory_path.read_bytes()).hexdigest()
+
+    receipt = ensure_inventory_filter(
+        inventory_path=inventory_path,
+        inventory_file_sha256=inventory_file_sha256,
+        state_path=state_path,
+        manifest_sha256=manifest["manifest_sha256"],
+    )
+    selected = reserve_continuous_batch(
+        manifest_path=manifest_path,
+        state_path=state_path,
+        batch_number=1,
+        limit=10,
+        max_attempts=5,
+        manifest_sha256=manifest["manifest_sha256"],
+        inventory_path=inventory_path,
+        inventory_file_sha256=inventory_file_sha256,
+    )
+
+    assert receipt["matched_count"] == 1
+    assert receipt["absent_count"] == 1
+    assert selected == ["task-inputs/run-3/0.png"]
 
 
 def test_batch_inventory_changes_when_content_changes(tmp_path) -> None:

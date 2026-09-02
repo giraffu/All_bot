@@ -67,6 +67,13 @@ class CopyErrorDetails:
         return self.error_code
 
 
+@dataclass(frozen=True)
+class CopyWorkOutcome:
+    result: dict[str, Any] | None
+    state_update: dict[str, Any] | None
+    error: BaseException | None
+
+
 _R2_NOT_FOUND_CODES = {"404", "nosuchkey", "notfound", "nosuchobject"}
 _R2_RETRYABLE_CODES = {
     "429",
@@ -396,6 +403,14 @@ def _init_state(path: Path) -> sqlite3.Connection:
              manifest_sha256 text primary key, imported_count integer not null,
              completed integer not null default 0, updated_at text not null)"""
     )
+    conn.execute(
+        """create table if not exists snapshot_inventory_filters(
+             manifest_sha256 text not null, inventory_file_sha256 text not null,
+             inventory_object_count integer not null, inventory_byte_size integer not null,
+             matched_count integer not null, absent_count integer not null,
+             verified_at text not null,
+             primary key(manifest_sha256,inventory_file_sha256))"""
+    )
     conn.commit()
     return conn
 
@@ -448,25 +463,34 @@ def _build_r2_client(config: dict[str, Any]):
     )
 
 
-def copy_one(
+def _copy_without_state(
     client: Any,
     *,
     bucket: str,
     root: Path,
     key: str,
-    state_path: Path,
     limiter: BandwidthLimiter,
-) -> dict[str, Any]:
-    """Download one key once, stream-hash it, and atomically expose it on NAS."""
+    stored: tuple[int | None, str | None, str] | None,
+) -> CopyWorkOutcome:
+    """Download and verify one key without allowing workers to write SQLite."""
     destination = _safe_destination(root, key)
-    conn = _init_state(state_path)
     try:
-        stored = conn.execute(
-            "select byte_size,sha256,status from snapshot_objects where object_key=?", (key,)
-        ).fetchone()
-        if stored and stored[2] == "completed" and destination.is_file() and destination.stat().st_size == stored[0]:
+        if (
+            stored
+            and stored[2] == "completed"
+            and destination.is_file()
+            and destination.stat().st_size == stored[0]
+        ):
             if _sha256_file(destination) == stored[1]:
-                return {"key": key, "status": "already_verified", "bytes": stored[0]}
+                return CopyWorkOutcome(
+                    result={
+                        "key": key,
+                        "status": "already_verified",
+                        "bytes": int(stored[0] or 0),
+                    },
+                    state_update=None,
+                    error=None,
+                )
         head = client.head_object(Bucket=bucket, Key=key)
         expected_size = int(head["ContentLength"])
         etag = str(head.get("ETag", "")).strip('"')
@@ -496,19 +520,66 @@ def copy_one(
             raise RuntimeError("R2 object identity changed while being downloaded")
         os.replace(temporary_path, destination)
         sha256 = digest.hexdigest()
-        conn.execute(
-            """insert into snapshot_objects(object_key,byte_size,etag,sha256,status,attempts,error,completed_at)
-               values(?,?,?,?, 'completed',1,null,?)
-               on conflict(object_key) do update set byte_size=excluded.byte_size,etag=excluded.etag,
-                 sha256=excluded.sha256,status='completed',attempts=snapshot_objects.attempts+1,
-                 error=null,completed_at=excluded.completed_at""",
-            (key, copied, etag, sha256, datetime.now(timezone.utc).isoformat()),
+        completed_at = datetime.now(timezone.utc).isoformat()
+        return CopyWorkOutcome(
+            result={"key": key, "status": "completed", "bytes": copied},
+            state_update={
+                "object_key": key,
+                "status": "completed",
+                "byte_size": copied,
+                "etag": etag,
+                "sha256": sha256,
+                "completed_at": completed_at,
+            },
+            error=None,
         )
-        conn.commit()
-        return {"key": key, "status": "completed", "bytes": copied}
     except Exception as exc:
         details = classify_copy_error(exc)
-        conn.execute(
+        return CopyWorkOutcome(
+            result=None,
+            state_update={
+                "object_key": key,
+                "status": "failed",
+                "error": details.summary_key,
+                "error_class": details.error_class,
+                "error_code": details.error_code,
+                "error_http_status": details.http_status,
+                "error_operation": details.operation,
+                "error_retryable": int(details.retryable),
+                "last_error_at": datetime.now(timezone.utc).isoformat(),
+            },
+            error=exc,
+        )
+
+
+def _persist_copy_updates(
+    state: sqlite3.Connection, updates: Iterable[dict[str, Any]]
+) -> None:
+    for update in updates:
+        if update["status"] == "completed":
+            state.execute(
+                """insert into snapshot_objects(
+                     object_key,byte_size,etag,sha256,status,attempts,error,completed_at,
+                     error_class,error_code,error_http_status,error_operation,
+                     error_retryable,last_error_at)
+                   values(?,?,?,?, 'completed',1,null,?,null,null,null,null,null,null)
+                   on conflict(object_key) do update set
+                     byte_size=excluded.byte_size,etag=excluded.etag,
+                     sha256=excluded.sha256,status='completed',
+                     attempts=snapshot_objects.attempts+1,error=null,
+                     completed_at=excluded.completed_at,error_class=null,error_code=null,
+                     error_http_status=null,error_operation=null,error_retryable=null,
+                     last_error_at=null""",
+                (
+                    update["object_key"],
+                    update["byte_size"],
+                    update["etag"],
+                    update["sha256"],
+                    update["completed_at"],
+                ),
+            )
+            continue
+        state.execute(
             """insert into snapshot_objects(
                  object_key,status,attempts,error,error_class,error_code,
                  error_http_status,error_operation,error_retryable,last_error_at)
@@ -521,20 +592,113 @@ def copy_one(
                  error_retryable=excluded.error_retryable,
                  last_error_at=excluded.last_error_at""",
             (
-                key,
-                details.summary_key,
-                details.error_class,
-                details.error_code,
-                details.http_status,
-                details.operation,
-                int(details.retryable),
-                datetime.now(timezone.utc).isoformat(),
+                update["object_key"],
+                update["error"],
+                update["error_class"],
+                update["error_code"],
+                update["error_http_status"],
+                update["error_operation"],
+                update["error_retryable"],
+                update["last_error_at"],
             ),
         )
-        conn.commit()
-        raise
+    state.commit()
+
+
+def copy_one(
+    client: Any,
+    *,
+    bucket: str,
+    root: Path,
+    key: str,
+    state_path: Path,
+    limiter: BandwidthLimiter,
+) -> dict[str, Any]:
+    """Download one key and persist its receipt through the serial state path."""
+    state = _init_state(state_path)
+    try:
+        stored = state.execute(
+            "select byte_size,sha256,status from snapshot_objects where object_key=?",
+            (key,),
+        ).fetchone()
+        outcome = _copy_without_state(
+            client,
+            bucket=bucket,
+            root=root,
+            key=key,
+            limiter=limiter,
+            stored=stored,
+        )
+        if outcome.state_update is not None:
+            _persist_copy_updates(state, (outcome.state_update,))
+        if outcome.error is not None:
+            raise outcome.error
+        assert outcome.result is not None
+        return outcome.result
     finally:
-        conn.close()
+        state.close()
+
+
+def copy_many(
+    client: Any,
+    *,
+    bucket: str,
+    root: Path,
+    keys: list[str],
+    state_path: Path,
+    limiter: BandwidthLimiter,
+    workers: int,
+    state_commit_batch_size: int = 100,
+) -> dict[str, Any]:
+    """Run concurrent R2 I/O while one caller-owned SQLite writer batches receipts."""
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state = _init_state(state_path)
+    try:
+        stored_by_key = {
+            key: state.execute(
+                "select byte_size,sha256,status from snapshot_objects where object_key=?",
+                (key,),
+            ).fetchone()
+            for key in keys
+        }
+        completed: list[dict[str, Any]] = []
+        failures: Counter[str] = Counter()
+        pending_updates: list[dict[str, Any]] = []
+        commit_size = max(1, min(10000, int(state_commit_batch_size)))
+        with ThreadPoolExecutor(max_workers=max(1, min(64, int(workers)))) as pool:
+            futures = [
+                pool.submit(
+                    _copy_without_state,
+                    client,
+                    bucket=bucket,
+                    root=root,
+                    key=key,
+                    limiter=limiter,
+                    stored=stored_by_key[key],
+                )
+                for key in keys
+            ]
+            for future in as_completed(futures):
+                outcome = future.result()
+                if outcome.state_update is not None:
+                    pending_updates.append(outcome.state_update)
+                if outcome.result is not None:
+                    completed.append(outcome.result)
+                if outcome.error is not None:
+                    failures[classify_copy_error(outcome.error).summary_key] += 1
+                if len(pending_updates) >= commit_size:
+                    _persist_copy_updates(state, pending_updates)
+                    pending_updates.clear()
+        if pending_updates:
+            _persist_copy_updates(state, pending_updates)
+        return {
+            "attempted": len(keys),
+            "completed": len(completed),
+            "bytes": sum(int(item["bytes"]) for item in completed),
+            "failures": dict(sorted(failures.items())),
+        }
+    finally:
+        state.close()
 
 
 def load_verified_manifest(path: Path) -> dict[str, Any]:
@@ -567,6 +731,9 @@ def reserve_continuous_batch(
     limit: int,
     max_attempts: int,
     manifest_sha256: str,
+    priority_prefixes: tuple[str, ...] = (),
+    inventory_path: Path | None = None,
+    inventory_file_sha256: str | None = None,
 ) -> list[str]:
     """Freeze one resumable batch before downloading any object bodies."""
     state = _init_state(state_path)
@@ -586,22 +753,92 @@ def reserve_continuous_batch(
         ).fetchone()
         if not indexed or int(indexed[0]) != 1:
             raise RuntimeError("manifest index is not complete")
-        selected = [
-            str(row[0])
-            for row in state.execute(
-                """select manifest.object_key
-                   from snapshot_manifest_index manifest
-                   left join snapshot_objects state
-                     on state.object_key=manifest.object_key
-                   where manifest.manifest_sha256=? and (
-                     state.object_key is null or state.status not in ('completed','failed') or
-                     (state.status='failed' and coalesce(state.error_retryable,1)=1
-                       and state.attempts < ?)
-                   )
-                   order by manifest.sequence limit ?""",
-                (manifest_sha256, max(1, max_attempts), max(1, limit)),
+        if (inventory_path is None) != (inventory_file_sha256 is None):
+            raise ValueError("inventory path and SHA-256 must be configured together")
+        inventory_join = ""
+        if inventory_path is not None and inventory_file_sha256 is not None:
+            receipt = state.execute(
+                """select 1 from snapshot_inventory_filters
+                   where manifest_sha256=? and inventory_file_sha256=?""",
+                (manifest_sha256, inventory_file_sha256),
+            ).fetchone()
+            if not receipt:
+                raise RuntimeError("verified inventory filter receipt is missing")
+            state.execute(
+                "attach database ? as verified_inventory", (str(inventory_path.resolve()),)
             )
-        ]
+            inventory_join = (
+                " join verified_inventory.objects inventory"
+                " on inventory.key=manifest.object_key"
+            )
+        normalized_prefixes = tuple(dict.fromkeys(priority_prefixes))
+        for prefix in normalized_prefixes:
+            if (
+                not prefix.endswith("/")
+                or prefix.startswith("/")
+                or any(part in {"", ".", ".."} for part in prefix[:-1].split("/"))
+            ):
+                raise ValueError("priority prefixes must be safe R2 directory prefixes")
+        selected: list[str] = []
+        eligibility = """(
+          state.object_key is null or state.status not in ('completed','failed') or
+          (state.status='failed' and coalesce(state.error_retryable,1)=1
+            and state.attempts < ?)
+        )"""
+        for prefix in normalized_prefixes:
+            remaining = max(1, limit) - len(selected)
+            if remaining <= 0:
+                break
+            upper_bound = prefix + chr(0x10FFFF)
+            selected.extend(
+                str(row[0])
+                for row in state.execute(
+                    f"""select manifest.object_key
+                        from snapshot_manifest_index manifest
+                        {inventory_join}
+                        left join snapshot_objects state
+                          on state.object_key=manifest.object_key
+                        where manifest.manifest_sha256=?
+                          and manifest.object_key>=? and manifest.object_key<?
+                          and {eligibility}
+                        order by manifest.object_key limit ?""",
+                    (
+                        manifest_sha256,
+                        prefix,
+                        upper_bound,
+                        max(1, max_attempts),
+                        remaining,
+                    ),
+                )
+            )
+        remaining = max(1, limit) - len(selected)
+        if remaining > 0:
+            exclusions = "".join(
+                " and not (manifest.object_key>=? and manifest.object_key<?)"
+                for _prefix in normalized_prefixes
+            )
+            exclusion_parameters: list[str] = []
+            for prefix in normalized_prefixes:
+                exclusion_parameters.extend((prefix, prefix + chr(0x10FFFF)))
+            selected.extend(
+                str(row[0])
+                for row in state.execute(
+                    f"""select manifest.object_key
+                        from snapshot_manifest_index manifest
+                        {inventory_join}
+                        left join snapshot_objects state
+                          on state.object_key=manifest.object_key
+                        where manifest.manifest_sha256=? and {eligibility}
+                          {exclusions}
+                        order by manifest.sequence limit ?""",
+                    (
+                        manifest_sha256,
+                        max(1, max_attempts),
+                        *exclusion_parameters,
+                        remaining,
+                    ),
+                )
+            )
         if not selected:
             return []
         now = datetime.now(timezone.utc).isoformat()
@@ -685,6 +922,97 @@ def ensure_manifest_index(
         )
         state.commit()
         return imported_count
+    finally:
+        state.close()
+
+
+def ensure_inventory_filter(
+    *,
+    inventory_path: Path,
+    inventory_file_sha256: str,
+    state_path: Path,
+    manifest_sha256: str,
+) -> dict[str, Any]:
+    """Bind one complete inventory snapshot before excluding absent manifest keys."""
+    if len(inventory_file_sha256) != 64 or _sha256_file(inventory_path) != inventory_file_sha256:
+        raise ValueError("inventory file SHA-256 is invalid")
+    inventory = sqlite3.connect(
+        f"file:{inventory_path.resolve()}?mode=ro", uri=True, timeout=30
+    )
+    try:
+        quick_check = inventory.execute("pragma quick_check").fetchone()
+        if quick_check != ("ok",):
+            raise ValueError("inventory SQLite quick_check failed")
+        columns = {
+            str(row[1]) for row in inventory.execute("pragma table_info(objects)")
+        }
+        if not {"key", "size", "etag", "last_modified"}.issubset(columns):
+            raise ValueError("inventory objects schema is invalid")
+        inventory_count, inventory_bytes = inventory.execute(
+            "select count(*),coalesce(sum(size),0) from objects"
+        ).fetchone()
+    finally:
+        inventory.close()
+    state = _init_state(state_path)
+    try:
+        indexed = state.execute(
+            """select imported_count,completed from snapshot_manifest_index_meta
+               where manifest_sha256=?""",
+            (manifest_sha256,),
+        ).fetchone()
+        if not indexed or int(indexed[1]) != 1:
+            raise RuntimeError("manifest index is not complete")
+        state.execute(
+            "attach database ? as verified_inventory", (str(inventory_path.resolve()),)
+        )
+        try:
+            matched_count = int(
+                state.execute(
+                    """select count(*)
+                       from snapshot_manifest_index manifest
+                       join verified_inventory.objects inventory
+                         on inventory.key=manifest.object_key
+                       where manifest.manifest_sha256=?""",
+                    (manifest_sha256,),
+                ).fetchone()[0]
+            )
+        finally:
+            state.execute("detach database verified_inventory")
+        manifest_count = int(indexed[0])
+        if matched_count > manifest_count:
+            raise RuntimeError("inventory intersection exceeds manifest size")
+        absent_count = manifest_count - matched_count
+        verified_at = datetime.now(timezone.utc).isoformat()
+        state.execute(
+            """insert into snapshot_inventory_filters(
+                 manifest_sha256,inventory_file_sha256,inventory_object_count,
+                 inventory_byte_size,matched_count,absent_count,verified_at)
+               values(?,?,?,?,?,?,?)
+               on conflict(manifest_sha256,inventory_file_sha256) do update set
+                 inventory_object_count=excluded.inventory_object_count,
+                 inventory_byte_size=excluded.inventory_byte_size,
+                 matched_count=excluded.matched_count,
+                 absent_count=excluded.absent_count,
+                 verified_at=excluded.verified_at""",
+            (
+                manifest_sha256,
+                inventory_file_sha256,
+                int(inventory_count),
+                int(inventory_bytes),
+                matched_count,
+                absent_count,
+                verified_at,
+            ),
+        )
+        state.commit()
+        return {
+            "manifest_count": manifest_count,
+            "inventory_object_count": int(inventory_count),
+            "inventory_bytes": int(inventory_bytes),
+            "matched_count": matched_count,
+            "absent_count": absent_count,
+            "inventory_file_sha256": inventory_file_sha256,
+        }
     finally:
         state.close()
 
@@ -843,26 +1171,16 @@ def _run_reserved_copy(
                 selected.append(key)
     finally:
         state.close()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(
-                copy_one,
-                client,
-                bucket=str(config["source_bucket"]),
-                root=root,
-                key=key,
-                state_path=state_path,
-                limiter=limiter,
-            )
-            for key in selected
-        ]
-        results, failures = collect_copy_results(futures)
-    return {
-        "attempted": len(selected),
-        "completed": len(results),
-        "bytes": sum(int(item["bytes"]) for item in results),
-        "failures": failures,
-    }
+    return copy_many(
+        client,
+        bucket=str(config["source_bucket"]),
+        root=root,
+        keys=selected,
+        state_path=state_path,
+        limiter=limiter,
+        workers=workers,
+        state_commit_batch_size=int(config.get("state_commit_batch_size", 100)),
+    )
 
 
 def command_continuous(args: argparse.Namespace) -> None:
@@ -882,6 +1200,12 @@ def command_continuous(args: argparse.Namespace) -> None:
     ssh_alias = str(config["nas_ssh_alias"])
     nas_batches_root = str(config["nas_batches_root"])
     manifest_sha256 = str(config["manifest_sha256"])
+    raw_priority_prefixes = config.get("priority_prefixes", [])
+    if not isinstance(raw_priority_prefixes, list) or not all(
+        isinstance(item, str) for item in raw_priority_prefixes
+    ):
+        raise ValueError("priority_prefixes must be a JSON string list")
+    priority_prefixes = tuple(raw_priority_prefixes)
     indexed_count = ensure_manifest_index(
         manifest_path=manifest_path,
         state_path=state_path,
@@ -893,6 +1217,28 @@ def command_continuous(args: argparse.Namespace) -> None:
         ),
         flush=True,
     )
+    inventory_path: Path | None = None
+    inventory_file_sha256: str | None = None
+    if config.get("inventory_path") or config.get("inventory_file_sha256"):
+        if not config.get("inventory_path") or not config.get("inventory_file_sha256"):
+            raise ValueError("inventory_path and inventory_file_sha256 are both required")
+        inventory_path = Path(
+            _resolve_env(str(config["inventory_path"]))
+        ).expanduser()
+        inventory_file_sha256 = str(config["inventory_file_sha256"])
+        inventory_receipt = ensure_inventory_filter(
+            inventory_path=inventory_path,
+            inventory_file_sha256=inventory_file_sha256,
+            state_path=state_path,
+            manifest_sha256=manifest_sha256,
+        )
+        print(
+            json.dumps(
+                {"status": "inventory_filter_ready", **inventory_receipt},
+                sort_keys=True,
+            ),
+            flush=True,
+        )
     while True:
         state = _init_state(state_path)
         try:
@@ -923,6 +1269,9 @@ def command_continuous(args: argparse.Namespace) -> None:
             limit=batch_size,
             max_attempts=max_attempts,
             manifest_sha256=manifest_sha256,
+            priority_prefixes=priority_prefixes,
+            inventory_path=inventory_path,
+            inventory_file_sha256=inventory_file_sha256,
         )
         if not keys:
             print(
