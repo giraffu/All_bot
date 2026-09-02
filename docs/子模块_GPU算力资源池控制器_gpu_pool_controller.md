@@ -173,7 +173,12 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   comfy-kitchen Triton backend；启动日志必须确认 Triton 的 `int8_linear` 可用且未被
   disabled。H3 镜像只安装已校验的
   `comfy-kitchen 0.2.31` pure-Python wheel，禁止让 CUDA 13.0 编译的 manylinux
-  扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该参数不改变 BF16 模型的执行图。
+  扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该 wheel 的两个 Triton INT8 GEMM
+  kernel 还必须由镜像构建步骤把输出坐标提升为 int64，并以精确源码形状门禁；否则
+  MiniMax H3 的长时高分辨率张量会跨过 int32 扁平索引上限并触发 CUDA illegal
+  memory access。H3 runtime 同时启用有时间窗的 ComfyUI 连续探针失败进程退出，
+  让容器 supervisor 在 CUDA context 已损坏且进程假活时执行整容器恢复；短暂失败仍
+  保持原有 error/recovery 探针语义。这些兼容门禁不改变 BF16 模型的执行图。
 - 已有 H3 Pod 的参数同步使用
   `scripts/runpod_prod_ops.sh refresh-runtime-env --profile minimax_h3 --slot <NN>`：
   它先 disabled 并等待 `current_task_id` 清空，再通过 RunPod PATCH 更新同一 Pod 的

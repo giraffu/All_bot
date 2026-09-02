@@ -10,6 +10,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
     RUNPOD_TASK_PROFILES,
 )
+from ops.gpu_pool_controller.runtime import LAN_AIO_MINIMAX_H3_ENV
 
 
 def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
@@ -40,6 +41,9 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
     assert body["env"]["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] == "true"
     assert body["env"]["COMFY_EXTRA_ARGS"] == RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
+    assert body["env"]["COMFY_PROCESS_RECOVERY_ENABLED"] == "true"
+    assert body["env"]["COMFY_PROCESS_RECOVERY_MIN_FAILURES"] == "3"
+    assert body["env"]["COMFY_PROCESS_RECOVERY_SECONDS"] == "60"
     assert prod_body["env"]["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "4"
     assert prod_body["env"]["RUNPOD_START_SSHD"] == "true"
@@ -49,6 +53,12 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
         RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES
     )
     assert body["env"]["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
+
+
+def test_lan_minimax_h3_enables_comfy_process_recovery():
+    assert LAN_AIO_MINIMAX_H3_ENV["COMFY_PROCESS_RECOVERY_ENABLED"] == "true"
+    assert LAN_AIO_MINIMAX_H3_ENV["COMFY_PROCESS_RECOVERY_MIN_FAILURES"] == "3"
+    assert LAN_AIO_MINIMAX_H3_ENV["COMFY_PROCESS_RECOVERY_SECONDS"] == "60"
 
 
 def test_minimax_h3_autoscaler_profile_pulls_all_public_execution_types():

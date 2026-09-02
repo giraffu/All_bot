@@ -28,6 +28,8 @@ ENV PIP_NO_CACHE_DIR=1
 ENV COMFY_EXTRA_ARGS=--enable-triton-backend
 
 COPY workers/runpod_profiles/minimax_h3/download_pinned_file.py /tmp/download_pinned_file.py
+# INT8 GEMM output offsets are int64-patched until comfy-kitchen ships the upstream fix.
+COPY workers/runpod_profiles/minimax_h3/patch_comfy_kitchen_int8_offsets.py /tmp/patch_comfy_kitchen_int8_offsets.py
 
 RUN set -euo pipefail; \
     command -v ffmpeg >/dev/null; command -v git >/dev/null; command -v python3 >/dev/null; \
@@ -100,6 +102,7 @@ RUN set -euo pipefail; \
     python3 /tmp/download_pinned_file.py --url "${COMFY_KITCHEN_PURE_WHEEL_URL}" --output "$comfy_kitchen_wheel" --size "${COMFY_KITCHEN_PURE_WHEEL_SIZE}" --sha256 "${COMFY_KITCHEN_PURE_WHEEL_SHA256}" --parallelism 1; \
     pip_install_with_retry --force-reinstall --no-deps "$comfy_kitchen_wheel"; \
     rm -f "$comfy_kitchen_wheel"; \
+    python3 /tmp/patch_comfy_kitchen_int8_offsets.py; \
     python3 -c "from pathlib import Path; import comfy_kitchen; root=Path(comfy_kitchen.__file__).parent; assert not (root / 'backends/cuda/_C.abi3.so').exists()"; \
     python3 -c "from comfy_kitchen.backends import triton; assert 'int8_linear' in triton._build_constraints()"; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \

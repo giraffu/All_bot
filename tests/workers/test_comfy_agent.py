@@ -2026,6 +2026,44 @@ async def test_poll_loop_marks_error_and_does_not_pop_when_comfy_unhealthy(monke
     assert sleep_calls[-1] == module.COMFY_ERROR_POLL_SECONDS
 
 
+def test_comfy_probe_failures_request_process_recovery(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent.running = True
+
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_ENABLED", True)
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_MIN_FAILURES", 2)
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_SECONDS", 0)
+
+    agent._record_health_failure(
+        reason="comfy_probe_failed",
+        error="ComfyUI /system_stats probe failed",
+    )
+    with pytest.raises(module.ComfyProcessRecoveryExit):
+        agent._record_health_failure(
+            reason="comfy_probe_failed",
+            error="ComfyUI /system_stats probe failed",
+        )
+
+    assert agent.comfy_process_recovery_requested is True
+    assert agent.running is False
+
+
+def test_non_probe_health_failure_does_not_request_comfy_process_recovery(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent.running = True
+
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_ENABLED", True)
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_MIN_FAILURES", 1)
+    monkeypatch.setattr(module, "COMFY_PROCESS_RECOVERY_SECONDS", 0)
+
+    agent._record_health_failure(reason="artifact_disk_low", error="disk low")
+
+    assert agent.comfy_process_recovery_requested is False
+    assert agent.running is True
+
+
 @pytest.mark.asyncio
 async def test_poll_loop_recovers_after_required_successful_probes(monkeypatch):
     module = build_agent_module(monkeypatch)

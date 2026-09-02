@@ -564,6 +564,9 @@ class RunPodPodRequestBuilder:
             )
             env["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] = "true"
             env["COMFY_EXTRA_ARGS"] = RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
+            env["COMFY_PROCESS_RECOVERY_ENABLED"] = "true"
+            env["COMFY_PROCESS_RECOVERY_MIN_FAILURES"] = "3"
+            env["COMFY_PROCESS_RECOVERY_SECONDS"] = "60"
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides

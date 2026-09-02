@@ -45,6 +45,8 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "assert not (root / 'backends/cuda/_C.abi3.so').exists()" in dockerfile
     assert "ENV COMFY_EXTRA_ARGS=--enable-triton-backend" in dockerfile
     assert "'int8_linear' in triton._build_constraints()" in dockerfile
+    assert "patch_comfy_kitchen_int8_offsets.py" in dockerfile
+    assert "INT8 GEMM output offsets are int64" in dockerfile
     assert "--index-url \"${PIP_INDEX_URL}\"" in dockerfile
     assert "pip_install_with_retry -r" in dockerfile
     assert "rm -rf /tmp/allbot-pip-cache" in dockerfile
