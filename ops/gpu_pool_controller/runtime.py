@@ -12,6 +12,7 @@ from .runpod_profile_catalog import (
     RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
 )
 from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProfile
 
@@ -835,6 +836,8 @@ class RuntimePlanner:
             args.append("--fast-disk")
         if profile.runtime_profile in LAN_AIO_DISABLE_PINNED_MEMORY_PROFILES:
             args.append("--disable-pinned-memory")
+        if profile.runtime_profile == "minimax_h3":
+            args.append(RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS)
         if accelerator == "rocm":
             args.extend(["--lowvram", "--disable-pinned-memory"])
         return " ".join(args)

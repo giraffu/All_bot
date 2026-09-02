@@ -4,6 +4,7 @@ from ops.gpu_pool_controller.providers.runpod import RunPodSettings
 from ops.gpu_pool_controller.runpod_pod_request import RunPodPodRequestBuilder
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_AUTOSCALER_PROFILE_OPTIONS,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
@@ -38,6 +39,7 @@ def test_minimax_h3_runpod_request_is_exact_autoscaled_profile():
     assert body["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
     assert body["env"]["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] == "true"
+    assert body["env"]["COMFY_EXTRA_ARGS"] == RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
     assert prod_body["env"]["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert prod_body["env"]["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "4"
     assert prod_body["env"]["RUNPOD_START_SSHD"] == "true"

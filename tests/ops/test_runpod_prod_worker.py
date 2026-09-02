@@ -30,6 +30,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX25_VIDEO_UPSCALE_SUPPORTED_TASK_TYPES,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
     RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
@@ -950,6 +951,7 @@ def test_prod_worker_render_minimax_h3_uses_fixed_release_profile_defaults():
         RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES
     )
     assert payload["render"]["pool_runtime_profile"] == "minimax_h3"
+    assert payload["render"]["comfy_extra_args"] == RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
     assert payload["render"]["model_prefix"] == RUNPOD_MINIMAX_H3_MODEL_PREFIX
     assert (
         payload["render"]["model_manifest_key"]

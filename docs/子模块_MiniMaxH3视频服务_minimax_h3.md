@@ -109,6 +109,14 @@ H3 发布顺序固定为：
 5. 现有 RunPod 不因这次 LAN 验证而重建、拉取或切换镜像；新建 H3 RunPod 只允许消费
    新 digest 和新 manifest。
 
+H3 的 LAN AIO 和 RunPod 启动契约必须包含
+`COMFY_EXTRA_ARGS=--enable-triton-backend`。镜像继续使用 CUDA 12.8 兼容的
+`comfy-kitchen 0.2.31` pure-Python wheel，但 INT8 ConvRot 线性层必须通过 Triton
+backend 执行；构建检查 `triton` backend 已注册 `int8_linear`，运行日志检查该 backend
+未被 disabled。BF16 不依赖这条 INT8 kernel 路径。已有 H3 RunPod 如需应用该修复，只能
+在任务自然空闲后做配置级滚动重启，不切换镜像、不复制源码、不删除 Pod；任一 Pod 验证
+失败即停止后续滚动并保留其余实例。
+
 生产 mutation 必须使用完整 SHA、digest-pinned artifact 和精确 manifest key。禁止
 mutable tag、目标机 build、源码 bind mount、手工 Compose 或绕过 fleet helper。LAN
 rollout 前必须确认 slot 自然空闲；不得中断正在执行的正式任务。

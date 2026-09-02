@@ -20,6 +20,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
 )
 from ops.gpu_pool_controller.runtime import (
     LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
@@ -302,6 +303,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
     assert "--cache-none" in environment["COMFY_EXTRA_ARGS"]
     assert "--fast-disk" in environment["COMFY_EXTRA_ARGS"]
     assert "--disable-pinned-memory" in environment["COMFY_EXTRA_ARGS"]
+    assert RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS in environment["COMFY_EXTRA_ARGS"]
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
     )

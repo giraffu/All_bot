@@ -23,6 +23,7 @@ from .runpod_profile_catalog import (
     RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
     RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB,
     RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
+    RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
     RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
     RUNPOD_MINIMAX_H3_ALLOWED_GPU_TYPE_IDS,
     RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
@@ -562,6 +563,7 @@ class RunPodPodRequestBuilder:
                 f"{self.settings.volume_mount_path.rstrip('/')}/ComfyUI/models"
             )
             env["MINIMAX_H3_FORCE_PYTORCH_ATTENTION"] = "true"
+            env["COMFY_EXTRA_ARGS"] = RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides

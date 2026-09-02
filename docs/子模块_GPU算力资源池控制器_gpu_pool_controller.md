@@ -168,9 +168,12 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   运行态，缺任一证据均 fail closed。
 - 新建 `minimax_h3` RunPod request 必须消费当前九文件 manifest 和新的精确镜像 digest，
   现有 RunPod 不因 LAN 验证被重建或拉取。request 必须写入
-  `MINIMAX_H3_FORCE_PYTORCH_ATTENTION=true`；H3 镜像只安装已校验的
+  `MINIMAX_H3_FORCE_PYTORCH_ATTENTION=true` 和
+  `COMFY_EXTRA_ARGS=--enable-triton-backend`，使 INT8 ConvRot 的线性层优先使用
+  comfy-kitchen Triton backend；启动日志必须确认 Triton 的 `int8_linear` 可用且未被
+  disabled。H3 镜像只安装已校验的
   `comfy-kitchen 0.2.31` pure-Python wheel，禁止让 CUDA 13.0 编译的 manylinux
-  扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该兼容门禁不改变 LAN 当前 artifact。
+  扩展进入只满足 CUDA 12.8 的 RunPod 宿主。该参数不改变 BF16 模型的执行图。
 - profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
   已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
   变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。
