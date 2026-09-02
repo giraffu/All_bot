@@ -18,6 +18,9 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
                 {"task_type": "edit", "generation_count": 120},
                 {"task_type": "video_lora", "generation_count": 30},
             ]
+        if "generation_history_h3_main_models" in query:
+            assert args == ()
+            return [{"main_model": "10eros_int8", "generation_count": 7}]
         assert "generation_history_rows" in query
         assert args == ("edit", 10, 10)
         assert "left join users" in query.lower()
@@ -70,8 +73,15 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
     assert payload["rows"][0]["input_verified_count"] == 1
     assert payload["rows"][0]["output_verified_count"] == 2
     assert payload["task_types"][0] == {"task_type": "edit", "generation_count": 120}
+    assert payload["h3_main_models"] == [
+        {"main_model": "10eros_int8", "generation_count": 7}
+    ]
     assert payload["pagination"] == {"page": 2, "limit": 10, "total": 21, "total_pages": 3}
-    assert payload["filters"] == {"task_type": "edit", "sort": "type_count_desc"}
+    assert payload["filters"] == {
+        "task_type": "edit",
+        "h3_main_model": "",
+        "sort": "type_count_desc",
+    }
 
 
 @pytest.mark.asyncio
@@ -82,6 +92,8 @@ async def test_generation_history_defaults_to_all_types_latest_first_and_ten_row
 
     async def fake_fetch(query, *args):
         if "generation_history_types" in query:
+            return []
+        if "generation_history_h3_main_models" in query:
             return []
         assert args == ("", 10, 0)
         assert "h.created_at desc" in query.lower()
@@ -102,7 +114,11 @@ async def test_generation_history_defaults_to_all_types_latest_first_and_ten_row
     payload = response.json()
     assert payload["pagination"]["page"] == 1
     assert payload["pagination"]["limit"] == 10
-    assert payload["filters"] == {"task_type": "", "sort": "created_desc"}
+    assert payload["filters"] == {
+        "task_type": "",
+        "h3_main_model": "",
+        "sort": "created_desc",
+    }
 
 
 @pytest.mark.asyncio
@@ -124,6 +140,8 @@ async def test_generation_history_can_sort_all_rows_by_task_type_count(monkeypat
     async def fake_fetch(query, *args):
         if "generation_history_types" in query:
             return []
+        if "generation_history_h3_main_models" in query:
+            return []
         assert "with type_counts as" in query.lower()
         assert "type_counts.generation_count desc" in query.lower()
         assert args == (10, 0)
@@ -140,3 +158,51 @@ async def test_generation_history_can_sort_all_rows_by_task_type_count(monkeypat
 
     assert response.status_code == 200
     assert response.json()["filters"]["sort"] == "type_count_desc"
+
+
+@pytest.mark.asyncio
+async def test_generation_history_filters_by_persisted_h3_main_model(monkeypatch):
+    async def fake_fetchrow(query, *args):
+        assert "_minimax_h3_context" in query
+        assert "minimax_h3_i2v" in query
+        assert args == ("", None, "", None, None, None, "", "", "", False, "10eros_int8")
+        return {"total": 1}
+
+    async def fake_fetch(query, *args):
+        if "generation_history_h3_main_models" in query:
+            return [{"main_model": "10eros_bf16", "generation_count": 3}]
+        if "group by 1" in query:
+            return []
+        assert "_minimax_h3_context" in query
+        assert args == (
+            "",
+            None,
+            "",
+            None,
+            None,
+            None,
+            "",
+            "",
+            "",
+            False,
+            "10eros_int8",
+            10,
+            0,
+        )
+        return [{"id": 7, "task_type": "minimax_h3_i2v", "h3_main_model": "10eros_int8"}]
+
+    monkeypatch.setattr(analytics_main, "_fetchrow", fake_fetchrow)
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/generation-history?h3_main_model=10eros_int8")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filters"]["h3_main_model"] == "10eros_int8"
+    assert payload["rows"] == [
+        {"id": 7, "task_type": "minimax_h3_i2v", "h3_main_model": "10eros_int8"}
+    ]

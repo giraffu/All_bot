@@ -534,21 +534,23 @@ async def test_handle_task_completion_persists_minimax_h3_context(monkeypatch):
         allow_contribute=True,
         result_meta={
             "minimax_h3_mode": "flf2v",
+            "minimax_h3_main_model": "10eros_int8",
             "requested_duration": 10,
             "minimax_h3_resolution_preset": "standard",
             "minimax_h3_aspect_ratio": "source",
-            "lora_items": [{"name": "sex_pose", "strength": 0.5}],
+            "lora_items": [{"name": "footjob", "strength": 0.5}],
         },
     )
 
     context = download_output.await_args.kwargs["extra_outputs"]["_minimax_h3_context"]
     assert context == {
-        "version": 1,
+        "version": 3,
         "mode": "flf2v",
+        "main_model": "10eros_int8",
         "requested_duration": 10,
         "resolution_preset": "standard",
         "aspect_ratio": "source",
-        "lora_items": [{"name": "sex_pose", "strength": 0.5}],
+        "lora_items": [{"name": "footjob", "strength": 0.5}],
     }
 
 

@@ -12,11 +12,13 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_PIXEL_PRESETS,
     MiniMaxH3ValidationError,
     normalize_minimax_h3_addon_items,
+    normalize_minimax_h3_main_model,
 )
 
 
 MINIMAX_H3_HISTORY_CONTEXT_KEY = "_minimax_h3_context"
-MINIMAX_H3_HISTORY_CONTEXT_VERSION = 2
+MINIMAX_H3_HISTORY_CONTEXT_VERSION = 3
+MINIMAX_H3_PREVIOUS_HISTORY_CONTEXT_VERSION = 2
 MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION = 1
 MINIMAX_H3_GALLERY_TASK_TYPES = frozenset(
     {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V, MINIMAX_H3_REF2V}
@@ -86,6 +88,12 @@ def build_minimax_h3_history_context(
     except MiniMaxH3ValidationError:
         return {}
     try:
+        main_model = normalize_minimax_h3_main_model(
+            metadata.get("minimax_h3_main_model")
+        )
+    except MiniMaxH3ValidationError:
+        return {}
+    try:
         reference_audio = _normalize_durable_reference_audio(
             metadata.get("reference_audio")
         )
@@ -96,6 +104,7 @@ def build_minimax_h3_history_context(
     context = {
         "version": MINIMAX_H3_HISTORY_CONTEXT_VERSION,
         "mode": mode,
+        "main_model": main_model,
         "requested_duration": requested_duration,
         "resolution_preset": resolution_preset,
         "aspect_ratio": aspect_ratio,
@@ -143,6 +152,7 @@ def extract_minimax_h3_history_context(
         return {}
     if context.get("version") not in {
         MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION,
+        MINIMAX_H3_PREVIOUS_HISTORY_CONTEXT_VERSION,
         MINIMAX_H3_HISTORY_CONTEXT_VERSION,
     }:
         return {}
@@ -162,6 +172,7 @@ def resolve_valid_minimax_h3_history_context(
             "requested_duration": context.get("requested_duration"),
             "minimax_h3_resolution_preset": context.get("resolution_preset"),
             "minimax_h3_aspect_ratio": context.get("aspect_ratio"),
+            "minimax_h3_main_model": context.get("main_model"),
             "reference_audio": context.get("reference_audio"),
             "lora_items": context.get("lora_items"),
             "minimax_h3_prev_task_id": context.get("prev_task_id"),
@@ -170,9 +181,13 @@ def resolve_valid_minimax_h3_history_context(
     )
     if not rebuilt:
         return {}
-    if context.get("version") == MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION:
+    if context.get("version") in {
+        MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION,
+        MINIMAX_H3_PREVIOUS_HISTORY_CONTEXT_VERSION,
+    }:
         legacy_rebuilt = dict(rebuilt)
-        legacy_rebuilt["version"] = MINIMAX_H3_LEGACY_HISTORY_CONTEXT_VERSION
+        legacy_rebuilt["version"] = context["version"]
+        legacy_rebuilt.pop("main_model", None)
         return rebuilt if legacy_rebuilt == context else {}
     return rebuilt if rebuilt == context else {}
 

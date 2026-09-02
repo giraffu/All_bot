@@ -1,5 +1,16 @@
 const $ = (selector) => document.querySelector(selector);
 
+const H3_MAIN_MODEL_LABELS = {
+  official: "官方主模型",
+  official_ref2v_turbo: "官方 Ref2V Turbo",
+  "10eros_bf16": "10Eros H3 BF16",
+  "10eros_int8": "10Eros H3 INT8",
+};
+
+function h3MainModelLabel(mainModel) {
+  return H3_MAIN_MODEL_LABELS[mainModel] || mainModel;
+}
+
 export function createGenerationHistoryModule({
   fetchJson,
   state,
@@ -11,6 +22,7 @@ export function createGenerationHistoryModule({
   function params() {
     return {
       task_type: $("#generationHistoryTaskTypeSelect")?.value || "",
+      h3_main_model: $("#generationHistoryH3MainModelSelect")?.value || "",
       history_id: $("#generationHistoryIdInput")?.value || "",
       task_id: $("#generationHistoryTaskIdInput")?.value || "",
       user_id: $("#generationHistoryUserIdInput")?.value || "",
@@ -39,12 +51,27 @@ export function createGenerationHistoryModule({
     select.value = selected;
   }
 
+  function renderH3MainModels() {
+    const select = $("#generationHistoryH3MainModelSelect");
+    if (!select) return;
+    const selected = state.generationHistory?.filters?.h3_main_model ?? select.value ?? "";
+    const options = [
+      '<option value="">全部 H3 主模型</option>',
+      '<option value="__unrecorded__">未记录（旧 H3 历史）</option>',
+      ...(state.generationHistory?.h3_main_models || []).map((row) => (
+        `<option value="${escapeHtml(row.main_model)}">${escapeHtml(h3MainModelLabel(row.main_model))}（${fmt(row.generation_count)}）</option>`
+      )),
+    ];
+    select.innerHTML = options.join("");
+    select.value = selected;
+  }
+
   function renderRows() {
     const body = $("#generationHistoryRows");
     if (!body) return;
     const rows = state.generationHistory?.rows || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="15" class="empty">暂无历史生成记录</td></tr>';
+      body.innerHTML = '<tr><td colspan="16" class="empty">暂无历史生成记录</td></tr>';
       return;
     }
     const taskTypeCounts = new Map(
@@ -66,6 +93,7 @@ export function createGenerationHistoryModule({
           <strong>${escapeHtml(row.task_type || "unknown")}</strong>
           <div class="muted small">该类 ${fmt(taskTypeCounts.get(row.task_type) || 0)} 条</div>
         </td>
+        <td>${escapeHtml(row.h3_main_model ? h3MainModelLabel(row.h3_main_model) : "-")}</td>
         <td>${escapeHtml(row.source || "-")}</td>
         <td class="generation-history-prompt"><div class="generation-history-prompt-text">${escapeHtml(row.prompt || "-")}</div></td>
         <td>${escapeHtml(row.billing_resolution || "-")}</td>
@@ -117,6 +145,7 @@ export function createGenerationHistoryModule({
       ["暂停原因", status.pause_reason || "无"],
     ].map(([label, value]) => `<article class="metric-card"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${typeof value === "number" ? fmt(value) : escapeHtml(value ?? "-")}</div></article>`).join("");
     renderTaskTypes();
+    renderH3MainModels();
     renderRows();
     renderPagination();
   }
@@ -138,6 +167,7 @@ export function createGenerationHistoryModule({
   }
 
   $("#generationHistoryTaskTypeSelect")?.addEventListener("change", resetAndLoad);
+  $("#generationHistoryH3MainModelSelect")?.addEventListener("change", resetAndLoad);
   $("#generationHistorySortSelect")?.addEventListener("change", resetAndLoad);
   ["#generationHistoryIdInput", "#generationHistoryTaskIdInput", "#generationHistoryUserIdInput", "#generationHistoryDateFromInput", "#generationHistoryDateToInput", "#generationHistoryArchiveSourceInput"].forEach((selector) => {
     $(selector)?.addEventListener("change", resetAndLoad);

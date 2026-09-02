@@ -11,6 +11,7 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
         task_type="minimax_h3_flf2v",
         metadata={
             "minimax_h3_mode": "flf2v",
+            "minimax_h3_main_model": "10eros_int8",
             "requested_duration": 10,
             "minimax_h3_resolution_preset": "standard",
             "minimax_h3_aspect_ratio": "source",
@@ -22,8 +23,9 @@ def test_build_minimax_h3_history_context_preserves_locked_ordered_parameters():
     )
 
     assert context == {
-        "version": 2,
+        "version": 3,
         "mode": "flf2v",
+        "main_model": "10eros_int8",
         "requested_duration": 10,
         "resolution_preset": "standard",
         "aspect_ratio": "source",
@@ -39,6 +41,7 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
         task_type="minimax_h3_ref2v",
         metadata={
             "minimax_h3_mode": "ref2v",
+            "minimax_h3_main_model": "10eros_bf16",
             "requested_duration": 5,
             "minimax_h3_resolution_preset": "preview",
             "minimax_h3_aspect_ratio": "16:9",
@@ -48,8 +51,9 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
     )
 
     assert context == {
-        "version": 2,
+        "version": 3,
         "mode": "ref2v",
+        "main_model": "10eros_bf16",
         "requested_duration": 5,
         "resolution_preset": "preview",
         "aspect_ratio": "16:9",
@@ -98,7 +102,7 @@ def test_extract_minimax_h3_context_accepts_v1_and_rejects_unknown_versions():
     ) == {"version": 1, "mode": "i2v"}
     assert (
         extract_minimax_h3_history_context(
-            {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 3, "mode": "i2v"}}
+            {MINIMAX_H3_HISTORY_CONTEXT_KEY: {"version": 4, "mode": "i2v"}}
         )
         == {}
     )
@@ -109,6 +113,7 @@ def test_build_minimax_h3_v2_context_keeps_verified_parent_chain():
         task_type="minimax_h3_i2v",
         metadata={
             "minimax_h3_mode": "i2v",
+            "minimax_h3_main_model": "10eros_bf16",
             "requested_duration": 5,
             "minimax_h3_resolution_preset": "preview",
             "minimax_h3_aspect_ratio": "source",
@@ -118,6 +123,7 @@ def test_build_minimax_h3_v2_context_keeps_verified_parent_chain():
         },
     )
 
-    assert context["version"] == 2
+    assert context["version"] == 3
+    assert context["main_model"] == "10eros_bf16"
     assert context["prev_task_id"] == "segment-2"
     assert context["chain_task_ids"] == ["segment-1", "segment-2"]
