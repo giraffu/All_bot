@@ -278,6 +278,12 @@ SHA 后继续删除。安全引用或对象级探测失败的候选保留并让�
 协调器验证 working inventory 未变、失败 key 属于冻结计划且回执没有删除结果后，只把
 这些失败 key 延后到后续 fresh pass，清空 pending 并为其余对象生成新的精确计划；禁止
 修改旧计划、执行部分旧计划或因单个漂移对象无限重启同一批次。
+dry-run 本身出现混合探测结果时，冻结计划只把已经通过引用、源/目标 SHA 与字节门禁的
+对象放入 `objects`，并把失败 key 留在 `probe_failures`。协调器可以执行这份计划中的
+完整 `objects` rowset，但只有执行回执完成后才同时从 working inventory 移除已删除
+rowset，并把计划阶段失败 key 记为 deferred；若执行阶段又出现漂移，则计划与执行两组
+失败 key 一并延后，任何对象仍不得部分删除。这样单个计划探测失败不会把全部已验证对象
+困在重试退避中，也不会把失败对象误计为删除完成。
 宿主 systemd 只消费 digest-pinned migration image，清空大小写代理变量并挂载受限 state；
 本地旧 cleanup supervisor 必须保持 disabled，本地不得生成 inventory 或执行正文摘要。
 
@@ -805,3 +811,7 @@ manifest 的小批 canary，限速和并发从配置读取；完成基线后，�
 本地与 NAS 完全一致后才原子发布正式批次并清理本地 spool。进程中断会恢复同一预留批次；
 404/`NoSuchKey` 等终止错误不循环重试，429、5xx、连接和读取超时在配置的最大次数内重试，
 旧版笼统 `ClientError` 行会先重新探测并补齐分类。持续服务只备份、不删除或切换任何 R2 key。
+它与 R2 旧源清理并行时只消费冻结 manifest 的精确 key：若 manifest 仍引用某个旧源，生产
+History 引用门禁必须阻止该旧源进入删除计划；完成 Switch 后的新 manifest 通常读取清理计划
+明确保留并复核的 durable target。放行清理前应对计划 source rowset 与 NAS manifest 做精确
+交集检查，非零时 fail closed；NAS 备份进度或回执本身不替代 R2 删除授权。
