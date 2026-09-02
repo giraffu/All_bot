@@ -811,6 +811,14 @@ manifest 的小批 canary，限速和并发从配置读取；完成基线后，�
 本地与 NAS 完全一致后才原子发布正式批次并清理本地 spool。进程中断会恢复同一预留批次；
 404/`NoSuchKey` 等终止错误不循环重试，429、5xx、连接和读取超时在配置的最大次数内重试，
 旧版笼统 `ClientError` 行会先重新探测并补齐分类。持续服务只备份、不删除或切换任何 R2 key。
+大量历史路径与标准持久路径混合时，配置可用 `priority_prefixes` 只改变冻结 manifest 的
+领取顺序，不能增加、删除或改写 manifest 对象。并发下载线程不直接写 SQLite；主线程按
+`state_commit_batch_size` 批量提交成功和低基数失败回执，避免每个远端请求触发独立连接与
+磁盘同步。可选的 `inventory_path` 必须同时绑定精确 `inventory_file_sha256`：执行器先验证
+文件摘要、SQLite `quick_check`、`objects(key,size,etag,last_modified)` schema 和完整
+manifest 交集计数，并把 matched/absent 计数写入状态回执，随后才允许跳过 inventory 中
+不存在的 key。该 inventory 必须是数据库冻结时间之后由独立只读全桶列举生成的不可变文件；
+运行中 cleanup 的可变 working inventory、未完成 `.tmp` 或未绑定摘要的副本不能用于过滤。
 它与 R2 旧源清理并行时只消费冻结 manifest 的精确 key：若 manifest 仍引用某个旧源，生产
 History 引用门禁必须阻止该旧源进入删除计划；完成 Switch 后的新 manifest 通常读取清理计划
 明确保留并复核的 durable target。放行清理前应对计划 source rowset 与 NAS manifest 做精确
