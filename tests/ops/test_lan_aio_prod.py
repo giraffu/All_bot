@@ -296,6 +296,9 @@ def test_gpu177_minimax_h3_candidate_renders_four_public_types_and_isolated_mode
     service = compose["services"][slot.container_name]
     environment = service["environment"]
     assert environment["SUPPORTED_TASK_TYPES"] == ",".join(MINIMAX_H3_TASK_TYPES)
+    assert environment["PIPELINE_PROFILE_POLICY"] == (
+        "media_claim2_comfy1_delivery1_v1"
+    )
     assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
@@ -480,6 +483,10 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     assert environment["PIPELINE_TASK_TYPES"] == expected_types
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert environment["PIPELINE_PROFILE_POLICY"] == (
+        "media_claim2_comfy1_delivery1_v1"
+    )
     assert "--disable-dynamic-vram" not in environment["COMFY_EXTRA_ARGS"]
     assert "--reserve-vram" not in environment["COMFY_EXTRA_ARGS"]
     assert json.loads(environment["RUNPOD_MODEL_MANIFEST_KEYS"]) == list(
@@ -509,6 +516,37 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
         "/home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/"
         "all/workspace/ComfyUI/models:/opt/ComfyUI/models"
     ) in service["volumes"]
+
+
+@pytest.mark.parametrize(
+    "slot_id",
+    (
+        "gpu-252-gpu0-image_to_video",
+        "gpu-177-gpu0-wan22_video_v2",
+        "gpu-177-gpu1-minimax_h3",
+        "gpu-226-gpu0-all",
+    ),
+)
+def test_requested_media_lan_profiles_keep_single_comfy_delivery_overlap(slot_id):
+    import yaml
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots[slot_id]
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["PIPELINE_ENABLED"] == "true"
+    assert environment["PIPELINE_PROFILE_POLICY"] == (
+        "media_claim2_comfy1_delivery1_v1"
+    )
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
 
 
 def test_gpu226_all_profile_rejects_incomplete_multi_manifest_marker(

@@ -20,6 +20,7 @@ MEDIA_PIPELINE_PROFILES = frozenset(
         "image_to_video",
         "ltx_video",
         "ltx_t2v",
+        "minimax_h3",
         "scail2",
         "scail2_flex",
         "wan22_video_v2",
