@@ -30,6 +30,7 @@ create table if not exists analytics_snapshot_backup_sets(
   object_count bigint not null default 0,
   reference_count bigint not null default 0,
   last_verified_batch integer not null default 0,
+  history_status_ready boolean not null default false,
   status_counts jsonb not null default '{}'::jsonb,
   refreshed_at timestamptz,
   created_at timestamptz not null default now()
@@ -56,6 +57,54 @@ create table if not exists analytics_snapshot_backup_refs(
   original_ref text not null,
   object_key text not null
 );
+create table if not exists analytics_snapshot_backup_history_status(
+  snapshot_id text not null,
+  history_id bigint not null,
+  asset_count integer not null,
+  backed_up_count integer not null,
+  file_missing_count integer not null,
+  not_backed_up_count integer not null,
+  backing_up_count integer not null,
+  backup_failed_count integer not null,
+  input_asset_count integer not null,
+  input_backed_up_count integer not null,
+  input_missing_count integer not null,
+  output_asset_count integer not null,
+  output_backed_up_count integer not null,
+  output_missing_count integer not null,
+  updated_at timestamptz not null default now(),
+  primary key(snapshot_id,history_id)
+);
+alter table analytics_snapshot_backup_sets
+  add column if not exists history_status_ready boolean not null default false;
+"""
+
+HISTORY_STATUS_SELECT_SQL = """
+select snapshot_ref.snapshot_id,snapshot_ref.history_id,
+       count(*)::int asset_count,
+       count(*) filter(where snapshot_object.backup_status='backed_up')::int backed_up_count,
+       count(*) filter(where snapshot_object.backup_status='file_missing')::int file_missing_count,
+       count(*) filter(where snapshot_object.backup_status='not_backed_up')::int not_backed_up_count,
+       count(*) filter(where snapshot_object.backup_status='backing_up')::int backing_up_count,
+       count(*) filter(where snapshot_object.backup_status='backup_failed')::int backup_failed_count,
+       count(*) filter(where snapshot_ref.role='input')::int input_asset_count,
+       count(*) filter(where snapshot_ref.role='input' and snapshot_object.backup_status='backed_up')::int input_backed_up_count,
+       count(*) filter(where snapshot_ref.role='input' and snapshot_object.backup_status='file_missing')::int input_missing_count,
+       count(*) filter(where snapshot_ref.role<>'input')::int output_asset_count,
+       count(*) filter(where snapshot_ref.role<>'input' and snapshot_object.backup_status='backed_up')::int output_backed_up_count,
+       count(*) filter(where snapshot_ref.role<>'input' and snapshot_object.backup_status='file_missing')::int output_missing_count,
+       now() updated_at
+from analytics_snapshot_backup_refs snapshot_ref
+join analytics_snapshot_backup_objects snapshot_object
+  on snapshot_object.snapshot_id=snapshot_ref.snapshot_id
+ and snapshot_object.object_key=snapshot_ref.object_key
+"""
+
+HISTORY_STATUS_COLUMNS = """
+snapshot_id,history_id,asset_count,backed_up_count,file_missing_count,
+not_backed_up_count,backing_up_count,backup_failed_count,input_asset_count,
+input_backed_up_count,input_missing_count,output_asset_count,
+output_backed_up_count,output_missing_count,updated_at
 """
 
 
@@ -196,7 +245,8 @@ async def import_manifest(
                  snapshot_label=excluded.snapshot_label,
                  manifest_sha256=excluded.manifest_sha256,
                  ready=false,object_count=0,reference_count=0,
-                 last_verified_batch=0,status_counts='{}'::jsonb,refreshed_at=null""",
+                 last_verified_batch=0,history_status_ready=false,
+                 status_counts='{}'::jsonb,refreshed_at=null""",
             snapshot_id,
             snapshot_label,
             manifest_sha256,
@@ -321,6 +371,7 @@ async def _apply_batch(
     snapshot_id: str,
     state_path: Path,
     batch_number: int,
+    refresh_history_status: bool = False,
 ) -> int:
     # The downloader uses rollback-journal SQLite. Keep each read transaction to one 5k batch.
     batch_status, rows = await asyncio.to_thread(_read_batch, state_path, batch_number)
@@ -369,14 +420,87 @@ async def _apply_batch(
            where target.snapshot_id=$1 and target.object_key=updates.object_key""",
         snapshot_id,
     )
+    if refresh_history_status:
+        await connection.execute(
+            f"""insert into analytics_snapshot_backup_history_status({HISTORY_STATUS_COLUMNS})
+                 {HISTORY_STATUS_SELECT_SQL}
+                 where snapshot_ref.snapshot_id=$1 and snapshot_ref.history_id in (
+                   select distinct snapshot_ref.history_id
+                   from analytics_snapshot_backup_refs snapshot_ref
+                   join snapshot_batch_updates updates
+                     on updates.object_key=snapshot_ref.object_key
+                   where snapshot_ref.snapshot_id=$1)
+                 group by snapshot_ref.snapshot_id,snapshot_ref.history_id
+                 on conflict(snapshot_id,history_id) do update set
+                   asset_count=excluded.asset_count,
+                   backed_up_count=excluded.backed_up_count,
+                   file_missing_count=excluded.file_missing_count,
+                   not_backed_up_count=excluded.not_backed_up_count,
+                   backing_up_count=excluded.backing_up_count,
+                   backup_failed_count=excluded.backup_failed_count,
+                   input_asset_count=excluded.input_asset_count,
+                   input_backed_up_count=excluded.input_backed_up_count,
+                   input_missing_count=excluded.input_missing_count,
+                   output_asset_count=excluded.output_asset_count,
+                   output_backed_up_count=excluded.output_backed_up_count,
+                   output_missing_count=excluded.output_missing_count,
+                   updated_at=excluded.updated_at""",
+            snapshot_id,
+        )
     return len(records)
+
+
+async def ensure_history_status(
+    connection: asyncpg.Connection, *, snapshot_id: str
+) -> int:
+    ready = await connection.fetchval(
+        "select history_status_ready from analytics_snapshot_backup_sets where snapshot_id=$1",
+        snapshot_id,
+    )
+    if ready:
+        return 0
+    await connection.execute(
+        "delete from analytics_snapshot_backup_history_status where snapshot_id=$1",
+        snapshot_id,
+    )
+    result = await connection.execute(
+        f"""insert into analytics_snapshot_backup_history_status({HISTORY_STATUS_COLUMNS})
+             {HISTORY_STATUS_SELECT_SQL}
+             where snapshot_ref.snapshot_id=$1
+             group by snapshot_ref.snapshot_id,snapshot_ref.history_id""",
+        snapshot_id,
+    )
+    await connection.execute(
+        """create index if not exists ix_snapshot_history_backed_up
+             on analytics_snapshot_backup_history_status(snapshot_id,history_id)
+             where backed_up_count>0;
+           create index if not exists ix_snapshot_history_file_missing
+             on analytics_snapshot_backup_history_status(snapshot_id,history_id)
+             where file_missing_count>0;
+           create index if not exists ix_snapshot_history_not_backed_up
+             on analytics_snapshot_backup_history_status(snapshot_id,history_id)
+             where not_backed_up_count>0;
+           create index if not exists ix_snapshot_history_backing_up
+             on analytics_snapshot_backup_history_status(snapshot_id,history_id)
+             where backing_up_count>0;
+           create index if not exists ix_snapshot_history_backup_failed
+             on analytics_snapshot_backup_history_status(snapshot_id,history_id)
+             where backup_failed_count>0"""
+    )
+    await connection.execute(
+        """update analytics_snapshot_backup_sets
+           set history_status_ready=true,refreshed_at=now() where snapshot_id=$1""",
+        snapshot_id,
+    )
+    return int(result.rsplit(" ", 1)[-1])
 
 
 async def refresh_state(
     connection: asyncpg.Connection, *, snapshot_id: str, state_path: Path
 ) -> dict[str, Any]:
     row = await connection.fetchrow(
-        "select ready,last_verified_batch from analytics_snapshot_backup_sets where snapshot_id=$1",
+        """select ready,last_verified_batch,history_status_ready
+           from analytics_snapshot_backup_sets where snapshot_id=$1""",
         snapshot_id,
     )
     if not row or not row["ready"]:
@@ -392,6 +516,7 @@ async def refresh_state(
             snapshot_id=snapshot_id,
             state_path=state_path,
             batch_number=batch_number,
+            refresh_history_status=bool(row["history_status_ready"]),
         )
         last_verified = batch_number
         await connection.execute(
@@ -406,6 +531,7 @@ async def refresh_state(
             snapshot_id=snapshot_id,
             state_path=state_path,
             batch_number=batch_number,
+            refresh_history_status=bool(row["history_status_ready"]),
         )
     counts_rows = await connection.fetch(
         """select backup_status,count(*)::bigint count
@@ -454,6 +580,9 @@ async def run(args: argparse.Namespace) -> None:
             connection,
             snapshot_id=args.snapshot_id,
             state_path=Path(args.state),
+        )
+        refreshed["history_status_rows_built"] = await ensure_history_status(
+            connection, snapshot_id=args.snapshot_id
         )
         print(
             json.dumps(

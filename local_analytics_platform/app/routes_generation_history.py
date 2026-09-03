@@ -21,16 +21,16 @@ MEDIA_COLUMNS_SQL = """
     coalesce(media.asset_count,0)::int asset_count,
     coalesce(media.verified_count,0)::int verified_count,
     coalesce(media.problem_count,0)::int problem_count,
-    coalesce(snapshot_media.snapshot_asset_count,0)::int snapshot_asset_count,
-    coalesce(snapshot_media.snapshot_backed_up_count,0)::int snapshot_backed_up_count,
-    coalesce(snapshot_media.snapshot_missing_count,0)::int snapshot_missing_count,
-    coalesce(snapshot_media.snapshot_pending_count,0)::int snapshot_pending_count,
-    coalesce(snapshot_media.input_snapshot_count,0)::int input_snapshot_count,
-    coalesce(snapshot_media.input_snapshot_backed_up_count,0)::int input_snapshot_backed_up_count,
-    coalesce(snapshot_media.input_snapshot_missing_count,0)::int input_snapshot_missing_count,
-    coalesce(snapshot_media.output_snapshot_count,0)::int output_snapshot_count,
-    coalesce(snapshot_media.output_snapshot_backed_up_count,0)::int output_snapshot_backed_up_count,
-    coalesce(snapshot_media.output_snapshot_missing_count,0)::int output_snapshot_missing_count
+    coalesce(snapshot_history.asset_count,0)::int snapshot_asset_count,
+    coalesce(snapshot_history.backed_up_count,0)::int snapshot_backed_up_count,
+    coalesce(snapshot_history.file_missing_count,0)::int snapshot_missing_count,
+    coalesce(snapshot_history.not_backed_up_count + snapshot_history.backing_up_count + snapshot_history.backup_failed_count,0)::int snapshot_pending_count,
+    coalesce(snapshot_history.input_asset_count,0)::int input_snapshot_count,
+    coalesce(snapshot_history.input_backed_up_count,0)::int input_snapshot_backed_up_count,
+    coalesce(snapshot_history.input_missing_count,0)::int input_snapshot_missing_count,
+    coalesce(snapshot_history.output_asset_count,0)::int output_snapshot_count,
+    coalesce(snapshot_history.output_backed_up_count,0)::int output_snapshot_backed_up_count,
+    coalesce(snapshot_history.output_missing_count,0)::int output_snapshot_missing_count
 """
 
 MEDIA_JOIN_SQL = """
@@ -44,25 +44,14 @@ MEDIA_JOIN_SQL = """
         count(*) filter (where status in ('source_offline','provisional_missing','confirmed_lost','checksum_error')) problem_count
       from analytics_media_asset_catalog a where a.history_id=h.id
     ) media on true
-    left join lateral (
-      select count(*) snapshot_asset_count,
-        count(*) filter (where snapshot_object.backup_status='backed_up') snapshot_backed_up_count,
-        count(*) filter (where snapshot_object.backup_status='file_missing') snapshot_missing_count,
-        count(*) filter (where snapshot_object.backup_status in ('not_backed_up','backing_up','backup_failed')) snapshot_pending_count,
-        count(*) filter (where snapshot_ref.role='input') input_snapshot_count,
-        count(*) filter (where snapshot_ref.role='input' and snapshot_object.backup_status='backed_up') input_snapshot_backed_up_count,
-        count(*) filter (where snapshot_ref.role='input' and snapshot_object.backup_status='file_missing') input_snapshot_missing_count,
-        count(*) filter (where snapshot_ref.role<>'input') output_snapshot_count,
-        count(*) filter (where snapshot_ref.role<>'input' and snapshot_object.backup_status='backed_up') output_snapshot_backed_up_count,
-        count(*) filter (where snapshot_ref.role<>'input' and snapshot_object.backup_status='file_missing') output_snapshot_missing_count
-      from analytics_snapshot_backup_refs snapshot_ref
-      join analytics_snapshot_backup_objects snapshot_object
-        on snapshot_object.snapshot_id=snapshot_ref.snapshot_id
-       and snapshot_object.object_key=snapshot_ref.object_key
-      join analytics_snapshot_backup_sets snapshot_set
-        on snapshot_set.snapshot_id=snapshot_ref.snapshot_id and snapshot_set.ready
-      where snapshot_ref.history_id=h.id
-    ) snapshot_media on true
+"""
+
+SNAPSHOT_HISTORY_JOIN_SQL = """
+    left join analytics_snapshot_backup_history_status snapshot_history
+      on snapshot_history.history_id=h.id
+     and snapshot_history.snapshot_id=(
+       select snapshot_id from analytics_snapshot_backup_sets
+       where ready and history_status_ready order by created_at desc limit 1)
 """
 
 FILTER_SQL = """
@@ -88,16 +77,7 @@ FILTER_SQL = """
     )
     and coalesce(h.extra_outputs->'_minimax_h3_context'->>'main_model', '') = ''
   ) or coalesce(h.extra_outputs->'_minimax_h3_context'->>'main_model', '') = $11::text)
-  and ($12::text = '' or exists (
-    select 1
-    from analytics_snapshot_backup_refs snapshot_ref
-    join analytics_snapshot_backup_objects snapshot_object
-      on snapshot_object.snapshot_id=snapshot_ref.snapshot_id
-     and snapshot_object.object_key=snapshot_ref.object_key
-    join analytics_snapshot_backup_sets snapshot_set
-      on snapshot_set.snapshot_id=snapshot_ref.snapshot_id and snapshot_set.ready
-    where snapshot_ref.history_id=h.id
-      and snapshot_object.backup_status=$12::text))
+  and __SNAPSHOT_FILTER__
 """
 
 H3_MAIN_MODEL_SQL = """
@@ -136,6 +116,19 @@ async def generation_history(
 ) -> dict[str, Any]:
     normalized_task_type = task_type.strip()
     normalized_h3_main_model = h3_main_model.strip().lower()
+    snapshot_status_column = {
+        "backed_up": "backed_up_count",
+        "file_missing": "file_missing_count",
+        "not_backed_up": "not_backed_up_count",
+        "backing_up": "backing_up_count",
+        "backup_failed": "backup_failed_count",
+    }.get(snapshot_backup_status)
+    snapshot_filter_sql = (
+        f"coalesce(snapshot_history.{snapshot_status_column},0)>0"
+        if snapshot_status_column
+        else "true"
+    )
+    filter_sql = FILTER_SQL.replace("__SNAPSHOT_FILTER__", snapshot_filter_sql)
     advanced = any(
         value not in (None, "", False)
         for value in (
@@ -168,6 +161,7 @@ async def generation_history(
                 from history h join type_counts on type_counts.task_type=coalesce(h.type,'unknown')
                 left join users u on u.id=h.user_id
                 {MEDIA_JOIN_SQL}
+                {SNAPSHOT_HISTORY_JOIN_SQL}
                 order by type_counts.generation_count desc,h.created_at desc,h.id desc limit $1::int offset $2::int
             """
             rows_args = (GENERATION_HISTORY_PAGE_SIZE, offset)
@@ -180,6 +174,7 @@ async def generation_history(
                     h.rating,h.created_at,{H3_MAIN_MODEL_SQL},{MEDIA_COLUMNS_SQL}
                 from history h left join users u on u.id=h.user_id
                 {MEDIA_JOIN_SQL}
+                {SNAPSHOT_HISTORY_JOIN_SQL}
                 where ($1::text='' or coalesce(h.type,'unknown')=$1::text)
                 order by h.created_at desc,h.id desc limit $2::int offset $3::int
             """
@@ -231,7 +226,6 @@ async def generation_history(
         archive_source.strip(),
         loss_only,
         normalized_h3_main_model,
-        snapshot_backup_status,
     )
     offset = (page - 1) * GENERATION_HISTORY_PAGE_SIZE
     order_sql = (
@@ -256,13 +250,16 @@ async def generation_history(
         h.rating, h.created_at, {H3_MAIN_MODEL_SQL}, {MEDIA_COLUMNS_SQL}
       from history h left join users u on u.id=h.user_id {type_join}
       {MEDIA_JOIN_SQL}
-      where {FILTER_SQL}
-      order by {order_sql} limit $13::int offset $14::int
+      {SNAPSHOT_HISTORY_JOIN_SQL}
+      where {filter_sql}
+      order by {order_sql} limit $12::int offset $13::int
     """
     total, task_types, h3_main_models, rows = await _gather_limited(
         4,
         _fetchrow(
-            f"select count(*)::bigint total from history h where {FILTER_SQL}", *filters
+            f"""select count(*)::bigint total from history h
+                 {SNAPSHOT_HISTORY_JOIN_SQL} where {filter_sql}""",
+            *filters,
         ),
         _fetch("""select coalesce(type,'unknown') task_type, count(*)::bigint generation_count
                   from history group by 1 order by generation_count desc, task_type"""),

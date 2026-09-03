@@ -96,6 +96,9 @@ health 回读，不从本文复制历史快照。
 快照备份索引首次从 immutable manifest 与 inventory 流式构建，之后只按短事务读取
 下载 SQLite 中新增的已验收批次和当前活动批次，避免长读事务阻塞下载器。索引保存在
 本机 shadow PostgreSQL 的派生表中；媒体正文仍只在 NAS 批次目录，不迁入 PostgreSQL。
+对象状态同时汇总到每个 History 一行的 `analytics_snapshot_backup_history_status`，
+列表计数和状态筛选只读该表；每次新批次仅重算受影响的 History，禁止在页面请求中
+关联扫描全部 manifest 引用。
 页面用 opaque ref ID 请求原件，FastAPI 只向绑定 loopback、带域隔离 token 的网关代理；
 网关通过只读 SSH 路径打开 NAS 普通文件并支持 Range。Cloudflare 请求仍在内容读取前
 拒绝，公网只能查看状态，不能读取原件。
