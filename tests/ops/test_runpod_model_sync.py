@@ -77,6 +77,77 @@ def test_runpod_model_sync_resumes_partial_download(monkeypatch, tmp_path):
     assert temp_target.read_bytes() == payload
 
 
+class _RangeClient:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.requests: list[tuple[int, int | None]] = []
+        self.active = 0
+        self.maximum_active = 0
+        self.lock = threading.Lock()
+        self.barrier = threading.Barrier(4)
+
+    def get_object(
+        self,
+        bucket: str,
+        key: str,
+        *,
+        offset: int = 0,
+        length: int | None = None,
+    ):
+        assert bucket == "allbot-model-cache"
+        assert key == "models/big.safetensors"
+        with self.lock:
+            self.requests.append((offset, length))
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+        try:
+            self.barrier.wait(timeout=1)
+        except threading.BrokenBarrierError:
+            pass
+        end = None if length is None else offset + length
+        response = _FakeResponse([self.payload[offset:end]])
+        original_close = response.close
+
+        def close() -> None:
+            original_close()
+            with self.lock:
+                self.active -= 1
+
+        response.close = close
+        return response
+
+
+def test_runpod_model_sync_downloads_one_file_with_parallel_ranges(
+    monkeypatch, tmp_path
+):
+    sync_module = _load_module()
+    payload = bytes(range(64))
+    temp_target = tmp_path / "big.safetensors.partial"
+    temp_target.write_bytes(payload[:8])
+    client = _RangeClient(payload)
+    monkeypatch.setenv("RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE", "4")
+    monkeypatch.setenv("RUNPOD_MODEL_DOWNLOAD_RETRY_SECONDS", "0")
+
+    sync_module._download_object_with_parallel_ranges(
+        client,
+        bucket="allbot-model-cache",
+        key="models/big.safetensors",
+        temp_target=temp_target,
+        expected_size=len(payload),
+        relative_path="checkpoints/big.safetensors",
+    )
+
+    assert client.maximum_active == 4
+    assert sorted(client.requests) == [
+        (8, 14),
+        (22, 14),
+        (36, 14),
+        (50, 14),
+    ]
+    assert temp_target.read_bytes() == payload
+    assert not list(tmp_path.glob("*.range-*"))
+
+
 def test_runpod_model_sync_rejects_invalid_lan_override(monkeypatch, tmp_path):
     sync_module = _load_module()
 

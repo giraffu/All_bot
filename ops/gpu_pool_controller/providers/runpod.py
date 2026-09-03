@@ -557,6 +557,7 @@ class RunPodSettings:
     minio_secret_key_ref: str = RUNPOD_R2_SECRET_KEY_REF
     model_sync_enabled: bool = False
     model_download_concurrency: int = 4
+    model_download_parts_per_file: int = 1
     model_bucket: str = ""
     model_prefix: str = "img2img_lora/2026-06-10"
     model_manifest_key: str = ""
@@ -602,6 +603,8 @@ class RunPodSettings:
     def __post_init__(self) -> None:
         if not 1 <= self.model_download_concurrency <= 8:
             raise ValueError("model_download_concurrency must be between 1 and 8")
+        if not 1 <= self.model_download_parts_per_file <= 8:
+            raise ValueError("model_download_parts_per_file must be between 1 and 8")
         if self.min_download_mbps_minimax_h3 < 0:
             raise ValueError("min_download_mbps_minimax_h3 must not be negative")
         if self.min_ram_per_gpu_minimax_h3 < 0:
@@ -1022,6 +1025,12 @@ class RunPodSettings:
             model_download_concurrency=_bounded_int_env(
                 os.getenv("RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"),
                 default=4,
+                minimum=1,
+                maximum=8,
+            ),
+            model_download_parts_per_file=_bounded_int_env(
+                os.getenv("RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE"),
+                default=1,
                 minimum=1,
                 maximum=8,
             ),

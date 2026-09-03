@@ -487,6 +487,9 @@ class RunPodPodRequestBuilder:
             "RUNPOD_MODEL_DOWNLOAD_CONCURRENCY": str(
                 self.settings.model_download_concurrency
             ),
+            "RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE": str(
+                self.settings.model_download_parts_per_file
+            ),
             "RUNPOD_MODEL_BUCKET": env_config["model_bucket"],
             "RUNPOD_MODEL_PREFIX": env_config["model_prefix"],
             "RUNPOD_MODEL_MANIFEST_KEY": env_config["model_manifest_key"],

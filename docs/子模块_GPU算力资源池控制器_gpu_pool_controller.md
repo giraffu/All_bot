@@ -127,7 +127,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - 先读取 provider 状态、operation store、Central worker 和目标 profile
   release pin，再决定 status/add/down/restart/rollout。
 - 新建 RunPod 通过 `RUNPOD_MODEL_DOWNLOAD_CONCURRENCY` 控制模型文件级并行，
-  默认 4、有效范围 1–8；同步器自身在变量缺失时保持串行，避免改变 LAN 调用。
+  默认 4、有效范围 1–8；`RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE` 控制单文件 Range
+  分段并行，默认 1、有效范围 1–8，因此其它 profile 和 LAN 调用保持原行为。单文件
+  分段只追加连续完成的前缀，重启后仍由原 `.partial` 断点续传。
   下载阶段只写各自 `.partial`，全部成功后才按 manifest 顺序串行执行
   size/SHA-256 校验和原子替换。任一文件耗尽重试时取消未开始项、停止活动流并
   保留 partial，整个 bootstrap fail closed。

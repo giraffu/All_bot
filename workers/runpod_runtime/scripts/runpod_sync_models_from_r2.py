@@ -422,6 +422,168 @@ def _download_object_with_resume(
             time.sleep(retry_seconds)
 
 
+def _download_range_with_resume(
+    client: Minio,
+    *,
+    bucket: str,
+    key: str,
+    range_target: Path,
+    object_offset: int,
+    range_size: int,
+    relative_path: str,
+    cancel_event: threading.Event | None = None,
+) -> int:
+    max_attempts = _int_env("RUNPOD_MODEL_DOWNLOAD_MAX_ATTEMPTS", default=8)
+    retry_seconds = _int_env(
+        "RUNPOD_MODEL_DOWNLOAD_RETRY_SECONDS", default=5, minimum=0
+    )
+    chunk_size = _int_env(
+        "RUNPOD_MODEL_DOWNLOAD_CHUNK_SIZE",
+        default=1024 * 1024,
+        minimum=64 * 1024,
+    )
+    for attempt in range(1, max_attempts + 1):
+        if cancel_event is not None and cancel_event.is_set():
+            raise _DownloadCancelled(f"download cancelled for {relative_path}")
+        current_size = range_target.stat().st_size if range_target.exists() else 0
+        if current_size == range_size:
+            return attempt
+        if current_size > range_size:
+            range_target.unlink(missing_ok=True)
+            current_size = 0
+        response = client.get_object(
+            bucket,
+            key,
+            offset=object_offset + current_size,
+            length=range_size - current_size,
+        )
+        try:
+            with range_target.open("ab") as file_obj:
+                for chunk in response.stream(amt=chunk_size):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise _DownloadCancelled(
+                            f"download cancelled for {relative_path}"
+                        )
+                    if chunk:
+                        file_obj.write(chunk)
+        except _DownloadCancelled:
+            raise
+        except Exception:
+            if attempt >= max_attempts:
+                raise
+            if retry_seconds:
+                time.sleep(retry_seconds)
+            continue
+        finally:
+            response.close()
+            response.release_conn()
+        if range_target.stat().st_size == range_size:
+            return attempt
+        if attempt >= max_attempts:
+            raise RuntimeError(
+                f"incomplete range for {relative_path}: "
+                f"expected {range_size}, got {range_target.stat().st_size}"
+            )
+        if retry_seconds:
+            time.sleep(retry_seconds)
+    raise RuntimeError(f"download failed for {relative_path}")
+
+
+def _download_object_with_parallel_ranges(
+    client: Minio,
+    *,
+    bucket: str,
+    key: str,
+    temp_target: Path,
+    expected_size: int,
+    relative_path: str,
+    cancel_event: threading.Event | None = None,
+) -> int:
+    parts_per_file = _bounded_int_env(
+        "RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE",
+        default=1,
+        minimum=1,
+        maximum=8,
+    )
+    current_size = temp_target.stat().st_size if temp_target.exists() else 0
+    if current_size >= expected_size or parts_per_file == 1:
+        return _download_object_with_resume(
+            client,
+            bucket=bucket,
+            key=key,
+            temp_target=temp_target,
+            expected_size=expected_size,
+            relative_path=relative_path,
+            cancel_event=cancel_event,
+        )
+
+    for stale_part in temp_target.parent.glob(f"{temp_target.name}.range-*"):
+        stale_part.unlink(missing_ok=True)
+    remaining = expected_size - current_size
+    effective_parts = min(parts_per_file, remaining)
+    base_size, extra = divmod(remaining, effective_parts)
+    ranges: list[tuple[int, int, Path]] = []
+    offset = current_size
+    for index in range(effective_parts):
+        range_size = base_size + (1 if index < extra else 0)
+        range_target = temp_target.with_name(
+            f"{temp_target.name}.range-{offset}-{offset + range_size}"
+        )
+        ranges.append((offset, range_size, range_target))
+        offset += range_size
+    _log_event(
+        "file_range_download_start",
+        relative_path=relative_path,
+        parts=effective_parts,
+        remaining_bytes=remaining,
+    )
+    attempts: list[int] = []
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=effective_parts,
+        thread_name_prefix="runpod-model-range",
+    )
+    futures = [
+        executor.submit(
+            _download_range_with_resume,
+            client,
+            bucket=bucket,
+            key=key,
+            range_target=range_target,
+            object_offset=object_offset,
+            range_size=range_size,
+            relative_path=relative_path,
+            cancel_event=cancel_event,
+        )
+        for object_offset, range_size, range_target in ranges
+    ]
+    try:
+        with temp_target.open("ab") as output:
+            for (_, range_size, range_target), future in zip(ranges, futures):
+                attempts.append(future.result())
+                if range_target.stat().st_size != range_size:
+                    raise RuntimeError(
+                        f"range size mismatch for {relative_path}: "
+                        f"expected {range_size}, got {range_target.stat().st_size}"
+                    )
+                with range_target.open("rb") as input_file:
+                    shutil.copyfileobj(input_file, output, length=1024 * 1024)
+                range_target.unlink()
+    except Exception:
+        if cancel_event is not None:
+            cancel_event.set()
+        for future in futures:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+    if temp_target.stat().st_size != expected_size:
+        raise RuntimeError(
+            f"size mismatch for {relative_path}: expected {expected_size}, "
+            f"got {temp_target.stat().st_size}"
+        )
+    return max(attempts, default=1)
+
+
 def _download_job(
     client: Minio,
     *,
@@ -433,7 +595,7 @@ def _download_job(
     temp_target = Path(str(job["temp_target"]))
     initial_size = temp_target.stat().st_size if temp_target.exists() else 0
     started_at = time.monotonic()
-    attempts = _download_object_with_resume(
+    attempts = _download_object_with_parallel_ranges(
         client,
         bucket=bucket,
         key=str(job["key"]),

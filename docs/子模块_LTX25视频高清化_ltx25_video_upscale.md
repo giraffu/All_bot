@@ -62,6 +62,10 @@ runtime 和 workflow。模型 manifest 固定为
 均需先在 Hugging Face 接受许可，再使用只读 `HF_TOKEN` 下载；token 不写入 Git、
 日志或镜像。
 
+云测试冷启动应显式设置 `RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE=4`，在保留文件级
+并行和 `.partial` 断点续传的同时，对 20GB transformer 与 14GB 文本编码器使用
+Range 分段下载；正式 profile 在 canary 验证前仍保持默认值 1。
+
 测试 profile 固定为 32GB RTX 5090；15 秒混合链路须由最大负载 canary 确认。
 容器盘至少 100GB、volume 至少 60GB。profile 默认不参加 autoscaler，首次发布必须
 使用 digest-pinned 镜像，先以
