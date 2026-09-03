@@ -679,6 +679,11 @@
               <option value="provisional_missing">暂定缺失</option><option value="confirmed_lost">确认丢失</option>
               <option value="checksum_error">校验错误</option>
             </select></label>
+            <label><span>NAS 快照备份</span><select id="generationHistorySnapshotStatusSelect">
+              <option value="">全部</option><option value="backed_up">已备份</option>
+              <option value="file_missing">文件缺失</option><option value="not_backed_up">未备份</option>
+              <option value="backing_up">备份中</option><option value="backup_failed">备份失败</option>
+            </select></label>
             <label><span>资产角色</span><select id="generationHistoryAssetRoleSelect">
               <option value="">全部</option><option value="input">输入</option><option value="output">主输出</option>
             </select></label>
@@ -1456,6 +1461,6 @@
       </div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script type="module" src="/static/js/bootstrap.js?v=20260806-nas-history-media-v2"></script>
+    <script type="module" src="/static/js/bootstrap.js?v=20260903-snapshot-media-v1"></script>
   </body>
 </html>

@@ -266,7 +266,10 @@ def install_auth(app: FastAPI, *, static_dir: Path) -> None:
             create_session_token(config, username=config.username),
             max_age=config.session_ttl_seconds,
             httponly=True,
-            secure=config.cookie_secure,
+            # One service is reached both through HTTPS/Cloudflare and directly
+            # over the trusted LAN. A Secure cookie cannot be returned by LAN
+            # HTTP clients, while the public HTTPS host still receives one.
+            secure=config.cookie_secure and request.url.scheme == "https",
             samesite="lax",
             path="/",
         )

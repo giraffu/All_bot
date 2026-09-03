@@ -102,6 +102,7 @@ def test_dry_run_preserves_local_analytics_tables_before_shadow_switch(tmp_path,
     assert "analytics_prompt_%" in commands
     assert "analytics_user_profile_%" in commands
     assert "analytics_history_media_%" in commands
+    assert "analytics_snapshot_backup_%" in commands
     assert "--table=public.$table_name" in commands
     assert "pg_dump --dbname=\"$SHADOW_DB\"" in commands
     assert "pg_restore --no-owner --no-privileges --dbname=\"$SHADOW_NEXT_DB\"" in commands

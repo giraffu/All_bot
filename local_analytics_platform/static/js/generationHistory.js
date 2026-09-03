@@ -29,6 +29,7 @@ export function createGenerationHistoryModule({
       date_from: $("#generationHistoryDateFromInput")?.value || "",
       date_to: $("#generationHistoryDateToInput")?.value || "",
       archive_status: $("#generationHistoryArchiveStatusSelect")?.value || "",
+      snapshot_backup_status: $("#generationHistorySnapshotStatusSelect")?.value || "",
       asset_role: $("#generationHistoryAssetRoleSelect")?.value || "",
       archive_source: $("#generationHistoryArchiveSourceInput")?.value || "",
       loss_only: $("#generationHistoryLossOnly")?.checked || false,
@@ -81,8 +82,14 @@ export function createGenerationHistoryModule({
       const isInput = roleGroup === "input";
       const total = Number(row[isInput ? "input_asset_count" : "output_asset_count"] || 0);
       const verified = Number(row[isInput ? "input_verified_count" : "output_verified_count"] || 0);
-      if (!total) return '<span class="muted">无媒体</span>';
-      return `<div class="generation-history-media-summary">本地可用 ${fmt(verified)} / ${fmt(total)}</div>
+      const snapshotTotal = Number(row[isInput ? "input_snapshot_count" : "output_snapshot_count"] || 0);
+      const backedUp = Number(row[isInput ? "input_snapshot_backed_up_count" : "output_snapshot_backed_up_count"] || 0);
+      const missing = Number(row[isInput ? "input_snapshot_missing_count" : "output_snapshot_missing_count"] || 0);
+      if (!total && !snapshotTotal) return '<span class="muted">无媒体</span>';
+      const summary = snapshotTotal
+        ? `NAS 已备份 ${fmt(backedUp)} / ${fmt(snapshotTotal)}${missing ? ` · 文件缺失 ${fmt(missing)}` : ""}`
+        : `未纳入快照 · 官方归档可用 ${fmt(verified)} / ${fmt(total)}`;
+      return `<div class="generation-history-media-summary">${summary}</div>
         <button type="button" data-history-media="${escapeHtml(row.id)}" data-role-group="${roleGroup}">查看${isInput ? "输入" : "输出"}</button>`;
     };
     body.innerHTML = rows.map((row) => `
@@ -134,6 +141,8 @@ export function createGenerationHistoryModule({
 
   function render() {
     const status = state.archiveStatus || {};
+    const snapshot = status.snapshot_backup || {};
+    const snapshotCounts = snapshot.status_counts || {};
     const summary = $("#archiveStatusSummary");
     if (summary) summary.innerHTML = [
       ["逻辑资产", status.logical_assets], ["已验收", status.verified_assets],
@@ -143,6 +152,9 @@ export function createGenerationHistoryModule({
       ["当前吞吐", status.throughput_bytes_per_second ? `${(Number(status.throughput_bytes_per_second) / 1024 / 1024).toFixed(2)} MiB/s` : "-"],
       ["容量使用", status.usage_ratio == null ? "未配置" : `${(Number(status.usage_ratio) * 100).toFixed(1)}%`],
       ["暂停原因", status.pause_reason || "无"],
+      ["NAS 快照已备份", snapshotCounts.backed_up ?? "索引未就绪"],
+      ["NAS 快照文件缺失", snapshotCounts.file_missing ?? "-"],
+      ["NAS 快照未备份", snapshotCounts.not_backed_up ?? "-"],
     ].map(([label, value]) => `<article class="metric-card"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${typeof value === "number" ? fmt(value) : escapeHtml(value ?? "-")}</div></article>`).join("");
     renderTaskTypes();
     renderH3MainModels();
@@ -172,7 +184,7 @@ export function createGenerationHistoryModule({
   ["#generationHistoryIdInput", "#generationHistoryTaskIdInput", "#generationHistoryUserIdInput", "#generationHistoryDateFromInput", "#generationHistoryDateToInput", "#generationHistoryArchiveSourceInput"].forEach((selector) => {
     $(selector)?.addEventListener("change", resetAndLoad);
   });
-  ["#generationHistoryArchiveStatusSelect", "#generationHistoryAssetRoleSelect", "#generationHistoryLossOnly"].forEach((selector) => {
+  ["#generationHistoryArchiveStatusSelect", "#generationHistorySnapshotStatusSelect", "#generationHistoryAssetRoleSelect", "#generationHistoryLossOnly"].forEach((selector) => {
     $(selector)?.addEventListener("change", resetAndLoad);
   });
   $("#generationHistoryRows")?.addEventListener("click", async (event) => {
@@ -184,7 +196,8 @@ export function createGenerationHistoryModule({
       const payload = await fetchJson(`/api/generation-history/${historyId}/media`, { role_group: roleGroup });
       const dialog = $("#generationHistoryMediaDialog");
       const roleLabel = { input: "输入", output: "输出", all: "全部" }[payload.role_group] || "全部";
-      $("#generationHistoryMediaTitle").textContent = `History #${historyId} · ${roleLabel} · ${payload.assets.length} 个逻辑媒体`;
+      const sourceLabel = payload.media_source === "snapshot_backup" ? "NAS 快照备份" : "官方归档";
+      $("#generationHistoryMediaTitle").textContent = `History #${historyId} · ${roleLabel} · ${sourceLabel} · ${payload.assets.length} 个逻辑媒体`;
       $("#generationHistoryMediaBody").innerHTML = payload.assets.length ? payload.assets.map((asset) => {
         const contentUrl = asset.content_url || "";
         const safeContentUrl = escapeHtml(contentUrl);
@@ -193,7 +206,7 @@ export function createGenerationHistoryModule({
           : contentUrl && (asset.mime_type || "").startsWith("video/")
             ? `<video controls preload="metadata" src="${safeContentUrl}"></video>` : "";
         return `<article class="archive-media-card">${preview}<strong>${escapeHtml(asset.role)} #${fmt(asset.ordinal)}</strong>
-          <span class="archive-status archive-status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+          <span class="archive-status archive-status-${escapeHtml(asset.status)}">${escapeHtml({ backed_up: "已备份", file_missing: "文件缺失", not_backed_up: "未备份", backing_up: "备份中", backup_failed: "备份失败" }[asset.status] || asset.status)}</span>
           <div class="small"><span class="muted">原始引用：</span>${escapeHtml(asset.original_ref)}</div>
           <div class="mono small">${asset.byte_size ? `${fmt(asset.byte_size)} bytes` : "-"} · ${escapeHtml(asset.sha256 || "无 SHA-256")}</div>
           <div class="small">来源：${escapeHtml(asset.found_source || "-")}</div>

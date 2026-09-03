@@ -17,6 +17,8 @@ Dashboard，也不复用 `dashboard/backend` 或 Dashboard Vue 应用。
 | Shadow 同步后刷新 | `scripts/run_local_analytics_shadow_pipeline.py` |
 | 用户画像快照 | `local_analytics_platform/app/refresh_user_profile_snapshots.py` |
 | Prompt Mart / slim / token / vector | 对应 `refresh_prompt_*.py` 入口 |
+| R2 History 快照备份索引 | `scripts/refresh_r2_history_snapshot_analytics.py` |
+| NAS 快照原件 loopback 网关 | `scripts/serve_r2_history_snapshot_nas.py` |
 
 默认 LAN 端口和实时容器状态属于部署配置/运行态；操作前从 Compose、env 和 live
 health 回读，不从本文复制历史快照。
@@ -48,6 +50,13 @@ health 回读，不从本文复制历史快照。
   证明 shadow 已同步，不能证明画像快照或 Prompt 派生数据已刷新。
 - NAS 归档原件只通过登录保护的本地 API 只读流式提供；浏览器不获得 MinIO
   凭据。R2 治理页面只消费脱敏摘要，不返回对象 key、预签 URL 或 secret。
+- R2 History 快照备份与正式 `analytics_media_asset_catalog` 归档是两套独立事实源。
+  `analytics_snapshot_backup_*` 只投影冻结 manifest、对象 inventory、下载 state 和
+  NAS 批次 receipt；不得把“批次中出现”或“下载 completed”直接等同于已备份，只有
+  对象完成且所属 NAS 批次为 `verified` 才是 `backed_up`。
+- 快照备份状态固定区分 `backed_up`、`file_missing`、`not_backed_up`、
+  `backing_up` 和 `backup_failed`。其中 inventory 不存在或终态 404 才显示文件缺失；
+  inventory 存在但尚未处理显示未备份。冻结快照之外的新 History 不推测状态。
 
 ## 4. 当前模块地图
 
@@ -84,6 +93,13 @@ health 回读，不从本文复制历史快照。
 规则或 normalization version 变化时，增量刷新可以拒绝旧版本。只有代码明确要求
 时才做 full rebuild；不要为一次小规则调整反复全量扫描。
 
+快照备份索引首次从 immutable manifest 与 inventory 流式构建，之后只按短事务读取
+下载 SQLite 中新增的已验收批次和当前活动批次，避免长读事务阻塞下载器。索引保存在
+本机 shadow PostgreSQL 的派生表中；媒体正文仍只在 NAS 批次目录，不迁入 PostgreSQL。
+页面用 opaque ref ID 请求原件，FastAPI 只向绑定 loopback、带域隔离 token 的网关代理；
+网关通过只读 SSH 路径打开 NAS 普通文件并支持 Range。Cloudflare 请求仍在内容读取前
+拒绝，公网只能查看状态，不能读取原件。
+
 ## 6. 安全与运维门禁
 
 - LAN 使用也要保留 bind/Trusted Host/Origin/登录边界；公网访问必须同时启用
@@ -110,6 +126,7 @@ python3 scripts/doc_quality_checker.py
 - shadow 业务表时间、画像 `snapshot_date/captured_at` 与 Prompt state 分层新鲜度；
 - 只读业务事务、派生表写入范围和数据库资源占用；
 - NAS/R2 页面不泄露凭据、对象 key 或私密媒体；
+- 快照 `backed_up` 必须可追溯到 verified batch，缺失/未备份筛选与明细一致；
 - Cloudflare 入口未登录/已授权行为与本地应用登录均成立。
 
 历史功能演进已归档到
