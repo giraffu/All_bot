@@ -50,6 +50,14 @@ def test_ltx25_video_upscale_patcher_locks_source_prompt_seed_and_output():
             "video": "source-5s.mp4",
             "prompt": "preserve the same adult subject and motion",
             "seed": 20260831,
+            "resolution": "2k",
+            "_ltx25_mode": "ltx_hybrid",
+            "_ltx25_target_width": 1440,
+            "_ltx25_target_height": 2160,
+            "_ltx25_content_width": 576,
+            "_ltx25_content_height": 864,
+            "_ltx25_pad_x": 0,
+            "_ltx25_pad_y": 0,
         },
         execution_id="backend-upscale-1",
     )
@@ -64,6 +72,41 @@ def test_ltx25_video_upscale_patcher_locks_source_prompt_seed_and_output():
     )
     assert patched["5004:5606"]["inputs"]["strength_model"] == 1.0
     assert patched["5516:4984"]["inputs"]["sigmas"].count(",") == 8
+    assert patched["6004"]["inputs"]["sigmas"].count(",") == 3
+    assert patched["5516:4829"]["class_type"] == "LTXVLoopingSampler"
+    assert patched["5516:4829"]["inputs"]["temporal_tile_size"] == 208
+    assert patched["6005"]["inputs"]["temporal_overlap"] == 16
+    assert patched["6002"]["inputs"]["model"] == ["5004:5602", 0]
+    assert patched["7001"]["inputs"] == {
+        "image": ["5518:5538", 0],
+        "width": 1152,
+        "height": 1728,
+        "x": 0,
+        "y": 0,
+    }
+    assert patched["7000"]["inputs"]["images"] == ["7001", 0]
+    assert patched["7000"]["inputs"]["width"] == 1440
+    assert patched["7000"]["inputs"]["height"] == 2160
+
+
+def test_ltx25_video_upscale_patcher_bypasses_diffusion_for_near_target_video():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx25_video_upscale",
+        patcher.load_workflow("ltx25_video_upscale"),
+        {
+            "video": "source-1080p.mp4",
+            "length": 5,
+            "resolution": "2k",
+            "_ltx25_mode": "vsr_only",
+            "_ltx25_target_width": 2560,
+            "_ltx25_target_height": 1440,
+        },
+    )
+
+    assert patched["7000"]["inputs"]["images"] == ["5548:9006", 0]
+    assert patched["7000"]["inputs"]["width"] == 2560
+    assert patched["7000"]["inputs"]["height"] == 1440
 
 
 def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():

@@ -315,7 +315,7 @@ async def prepare_web_submission_request(
         if source_duration is None or source_duration <= 0:
             raise CoreDomainError("无法读取视频时长，请重新上传视频后再试。")
         if source_duration > LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
-            raise CoreDomainError("视频高清化当前只支持最长 20 秒的视频。")
+            raise CoreDomainError("视频高清化当前只支持最长 15 秒的视频。")
         inputs["duration"] = normalize_ltx25_video_upscale_source_duration(
             source_duration
         )

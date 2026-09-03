@@ -1,15 +1,15 @@
 bundles:
   ltx25_video_upscale_runtime:
-    version: 2026-08-31-int8-ic-v1
+    version: 2026-09-04-adaptive-hybrid-v2
     profiles:
       - ltx25_video_upscale
     source:
       node_id: huggingface-gated
       comfy_id: ltx25-video-upscale
       model_dir: /srv/allbot/model-registry
-      discovered_size_gb: 36.4
+      discovered_size_gb: 37.3
       import_status: gated_download_required
-      notes: LTX-2.5 distilled INT8 ConvRot plus the official 2x pixel-spatial IC-LoRA. Accept both Lightricks licenses and run scripts/prepare_ltx25_video_upscale_model_bundle.py with a read-only HF_TOKEN.
+      notes: Adaptive LTX-2.5 IC 8-step pass, official LTX-2.3 latent x2 3-step pass, and RTX VSR finishing. Accept the Lightricks licenses and run scripts/prepare_ltx25_video_upscale_model_bundle.py with a read-only HF_TOKEN.
     files:
       - relative_path: diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors
         sha256: c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334
@@ -26,6 +26,9 @@ bundles:
       - relative_path: loras/ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors
         sha256: 984851b769ea2bcb4c9e0a239a7676239e42c6a6001ddc69943b41ff0b283c1d
         size_bytes: 327322640
+      - relative_path: latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+        sha256: 5f416311fa8172b65af67530758964708d29a317b830d689a51143b7f91913ed
+        size_bytes: 995743560
 
   face_i2i_t2i_baseline:
     version: 2026-06-10

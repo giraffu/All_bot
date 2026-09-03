@@ -940,6 +940,7 @@ class ComfyAgent:
                 key,
                 path,
                 resolution=params.get("resolution"),
+                plan_output=params,
             )
         await process_agent_single_input_asset(
             params=params,

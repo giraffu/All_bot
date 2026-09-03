@@ -454,7 +454,7 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     assert "ltx_video/2026-06-10/manifest.json" not in profile.model_manifest_keys
     assert "ltx_t2v/2026-07-22/manifest.json" not in profile.model_manifest_keys
     assert (
-        "ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json"
+        "ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json"
         in profile.model_manifest_keys
     )
     assert "ltx_unified_runtime" in profile.model_bundles

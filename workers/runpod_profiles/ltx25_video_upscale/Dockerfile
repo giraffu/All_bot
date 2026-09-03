@@ -8,13 +8,18 @@ ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
 ARG COMFYUI_REF=8a33128f2f8c5585c57486c07de481241e70a39c
 ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
 ARG LTXVIDEO_REF=15d09abb5a187a8dcaea2fc31fe51ee96e6c9d0d
+ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
+ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
+ARG NVIDIA_VFX_WHEEL_URL=https://pypi.nvidia.com/nvidia-vfx/nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+ARG NVIDIA_VFX_WHEEL_SHA256=e51d9e6faa68466e45b83be7928321af4b0c561c7c5536a8cb2b7e6aba25f905
+ARG NVIDIA_VFX_WHEEL_SIZE=597321055
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_RUNTIME_PACKAGE_SHA256
 ARG ALLBOT_WORKFLOW_MAPPING_SHA256
 
-LABEL org.opencontainers.image.title="AllBot LTX-2.5 IC V2V 2x video upscaler"
-LABEL org.opencontainers.image.description="Model-free LTX-2.5 pixel-spatial IC-LoRA runtime"
+LABEL org.opencontainers.image.title="AllBot adaptive LTX-2.5 and RTX VSR video upscaler"
+LABEL org.opencontainers.image.description="Bounded LTX 8+3 step hybrid and VSR-only runtime"
 LABEL allbot.runpod.profile="ltx25_video_upscale"
 LABEL allbot.runpod.models="external-content-addressed-manifest"
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA
@@ -43,6 +48,7 @@ RUN set -euo pipefail; \
 
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite /opt/allbot/node_source/ComfyUI-VideoHelperSuite
 COPY workers/runpod_profiles/ltx_t2v/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
+COPY workers/runpod_profiles/minimax_h3/download_pinned_file.py /tmp/download_pinned_file.py
 RUN rm -rf /opt/allbot/runtime/runpod_worker
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
@@ -65,10 +71,20 @@ RUN set -euo pipefail; \
     git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
     test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
     python3 -m pip install -r "${ltxvideo_dir}/requirements.txt"; \
+    nvidia_vfx_wheel=/tmp/nvidia_vfx.whl; \
+    python3 /tmp/download_pinned_file.py --url "${NVIDIA_VFX_WHEEL_URL}" --output "$nvidia_vfx_wheel" --size "${NVIDIA_VFX_WHEEL_SIZE}" --sha256 "${NVIDIA_VFX_WHEEL_SHA256}" --parallelism 1; \
+    python3 -m pip install "$nvidia_vfx_wheel"; rm -f "$nvidia_vfx_wheel"; \
+    dasiwa_dir="${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; dasiwa_archive=/tmp/dasiwa.tar.gz; \
+    python3 -c 'import sys,urllib.request; urllib.request.urlretrieve(sys.argv[1],sys.argv[2])' "https://codeload.github.com/darksidewalker/ComfyUI-DaSiWa-Nodes/tar.gz/${DASIWA_REF}" "$dasiwa_archive"; \
+    echo "bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18  $dasiwa_archive" | sha256sum -c -; \
+    mkdir -p "$dasiwa_dir"; tar -xzf "$dasiwa_archive" --strip-components=1 -C "$dasiwa_dir"; \
+    python3 -m pip install -r "$dasiwa_dir/requirements.txt"; rm -f "$dasiwa_archive"; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt minio packaging; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.runtime_manifest import load_runtime_manifest; load_runtime_manifest()'; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel); assert "ltx25_video_upscale" in p'; \
-    COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${ltxvideo_dir}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util,os,sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; d=Path(os.environ["LTXVIDEO_NODE_DIR"]); s=importlib.util.spec_from_file_location("allbot_ltxvideo",d/"__init__.py",submodule_search_locations=[str(d)]); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); expected={"LTXICLoRALoaderModelOnly","LTXAddVideoICLoRAGuide"}; assert expected <= set(m.NODE_CLASS_MAPPINGS)'; \
+    COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${ltxvideo_dir}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util,os,sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; d=Path(os.environ["LTXVIDEO_NODE_DIR"]); s=importlib.util.spec_from_file_location("allbot_ltxvideo",d/"__init__.py",submodule_search_locations=[str(d)]); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); expected={"LTXICLoRALoaderModelOnly","LTXAddVideoICLoRAGuide","LTXVLoopingSampler"}; assert expected <= set(m.NODE_CLASS_MAPPINGS)'; \
+    grep -R -q 'DaSiWa_RTX_UpscalerRefiner' "$dasiwa_dir"; \
+    grep -q 'class LTXVLatentUpsampler' "${comfyui_dir}/comfy_extras/nodes_lt_upsampler.py"; \
     python3 -c 'import json; from pathlib import Path; p=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows/LTX 2.5 IC V2V Upscale.api.json"); data=json.loads(p.read_text()); assert data["5004:5606"]["inputs"]["strength_model"] == 1'; \
     if find "${comfyui_dir}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then echo "models must not be baked into image" >&2; exit 1; fi; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \

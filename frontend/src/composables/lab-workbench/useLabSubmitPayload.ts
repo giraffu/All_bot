@@ -11,10 +11,11 @@ import {
   type LtxVideoLoraItem,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
-import type {
-  LabModeConfig,
-  LabUploadSlotId,
-  MiniMaxH3AddonItem,
+import {
+  getLtx25VideoUpscaleResolutionOptions,
+  type LabModeConfig,
+  type LabUploadSlotId,
+  type MiniMaxH3AddonItem,
 } from '@/features/generation/labModeConfig'
 import { isScail2ModeId } from './modeHelpers'
 import type {
@@ -152,20 +153,20 @@ export function useLabSubmitPayload({
         return
       }
       const sourceDuration = video.durationSeconds
-      if (typeof sourceDuration === 'number' && sourceDuration > 20.25) {
+      if (typeof sourceDuration === 'number' && sourceDuration > 15.25) {
         message.warning(t('lab.workbench.validation.ltx25_video_too_long'))
         return
       }
       if (
         typeof video.width === 'number'
         && typeof video.height === 'number'
-        && Math.max(video.width, video.height) >= 2560
+        && getLtx25VideoUpscaleResolutionOptions(video.width, video.height).length === 0
       ) {
         message.warning(t('lab.workbench.validation.ltx25_video_already_2k'))
         return
       }
       const normalizedDuration = typeof sourceDuration === 'number'
-        ? Math.min(20, Math.max(1, Math.ceil(sourceDuration - 0.25)))
+        ? Math.min(15, Math.max(1, Math.ceil(sourceDuration - 0.25)))
         : 5
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: 'ltx25_video_upscale',

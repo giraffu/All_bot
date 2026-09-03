@@ -11,6 +11,7 @@ from src.domain_config.ltx25_video_upscale import (
     LTX25_VIDEO_UPSCALE_FPS,
     LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS,
     LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+    build_ltx25_video_upscale_plan,
     get_ltx25_video_upscale_frame_count,
     get_ltx25_video_upscale_model_input_dimensions,
     normalize_ltx25_video_upscale_source_duration,
@@ -105,8 +106,9 @@ def prepare_ltx25_video_upscale_input(
     local_path: str,
     *,
     resolution: object = None,
+    plan_output: dict[str, Any] | None = None,
 ) -> str:
-    """Create a 24fps/8n+1-frame, Div32 source for 2x LTX-2.5."""
+    """Create a 24fps/8n+1-frame source and expose its adaptive execution plan."""
     if param_key != "video":
         return local_path
     source = Path(local_path)
@@ -146,11 +148,41 @@ def prepare_ltx25_video_upscale_input(
             )
         normalized_duration = normalize_ltx25_video_upscale_source_duration(duration)
         normalized_resolution = normalize_ltx25_video_upscale_resolution(resolution)
-        model_width, model_height = get_ltx25_video_upscale_model_input_dimensions(
+        plan = build_ltx25_video_upscale_plan(
             video_stream.get("width"),
             video_stream.get("height"),
             normalized_resolution,
         )
+        if plan.mode == "ltx_hybrid":
+            model_width = int(plan.model_width or 0)
+            model_height = int(plan.model_height or 0)
+            scale_filter = (
+                f"scale='{model_width}:{model_height}':"
+                "force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"pad='{model_width}:{model_height}':"
+                "'(ow-iw)/2':'(oh-ih)/2':color=black"
+            )
+        else:
+            model_width = max(2, int(plan.source_width / 2) * 2)
+            model_height = max(2, int(plan.source_height / 2) * 2)
+            scale_filter = f"scale='{model_width}:{model_height}':flags=lanczos"
+        if plan_output is not None:
+            plan_output.update(
+                {
+                    "_ltx25_mode": plan.mode,
+                    "_ltx25_source_width": plan.source_width,
+                    "_ltx25_source_height": plan.source_height,
+                    "_ltx25_target_width": plan.target_width,
+                    "_ltx25_target_height": plan.target_height,
+                    "_ltx25_model_width": plan.model_width,
+                    "_ltx25_model_height": plan.model_height,
+                    "_ltx25_content_width": plan.content_width,
+                    "_ltx25_content_height": plan.content_height,
+                    "_ltx25_pad_x": plan.pad_x,
+                    "_ltx25_pad_y": plan.pad_y,
+                    "_ltx25_source_duration_seconds": duration,
+                }
+            )
         frame_count = get_ltx25_video_upscale_frame_count(normalized_duration)
         encoding_cutoff = normalized_duration + LTX25_UPSCALE_ENCODING_TAIL_SECONDS
         encoding_cutoff_text = f"{encoding_cutoff:.1f}"
@@ -186,8 +218,7 @@ def prepare_ltx25_video_upscale_input(
                 "-vf",
                 (
                     f"fps={LTX25_VIDEO_UPSCALE_FPS},"
-                    f"scale='{model_width}:{model_height}':"
-                    "flags=lanczos,setsar=1,"
+                    f"{scale_filter},setsar=1,"
                     f"tpad=stop_mode=clone:stop_duration={encoding_cutoff_text}"
                 ),
                 "-frames:v",

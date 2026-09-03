@@ -504,7 +504,7 @@ def patch_ltx25_video_upscale_workflow(
     execution_id: str | None = None,
     **_: Any,
 ) -> None:
-    """Lock the isolated LTX-2.5 IC V2V graph to its supported v1 contract."""
+    """Select the bounded VSR-only or 8+3-step LTX/VSR execution branch."""
     source_video = str(params.get("video") or "").strip()
     if not source_video:
         raise ValueError("LTX-2.5 视频高清化缺少输入视频。")
@@ -515,6 +515,21 @@ def patch_ltx25_video_upscale_workflow(
         params.get("negative_prompt") or LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT
     ).strip()
     seed = int(params.get("seed") or 1)
+    mode = str(params.get("_ltx25_mode") or "").strip()
+    if mode not in {"vsr_only", "ltx_hybrid"}:
+        raise ValueError("LTX-2.5 视频高清化缺少已探测的执行计划。")
+
+    def required_dimension(name: str, *, maximum: int = 2560) -> int:
+        try:
+            value = int(params.get(name))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("LTX-2.5 视频高清化执行计划尺寸无效。") from exc
+        if value <= 0 or value > maximum or value % 2:
+            raise ValueError("LTX-2.5 视频高清化执行计划尺寸无效。")
+        return value
+
+    target_width = required_dimension("_ltx25_target_width")
+    target_height = required_dimension("_ltx25_target_height")
 
     for node_id, input_name, value in (
         ("5001", "file", source_video),
@@ -522,6 +537,8 @@ def patch_ltx25_video_upscale_workflow(
         ("5509", "value", negative_prompt),
         ("5516:4832", "noise_seed", seed),
         ("5004:5606", "strength_model", 1.0),
+        ("7000", "width", target_width),
+        ("7000", "height", target_height),
     ):
         set_node_input(
             workflow,
@@ -529,6 +546,36 @@ def patch_ltx25_video_upscale_workflow(
             input_name=input_name,
             value=value,
         )
+
+    if mode == "vsr_only":
+        set_node_input(
+            workflow,
+            node_id="7000",
+            input_name="images",
+            value=["5548:9006", 0],
+        )
+    else:
+        content_width = required_dimension("_ltx25_content_width", maximum=864)
+        content_height = required_dimension("_ltx25_content_height", maximum=864)
+        try:
+            pad_x = int(params.get("_ltx25_pad_x") or 0)
+            pad_y = int(params.get("_ltx25_pad_y") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("LTX-2.5 视频高清化执行计划裁切无效。") from exc
+        if min(pad_x, pad_y) < 0:
+            raise ValueError("LTX-2.5 视频高清化执行计划裁切无效。")
+        for input_name, value in (
+            ("width", content_width * 2),
+            ("height", content_height * 2),
+            ("x", pad_x * 2),
+            ("y", pad_y * 2),
+        ):
+            set_node_input(
+                workflow,
+                node_id="7001",
+                input_name=input_name,
+                value=value,
+            )
 
     safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip(
         "_"

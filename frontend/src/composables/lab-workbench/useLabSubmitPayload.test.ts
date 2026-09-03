@@ -605,12 +605,12 @@ describe('useLabSubmitPayload', () => {
     }, 'lab.cards.ltx25_video_upscale_title')
   })
 
-  it('rejects LTX-2.5 source videos over the 20 second encoding tolerance', async () => {
+  it('rejects LTX-2.5 source videos over the 15 second encoding tolerance', async () => {
     const harness = createHarness('ltx25_video_upscale')
     harness.uploadedSlotAssets.value = {
       target_video: {
         ...slotAsset('too-long.mp4', 'video'),
-        durationSeconds: 20.251,
+        durationSeconds: 15.251,
       },
     }
 

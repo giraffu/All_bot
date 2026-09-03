@@ -145,23 +145,31 @@ export const LTX_VIDEO_DURATION_OPTIONS = [
 ] as const
 
 export const LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS = [
-  { value: '720p', label: '720p', longEdge: 1280, creditsPerSecond: 5 },
-  { value: '1080p', label: '1080p', longEdge: 1920, creditsPerSecond: 10 },
-  { value: '2k', label: '2K', longEdge: 2560, creditsPerSecond: 36 },
+  { value: '720p', label: '720p', shortEdge: 720, creditsPerSecond: 5 },
+  { value: '1080p', label: '1080p', shortEdge: 1080, creditsPerSecond: 10 },
+  { value: '2k', label: '2K', shortEdge: 1440, creditsPerSecond: 36 },
 ] as const
+
+const LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE = 2560
 
 export const getLtx25VideoUpscaleResolutionOptions = (
   sourceWidth: number | null | undefined,
   sourceHeight: number | null | undefined,
 ) => {
   if (!sourceWidth || !sourceHeight) return LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS
+  const sourceShortEdge = Math.min(sourceWidth, sourceHeight)
   const sourceLongEdge = Math.max(sourceWidth, sourceHeight)
-  return LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS.filter(option => option.longEdge > sourceLongEdge)
+  return LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS.filter(option => (
+    Math.min(
+      option.shortEdge / sourceShortEdge,
+      LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE / sourceLongEdge,
+    ) > 1
+  ))
 }
 
 export const normalizeLtx25VideoUpscaleDuration = (sourceDuration?: number | null) => (
   typeof sourceDuration === 'number' && Number.isFinite(sourceDuration)
-    ? Math.min(20, Math.max(1, Math.ceil(sourceDuration - 0.25)))
+    ? Math.min(15, Math.max(1, Math.ceil(sourceDuration - 0.25)))
     : 5
 )
 
