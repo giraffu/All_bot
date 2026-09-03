@@ -167,6 +167,12 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
         task_type="ltx_t2v",
         environment="cloud-test",
     )
+    ltx25 = RunPodPodRequestBuilder(
+        _settings_for_profile("ltx25_video_upscale")
+    ).create_pod_body(
+        task_type="ltx25_video_upscale",
+        environment="cloud-test",
+    )
     assert img2img["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
     assert img2img["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
     assert wan22["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
@@ -188,6 +194,7 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
         RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES
     )
     assert ltx_t2v["env"]["POOL_RUNTIME_PROFILE"] == "ltx_t2v"
+    assert ltx25["env"]["TASK_COMPLETION_TIMEOUT_SECONDS"] == "3600"
     assert (
         ltx_t2v["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
         == RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
