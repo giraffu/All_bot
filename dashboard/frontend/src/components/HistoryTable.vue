@@ -424,14 +424,16 @@ onBeforeUnmount(() => {
         <!-- Input -->
         <template v-else-if="column.key === 'input'">
           <div class="flex flex-wrap gap-2 py-1">
-             <template v-if="record.input_file">
+             <template v-if="buildHistoryInputMedia(record).length">
                 <MediaItem 
                   v-for="(media, index) in buildHistoryInputMedia(record)"
                   :key="`${media.file}-${index}`"
                   :file="media.file"
                   :url="media.url"
                   :preview-url="media.previewUrl"
+                  :resolve-url="media.resolveUrl"
                   :label="media.label"
+                  :kind="media.kind"
                   size="w-16 h-16"
                 />
              </template>

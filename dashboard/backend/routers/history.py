@@ -1,13 +1,18 @@
 import logging
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.backend.schemas import HistoryListResponse, UserHistoryListResponse
+from dashboard.backend.schemas import (
+    HistoryListResponse,
+    HistoryMediaUrlResponse,
+    UserHistoryListResponse,
+)
 from dashboard.backend.services.history_service import (
     HistoryCountCache,
     get_all_history_payload,
+    get_history_media_url,
     get_user_history_payload,
 )
 from src.database.core import get_db
@@ -43,6 +48,26 @@ async def get_all_history(
         count_cache=history_count_cache,
         logger_override=logger,
     )
+
+
+@router.get(
+    "/media/{task_id}",
+    response_model=HistoryMediaUrlResponse,
+    include_in_schema=False,
+)
+async def get_history_media(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve a history result lazily when an administrator opens a preview."""
+    url = await get_history_media_url(
+        task_id=task_id,
+        db=db,
+        logger_override=logger,
+    )
+    if not url:
+        raise HTTPException(status_code=404, detail="History media not found")
+    return {"url": url}
 
 
 @router.get("/{user_id}", response_model=UserHistoryListResponse)

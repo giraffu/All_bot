@@ -3,6 +3,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from config import MINIO_BUCKET, MINIO_TEMPLATE_BUCKET
@@ -77,7 +78,9 @@ def _build_history(**overrides):
     }
     base.update(overrides)
     obj = SimpleNamespace(**base)
-    obj.__table__ = SimpleNamespace(columns=[SimpleNamespace(name=k) for k in base.keys()])
+    obj.__table__ = SimpleNamespace(
+        columns=[SimpleNamespace(name=k) for k in base.keys()]
+    )
     return obj
 
 
@@ -104,6 +107,98 @@ def test_build_history_item_payload_generates_storage_urls():
         f"url://{MINIO_BUCKET}/user/input_thumb.webp"
     )
     assert result["output_file_url"] == "url://comfyui-temp/result.png"
+
+
+def test_build_history_item_payload_includes_h3_audio_and_extension_video_inputs():
+    storage_service = _FakeStorage()
+    history = _build_history(
+        type="minimax_h3_ref2v",
+        input_file="task-inputs/task-2/reference-a.png|task-inputs/task-2/reference-b.png",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 3,
+                "mode": "ref2v",
+                "main_model": "10eros_bf16",
+                "requested_duration": 10,
+                "resolution_preset": "preview",
+                "aspect_ratio": "9:16",
+                "lora_items": [],
+                "reference_audio": "task-inputs/task-2/voice.m4a",
+                "prev_task_id": "task-1",
+                "chain_task_ids": ["task-1"],
+            }
+        },
+    )
+
+    result = history_presenter.build_history_item_payload(
+        history=history,
+        storage_service=storage_service,
+    )
+
+    assert result["input_media"] == [
+        {
+            "file": "task-inputs/task-2/reference-a.png",
+            "url": "url://default/task-inputs/task-2/reference-a.png",
+            "preview_url": (
+                f"url://{MINIO_BUCKET}/task-inputs/task-2/reference-a_thumb.webp"
+            ),
+            "kind": "image",
+            "label": "参考图 1",
+        },
+        {
+            "file": "task-inputs/task-2/reference-b.png",
+            "url": "url://default/task-inputs/task-2/reference-b.png",
+            "preview_url": (
+                f"url://{MINIO_BUCKET}/task-inputs/task-2/reference-b_thumb.webp"
+            ),
+            "kind": "image",
+            "label": "参考图 2",
+        },
+        {
+            "file": "task-1.mp4",
+            "url": "",
+            "preview_url": "",
+            "resolve_url": "/api/history/media/task-1",
+            "kind": "video",
+            "label": "输入视频",
+        },
+        {
+            "file": "task-inputs/task-2/voice.m4a",
+            "url": "url://default/task-inputs/task-2/voice.m4a",
+            "preview_url": "",
+            "kind": "audio",
+            "label": "参考音频",
+        },
+    ]
+
+
+def test_build_history_item_payload_does_not_label_legacy_h3_audio_as_an_image():
+    history = _build_history(
+        type="minimax_h3_ref2v",
+        input_file="reference.png|voice.mp4",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 3,
+                "mode": "ref2v",
+                "main_model": "10eros_bf16",
+                "requested_duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "16:9",
+                "lora_items": [],
+                "reference_audio": "voice.mp4",
+            }
+        },
+    )
+
+    result = history_presenter.build_history_item_payload(
+        history=history,
+        storage_service=_FakeStorage(),
+    )
+
+    assert [(item["kind"], item["label"]) for item in result["input_media"]] == [
+        ("image", "参考图 1"),
+        ("audio", "参考音频"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -212,10 +307,12 @@ async def test_get_all_history_payload_caches_only_total_while_rows_stay_live():
     assert first_result["total"] == 10
     assert second_result["total"] == 10
     assert second_result["items"][0]["task_id"] == "task-second"
-    assert sum(
-        "count(history.id)" in str(stmt).lower()
-        for stmt in first_db.executed_stmts
-    ) == 1
+    assert (
+        sum(
+            "count(history.id)" in str(stmt).lower() for stmt in first_db.executed_stmts
+        )
+        == 1
+    )
     assert all(
         "count(history.id)" not in str(stmt).lower()
         for stmt in second_db.executed_stmts
@@ -534,9 +631,7 @@ async def test_get_all_history_payload_filters_by_exact_username_case_insensitiv
 async def test_get_all_history_payload_accepts_qqcc_source_filter():
     storage_service = _FakeStorage()
     history = _build_history(
-        extra_outputs={
-            "_qqcc_regenerate": {"kind": "quick_image", "mode": "face_swap"}
-        }
+        extra_outputs={"_qqcc_regenerate": {"kind": "quick_image", "mode": "face_swap"}}
     )
     db = _FakeHistoryDb(
         total=1,
@@ -572,9 +667,7 @@ async def test_get_all_history_payload_degrades_when_thumbnail_lookup_fails():
         resolve_media_urls_func=failing_media_resolver,
     )
 
-    assert result["items"][0]["output_file_url"] == (
-        "url://default/folder/output.mp4"
-    )
+    assert result["items"][0]["output_file_url"] == ("url://default/folder/output.mp4")
     assert result["items"][0].get("output_file_preview_url") is None
 
 
@@ -601,6 +694,81 @@ async def test_get_all_history_router_forwards_source_and_username_filters(monke
     assert result == {"items": [], "total": 0}
     assert captured["source"] == "bot:qqcc-private"
     assert captured["username"] == "gray"
+
+
+@pytest.mark.asyncio
+async def test_get_history_media_url_releases_db_before_resolving_media():
+    history = _build_history(
+        task_id="task-parent",
+        type="minimax_h3_ref2v",
+        output_file="task-results/backend-parent/primary.mp4",
+    )
+
+    class _ScalarRows:
+        def scalars(self):
+            return self
+
+        def first(self):
+            return history
+
+    class _MediaDb:
+        rollback_calls = 0
+
+        async def execute(self, _stmt):
+            return _ScalarRows()
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    db = _MediaDb()
+
+    async def resolve_media_urls(**kwargs):
+        assert db.rollback_calls == 1
+        assert kwargs["task_id"] == "task-parent"
+        assert kwargs["output_file"] == "task-results/backend-parent/primary.mp4"
+        return "url://r2/parent.mp4", "url://r2/parent_thumb.webp"
+
+    result = await history_service.get_history_media_url(
+        task_id="task-parent",
+        db=db,
+        resolve_media_urls_func=resolve_media_urls,
+        storage_service=_FakeStorage(),
+    )
+
+    assert result == "url://r2/parent.mp4"
+
+
+@pytest.mark.asyncio
+async def test_get_history_media_route_returns_a_signed_url_on_demand(monkeypatch):
+    async def fake_get_history_media_url(**_kwargs):
+        return "https://media.example/parent.mp4"
+
+    monkeypatch.setattr(
+        history_router,
+        "get_history_media_url",
+        fake_get_history_media_url,
+    )
+
+    response = await history_router.get_history_media("task-parent", db=object())
+
+    assert response == {"url": "https://media.example/parent.mp4"}
+
+
+@pytest.mark.asyncio
+async def test_get_history_media_route_returns_404_for_missing_history(monkeypatch):
+    async def fake_get_history_media_url(**_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        history_router,
+        "get_history_media_url",
+        fake_get_history_media_url,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await history_router.get_history_media("missing", db=object())
+
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

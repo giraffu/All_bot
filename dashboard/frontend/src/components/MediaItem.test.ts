@@ -1,8 +1,16 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import MediaItem from './MediaItem.vue'
+
+const clientMocks = vi.hoisted(() => ({
+  get: vi.fn(),
+}))
+
+vi.mock('../api/client', () => ({
+  api: { get: clientMocks.get },
+}))
 
 const ModalStub = defineComponent({
   name: 'AModal',
@@ -27,6 +35,8 @@ interface MediaProps {
   file: string
   url: string
   previewUrl?: string
+  kind?: 'image' | 'video' | 'audio'
+  resolveUrl?: string
 }
 
 const mountMedia = (props: MediaProps) =>
@@ -58,7 +68,7 @@ describe('MediaItem lightweight previews', () => {
     expect(wrapper.find('video').exists()).toBe(false)
 
     await wrapper.get('[data-testid="media-video-trigger"]').trigger('click')
-    await nextTick()
+    await flushPromises()
 
     wrapper.get('[data-testid="media-video-modal"]')
     expect(wrapper.get('video').attributes('src')).toBe(
@@ -80,5 +90,46 @@ describe('MediaItem lightweight previews', () => {
     expect(image.props('preview')).toEqual({
       src: 'https://media.example/original.png',
     })
+  })
+
+  it('loads reference audio only after the administrator opens its preview', async () => {
+    const wrapper = mountMedia({
+      file: 'voice.m4a',
+      url: 'https://media.example/voice.m4a',
+      kind: 'audio',
+    })
+
+    expect(wrapper.find('audio').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="media-audio-trigger"]').text()).toContain('Audio')
+
+    await wrapper.get('[data-testid="media-audio-trigger"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('audio').attributes('src')).toBe(
+      'https://media.example/voice.m4a',
+    )
+  })
+
+  it('resolves an extension input video with authenticated API only when opened', async () => {
+    clientMocks.get.mockResolvedValueOnce({
+      data: { url: 'https://signed.example/parent.mp4' },
+    })
+    const wrapper = mountMedia({
+      file: 'parent.mp4',
+      url: '',
+      kind: 'video',
+      resolveUrl: '/api/history/media/parent-task',
+    })
+
+    expect(clientMocks.get).not.toHaveBeenCalled()
+    expect(wrapper.find('video').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="media-video-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(clientMocks.get).toHaveBeenCalledWith('/api/history/media/parent-task')
+    expect(wrapper.get('video').attributes('src')).toBe(
+      'https://signed.example/parent.mp4',
+    )
   })
 })

@@ -173,6 +173,19 @@ class WorkerHistoryListResponse(BaseModel):
     data: List[WorkerHistoryItemResponse]
 
 
+class HistoryInputMediaResponse(BaseModel):
+    file: str
+    url: str
+    preview_url: str = ""
+    resolve_url: Optional[str] = None
+    kind: Literal["image", "video", "audio"]
+    label: str = ""
+
+
+class HistoryMediaUrlResponse(BaseModel):
+    url: str
+
+
 class HistoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -191,6 +204,7 @@ class HistoryResponse(BaseModel):
     worker_id: Optional[str] = None
     input_file_url: Optional[str] = None
     input_file_preview_url: Optional[str] = None
+    input_media: List[HistoryInputMediaResponse] = Field(default_factory=list)
     output_file_url: Optional[str] = None
     output_file_preview_url: Optional[str] = None
     source: str = "bot"
