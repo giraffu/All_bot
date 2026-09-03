@@ -56,7 +56,9 @@ profile、模型包和镜像入口分别是：
 - `scripts/prepare_ltx25_video_upscale_model_bundle.py`
 
 镜像不包含模型权重，只烘焙固定 revision 的 ComfyUI、ComfyUI-LTXVideo、Worker
-runtime 和 workflow。模型 manifest 固定为
+runtime、workflow、DaSiWa RTX VSR 节点及其 NVIDIA VFX 依赖。runtime-refresh
+必须继承已经完成节点导入验证的完整 digest，不能回退到不含 DaSiWa 的早期基础镜像。
+模型 manifest 固定为
 `ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json`，六个文件合计约
 40GB，全部按 size 和 SHA256 校验。基础 LTX-2.5、IC-LoRA 和 LTX-2.3 潜空间模型
 均需先在 Hugging Face 接受许可，再使用只读 `HF_TOKEN` 下载；token 不写入 Git、

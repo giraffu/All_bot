@@ -73,7 +73,7 @@ def test_ltx25_upscale_runtime_refresh_is_dependency_closed():
 
     assert (
         "ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:"
-        "a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2"
+        "33a20b8ffc66d42db3b0c737ba2c7bf678518f78acffe38f55205102f986011c"
     ) in dockerfile
     assert "RUNTIME_REQUIREMENTS_SHA256" in dockerfile
     assert (
