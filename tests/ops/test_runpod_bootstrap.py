@@ -30,6 +30,9 @@ LAN_ALL_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/all/Dockerfile")
 LAN_ALL_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/all/Dockerfile.runtime-refresh"
 )
+LAN_WAN22_RUNTIME_REFRESH_DOCKERFILE = Path(
+    "workers/runpod_profiles/wan22_aio_video/Dockerfile.lan-runtime-refresh"
+)
 SCAIL2_FLEX_DOCKERFILE = Path("workers/runpod_profiles/scail2_flex/Dockerfile")
 MODULE_CATALOG = Path("deploy/module-catalog.json")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
@@ -512,12 +515,12 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert (
         "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
         "allbot-gpu-lan-all@sha256:"
-        "3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30"
+        "9dafc721948fa5158ca0121b1949ecdd82d1802310e670ebf6947f8716fd77f0"
         in dockerfile
     )
     assert (
         'allbot.lan.runtime-refresh-base="sha256:'
-        '3b0310cd92333ef78139fc8c776cb0993dc6b0b7746336ee55c81a92a39f1f30"'
+        '9dafc721948fa5158ca0121b1949ecdd82d1802310e670ebf6947f8716fd77f0"'
         in dockerfile
     )
     assert "ghcr.io/" not in dockerfile
@@ -539,6 +542,32 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
     assert runtime_refresh["dockerfile"] == (
         "workers/runpod_profiles/all/Dockerfile.runtime-refresh"
     )
+    assert runtime_refresh["external_base_arg"] == "RUNTIME_BASE_IMAGE"
+
+
+def test_lan_wan22_runtime_refresh_uses_the_live_lan_base_only():
+    dockerfile = LAN_WAN22_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
+    catalog = json.loads(MODULE_CATALOG.read_text(encoding="utf-8"))["modules"]
+
+    assert (
+        "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
+        "comfy-runpod-wan22-aio-video@sha256:"
+        "8e4cc59400caea36e1fcf25f6fc99fafe64141ef8e73ed89614db659fdd251f4"
+        in dockerfile
+    )
+    assert "ghcr.io/" not in dockerfile
+    assert "docker.io/" not in dockerfile
+    assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
+    assert "COPY workers/comfy_agent " in dockerfile
+    assert "COPY src " in dockerfile
+    assert "COPY shared " in dockerfile
+    assert "load_runtime_manifest();" in dockerfile
+    assert "apt-get" not in dockerfile
+    assert "pip install" not in dockerfile
+
+    runtime_refresh = catalog["lan_wan22_video_runtime_refresh"]
+    assert runtime_refresh["image"] == "comfy-runpod-wan22-aio-video"
+    assert runtime_refresh["dockerfile"] == str(LAN_WAN22_RUNTIME_REFRESH_DOCKERFILE)
     assert runtime_refresh["external_base_arg"] == "RUNTIME_BASE_IMAGE"
 
 
