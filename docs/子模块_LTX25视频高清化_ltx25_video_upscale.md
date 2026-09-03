@@ -9,8 +9,9 @@
 2K 最大档实测需要 96 GB 显存节点，不能回落到 32 GB RTX 5090；价格除约
 1.78 倍的像素负载外，还覆盖大显存节点约 2 倍的小时成本和失败重试余量。
 RunPod profile 必须投影 `TASK_COMPLETION_TIMEOUT_SECONDS=3600` 和
-`COMFY_EXTRA_ARGS=--lowvram`；20 秒 2K 工作流的实测推理会超过通用 Worker 的
-1800 秒默认值，普通显存模式还会在 96 GB 节点模型加载阶段耗尽显存。
+`COMFY_EXTRA_ARGS=--reserve-vram 8`；20 秒 2K 工作流的实测推理会超过通用
+Worker 的 1800 秒默认值，未预留显存时还会在 96 GB 节点模型加载阶段把剩余显存
+压到不足一次 4.28 GiB 分配。动态显存模式下 `--lowvram` 不生效，不能作为替代。
 它的主要定位是对本项目当前 H3 beta4 生成的已定稿成片做第二次 IC V2V，
 不依赖或回退到早期 beta2 模型与工作流。
 它是独立 GPU profile，不替换 H3、`ltx_video`、SCAIL-2 或传统超分任务。

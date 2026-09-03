@@ -202,6 +202,7 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     assert (
         ltx25["env"]["COMFY_EXTRA_ARGS"]
         == RUNPOD_LTX25_VIDEO_UPSCALE_COMFY_EXTRA_ARGS
+        == "--reserve-vram 8"
     )
     assert (
         ltx_t2v["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
