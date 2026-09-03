@@ -1,13 +1,12 @@
 ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim@sha256:4172d960fe57c630d33f6bd8891aa7ecf55e7768559565c6b74e8d57e44512a9
-ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:5f959c7936e6ce271cbbb0d595993b48c4e408d6aded9476de949493d76400b4
-
-FROM ${NODE_SOURCE_IMAGE} AS node_source
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
 ARG COMFYUI_REF=8a33128f2f8c5585c57486c07de481241e70a39c
 ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
 ARG LTXVIDEO_REF=15d09abb5a187a8dcaea2fc31fe51ee96e6c9d0d
+ARG VHS_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+ARG VHS_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
 ARG NVIDIA_VFX_WHEEL_URL=https://pypi.nvidia.com/nvidia-vfx/nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
@@ -46,7 +45,6 @@ RUN set -euo pipefail; \
     mkdir -p "${comfyui_dir}/custom_nodes"; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir
 
-COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite /opt/allbot/node_source/ComfyUI-VideoHelperSuite
 COPY workers/runpod_profiles/ltx_t2v/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
 COPY workers/runpod_profiles/minimax_h3/download_pinned_file.py /tmp/download_pinned_file.py
 RUN rm -rf /opt/allbot/runtime/runpod_worker
@@ -62,7 +60,13 @@ RUN set -euo pipefail; \
     test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256"; \
     test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
-    cp -a /opt/allbot/node_source/ComfyUI-VideoHelperSuite "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
+    vhs_dir="${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
+    mkdir -p "${vhs_dir}"; git -C "${vhs_dir}" init; \
+    git -C "${vhs_dir}" remote add origin "${VHS_REPO}"; \
+    git -C "${vhs_dir}" fetch --depth 1 origin "${VHS_REF}"; \
+    git -C "${vhs_dir}" checkout --force FETCH_HEAD; \
+    test "$(git -C "${vhs_dir}" rev-parse HEAD)" = "${VHS_REF}"; \
+    python3 -m pip install -r "${vhs_dir}/requirements.txt"; \
     cp -a /opt/allbot/allbot_ltx_min_nodes "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"; \
     ltxvideo_dir="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
     mkdir -p "${ltxvideo_dir}"; git -C "${ltxvideo_dir}" init; \
