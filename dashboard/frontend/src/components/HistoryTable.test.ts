@@ -11,7 +11,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('../api/api', () => apiMocks)
 
-describe('HistoryTable source filters', () => {
+describe('HistoryTable filters', () => {
   beforeEach(() => {
     apiMocks.fetchHistoryAll.mockReset()
     apiMocks.fetchHistoryAll.mockResolvedValue({ items: [], total: 0 })
@@ -116,6 +116,70 @@ describe('HistoryTable source filters', () => {
       'bot:qqcc',
       null,
       { signal: expect.any(AbortSignal) },
+    )
+  })
+
+  it('shows focused H3 reference and chain filters and keeps them server-side', async () => {
+    const SelectStub = defineComponent({
+      name: 'ASelect',
+      inheritAttrs: false,
+      props: {
+        value: { type: [String, Array], default: null },
+      },
+      emits: ['update:value', 'change'],
+      template: '<select v-bind="$attrs" />',
+    })
+    const wrapper = shallowMount(HistoryTable, {
+      global: { components: { ASelect: SelectStub } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="history-h3-facet-filter"]').exists()).toBe(false)
+
+    const typeSelect = wrapper.get('[data-testid="history-type-filter"]')
+      .getComponent(SelectStub)
+    typeSelect.vm.$emit('update:value', ['minimax_h3_ref2v'])
+    typeSelect.vm.$emit('change')
+    await flushPromises()
+
+    const h3FacetSelect = wrapper.get('[data-testid="history-h3-facet-filter"]')
+      .getComponent(SelectStub)
+    h3FacetSelect.vm.$emit('update:value', 'input:audio')
+    h3FacetSelect.vm.$emit('change')
+    await flushPromises()
+
+    expect(apiMocks.fetchHistoryAll).toHaveBeenLastCalledWith(
+      1,
+      20,
+      'minimax_h3_ref2v',
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        signal: expect.any(AbortSignal),
+        h3InputKind: 'audio',
+      },
+    )
+
+    h3FacetSelect.vm.$emit('update:value', 'chain:stitched')
+    h3FacetSelect.vm.$emit('change')
+    await flushPromises()
+
+    expect(apiMocks.fetchHistoryAll).toHaveBeenLastCalledWith(
+      1,
+      20,
+      'minimax_h3_ref2v',
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        signal: expect.any(AbortSignal),
+        h3ChainKind: 'stitched',
+      },
     )
   })
 

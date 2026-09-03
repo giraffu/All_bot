@@ -4,19 +4,37 @@ import time
 from collections.abc import Awaitable, Callable
 
 from fastapi import HTTPException
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 
 from dashboard.backend.presenters.history_presenter import (
     build_history_item_payload,
     build_history_output_file_url,
 )
 from src.database.models import History, PrivateBotTaskSubmission, User, WorkerLog
+from src.domain_config.minimax_h3 import MINIMAX_H3_I2V, MINIMAX_H3_REF2V
+from src.services.minimax_h3_history_context_service import (
+    MINIMAX_H3_HISTORY_CONTEXT_KEY,
+)
 from src.services.qqcc_regenerate_metadata import QQCC_REGENERATE_CONTEXT_KEY
 from src.services.storage import storage
 from src.web_api.presenters.media_presenter import resolve_history_media_urls
 
 logger = logging.getLogger("dashboard.history")
 HistoryCountCacheKey = tuple[object, ...]
+_H3_INPUT_KINDS = frozenset({"image", "audio", "video"})
+_H3_CHAIN_KINDS = frozenset({"segment", "stitched"})
+_MINIMAX_H3_STITCH_RESULT_KEY = "_minimax_h3_chain_stitch"
+_IMAGE_INPUT_SUFFIXES = (
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".heic",
+    ".heif",
+    ".avif",
+)
 
 
 async def get_history_media_url(
@@ -141,11 +159,33 @@ def _history_count_cache_key(
     worker_id: str | None,
     source: str | None,
     username: str | None,
+    h3_input_kind: str | None = None,
+    h3_chain_kind: str | None = None,
 ) -> HistoryCountCacheKey:
     type_key = tuple(sorted(type.split(","))) if type and type != "all" else ()
     worker_key = worker_id if worker_id and worker_id != "all" else ""
     username_key = (username or "").strip().lstrip("@").lower()
-    return (type_key, rating, is_public, worker_key, source or "", username_key)
+    return (
+        type_key,
+        rating,
+        is_public,
+        worker_key,
+        source or "",
+        username_key,
+        h3_input_kind or "",
+        h3_chain_kind or "",
+    )
+
+
+def _json_text_value(key: str, field: str | None = None):
+    value = History.extra_outputs[key]
+    if field is not None:
+        value = value[field]
+    return value.as_string()
+
+
+def _has_json_text_value(key: str, field: str | None = None):
+    return func.coalesce(_json_text_value(key, field), "") != ""
 
 
 def _build_history_filters(
@@ -156,10 +196,43 @@ def _build_history_filters(
     worker_id: str | None,
     source: str | None,
     username: str | None,
+    h3_input_kind: str | None = None,
+    h3_chain_kind: str | None = None,
 ) -> list:
+    if h3_input_kind not in _H3_INPUT_KINDS | {None}:
+        raise ValueError(f"Unsupported H3 input kind: {h3_input_kind}")
+    if h3_chain_kind not in _H3_CHAIN_KINDS | {None}:
+        raise ValueError(f"Unsupported H3 chain kind: {h3_chain_kind}")
+
     filters = []
-    if type and type != "all":
+    if h3_chain_kind == "stitched":
+        filters.extend(
+            (
+                History.type == MINIMAX_H3_I2V,
+                _has_json_text_value(_MINIMAX_H3_STITCH_RESULT_KEY),
+            )
+        )
+    elif type and type != "all":
         filters.append(History.type.in_(type.split(",")))
+    if h3_input_kind or h3_chain_kind == "segment":
+        filters.append(History.type == MINIMAX_H3_REF2V)
+    if h3_input_kind == "image":
+        input_file = func.lower(func.coalesce(History.input_file, ""))
+        filters.append(
+            or_(*(input_file.like(f"%{suffix}%") for suffix in _IMAGE_INPUT_SUFFIXES))
+        )
+    elif h3_input_kind == "audio":
+        filters.append(
+            _has_json_text_value(MINIMAX_H3_HISTORY_CONTEXT_KEY, "reference_audio")
+        )
+    elif h3_input_kind == "video":
+        filters.append(
+            _has_json_text_value(MINIMAX_H3_HISTORY_CONTEXT_KEY, "prev_task_id")
+        )
+    if h3_chain_kind == "segment":
+        filters.append(
+            _has_json_text_value(MINIMAX_H3_HISTORY_CONTEXT_KEY, "prev_task_id")
+        )
     if rating is not None:
         filters.append(History.rating == rating)
     if is_public is not None:
@@ -234,6 +307,8 @@ async def refresh_default_history_count_cache(
         worker_id=None,
         source=None,
         username=None,
+        h3_input_kind=None,
+        h3_chain_kind=None,
     )
     async with session_factory() as db:
         total = await count_cache.refresh(
@@ -302,6 +377,8 @@ async def get_all_history_payload(
     worker_id: str | None = None,
     source: str | None = None,
     username: str | None = None,
+    h3_input_kind: str | None = None,
+    h3_chain_kind: str | None = None,
     count_cache: HistoryCountCache | None = None,
     storage_service=None,
     resolve_media_urls_func=resolve_history_media_urls,
@@ -345,6 +422,8 @@ async def get_all_history_payload(
             worker_id=worker_id,
             source=source,
             username=username,
+            h3_input_kind=h3_input_kind,
+            h3_chain_kind=h3_chain_kind,
         )
         if count_cache is None:
             total = await _load_history_count(db=db, filters=filters)
@@ -356,6 +435,8 @@ async def get_all_history_payload(
                 worker_id=worker_id,
                 source=source,
                 username=username,
+                h3_input_kind=h3_input_kind,
+                h3_chain_kind=h3_chain_kind,
             )
             total = await count_cache.get_or_load(
                 cache_key,

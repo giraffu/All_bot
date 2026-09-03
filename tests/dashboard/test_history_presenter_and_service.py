@@ -374,6 +374,35 @@ async def test_history_count_cache_keeps_username_totals_separate():
 
 
 @pytest.mark.asyncio
+async def test_history_count_cache_keeps_h3_facet_totals_separate():
+    count_cache = history_service.HistoryCountCache(ttl_seconds=300)
+    segment_db = _FakeHistoryDb(total=5, rows=[])
+    stitched_db = _FakeHistoryDb(total=2, rows=[])
+
+    segment_result = await history_service.get_all_history_payload(
+        db=segment_db,
+        type="minimax_h3_ref2v",
+        h3_chain_kind="segment",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+    stitched_result = await history_service.get_all_history_payload(
+        db=stitched_db,
+        type="minimax_h3_ref2v",
+        h3_chain_kind="stitched",
+        count_cache=count_cache,
+        storage_service=_FakeStorage(),
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+    )
+
+    assert segment_result["total"] == 5
+    assert stitched_result["total"] == 2
+    assert segment_db.execute_calls == 2
+    assert stitched_db.execute_calls == 2
+
+
+@pytest.mark.asyncio
 async def test_history_count_cache_single_flights_concurrent_loads():
     count_cache = history_service.HistoryCountCache(ttl_seconds=300)
     load_started = asyncio.Event()
@@ -628,6 +657,116 @@ async def test_get_all_history_payload_filters_by_exact_username_case_insensitiv
 
 
 @pytest.mark.asyncio
+async def test_get_all_history_payload_filters_h3_reference_inputs_and_chain_results():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        for model in (User, History, WorkerLog):
+            await connection.run_sync(model.__table__.create)
+        await connection.exec_driver_sql(
+            "CREATE TABLE private_bot_task_submissions "
+            "(registry_task_id VARCHAR(64), client_type VARCHAR(128))"
+        )
+
+    def h3_context(**overrides):
+        context = {
+            "version": 3,
+            "mode": "ref2v",
+            "main_model": "10eros_bf16",
+            "requested_duration": 10,
+            "resolution_preset": "preview",
+            "aspect_ratio": "9:16",
+            "lora_items": [],
+        }
+        context.update(overrides)
+        return {"_minimax_h3_context": context}
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(User(id=123, username="tester", full_name="Tester"))
+        db.add_all(
+            [
+                History(
+                    user_id=123,
+                    task_id="image-reference",
+                    type="minimax_h3_ref2v",
+                    input_file="inputs/reference.webp",
+                    output_file="image-reference.mp4",
+                    extra_outputs=h3_context(),
+                    source="web",
+                ),
+                History(
+                    user_id=123,
+                    task_id="audio-reference",
+                    type="minimax_h3_ref2v",
+                    input_file="inputs/reference.png|inputs/voice.m4a",
+                    output_file="audio-reference.mp4",
+                    extra_outputs=h3_context(reference_audio="inputs/voice.m4a"),
+                    source="web",
+                ),
+                History(
+                    user_id=123,
+                    task_id="extension-segment",
+                    type="minimax_h3_ref2v",
+                    input_file="inputs/reference.jpg",
+                    output_file="extension-segment.mp4",
+                    extra_outputs=h3_context(
+                        prev_task_id="image-reference",
+                        chain_task_ids=["image-reference"],
+                    ),
+                    source="web",
+                ),
+                History(
+                    user_id=123,
+                    task_id="stitched-result",
+                    type="minimax_h3_i2v",
+                    output_file="stitched-result.mp4",
+                    extra_outputs={
+                        "_minimax_h3_chain_stitch": {
+                            "chain_task_ids": [
+                                "image-reference",
+                                "extension-segment",
+                            ],
+                            "segment_count": 2,
+                        }
+                    },
+                    source="web",
+                ),
+            ]
+        )
+        await db.commit()
+
+        async def matching_task_ids(**filters):
+            result = await history_service.get_all_history_payload(
+                db=db,
+                type="minimax_h3_ref2v",
+                storage_service=_FakeStorage(),
+                resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
+                **filters,
+            )
+            return {item["task_id"] for item in result["items"]}
+
+        assert await matching_task_ids(h3_input_kind="image") == {
+            "image-reference",
+            "audio-reference",
+            "extension-segment",
+        }
+        assert await matching_task_ids(h3_input_kind="audio") == {
+            "audio-reference"
+        }
+        assert await matching_task_ids(h3_input_kind="video") == {
+            "extension-segment"
+        }
+        assert await matching_task_ids(h3_chain_kind="segment") == {
+            "extension-segment"
+        }
+        assert await matching_task_ids(h3_chain_kind="stitched") == {
+            "stitched-result"
+        }
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_get_all_history_payload_accepts_qqcc_source_filter():
     storage_service = _FakeStorage()
     history = _build_history(
@@ -672,7 +811,9 @@ async def test_get_all_history_payload_degrades_when_thumbnail_lookup_fails():
 
 
 @pytest.mark.asyncio
-async def test_get_all_history_router_forwards_source_and_username_filters(monkeypatch):
+async def test_get_all_history_router_forwards_source_username_and_h3_filters(
+    monkeypatch,
+):
     captured = {}
 
     async def fake_get_all_history_payload(**kwargs):
@@ -688,12 +829,16 @@ async def test_get_all_history_router_forwards_source_and_username_filters(monke
     result = await history_router.get_all_history(
         source="bot:qqcc-private",
         username="gray",
+        h3_input_kind="video",
+        h3_chain_kind="segment",
         db=object(),
     )
 
     assert result == {"items": [], "total": 0}
     assert captured["source"] == "bot:qqcc-private"
     assert captured["username"] == "gray"
+    assert captured["h3_input_kind"] == "video"
+    assert captured["h3_chain_kind"] == "segment"
 
 
 @pytest.mark.asyncio
