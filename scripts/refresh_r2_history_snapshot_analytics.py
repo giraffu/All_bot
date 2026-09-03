@@ -385,14 +385,28 @@ async def refresh_state(
         _state_batches, state_path, int(row["last_verified_batch"])
     )
     updated = 0
-    for batch_number in [*verified, *active]:
+    last_verified = int(row["last_verified_batch"])
+    for batch_number in verified:
         updated += await _apply_batch(
             connection,
             snapshot_id=snapshot_id,
             state_path=state_path,
             batch_number=batch_number,
         )
-    last_verified = max(verified, default=int(row["last_verified_batch"]))
+        last_verified = batch_number
+        await connection.execute(
+            """update analytics_snapshot_backup_sets
+               set last_verified_batch=$2,refreshed_at=now() where snapshot_id=$1""",
+            snapshot_id,
+            last_verified,
+        )
+    for batch_number in active:
+        updated += await _apply_batch(
+            connection,
+            snapshot_id=snapshot_id,
+            state_path=state_path,
+            batch_number=batch_number,
+        )
     counts_rows = await connection.fetch(
         """select backup_status,count(*)::bigint count
            from analytics_snapshot_backup_objects where snapshot_id=$1 group by 1""",
