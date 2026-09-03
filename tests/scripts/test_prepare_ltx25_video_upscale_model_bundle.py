@@ -55,6 +55,10 @@ def test_ltx25_upscale_image_is_model_free_and_runtime_pinned():
     assert "test -x /opt/allbot/runpod_bootstrap_from_git.sh" in dockerfile
     assert "2984ec4c4b93292421888f38db74a5e8802a8ff8" in dockerfile
     assert "NODE_SOURCE_IMAGE" not in dockerfile
+    assert (
+        "nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64."
+        "manylinux_2_28_x86_64.whl"
+    ) in dockerfile
     assert dockerfile.index(
         "rm -rf /opt/allbot/runtime/runpod_worker"
     ) < dockerfile.index(

@@ -75,7 +75,7 @@ RUN set -euo pipefail; \
     git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
     test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
     python3 -m pip install -r "${ltxvideo_dir}/requirements.txt"; \
-    nvidia_vfx_wheel=/tmp/nvidia_vfx.whl; \
+    nvidia_vfx_wheel=/tmp/nvidia_vfx-0.1.0.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; \
     python3 /tmp/download_pinned_file.py --url "${NVIDIA_VFX_WHEEL_URL}" --output "$nvidia_vfx_wheel" --size "${NVIDIA_VFX_WHEEL_SIZE}" --sha256 "${NVIDIA_VFX_WHEEL_SHA256}" --parallelism 1; \
     python3 -m pip install "$nvidia_vfx_wheel"; rm -f "$nvidia_vfx_wheel"; \
     dasiwa_dir="${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; dasiwa_archive=/tmp/dasiwa.tar.gz; \
