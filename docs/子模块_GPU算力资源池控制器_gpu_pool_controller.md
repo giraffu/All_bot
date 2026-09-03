@@ -106,6 +106,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - MiniMax H3 的 Worker-only 修订使用 `minimax_h3_runtime_refresh`；它以当前已验收
   H3 精确镜像为基础，只替换 canonical Worker/runtime。模型、ComfyUI、节点和
   Triton INT8 补丁继续继承该精确基础，不得为纯运行时代码变更重做完整模型镜像。
+- LAN 的 Wan22 / image_to_video Worker-only 修订使用
+  `lan_wan22_video_runtime_refresh`，直接以 LAN registry 中当前运行的精确 digest
+  为基础并把结果推回同一 LAN registry；不得为 LAN rollout 先绕行 GHCR。
 - profile 必须在镜像构建时安装 baked worker 的 `requirements.txt`；bootstrap
   可以复核已满足依赖，但生产重启不能把 PyPI 下载放在健康恢复关键路径。
 - 单槽 release 可把精确 digest 从公网仓库切到受信 LAN registry
