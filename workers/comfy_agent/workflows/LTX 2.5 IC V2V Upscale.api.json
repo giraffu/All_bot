@@ -667,7 +667,7 @@
         0
       ],
       "latents": ["9002:5012", 2],
-      "temporal_tile_size": 208,
+      "temporal_tile_size": 1000,
       "temporal_overlap": 16,
       "guiding_strength": 1.0,
       "adain_factor": 0.1,
@@ -811,7 +811,7 @@
       "sigmas": ["6004", 0],
       "guider": ["6002", 0],
       "latents": ["6001", 0],
-      "temporal_tile_size": 208,
+      "temporal_tile_size": 1000,
       "temporal_overlap": 16,
       "guiding_strength": 1.0,
       "adain_factor": 0.1,

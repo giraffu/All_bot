@@ -22,6 +22,13 @@ LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES = {
 LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE = 2560
 LTX25_VIDEO_UPSCALE_HYBRID_SCALE_THRESHOLD = 2.0
 LTX25_VIDEO_UPSCALE_MODEL_MAX_LONG_EDGE = 864
+LTX25_VIDEO_UPSCALE_VSR_MAX_SCALE = 4.0
+LTX25_VIDEO_UPSCALE_TEMPORAL_COMPRESSION = 8
+LTX25_VIDEO_UPSCALE_IC_GUIDE_TEMPORAL_MULTIPLIER = 2
+# Keep one IC-LoRA sampling window within the 32 GB canary envelope. The
+# budget is expressed as combined latent frames * model-input pixels and is
+# calibrated to 15 seconds at a 384x224 model canvas.
+LTX25_VIDEO_UPSCALE_MODEL_SPATIOTEMPORAL_BUDGET = 92 * 384 * 224
 LTX25_VIDEO_UPSCALE_CREDITS_PER_SECOND = {
     "720p": 5,
     "1080p": 10,
@@ -172,8 +179,14 @@ def get_ltx25_video_upscale_model_input_dimensions(
     source_width: object,
     source_height: object,
     resolution: object,
+    duration: object = LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
 ) -> tuple[int, int]:
-    plan = build_ltx25_video_upscale_plan(source_width, source_height, resolution)
+    plan = build_ltx25_video_upscale_plan(
+        source_width,
+        source_height,
+        resolution,
+        duration=duration,
+    )
     if plan.model_width is None or plan.model_height is None:
         return plan.target_width, plan.target_height
     return plan.model_width, plan.model_height
@@ -238,32 +251,64 @@ def _hybrid_model_canvas(
     height: int,
     target_width: int,
     target_height: int,
+    duration: int,
 ) -> tuple[int, int]:
     source_long = max(width, height)
+    source_short = min(width, height)
     target_long = max(target_width, target_height)
-    lower_long = target_long / 4
-    upper_long = min(
+    lower_long = math.ceil(
+        target_long / (2 * LTX25_VIDEO_UPSCALE_VSR_MAX_SCALE) / 32
+    ) * 32
+    upper_long = int(min(
         LTX25_VIDEO_UPSCALE_MODEL_MAX_LONG_EDGE,
         target_long / 2,
-    )
+    ) / 32) * 32
     desired_long = min(upper_long, max(lower_long, source_long))
-    canvas_long = max(32, int(round(desired_long / 32)) * 32)
-    if canvas_long > upper_long:
-        canvas_long = max(32, int(upper_long / 32) * 32)
-    desired_short = canvas_long * min(width, height) / source_long
-    canvas_short = max(32, int(round(desired_short / 32)) * 32)
-    if width >= height:
-        return canvas_long, canvas_short
-    return canvas_short, canvas_long
+    start_long = min(
+        upper_long,
+        max(lower_long, int(round(desired_long / 32)) * 32),
+    )
+    frame_count = get_ltx25_video_upscale_frame_count(duration)
+    latent_frames = (
+        (frame_count - 1) // LTX25_VIDEO_UPSCALE_TEMPORAL_COMPRESSION
+    ) + 1
+    combined_latent_frames = (
+        latent_frames * LTX25_VIDEO_UPSCALE_IC_GUIDE_TEMPORAL_MULTIPLIER
+    )
+    max_canvas_area = (
+        LTX25_VIDEO_UPSCALE_MODEL_SPATIOTEMPORAL_BUDGET
+        // combined_latent_frames
+    )
+
+    for canvas_long in range(start_long, lower_long - 1, -32):
+        desired_short = canvas_long * source_short / source_long
+        canvas_short = max(32, int(round(desired_short / 32)) * 32)
+        if canvas_long * canvas_short > max_canvas_area:
+            continue
+        if width >= height:
+            model_width, model_height = canvas_long, canvas_short
+        else:
+            model_width, model_height = canvas_short, canvas_long
+        vsr_scale = max(
+            target_width / (model_width * 2),
+            target_height / (model_height * 2),
+        )
+        if vsr_scale <= LTX25_VIDEO_UPSCALE_VSR_MAX_SCALE:
+            return model_width, model_height
+
+    raise ValueError("该视频宽高比无法在当前 15 秒显存预算内安全高清化。")
 
 
 def build_ltx25_video_upscale_plan(
     source_width: object,
     source_height: object,
     resolution: object,
+    *,
+    duration: object = LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
 ) -> Ltx25VideoUpscalePlan:
     width, height = _positive_dimensions(source_width, source_height)
     normalized = normalize_ltx25_video_upscale_resolution(resolution)
+    normalized_duration = normalize_ltx25_video_upscale_duration(duration)
     target_width, target_height = get_ltx25_video_upscale_target_dimensions(
         width, height, normalized
     )
@@ -287,6 +332,7 @@ def build_ltx25_video_upscale_plan(
         height,
         target_width,
         target_height,
+        normalized_duration,
     )
     latent_width = model_width * 2
     latent_height = model_height * 2
