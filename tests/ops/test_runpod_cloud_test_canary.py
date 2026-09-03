@@ -23,6 +23,7 @@ def _config(
     task_type: str = "img2img_lora",
     download_results: bool = True,
     timeout: float = 1.0,
+    ltx25_resolution: str = "1080p",
 ) -> RunPodCloudTestCanaryConfig:
     return RunPodCloudTestCanaryConfig(
         task_type=task_type,
@@ -37,6 +38,7 @@ def _config(
         task_poll_interval_seconds=0.0,
         prompt="cloud prompt",
         negative_prompt="cloud negative",
+        ltx25_resolution=ltx25_resolution,
     )
 
 
@@ -123,7 +125,11 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     assert h3_cases[3]["payload"]["inputs"]["main_model"] == "10eros_int8"
 
     upscale_cases = RunPodCloudTestCanaryCaseBuilder(
-        _config(tmp_path, task_type="ltx25_video_upscale")
+        _config(
+            tmp_path,
+            task_type="ltx25_video_upscale",
+            ltx25_resolution="2k",
+        )
     ).task_cases("user-data-test/web_uploads/3/h3-final.mp4")
     assert len(upscale_cases) == 1
     assert upscale_cases[0]["expected_central_task_type"] == "ltx25_video_upscale"
@@ -131,6 +137,7 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
         "images": ["user-data-test/web_uploads/3/h3-final.mp4"],
         "duration": 5,
         "duration_seconds": 5,
+        "resolution": "2k",
         "seed": 20260831,
     }
 

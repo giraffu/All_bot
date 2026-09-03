@@ -535,7 +535,7 @@ def test_runpod_canary_ltx25_upscale_dry_run_preflights_disabled_profile():
         EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY
     )
     assert any(
-        "submit one LTX-2.5 IC V2V 2x upscale Web task" in step
+        "submit one selectable-resolution LTX-2.5 IC V2V Web task" in step
         for step in payload["would_execute"]
     )
     assert provider.create_calls == 0
@@ -1401,6 +1401,8 @@ def test_cli_parses_runpod_canary_command():
             "图片中出现一个黑人女性",
             "--input-object-key",
             "user-data-test/web_uploads/3/example.png",
+            "--ltx25-resolution",
+            "2k",
             "--scail2-reference-object-key",
             "user-data-test/web_uploads/3/reference.jpg",
             "--scail2-motion-video-object-key",
@@ -1417,6 +1419,7 @@ def test_cli_parses_runpod_canary_command():
     assert args.disable_workers is False
     assert args.prompt == "图片中出现一个黑人女性"
     assert args.input_object_key == "user-data-test/web_uploads/3/example.png"
+    assert args.ltx25_resolution == "2k"
     assert args.scail2_reference_object_key == "user-data-test/web_uploads/3/reference.jpg"
     assert args.scail2_motion_video_object_key == "user-data-test/web_uploads/3/motion.mp4"
     assert args.download_results_dir == Path("/tmp/allbot_runpod_canary/results")

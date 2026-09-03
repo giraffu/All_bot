@@ -66,10 +66,17 @@ export function useLabSlotUploads({
     }
   }
 
-  const handleAssetVideoMetadata = (slotId: LabUploadSlotId, durationSeconds: number | null) => {
+  const handleAssetVideoMetadata = (
+    slotId: LabUploadSlotId,
+    durationSeconds: number | null,
+    width: number | null = null,
+    height: number | null = null,
+  ) => {
     const item = uploadedSlotAssets.value[slotId]
     if (item) {
       item.durationSeconds = durationSeconds
+      item.width = width ?? undefined
+      item.height = height ?? undefined
     }
     if (!isScail2ModeId(currentMode.value.id) || slotId !== 'motion_video') {
       return

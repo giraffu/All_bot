@@ -28,7 +28,9 @@ export const isLtxLabModeId = (modeId: UnifiedLabModeId) => (
 )
 
 export const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
-  modeId === 'face_video'
+  modeId === 'ltx25_video_upscale'
+    ? '1080p'
+    : modeId === 'face_video'
     ? DEFAULT_FACE_VIDEO_RESOLUTION
     : isLtxLabModeId(modeId)
       ? DEFAULT_LTX_VIDEO_RESOLUTION
@@ -134,6 +136,10 @@ export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {
 
   if (modeId === 'face_video') {
     return 'lab.workbench.cost_hints.face_video'
+  }
+
+  if (modeId === 'ltx25_video_upscale') {
+    return 'lab.workbench.cost_hints.ltx25_video_upscale'
   }
 
   if (isLtxLabModeId(modeId)) {

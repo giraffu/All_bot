@@ -30,7 +30,7 @@ def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div32(
                 (),
                 {
                     "returncode": 0,
-                    "stdout": b'{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"5.0"}}',
+                    "stdout": b'{"streams":[{"codec_type":"video","width":768,"height":448},{"codec_type":"audio"}],"format":{"duration":"5.0"}}',
                     "stderr": b"",
                 },
             )()
@@ -40,14 +40,15 @@ def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_div32(
     monkeypatch.setattr(
         "workers.comfy_agent.agent_input_preparation.subprocess.run", run
     )
-    result = prepare_ltx25_video_upscale_input("video", str(source))
+    result = prepare_ltx25_video_upscale_input(
+        "video", str(source), resolution="1080p"
+    )
 
     ffmpeg = commands[1]
     assert ffmpeg[ffmpeg.index("-frames:v") + 1] == "121"
     video_filter = ffmpeg[ffmpeg.index("-vf") + 1]
     assert "fps=24" in video_filter
-    assert "round(iw/32)*32" in video_filter
-    assert "round(ih/32)*32" in video_filter
+    assert "scale='960:544'" in video_filter
     assert ffmpeg[ffmpeg.index("-map") + 1] == "0:v:0"
     assert "0:a:0" in ffmpeg
     assert ffmpeg[ffmpeg.index("-af") + 1] == "apad"
@@ -114,7 +115,7 @@ def test_prepare_ltx25_upscale_keeps_boundary_frame_with_five_second_audio(
     assert int(audio["nb_read_frames"]) > 0
 
 
-def test_prepare_ltx25_upscale_video_rejects_more_than_five_seconds(
+def test_prepare_ltx25_upscale_video_rejects_more_than_twenty_seconds(
     tmp_path, monkeypatch
 ):
     source = tmp_path / "source.mp4"
@@ -127,7 +128,7 @@ def test_prepare_ltx25_upscale_video_rejects_more_than_five_seconds(
             (),
             {
                 "returncode": 0,
-                "stdout": b'{"streams":[{"codec_type":"video"}],"format":{"duration":"5.3"}}',
+                "stdout": b'{"streams":[{"codec_type":"video"}],"format":{"duration":"20.251"}}',
                 "stderr": b"",
             },
         )()
@@ -136,8 +137,8 @@ def test_prepare_ltx25_upscale_video_rejects_more_than_five_seconds(
         "workers.comfy_agent.agent_input_preparation.subprocess.run", run
     )
 
-    with pytest.raises(RuntimeError, match="5 second limit"):
-        prepare_ltx25_video_upscale_input("video", str(source))
+    with pytest.raises(RuntimeError, match="20 second limit"):
+        prepare_ltx25_video_upscale_input("video", str(source), resolution="1080p")
 
 
 def test_prepare_ltx25_upscale_accepts_h3_encoding_tail_and_trims_to_121_frames(
@@ -155,7 +156,7 @@ def test_prepare_ltx25_upscale_accepts_h3_encoding_tail_and_trims_to_121_frames(
                 (),
                 {
                     "returncode": 0,
-                    "stdout": b'{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"5.166667"}}',
+                    "stdout": b'{"streams":[{"codec_type":"video","width":768,"height":448},{"codec_type":"audio"}],"format":{"duration":"5.166667"}}',
                     "stderr": b"",
                 },
             )()
@@ -166,12 +167,101 @@ def test_prepare_ltx25_upscale_accepts_h3_encoding_tail_and_trims_to_121_frames(
         "workers.comfy_agent.agent_input_preparation.subprocess.run", run
     )
 
-    result = prepare_ltx25_video_upscale_input("video", str(source))
+    result = prepare_ltx25_video_upscale_input(
+        "video", str(source), resolution="1080p"
+    )
 
     ffmpeg = commands[1]
     assert ffmpeg[ffmpeg.index("-frames:v") + 1] == "121"
     assert ffmpeg[ffmpeg.index("-t") + 1] == "5.1"
     assert Path(result).read_bytes() == b"normalized-video"
+
+
+@pytest.mark.parametrize(
+    ("source_duration", "expected_frames", "expected_cutoff"),
+    [
+        (10.125, "241", "10.1"),
+        (15.166667, "361", "15.1"),
+        (20.25, "481", "20.1"),
+    ],
+)
+def test_prepare_ltx25_upscale_uses_dynamic_8n_plus_1_frame_grid(
+    tmp_path, monkeypatch, source_duration, expected_frames, expected_cutoff
+):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "ffprobe":
+            return type(
+                "Result",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": (
+                        '{"streams":[{"codec_type":"video","width":768,"height":448}],"format":{"duration":"'
+                        f"{source_duration}"
+                        '"}}'
+                    ).encode(),
+                    "stderr": b"",
+                },
+            )()
+        Path(command[-1]).write_bytes(b"normalized-video")
+        return type("Result", (), {"returncode": 0, "stderr": b""})()
+
+    monkeypatch.setattr(
+        "workers.comfy_agent.agent_input_preparation.subprocess.run", run
+    )
+
+    prepare_ltx25_video_upscale_input("video", str(source), resolution="1080p")
+
+    ffmpeg = commands[1]
+    assert ffmpeg[ffmpeg.index("-frames:v") + 1] == expected_frames
+    assert ffmpeg[ffmpeg.index("-t") + 1] == expected_cutoff
+
+
+@pytest.mark.parametrize(
+    ("resolution", "expected_scale"),
+    [
+        ("720p", "640:352"),
+        ("1080p", "960:544"),
+        ("2k", "1280:736"),
+    ],
+)
+def test_prepare_ltx25_upscale_resizes_model_input_for_selected_output(
+    tmp_path, monkeypatch, resolution, expected_scale
+):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "ffprobe":
+            return type(
+                "Result",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": b'{"streams":[{"codec_type":"video","width":768,"height":448}],"format":{"duration":"5.0"}}',
+                    "stderr": b"",
+                },
+            )()
+        Path(command[-1]).write_bytes(b"normalized-video")
+        return type("Result", (), {"returncode": 0, "stderr": b""})()
+
+    monkeypatch.setattr(
+        "workers.comfy_agent.agent_input_preparation.subprocess.run", run
+    )
+
+    prepare_ltx25_video_upscale_input(
+        "video", str(source), resolution=resolution
+    )
+
+    ffmpeg = commands[1]
+    assert f"scale='{expected_scale}'" in ffmpeg[ffmpeg.index("-vf") + 1]
 
 
 def test_prepare_h3_reference_video_tail_uses_last_five_seconds(tmp_path, monkeypatch):

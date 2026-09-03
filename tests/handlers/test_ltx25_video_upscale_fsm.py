@@ -54,6 +54,24 @@ async def test_ltx25_upscale_rejects_oversized_video_before_download(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_ltx25_upscale_rejects_over_twenty_seconds_before_download(monkeypatch):
+    reply = AsyncMock()
+    context = _context(ltx25_video_upscale_data={})
+    message = SimpleNamespace(
+        video=SimpleNamespace(file_id="video-file", file_size=1024, duration=21),
+        document=None,
+    )
+    update = SimpleNamespace(message=message)
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+
+    result = await fsm.receive_video(update, context)
+
+    assert result == Ltx25VideoUpscaleState.WAIT_VIDEO
+    context.bot.get_file.assert_not_awaited()
+    reply.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_ltx25_upscale_transfers_temp_file_ownership_to_background_task(
     monkeypatch,
 ):
@@ -85,7 +103,9 @@ async def test_ltx25_upscale_transfers_temp_file_ownership_to_background_task(
         AsyncMock(return_value="/tmp/ltx25-source.mp4"),
     )
     monkeypatch.setattr(fsm.os.path, "getsize", lambda _path: 1024)
-    monkeypatch.setattr(fsm, "_probe_duration_seconds", lambda _path: 5.0)
+    monkeypatch.setattr(
+        fsm, "_probe_video_metadata", lambda _path: (768, 448, 10.125)
+    )
     monkeypatch.setattr(
         fsm,
         "process_ltx25_video_upscale_task",
@@ -100,6 +120,8 @@ async def test_ltx25_upscale_transfers_temp_file_ownership_to_background_task(
     scheduled = schedule.call_args.args[1]
     assert scheduled[0] == "background"
     assert scheduled[1]["video_path"] == "/tmp/ltx25-source.mp4"
+    assert scheduled[1]["duration_seconds"] == 10
+    assert scheduled[1]["resolution"] == "720p"
     assert scheduled[1]["cleanup"] is True
     assert "in_conversation" not in context.user_data
     assert fsm.DATA_KEY not in context.user_data

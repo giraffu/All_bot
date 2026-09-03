@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.constants import (
+    MODE_LTX25_VIDEO_UPSCALE,
     MODE_SCAIL2_ACTION_TRANSFER,
     MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
@@ -13,6 +14,46 @@ from src.domain_config.scail2_video import (
     SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT,
 )
 from src.services import task_service_entrypoints_specialized as entrypoints
+
+
+@pytest.mark.asyncio
+async def test_process_ltx25_upscale_task_uses_per_second_resolution_price(monkeypatch):
+    captured = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured["flow"] = flow
+        return "ok"
+
+    monkeypatch.setattr(
+        entrypoints, "resolve_internal_user_id", AsyncMock(return_value=999)
+    )
+    monkeypatch.setattr(
+        entrypoints, "get_acceleration_notice", AsyncMock(return_value="")
+    )
+    monkeypatch.setattr(
+        entrypoints, "run_bot_task_application", fake_run_bot_task_application
+    )
+    context = SimpleNamespace(t=lambda key, **kwargs: f"{key}:{kwargs}", user_data={})
+
+    result = await entrypoints.process_ltx25_video_upscale_task(
+        context=context,
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        video_path="/tmp/source.mp4",
+        duration_seconds=10,
+        resolution="2k",
+    )
+
+    assert result == "ok"
+    flow = captured["flow"]
+    assert flow.request.task_type == MODE_LTX25_VIDEO_UPSCALE
+    assert flow.request.inputs["duration"] == 10
+    assert flow.request.inputs["resolution"] == "2k"
+    assert flow.request.cost_override == 180
+    assert flow.runtime_state.actual_cost == 180
+    assert flow.billing.requested_duration == 10
+    assert flow.billing.billing_resolution == "2k"
 
 
 @pytest.mark.asyncio

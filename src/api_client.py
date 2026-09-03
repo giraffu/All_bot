@@ -1017,6 +1017,7 @@ class APIClient:
         video_path: str,
         prompt: str,
         length: int = 5,
+        resolution: str = "1080p",
         priority: int = 0,
     ) -> str:
         response = await self._request(
@@ -1027,6 +1028,7 @@ class APIClient:
                 "video": video_path,
                 "prompt": prompt,
                 "length": length,
+                "resolution": resolution,
                 "priority": priority,
             },
             circuit_breaker_key="submit",

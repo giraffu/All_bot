@@ -7,6 +7,8 @@ from typing import Any
 from src.core.task_core_types import CoreDomainError
 from src.domain_config.ltx25_video_upscale import (
     LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+    normalize_ltx25_video_upscale_source_duration,
+    resolve_ltx25_video_upscale_resolution,
 )
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
@@ -175,6 +177,10 @@ async def prepare_web_submission_request(
     advanced_video_profile_loader=None,
     prepare_h3_extension_func=None,
     probe_video_duration_func: Callable[[str], Awaitable[float | None]] | None = None,
+    probe_video_metadata_func: Callable[
+        [str], Awaitable[tuple[int | None, int | None, int | None]]
+    ]
+    | None = None,
 ) -> PreparedWebSubmission:
     _assert_task_access(
         req.task_type,
@@ -296,14 +302,33 @@ async def prepare_web_submission_request(
             )
 
             probe_video_duration_func = extract_video_duration_seconds_from_storage
+        if probe_video_metadata_func is None:
+            from src.media_processor import extract_media_metadata_from_storage
+
+            async def probe_video_metadata_func(source: str):
+                return await extract_media_metadata_from_storage(source, "video")
         try:
             source_duration = await probe_video_duration_func(images[0])
+            source_width, source_height, _ = await probe_video_metadata_func(images[0])
         except Exception as exc:
-            raise CoreDomainError("无法读取视频时长，请重新上传视频后再试。") from exc
+            raise CoreDomainError("无法读取视频信息，请重新上传视频后再试。") from exc
         if source_duration is None or source_duration <= 0:
             raise CoreDomainError("无法读取视频时长，请重新上传视频后再试。")
         if source_duration > LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
-            raise CoreDomainError("视频高清化当前只支持最长 5 秒的视频。")
+            raise CoreDomainError("视频高清化当前只支持最长 20 秒的视频。")
+        inputs["duration"] = normalize_ltx25_video_upscale_source_duration(
+            source_duration
+        )
+        try:
+            inputs["resolution"] = resolve_ltx25_video_upscale_resolution(
+                source_width,
+                source_height,
+                inputs.get("resolution"),
+            )
+        except ValueError as exc:
+            raise CoreDomainError(str(exc)) from exc
+        inputs["source_width"] = int(source_width)
+        inputs["source_height"] = int(source_height)
     if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
         raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")
     if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:

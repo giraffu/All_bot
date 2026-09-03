@@ -12,7 +12,11 @@ from itertools import product
 from typing import Any, Iterable
 
 from src.constants import LTX_DURATION_MULTIPLIER, LTX_RESOLUTION_COST
-from src.domain_config.ltx25_video_upscale import LTX25_VIDEO_UPSCALE_COST
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_CREDITS_PER_SECOND,
+    LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS,
+    get_ltx25_video_upscale_cost,
+)
 from src.domain_config.ltx_t2v import (
     CHARACTER_REFERENCE_BUILD_COST,
     LTX_T2V_COST_BY_DURATION,
@@ -173,6 +177,44 @@ def _ltx_video_offer(
             ),
             _dimension("resolution", "分辨率", (_option("1280x704", "1280 × 704"),)),
             _dimension("duration", "时长", LTX_DURATION_OPTIONS),
+        ),
+        variants,
+    )
+
+
+def _ltx25_video_upscale_offer() -> dict[str, Any]:
+    offer_id = "video_upscale"
+    durations = tuple(range(1, LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS + 1))
+    resolutions = tuple(LTX25_VIDEO_UPSCALE_CREDITS_PER_SECOND)
+    variants = (
+        _variant(
+            offer_id,
+            task_types=("ltx25_video_upscale",),
+            default_cost=get_ltx25_video_upscale_cost(duration, resolution),
+            resolution=resolution,
+            duration=duration,
+        )
+        for resolution, duration in product(resolutions, durations)
+    )
+    return _offer(
+        offer_id,
+        "视频高清化",
+        "按目标清晰度和原片整秒时长计价",
+        (
+            _dimension(
+                "resolution",
+                "目标清晰度",
+                (
+                    _option("720p", "720p"),
+                    _option("1080p", "1080p"),
+                    _option("2k", "2K"),
+                ),
+            ),
+            _dimension(
+                "duration",
+                "原片时长",
+                tuple(_option(value, f"{value} 秒") for value in durations),
+            ),
         ),
         variants,
     )
@@ -476,13 +518,7 @@ def build_base_task_pricing_catalog() -> list[dict[str, Any]]:
                 _scail2_offer(
                     "video_face_swap_v2", "视频换脸 v2", "scail2_face_swap_v2", (5, 8)
                 ),
-                _fixed_offer(
-                    "video_upscale",
-                    "视频高清化",
-                    "视频放大与增强",
-                    ("ltx25_video_upscale",),
-                    LTX25_VIDEO_UPSCALE_COST,
-                ),
+                _ltx25_video_upscale_offer(),
             ],
         },
         {

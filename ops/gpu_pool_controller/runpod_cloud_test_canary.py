@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from src.domain_config.ltx25_video_upscale import (
+    normalize_ltx25_video_upscale_resolution,
+)
+
 from .providers.runpod import RUNPOD_TASK_PROFILES, redact_payload
 from .runpod_control import join_url
 from .runpod_http import safe_url
@@ -57,6 +61,7 @@ class RunPodCloudTestCanaryConfig:
     prompt: str
     negative_prompt: str
     result_bucket: str = EXPECTED_TEST_BUCKET
+    ltx25_resolution: str = "1080p"
 
 
 class RunPodCloudTestCanaryCaseBuilder:
@@ -346,9 +351,12 @@ class RunPodCloudTestCanaryCaseBuilder:
     def ltx25_video_upscale_task_cases(
         self, video_object_key: str
     ) -> list[dict[str, Any]]:
+        resolution = normalize_ltx25_video_upscale_resolution(
+            self.config.ltx25_resolution
+        )
         return [
             {
-                "label": "ltx25_video_upscale_2x_5s",
+                "label": f"ltx25_video_upscale_{resolution}",
                 "expected_central_task_type": "ltx25_video_upscale",
                 "payload": {
                     "task_type": "ltx25_video_upscale",
@@ -356,6 +364,7 @@ class RunPodCloudTestCanaryCaseBuilder:
                         "images": [video_object_key],
                         "duration": 5,
                         "duration_seconds": 5,
+                        "resolution": resolution,
                         "seed": 20260831,
                     },
                     "prompt": self.config.prompt,

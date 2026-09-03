@@ -8,7 +8,13 @@ import subprocess
 from typing import Any
 
 from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_FPS,
+    LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS,
     LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+    get_ltx25_video_upscale_frame_count,
+    get_ltx25_video_upscale_model_input_dimensions,
+    normalize_ltx25_video_upscale_source_duration,
+    normalize_ltx25_video_upscale_resolution,
 )
 
 try:
@@ -26,7 +32,7 @@ except ImportError:  # pragma: no cover - package import in focused tests
 LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS = (
     LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS
 )
-LTX25_UPSCALE_ENCODING_CUTOFF_SECONDS = 5.1
+LTX25_UPSCALE_ENCODING_TAIL_SECONDS = 0.1
 
 
 def _cleanup_partial_downloads(local_path: str) -> None:
@@ -94,12 +100,16 @@ def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
     return str(output)
 
 
-def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
-    """Create the fixed 5s/24fps/121-frame, Div32 source for 2x LTX-2.5."""
+def prepare_ltx25_video_upscale_input(
+    param_key: str,
+    local_path: str,
+    *,
+    resolution: object = None,
+) -> str:
+    """Create a 24fps/8n+1-frame, Div32 source for 2x LTX-2.5."""
     if param_key != "video":
         return local_path
     source = Path(local_path)
-    output = source.with_name(f"{source.stem}__ltx25_5s_24fps.mp4")
     try:
         probe = subprocess.run(
             [
@@ -107,7 +117,7 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type:format=duration",
+                "stream=codec_type,width,height:format=duration",
                 "-of",
                 "json",
                 str(source),
@@ -124,9 +134,29 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
             )
         probe_payload = json.loads(probe.stdout.decode("utf-8"))
         streams = probe_payload.get("streams", [])
+        video_stream = next(
+            (stream for stream in streams if stream.get("codec_type") == "video"),
+            {},
+        )
         duration = float(probe_payload.get("format", {}).get("duration") or 0)
         if duration > LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
-            raise ValueError("source video exceeds the 5 second limit")
+            raise ValueError(
+                f"source video exceeds the {LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS} "
+                "second limit"
+            )
+        normalized_duration = normalize_ltx25_video_upscale_source_duration(duration)
+        normalized_resolution = normalize_ltx25_video_upscale_resolution(resolution)
+        model_width, model_height = get_ltx25_video_upscale_model_input_dimensions(
+            video_stream.get("width"),
+            video_stream.get("height"),
+            normalized_resolution,
+        )
+        frame_count = get_ltx25_video_upscale_frame_count(normalized_duration)
+        encoding_cutoff = normalized_duration + LTX25_UPSCALE_ENCODING_TAIL_SECONDS
+        encoding_cutoff_text = f"{encoding_cutoff:.1f}"
+        output = source.with_name(
+            f"{source.stem}__ltx25_{LTX25_VIDEO_UPSCALE_FPS}fps_{frame_count}f.mp4"
+        )
         has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
         command = [
             "ffmpeg",
@@ -147,26 +177,26 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
                 "0:v:0",
                 "-map",
                 "0:a:0" if has_audio else "1:a:0",
-                # A source audio stream that ends at exactly 5.000s must not
-                # make -shortest drop the padded 121st video frame. Extend the
+                # A source audio stream that ends at an exact second must not
+                # make -shortest drop the padded final video frame. Extend the
                 # selected audio stream so the video frame cap remains the
                 # duration authority; -shortest still trims the mux cleanly.
                 "-af",
                 "apad",
                 "-vf",
                 (
-                    "fps=24,"
-                    "scale='max(32,round(iw/32)*32)':'max(32,round(ih/32)*32)':"
+                    f"fps={LTX25_VIDEO_UPSCALE_FPS},"
+                    f"scale='{model_width}:{model_height}':"
                     "flags=lanczos,setsar=1,"
-                    "tpad=stop_mode=clone:stop_duration=5.1"
+                    f"tpad=stop_mode=clone:stop_duration={encoding_cutoff_text}"
                 ),
                 "-frames:v",
-                "121",
+                str(frame_count),
                 "-t",
-                # Let the 121-frame cap define the exact 5.041667s video
-                # duration. Using that same value as ffmpeg's time cutoff
-                # drops the boundary frame on real 24fps H3 encodes.
-                str(LTX25_UPSCALE_ENCODING_CUTOFF_SECONDS),
+                # Let the frame cap define the exact 8n+1-frame duration.
+                # Using the frame duration itself as ffmpeg's time cutoff drops
+                # the boundary frame on real 24fps H3 encodes.
+                encoding_cutoff_text,
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -193,7 +223,9 @@ def prepare_ltx25_video_upscale_input(param_key: str, local_path: str) -> str:
             timeout=180,
         )
     except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        output.unlink(missing_ok=True)
+        output = locals().get("output")
+        if isinstance(output, Path):
+            output.unlink(missing_ok=True)
         raise RuntimeError(f"Failed to normalize LTX-2.5 upscale input: {exc}") from exc
     if result.returncode != 0 or not output.is_file() or output.stat().st_size <= 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:]

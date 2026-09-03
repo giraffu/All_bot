@@ -17,6 +17,10 @@ from telegram.ext import (
 from src.domain_config.ltx25_video_upscale import (
     LTX25_VIDEO_UPSCALE_COST,
     LTX25_VIDEO_UPSCALE_MAX_BYTES,
+    LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS,
+    LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+    normalize_ltx25_video_upscale_source_duration,
+    resolve_ltx25_video_upscale_resolution,
 )
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import Ltx25VideoUpscaleState
@@ -58,14 +62,14 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE) -> None:
         cleanup_fsm_temp_files([video_path])
 
 
-def _probe_duration_seconds(path: str) -> float:
+def _probe_video_metadata(path: str) -> tuple[int, int, float]:
     result = subprocess.run(
         [
             "ffprobe",
             "-v",
             "error",
             "-show_entries",
-            "format=duration",
+            "stream=width,height:format=duration",
             "-of",
             "json",
             path,
@@ -77,7 +81,13 @@ def _probe_duration_seconds(path: str) -> float:
     )
     if result.returncode != 0:
         raise RuntimeError("ffprobe failed")
-    return float(json.loads(result.stdout.decode("utf-8"))["format"]["duration"])
+    payload = json.loads(result.stdout.decode("utf-8"))
+    stream = (payload.get("streams") or [{}])[0]
+    return (
+        int(stream["width"]),
+        int(stream["height"]),
+        float(payload["format"]["duration"]),
+    )
 
 
 async def start_upscale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -136,7 +146,10 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if size and size > LTX25_VIDEO_UPSCALE_MAX_BYTES:
         await robust_reply_text(message, _t(context, "fsm.ltx25_upscale.too_large"))
         return Ltx25VideoUpscaleState.WAIT_VIDEO
-    if telegram_duration and telegram_duration > 5:
+    if (
+        telegram_duration
+        and telegram_duration > LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS
+    ):
         await robust_reply_text(message, _t(context, "fsm.ltx25_upscale.too_long"))
         return Ltx25VideoUpscaleState.WAIT_VIDEO
     local_path = None
@@ -149,11 +162,14 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         if os.path.getsize(local_path) > LTX25_VIDEO_UPSCALE_MAX_BYTES:
             raise ValueError("too_large")
-        duration = await asyncio.to_thread(_probe_duration_seconds, local_path)
-        if duration > 5.1:
+        width, height, duration = await asyncio.to_thread(
+            _probe_video_metadata, local_path
+        )
+        if duration > LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
             cleanup_fsm_temp_files([local_path])
             await robust_reply_text(message, _t(context, "fsm.ltx25_upscale.too_long"))
             return Ltx25VideoUpscaleState.WAIT_VIDEO
+        resolution = resolve_ltx25_video_upscale_resolution(width, height)
     except ValueError as exc:
         cleanup_fsm_temp_files([local_path])
         key = (
@@ -183,6 +199,8 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             user_id=user.id,
             username=user.username,
             video_path=owned_path,
+            duration_seconds=normalize_ltx25_video_upscale_source_duration(duration),
+            resolution=resolution,
             message_id=message.message_id,
             cleanup=True,
         ),

@@ -511,7 +511,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile="ltx25_video_upscale",
         is_generation=True,
         is_video=True,
-        cost=40,
+        cost=50,
     ),
     "ltx_video_v2v_audio": _entry(
         "ltx_video_v2v_audio",

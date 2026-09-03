@@ -13,10 +13,11 @@ from src.constants import (
     MODE_SCAIL2_VIDEO_REPLACEMENT,
 )
 from src.domain_config.ltx25_video_upscale import (
-    LTX25_VIDEO_UPSCALE_COST,
     LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
-    LTX25_VIDEO_UPSCALE_FACTOR,
+    get_ltx25_video_upscale_cost,
+    normalize_ltx25_video_upscale_duration,
     normalize_ltx25_video_upscale_prompt,
+    normalize_ltx25_video_upscale_resolution,
 )
 from src.core.video_billing import normalize_requested_duration_seconds
 from src.domain_config.scail2_video import (
@@ -447,22 +448,27 @@ async def process_ltx25_video_upscale_task(
     user_id: int,
     username: str | None,
     video_path: str,
+    duration_seconds: int = LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+    resolution: str = "1080p",
     prompt: str = "",
     message_id: int | None = None,
     cleanup: bool = True,
 ):
     internal_user_id = await resolve_internal_user_id(user_id, username)
     normalized_prompt = normalize_ltx25_video_upscale_prompt(prompt)
+    normalized_duration = normalize_ltx25_video_upscale_duration(duration_seconds)
+    normalized_resolution = normalize_ltx25_video_upscale_resolution(resolution)
+    cost = get_ltx25_video_upscale_cost(normalized_duration, normalized_resolution)
     mode_name = translate_context_text(
         context, MODE_NAME_MAP[MODE_LTX25_VIDEO_UPSCALE]
     )
-    runtime_state = BotTaskRuntimeState(actual_cost=LTX25_VIDEO_UPSCALE_COST)
+    runtime_state = BotTaskRuntimeState(actual_cost=cost)
     notice = await get_acceleration_notice(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
     )
-    duration_label = f"{LTX25_VIDEO_UPSCALE_DURATION_SECONDS}s"
-    resolution_label = f"{LTX25_VIDEO_UPSCALE_FACTOR}x"
+    duration_label = f"{normalized_duration}s"
+    resolution_label = normalized_resolution.upper()
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
             translate_context_text(
@@ -490,7 +496,8 @@ async def process_ltx25_video_upscale_task(
     inputs = build_task_inputs(
         prompt=normalized_prompt,
         images=[video_path],
-        duration=LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+        duration=normalized_duration,
+        resolution=normalized_resolution,
     )
     return await run_bot_task_application(
         flow=build_bot_task_flow_context(
@@ -504,7 +511,7 @@ async def process_ltx25_video_upscale_task(
             prompt=normalized_prompt,
             is_video=True,
             deduct_quota=True,
-            cost_override=LTX25_VIDEO_UPSCALE_COST,
+            cost_override=cost,
             user_cancel_allowed=True,
             allow_cancel=True,
             send_result=True,
@@ -519,8 +526,8 @@ async def process_ltx25_video_upscale_task(
                 duration=duration_label,
             ),
             prefer_edit_status=True,
-            billing_resolution=resolution_label,
-            requested_duration=LTX25_VIDEO_UPSCALE_DURATION_SECONDS,
+            billing_resolution=normalized_resolution,
+            requested_duration=normalized_duration,
             cleanup=cleanup,
             cleanup_paths=build_cleanup_paths([video_path]),
             runtime_state=runtime_state,

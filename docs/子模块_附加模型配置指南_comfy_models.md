@@ -398,6 +398,7 @@ ready marker 并拒绝启动。`all`、`all_runtime_refresh` 与 `scail2_flex` �
 
 `ltx25_video_upscale` 使用独立 workflow、mapping、patcher、模型 bundle 和
 RunPod profile，禁止并入 H3 或既有 LTX profile。它固定官方 Pixel Spatial
-Upscaler x2 IC-LoRA 强度为 1.0，输入由 Worker 规范化为 24fps/121 帧/Div64，
-最终复用源音轨。完整契约和 gated 模型准备入口见
+Upscaler x2 IC-LoRA 强度为 1.0，输入由 Worker 按已核验的 1 至 20 秒时长规范化为
+24fps、`24 * 秒数 + 1` 帧和 Div32 尺寸，并根据 720p/1080p/2K 目标档位预缩放；
+工作流输出受 Div64 网格约束并最终复用源音轨。完整契约和 gated 模型准备入口见
 `docs/子模块_LTX25视频高清化_ltx25_video_upscale.md`。

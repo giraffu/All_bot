@@ -144,6 +144,35 @@ export const LTX_VIDEO_DURATION_OPTIONS = [
   { value: '20', label: '20 秒' },
 ] as const
 
+export const LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS = [
+  { value: '720p', label: '720p', longEdge: 1280, creditsPerSecond: 5 },
+  { value: '1080p', label: '1080p', longEdge: 1920, creditsPerSecond: 10 },
+  { value: '2k', label: '2K', longEdge: 2560, creditsPerSecond: 18 },
+] as const
+
+export const getLtx25VideoUpscaleResolutionOptions = (
+  sourceWidth: number | null | undefined,
+  sourceHeight: number | null | undefined,
+) => {
+  if (!sourceWidth || !sourceHeight) return LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS
+  const sourceLongEdge = Math.max(sourceWidth, sourceHeight)
+  return LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS.filter(option => option.longEdge > sourceLongEdge)
+}
+
+export const normalizeLtx25VideoUpscaleDuration = (sourceDuration?: number | null) => (
+  typeof sourceDuration === 'number' && Number.isFinite(sourceDuration)
+    ? Math.min(20, Math.max(1, Math.ceil(sourceDuration - 0.25)))
+    : 5
+)
+
+export const getLtx25VideoUpscaleCost = (
+  sourceDuration: number | null | undefined,
+  resolution: string,
+) => {
+  const rate = LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS.find(option => option.value === resolution)?.creditsPerSecond ?? 10
+  return normalizeLtx25VideoUpscaleDuration(sourceDuration) * rate
+}
+
 export const SCAIL2_VIDEO_DURATION_OPTIONS = [
   { value: '5', label: '5 秒' },
   { value: '8', label: '8 秒' },
@@ -628,15 +657,18 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     titleKey: 'lab.cards.ltx25_video_upscale_title',
     descriptionKey: 'lab.cards.ltx25_video_upscale_desc',
     kindKey: 'lab.workbench.mode_kinds.video',
-    baseCost: 40,
+    baseCost: 50,
     promptPlaceholderKey: 'lab.workbench.prompt_placeholders.ltx25_video_upscale',
     promptTarget: 'inputs',
     submitLabelKey: 'lab.workbench.submit_video',
     maxImages: 0,
     supportsUpload: false,
     supportsEditLora: false,
-    supportsVideoOptions: false,
-    supportsAdvancedOptions: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: false,
+    supportsResolutionOptions: true,
+    supportsAdvancedOptions: true,
     promptRequired: false,
     unified: true,
     uploadSlots: [

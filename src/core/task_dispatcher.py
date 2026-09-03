@@ -45,10 +45,10 @@ from src.domain_config.scail2_video import (
     resolve_scail2_execution_task_type,
 )
 from src.domain_config.ltx25_video_upscale import (
-    LTX25_VIDEO_UPSCALE_COST,
-    LTX25_VIDEO_UPSCALE_FACTOR,
+    get_ltx25_video_upscale_cost,
     normalize_ltx25_video_upscale_duration,
     normalize_ltx25_video_upscale_prompt,
+    normalize_ltx25_video_upscale_resolution,
 )
 from src.domain_config.task_type_registry import get_execution_task_type
 from src.domain_config.ltx_t2v import (
@@ -936,8 +936,9 @@ class Ltx25VideoUpscaleStrategy(BaseTaskStrategy):
     """Dispatch source-video-only enhancement to its isolated GPU profile."""
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
-        normalize_ltx25_video_upscale_duration(inputs.get("duration"))
-        return LTX25_VIDEO_UPSCALE_COST
+        return get_ltx25_video_upscale_cost(
+            inputs.get("duration"), inputs.get("resolution")
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         images = inputs.get("images")
@@ -947,12 +948,16 @@ class Ltx25VideoUpscaleStrategy(BaseTaskStrategy):
         return [video] if video else []
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        resolution = normalize_ltx25_video_upscale_resolution(
+            inputs.get("resolution")
+        )
         return {
             "saved_inputs": _get_saved_input_images(inputs)[:1],
             "requested_duration": normalize_ltx25_video_upscale_duration(
                 inputs.get("duration")
             ),
-            "upscale_factor": LTX25_VIDEO_UPSCALE_FACTOR,
+            "billing_resolution": resolution,
+            "target_resolution": resolution,
             "ltx_profile": "ltx25_ic_v2v_upscale",
             "gallery_supported": False,
         }
@@ -965,12 +970,16 @@ class Ltx25VideoUpscaleStrategy(BaseTaskStrategy):
             raise CoreDomainError("LTX-2.5 视频高清化只接受一个输入视频。")
         video_path = saved_inputs[0]
         duration = normalize_ltx25_video_upscale_duration(inputs.get("duration"))
+        resolution = normalize_ltx25_video_upscale_resolution(
+            inputs.get("resolution")
+        )
         prompt = normalize_ltx25_video_upscale_prompt(inputs.get("prompt"))
         return await _get_dispatch_image_service().submit_ltx25_video_upscale_task(
             task_id,
             video_path=video_path,
             prompt=prompt,
             length=duration,
+            resolution=resolution,
             priority=priority,
         )
 
