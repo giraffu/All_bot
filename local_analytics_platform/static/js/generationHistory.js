@@ -72,7 +72,7 @@ export function createGenerationHistoryModule({
     if (!body) return;
     const rows = state.generationHistory?.rows || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="16" class="empty">暂无历史生成记录</td></tr>';
+      body.innerHTML = '<tr><td colspan="15" class="empty">暂无历史生成记录</td></tr>';
       return;
     }
     const taskTypeCounts = new Map(
@@ -89,8 +89,17 @@ export function createGenerationHistoryModule({
       const summary = snapshotTotal
         ? `NAS 已备份 ${fmt(backedUp)} / ${fmt(snapshotTotal)}${missing ? ` · 文件缺失 ${fmt(missing)}` : ""}`
         : `未纳入快照 · 官方归档可用 ${fmt(verified)} / ${fmt(total)}`;
+      const previewUrl = row[isInput ? "input_preview_url" : "output_preview_url"] || "";
+      const previewKind = row[isInput ? "input_preview_kind" : "output_preview_kind"] || "";
+      const preview = previewUrl && previewKind === "video"
+        ? `<video class="generation-history-media-preview" muted playsinline preload="metadata" src="${escapeHtml(previewUrl)}"></video>`
+        : previewUrl
+          ? `<img class="generation-history-media-preview" loading="lazy" src="${escapeHtml(previewUrl)}" alt="${isInput ? "输入" : "输出"}预览" />`
+          : '<span class="generation-history-media-placeholder">暂无预览</span>';
       return `<div class="generation-history-media-summary">${summary}</div>
-        <button type="button" data-history-media="${escapeHtml(row.id)}" data-role-group="${roleGroup}">查看${isInput ? "输入" : "输出"}</button>`;
+        <button type="button" class="generation-history-media-button" data-history-media="${escapeHtml(row.id)}" data-role-group="${roleGroup}">
+          ${preview}<span>查看${isInput ? "输入" : "输出"}</span>
+        </button>`;
     };
     body.innerHTML = rows.map((row) => `
       <tr>
@@ -112,7 +121,6 @@ export function createGenerationHistoryModule({
         <td class="generation-history-time">${fmtDate(row.created_at)}</td>
         <td class="generation-history-address">${renderMediaAddress(row, "input")}</td>
         <td class="generation-history-address">${renderMediaAddress(row, "output")}</td>
-        <td><button type="button" data-history-media="${escapeHtml(row.id)}" data-role-group="all">查看全部</button></td>
       </tr>
     `).join("");
   }

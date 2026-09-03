@@ -799,6 +799,10 @@ main {
   font-size: 12px;
 }
 
+.generation-history-media-button { display: grid; gap: 5px; width: 112px; padding: 6px; overflow: hidden; }
+.generation-history-media-preview { display: block; width: 100%; height: 72px; object-fit: cover; border-radius: 6px; background: #0f172a; }
+.generation-history-media-placeholder { display: grid; place-items: center; width: 100%; height: 44px; color: #64748b; background: #eef2f7; border-radius: 6px; font-size: 11px; }
+
 .archive-media-dialog { width: min(1080px, 92vw); max-height: 86vh; border: 0; border-radius: 14px; padding: 18px; }
 .archive-media-dialog::backdrop { background: rgba(15, 23, 42, .58); }
 .archive-media-dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }

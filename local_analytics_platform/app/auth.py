@@ -181,20 +181,6 @@ class LocalAnalyticsAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        if (
-            request.url.path.startswith("/api/archive/")
-            and request.url.path.endswith("/content")
-            and any(
-                request.headers.get(name)
-                for name in ("cf-ray", "cf-connecting-ip", "cf-ipcountry", "cf-visitor")
-            )
-        ):
-            return JSONResponse(
-                {
-                    "detail": "full archive content is available from the authenticated LAN only"
-                },
-                status_code=403,
-            )
         config = AuthConfig.from_env()
         if not config.enabled:
             return await call_next(request)
