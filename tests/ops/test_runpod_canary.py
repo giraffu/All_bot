@@ -1266,6 +1266,38 @@ def test_ltx_t2v_canary_retries_transient_worker_fetch_gateway_error():
     assert summary["runpod_worker_fetch"]["last_http_status"] == 502
 
 
+def test_canary_fails_fast_when_pod_exits_before_worker_heartbeat():
+    provider = FakeRunPodProvider()
+    provider.pod_readiness = lambda pod_id: {  # type: ignore[method-assign]
+        "ok": True,
+        "pod_id": pod_id,
+        "desired_status": "EXITED",
+        "readiness": {
+            "infrastructure_ready": False,
+            "signals": {"desired_status": "EXITED"},
+        },
+    }
+    runner = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(
+            task_type="ltx25_video_upscale",
+            worker_timeout_seconds=0.1,
+            quiet=True,
+        ),
+        sleep_func=lambda _seconds: None,
+    )
+    runner._fetch_workers = lambda: []  # type: ignore[method-assign]
+    summary = {}
+
+    with pytest.raises(RunPodCanaryError, match="exited before worker heartbeat"):
+        runner._wait_runpod_worker("pod-exited", summary)
+
+    assert summary["runpod_worker_pod_status"] == {
+        "pod_id": "pod-exited",
+        "desired_status": "EXITED",
+    }
+
+
 def test_wan22_canary_disables_only_matching_cloud_test_non_runpod_workers():
     runner = RunPodCanaryRunner(
         FakeRunPodProvider(),

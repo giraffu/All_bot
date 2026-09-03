@@ -101,6 +101,8 @@ runner 在目标 heartbeat 后先把新 agent 设为 disabled，仅在提交这�
 并临时禁用同一 cloud-test 队列中声明相同任务类型的非 RunPod
 Worker，包括 `cloud_worker_test_*` 和 `lan_aio_test_*`，避免 canary 被其它
 测试执行面抢单；这些 control 只在 canary 窗口内生效，结束时恢复原状态。
+Pod 在 Worker heartbeat 前进入 `EXITED`、`STOPPED`、`TERMINATED` 或 `DELETED`
+终态时立即失败，不能仅凭短暂的 RUNNING/镜像端口信号继续空等 heartbeat timeout。
 终态或异常都会再次禁用并删除本次 test Pod；既有 prod manual Pod 只允许作为忽略的
 只读基线，不能成为 cleanup 目标。验收后还要回读 provider 和 Central，确认测试 Pod
 与 agent heartbeat 均无残留。
