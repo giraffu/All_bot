@@ -1,4 +1,4 @@
-ARG RUNTIME_BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2
+ARG RUNTIME_BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale@sha256:33a20b8ffc66d42db3b0c737ba2c7bf678518f78acffe38f55205102f986011c
 FROM ${RUNTIME_BASE_IMAGE}
 
 ARG ALLBOT_GIT_SHA
@@ -11,7 +11,7 @@ ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \
-      io.allbot.runpod.runtime-base-digest="sha256:a97047df9bae26a2c0a08c9daa2174ab42557fda1e109353ced02c2665b468c2"
+      io.allbot.runpod.runtime-base-digest="sha256:33a20b8ffc66d42db3b0c737ba2c7bf678518f78acffe38f55205102f986011c"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c - && rm -rf /opt/allbot/runtime/runpod_worker
