@@ -143,6 +143,9 @@ def test_minimax_h3_render_reserves_volume_for_full_immutable_bundle():
     assert RUNPOD_MINIMAX_H3_VOLUME_GB == 120
     assert body["volumeInGb"] == 120
     assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
+    assert body["env"]["PIPELINE_PROFILE_POLICY"] == (
+        "media_claim2_comfy1_delivery1_v1"
+    )
 
 
 def test_list_pods_filters_managed_pods_and_redacts_secrets():

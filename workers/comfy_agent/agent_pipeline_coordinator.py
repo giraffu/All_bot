@@ -19,10 +19,9 @@ class AgentPipelineCoordinator:
         task_type: str,
         *,
         pipeline_enabled: bool,
-        pipeline_max_running_tasks: int,
         pipeline_task_types: set[str],
     ) -> bool:
-        if not pipeline_enabled or pipeline_max_running_tasks <= 1:
+        if not pipeline_enabled:
             return False
         if "all" in pipeline_task_types:
             return True

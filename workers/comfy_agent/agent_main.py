@@ -1448,7 +1448,6 @@ class ComfyAgent:
         return self._pipeline_coordinator.pipeline_enabled_for_task_type(
             task_type,
             pipeline_enabled=PIPELINE_ENABLED,
-            pipeline_max_running_tasks=PIPELINE_MAX_RUNNING_TASKS,
             pipeline_task_types=self._pipeline_task_types,
         )
 

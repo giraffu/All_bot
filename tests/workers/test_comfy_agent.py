@@ -1650,6 +1650,17 @@ async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
     assert agent._executions == {}
 
 
+def test_single_comfy_media_profile_keeps_background_delivery_pipeline(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    monkeypatch.setattr(module, "PIPELINE_ENABLED", True)
+    monkeypatch.setattr(module, "PIPELINE_MAX_RUNNING_TASKS", 1)
+    agent = module.ComfyAgent()
+    agent._pipeline_task_types = {"minimax_h3_i2v"}
+
+    assert agent._pipeline_enabled_for_task_type("minimax_h3_i2v") is True
+    assert agent._pipeline_enabled_for_task_type("image_to_video") is False
+
+
 @pytest.mark.asyncio
 async def test_ws_events_route_by_prompt_id_without_cross_talk(monkeypatch):
     module = build_agent_module(monkeypatch)

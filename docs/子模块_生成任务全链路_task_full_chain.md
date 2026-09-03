@@ -527,7 +527,7 @@ Worker 拉到任务后会先处理输入：
 - `PIPELINE_ENABLED` 在 Comfy 槽未满时真实 pop 并提前准备/排队。running、claimed（含 reserved/delivery）和交付并发分别由三个 `PIPELINE_*` 上限约束；`gpu_done` 只释放计算槽，上传并收到 `/complete` 后才终态。
 - Central claim 是 at-least-once；Worker 以 `backend_task_id` 幂等执行。活跃 task 重投只确认 heartbeat/claim，不得重复准备、`queue_prompt`、finalizer、上传或 complete；重启后本地 execution 不存在时可恢复接纳。单进程保持 `task_id -> execution -> prompt_id -> finalizer` 一一对应。
 - 不可变 GPU artifact 必须在构建期安装并校验 Worker Python 依赖。baked entrypoint 启动时只做本地 import 验证，依赖完整就跳过 `pip install`；依赖缺失则 fail closed，禁止把生产 Worker 的可启动性依赖于节点当时能否访问 PyPI。
-- 有界重叠按 profile 分成两档。快速图片类 `img2img/img2img_lora`、`i2i_pro`、`pornmaster_flux2_edit_bf16` 使用 `PIPELINE_PROFILE_POLICY=image_claim3_comfy2_delivery1_v1`，有效 claimed/Comfy/delivery 上限为 `3/2/1`；媒体类 `image_to_video`、`ltx_video`、`scail2`、`wan22_video_v2` 使用 `media_claim2_comfy1_delivery1_v1`，有效上限为 `2/1/1`。媒体档始终只有一个 Comfy/GPU 执行槽，前一单进入 `gpu_done`/交付后才允许下一单开始计算。LAN render 与后续新建 RunPod create request 注入相同策略；存量 RunPod 不原地修改。数字环境仍固定写入回滚默认 `1/2/1`，旧 worker 忽略未知版本策略时保持串行。历史 `bf16_lan_claim3_comfy2_delivery1` 只作为已发布 BF16 镜像的兼容别名。
+- 有界重叠分两档。快速图片 `img2img/img2img_lora`、`i2i_pro`、`pornmaster_flux2_edit_bf16` 使用 `image_claim3_comfy2_delivery1_v1`，claimed/Comfy/delivery 为 `3/2/1`；媒体 `all`、`image_to_video`、`ltx_video`、`ltx_t2v`、`minimax_h3`、`scail2`、`scail2_flex`、`wan22_video_v2` 使用 `media_claim2_comfy1_delivery1_v1`，上限为 `2/1/1`。`Comfy=1` 只限制 GPU 并发，不关闭后台流水线；前一单进入 `gpu_done` 后下一单即可计算。LAN render 与后续新建 RunPod 注入同一策略，存量 RunPod 不改。数字环境保留旧 Worker 的串行回滚默认 `1/2/1`；`bf16_lan_claim3_comfy2_delivery1` 仅是兼容别名。
 
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。
 
