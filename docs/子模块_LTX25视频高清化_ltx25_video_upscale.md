@@ -8,8 +8,9 @@
 2K；价格按服务端核验后的整秒时长和目标档位计算，分别为 5、10、36 灵石/秒。
 2K 最大档实测需要 96 GB 显存节点，不能回落到 32 GB RTX 5090；价格除约
 1.78 倍的像素负载外，还覆盖大显存节点约 2 倍的小时成本和失败重试余量。
-RunPod profile 必须投影 `TASK_COMPLETION_TIMEOUT_SECONDS=3600`；20 秒 2K
-工作流的实测推理会超过通用 Worker 的 1800 秒默认值。
+RunPod profile 必须投影 `TASK_COMPLETION_TIMEOUT_SECONDS=3600` 和
+`COMFY_EXTRA_ARGS=--lowvram`；20 秒 2K 工作流的实测推理会超过通用 Worker 的
+1800 秒默认值，普通显存模式还会在 96 GB 节点模型加载阶段耗尽显存。
 它的主要定位是对本项目当前 H3 beta4 生成的已定稿成片做第二次 IC V2V，
 不依赖或回退到早期 beta2 模型与工作流。
 它是独立 GPU profile，不替换 H3、`ltx_video`、SCAIL-2 或传统超分任务。
@@ -61,8 +62,9 @@ runtime 和 workflow。模型 manifest 固定为
 均需先在 Hugging Face 接受许可，再使用只读 `HF_TOKEN` 下载；token 不写入 Git、
 日志或镜像。
 
-候选 GPU 为 RTX 5090 和 RTX PRO 6000 Blackwell，容器盘至少 100GB、volume 至少
-60GB。profile 默认不参加 autoscaler，首次发布必须使用 digest-pinned 镜像，先以
+GPU 固定为 96 GB RTX PRO 6000 Blackwell；32 GB RTX 5090 已通过最大负载反证排除。
+容器盘至少 100GB、volume 至少 60GB。profile 默认不参加 autoscaler，首次发布必须
+使用 digest-pinned 镜像，先以
 disabled Worker 按计划开放的时长/分辨率组合跑 canary，至少覆盖默认档和最大负载；
 核对输出档位、动态帧数、音轨、显存峰值和 identity/composition 保真，再决定是否
 启用接单。
