@@ -18,6 +18,8 @@ import {
   EDIT_LORA_OPTIONS,
   FACE_VIDEO_RESOLUTION_OPTIONS,
   LTX_T2V_IC_RESOLUTION_OPTIONS,
+  getLtx25VideoUpscaleCost,
+  getLtx25VideoUpscaleResolutionOptions,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
   type LabModeConfig,
@@ -336,7 +338,12 @@ export function useLabWorkbench() {
   const composerWarning = computed(() => template.templateWarning.value)
 
   const videoResolutionOptions = computed(() => (
-    currentMode.value.id === 'face_video'
+    currentMode.value.id === 'ltx25_video_upscale'
+      ? getLtx25VideoUpscaleResolutionOptions(
+        slots.uploadedSlotAssets.value.target_video?.width,
+        slots.uploadedSlotAssets.value.target_video?.height,
+      )
+      : currentMode.value.id === 'face_video'
       ? FACE_VIDEO_RESOLUTION_OPTIONS
       : currentMode.value.id === 'ltx_t2v' && selectedCharacterIds.value.length > 0
         ? LTX_T2V_IC_RESOLUTION_OPTIONS
@@ -398,7 +405,21 @@ export function useLabWorkbench() {
     wan22ResolutionPreset: wan22ResolutionPreset.value,
     hasCharacter: useT2VReferences.value,
   }))
-  const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
+  const displayedCost = computed(() => currentModeId.value === 'ltx25_video_upscale'
+    ? getRuntimeTaskPrice(
+      'ltx25_video_upscale',
+      getLtx25VideoUpscaleCost(
+        slots.uploadedSlotAssets.value.target_video?.durationSeconds,
+        resolution.value,
+      ),
+      {
+        resolution: resolution.value,
+        duration: String(Math.min(20, Math.max(1, Math.ceil(
+          (slots.uploadedSlotAssets.value.target_video?.durationSeconds ?? 5) - 0.25,
+        )))),
+      },
+    )
+    : currentModeId.value === 'minimax_h3'
       ? getRuntimeTaskPrice(
         `minimax_h3_${minimaxH3Mode.value}`,
         getMinimaxH3Cost(
@@ -509,6 +530,13 @@ export function useLabWorkbench() {
     }
     if (!options.some(option => option.value === duration.value)) {
       duration.value = options[0]?.value ?? DEFAULT_VIDEO_DURATION
+    }
+  }, { immediate: true })
+
+  watch(videoResolutionOptions, (options) => {
+    if (currentMode.value.id !== 'ltx25_video_upscale') return
+    if (!options.some(option => option.value === resolution.value)) {
+      resolution.value = options[0]?.value ?? '2k'
     }
   }, { immediate: true })
 

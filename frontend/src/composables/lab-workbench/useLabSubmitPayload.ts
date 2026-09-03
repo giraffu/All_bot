@@ -151,20 +151,34 @@ export function useLabSubmitPayload({
         message.warning(t('lab.workbench.validation.upload_slots_required'))
         return
       }
-      if (
-        typeof video.durationSeconds === 'number'
-        && video.durationSeconds > 5.1
-      ) {
+      const sourceDuration = video.durationSeconds
+      if (typeof sourceDuration === 'number' && sourceDuration > 20.25) {
         message.warning(t('lab.workbench.validation.ltx25_video_too_long'))
         return
       }
+      if (
+        typeof video.width === 'number'
+        && typeof video.height === 'number'
+        && Math.max(video.width, video.height) >= 2560
+      ) {
+        message.warning(t('lab.workbench.validation.ltx25_video_already_2k'))
+        return
+      }
+      const normalizedDuration = typeof sourceDuration === 'number'
+        ? Math.min(20, Math.max(1, Math.ceil(sourceDuration - 0.25)))
+        : 5
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: 'ltx25_video_upscale',
         images: [video.key],
-        duration: 5,
+        duration: normalizedDuration,
         prompt: prompt.value,
         promptTarget: 'inputs',
         isTemplate: false,
+        extraInputs: {
+          resolution: resolution.value,
+          source_width: video.width,
+          source_height: video.height,
+        },
       }))
       return
     }

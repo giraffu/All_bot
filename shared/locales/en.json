@@ -878,7 +878,7 @@
       "ltx_t2v_title": "Text to Video",
       "ltx_t2v_desc": "Describe visuals, camera motion, dialogue, and ambience; optionally select a character sheet for consistency.",
       "ltx25_video_upscale_title": "LTX-2.5 Video Upscale",
-      "ltx25_video_upscale_desc": "Upload up to 5 seconds and use generative IC V2V to preserve motion and composition at 2x dimensions.",
+      "ltx25_video_upscale_desc": "Upload up to 20 seconds, choose a 720p, 1080p, or 2K output above the source, and preserve motion and composition with generative IC V2V.",
       "minimax_h3_title": "Advanced Image-to-Video Pro",
       "minimax_h3_desc": "Text, first-frame, first/last-frame, and character-reference video modes.",
       "character_reference_title": "Character Identity",
@@ -960,7 +960,7 @@
         "target_video": "Upload the body video to swap into",
         "reference_image": "Upload the character image to animate or swap in",
         "motion_video": "Upload the video that provides motion, camera, and composition",
-        "upscale_video": "MP4/MOV/WebM, up to 5 seconds and 40MB; output dimensions are doubled"
+        "upscale_video": "MP4/MOV/WebM, up to 20 seconds and 40MB; choose 720p, 1080p, or 2K"
       },
       "upload_slot_buttons": {
         "face_image": "Add Face Image",
@@ -1038,6 +1038,7 @@
         "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "ltx_t2v": "Standard T2V costs 10/20/30/40 credits for 5/10/15/20 seconds; character mode costs 12/24/36/48 credits.",
+        "ltx25_video_upscale": "Charged by whole source seconds: 5 credits/s at 720p, 10 credits/s at 1080p, and 18 credits/s at 2K.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
         "scail2_video": "Fixed at 512x896. Action Transfer supports 5s/8s/10s/15s/20s for 40/80/120/180/260 credits. Video Replacement and Video Face Swap support 5s/8s."
       },
@@ -1073,7 +1074,8 @@
         ,"minimax_h3_images": "The reference image count does not match the selected Advanced Image-to-Video Pro mode"
         ,"minimax_h3_descriptions": "Add an identity and appearance description for every character reference"
         ,"minimax_h3_frame_ratio": "The last frame must match the first frame aspect ratio. Please upload it again.",
-        "ltx25_video_too_long": "Video Upscale v1 supports source videos up to 5 seconds."
+        "ltx25_video_too_long": "Video Upscale supports source videos up to 20 seconds.",
+        "ltx25_video_already_2k": "The source video is already 2K or larger, so no upscale target is available."
       },
       "mode_kinds": {
         "image": "Image",
@@ -1370,9 +1372,9 @@
     },
     "ltx25_upscale": {
       "disabled": "⚠️ The video-upscale node has not completed model validation and is not open yet.",
-      "start": "✨ **LTX-2.5 Video Upscale**\n\nSend an MP4/MOV/WebM video up to 5 seconds and {max_mb}MB. Output dimensions are doubled and the source audio is preserved. Estimated cost: {cost} credits.\n\nSend /cancel anytime to exit.",
+      "start": "✨ **LTX-2.5 Video Upscale**\n\nSend an MP4/MOV/WebM video up to 20 seconds and {max_mb}MB. The service chooses a higher output tier from the source, up to 2K, and charges per second.\n\nSend /cancel anytime to exit.",
       "too_large": "⚠️ The video must be 40MB or smaller. Please compress it and retry.",
-      "too_long": "⚠️ Version 1 supports videos up to 5 seconds. Please trim and retry.",
+      "too_long": "⚠️ Videos are limited to 20 seconds. Please trim and retry.",
       "submitting": "🚀 Video received. Submitting the 2x upscale task..."
     },
     "edit_image": {

@@ -15,6 +15,7 @@ class ImageService:
         video_path: str,
         prompt: str,
         length: int = 5,
+        resolution: str = "1080p",
         priority: int = 0,
     ) -> str:
         return await api_client.submit_ltx25_video_upscale(
@@ -22,6 +23,7 @@ class ImageService:
             video_path=video_path,
             prompt=prompt,
             length=length,
+            resolution=resolution,
             priority=priority,
         )
 

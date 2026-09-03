@@ -936,7 +936,11 @@ class ComfyAgent:
     ) -> None:
         prepare_input_file_func = prepare_h3_reference_video_tail
         if task_type == "ltx25_video_upscale":
-            prepare_input_file_func = prepare_ltx25_video_upscale_input
+            prepare_input_file_func = lambda key, path: prepare_ltx25_video_upscale_input(
+                key,
+                path,
+                resolution=params.get("resolution"),
+            )
         await process_agent_single_input_asset(
             params=params,
             downloaded_input_paths=downloaded_input_paths,

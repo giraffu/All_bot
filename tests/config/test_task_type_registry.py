@@ -97,7 +97,7 @@ def test_ltx25_video_upscale_has_an_isolated_gpu_profile_contract():
     assert entry.is_generation is True
     assert entry.is_video is True
     assert entry.gallery_supported is False
-    assert entry.cost == 40
+    assert entry.cost == 50
 
 
 def test_registry_matches_gallery_and_apply_capability_lists():

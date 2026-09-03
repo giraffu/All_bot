@@ -10,6 +10,8 @@ import {
   UNIFIED_LAB_MODES,
   WEB_LTX_T2V_ENABLED,
   getLabModeConfig,
+  getLtx25VideoUpscaleCost,
+  getLtx25VideoUpscaleResolutionOptions,
   getMiniMaxH3AddonOptionsForMode,
   getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
@@ -136,6 +138,19 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('ltx_video')).toBe('ltx_video')
     expect(resolveLabModeIdFromTaskType('ltx25_video_upscale')).toBe('ltx25_video_upscale')
     expect(resolveLabModeIdFromTaskType('ltx_video_audio')).toBe(DEFAULT_LAB_MODE_ID)
+  })
+
+  it('prices LTX-2.5 upscale per source second and filters targets by source size', () => {
+    expect(getLabModeConfig('ltx25_video_upscale').baseCost).toBe(50)
+    expect(getLabModeConfig('scail2_action_transfer').baseCost).toBe(40)
+    expect(getLtx25VideoUpscaleCost(10.125, '720p')).toBe(50)
+    expect(getLtx25VideoUpscaleCost(10.125, '1080p')).toBe(100)
+    expect(getLtx25VideoUpscaleCost(10.125, '2k')).toBe(180)
+    expect(getLtx25VideoUpscaleResolutionOptions(768, 448).map(item => item.value)).toEqual([
+      '720p', '1080p', '2k',
+    ])
+    expect(getLtx25VideoUpscaleResolutionOptions(1920, 1080).map(item => item.value)).toEqual(['2k'])
+    expect(getLtx25VideoUpscaleResolutionOptions(2560, 1440)).toEqual([])
   })
 
   it('keeps i2i draw out of the web lab modes while it is disabled', () => {

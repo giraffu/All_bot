@@ -8,6 +8,9 @@ from src.domain_config.task_pricing_catalog import pricing_variants_for_task_typ
 from src.domain_config.wan22_aio_video import (
     normalize_wan22_video_v2_resolution_preset,
 )
+from src.domain_config.ltx25_video_upscale import (
+    normalize_ltx25_video_upscale_resolution,
+)
 
 
 def _input_count(inputs: dict[str, Any]) -> str | None:
@@ -40,6 +43,11 @@ def _resolution(task_type: str, inputs: dict[str, Any]) -> str | None:
     )
     if raw is None:
         return None
+    if task_type == "ltx25_video_upscale":
+        try:
+            return normalize_ltx25_video_upscale_resolution(raw)
+        except ValueError:
+            return None
     if task_type.startswith("minimax_h3_") or task_type in {
         "custom_video",
         "video_lora",

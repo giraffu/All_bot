@@ -15,6 +15,7 @@ from src.domain_config.scail2_video import (
 from src.domain_config.ltx25_video_upscale import (
     normalize_ltx25_video_upscale_duration,
     normalize_ltx25_video_upscale_prompt,
+    normalize_ltx25_video_upscale_resolution,
 )
 
 
@@ -345,6 +346,7 @@ class Ltx25VideoUpscaleRequest(BaseModel):
     video: str
     prompt: str = ""
     length: int = 5
+    resolution: str = "1080p"
     priority: int = 0
 
     @field_validator("video")
@@ -364,6 +366,11 @@ class Ltx25VideoUpscaleRequest(BaseModel):
     @classmethod
     def validate_length(cls, value: int) -> int:
         return normalize_ltx25_video_upscale_duration(value)
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, value: str) -> str:
+        return normalize_ltx25_video_upscale_resolution(value)
 
 
 class MiniMaxH3Request(BaseModel):

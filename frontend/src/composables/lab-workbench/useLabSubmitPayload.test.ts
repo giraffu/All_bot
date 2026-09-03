@@ -580,10 +580,13 @@ describe('useLabSubmitPayload', () => {
     harness.uploadedSlotAssets.value = {
       target_video: {
         ...slotAsset('h3.mp4', 'video'),
-        durationSeconds: 4.9,
+        durationSeconds: 10.125,
+        width: 768,
+        height: 448,
       },
     }
     harness.prompt.value = 'preserve exact identity and motion'
+    harness.resolution.value = '1080p'
 
     await harness.handleSubmit()
 
@@ -591,12 +594,47 @@ describe('useLabSubmitPayload', () => {
       task_type: 'ltx25_video_upscale',
       inputs: {
         images: ['h3.mp4'],
-        duration: 5,
+        duration: 10,
+        resolution: '1080p',
+        source_width: 768,
+        source_height: 448,
         prompt: 'preserve exact identity and motion',
       },
       priority: 0,
       is_template: false,
     }, 'lab.cards.ltx25_video_upscale_title')
+  })
+
+  it('rejects LTX-2.5 source videos over the 20 second encoding tolerance', async () => {
+    const harness = createHarness('ltx25_video_upscale')
+    harness.uploadedSlotAssets.value = {
+      target_video: {
+        ...slotAsset('too-long.mp4', 'video'),
+        durationSeconds: 20.251,
+      },
+    }
+
+    await harness.handleSubmit()
+
+    expect(messageMock.warning).toHaveBeenCalledWith('lab.workbench.validation.ltx25_video_too_long')
+    expect(harness.submitTask).not.toHaveBeenCalled()
+  })
+
+  it('rejects LTX-2.5 source videos that already reach 2K', async () => {
+    const harness = createHarness('ltx25_video_upscale')
+    harness.uploadedSlotAssets.value = {
+      target_video: {
+        ...slotAsset('already-2k.mp4', 'video'),
+        durationSeconds: 5,
+        width: 2560,
+        height: 1440,
+      },
+    }
+
+    await harness.handleSubmit()
+
+    expect(messageMock.warning).toHaveBeenCalledWith('lab.workbench.validation.ltx25_video_already_2k')
+    expect(harness.submitTask).not.toHaveBeenCalled()
   })
 
   it('builds merged long SCAIL-2 action transfer payloads from structured slots', async () => {

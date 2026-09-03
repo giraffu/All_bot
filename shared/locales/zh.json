@@ -879,7 +879,7 @@
       "ltx_t2v_title": "文生视频",
       "ltx_t2v_desc": "直接描述画面、镜头、对白和环境音；可选人物参考表保持角色一致。",
       "ltx25_video_upscale_title": "LTX-2.5 视频高清化",
-      "ltx25_video_upscale_desc": "上传最长 5 秒的视频，以生成式 IC V2V 保持动作和构图并放大 2 倍。",
+      "ltx25_video_upscale_desc": "上传最长 20 秒的视频，按原片选择 720p、1080p 或 2K 输出，以生成式 IC V2V 保持动作和构图。",
       "minimax_h3_title": "高级图生视频pro",
       "minimax_h3_desc": "支持文生、首帧、首尾帧和角色参考四种视频模式。",
       "character_reference_title": "人物角色图",
@@ -961,7 +961,7 @@
         "target_video": "上传要替换到的身体视频",
         "reference_image": "上传要迁移或替换成的角色图片",
         "motion_video": "上传提供动作、镜头和构图的短视频",
-        "upscale_video": "MP4/MOV/WebM，最长 5 秒、最大 40MB；输出宽高放大 2 倍"
+        "upscale_video": "MP4/MOV/WebM，最长 20 秒、最大 40MB；可选 720p、1080p 或 2K"
       },
       "upload_slot_buttons": {
         "face_image": "添加脸部图",
@@ -1039,6 +1039,7 @@
         "face_video": "视频换脸 v2 固定 512x896，5 秒 40 灵石，8 秒 80 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
         "ltx_t2v": "普通文生视频 5/10/15/20 秒分别为 10/20/30/40 灵石；选择人物后分别为 12/24/36/48 灵石。",
+        "ltx25_video_upscale": "按原片整秒时长计费：720p 每秒 5 灵石、1080p 每秒 10 灵石、2K 每秒 18 灵石。",
         "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
         "scail2_video": "固定 512x896；动作迁移支持 5/8/10/15/20 秒，分别消耗 40/80/120/180/260 灵石；视频换人和视频换脸支持 5/8 秒。"
       },
@@ -1074,7 +1075,8 @@
         ,"minimax_h3_images": "当前高级图生视频pro模式的参考图数量不正确"
         ,"minimax_h3_descriptions": "请为每张角色参考图填写身份与外观说明"
         ,"minimax_h3_frame_ratio": "尾帧比例需与首帧一致，请重新上传尾帧。",
-        "ltx25_video_too_long": "视频高清化首版只支持最长 5 秒的视频。"
+        "ltx25_video_too_long": "视频高清化支持最长 20 秒的视频。",
+        "ltx25_video_already_2k": "原视频已达到或超过 2K，无需再选择高清化档位。"
       },
       "mode_kinds": {
         "image": "图像",
@@ -1372,9 +1374,9 @@
     },
     "ltx25_upscale": {
       "disabled": "⚠️ 视频高清化节点尚未完成模型校验，暂未开放。",
-      "start": "✨ **已进入 LTX-2.5 视频高清化**\n\n请发送最长 5 秒、最大 {max_mb}MB 的 MP4/MOV/WebM 视频。输出宽高放大 2 倍，保留原音轨，预计消耗 {cost} 灵石。\n\n随时发送 /cancel 退出。",
+      "start": "✨ **已进入 LTX-2.5 视频高清化**\n\n请发送最长 20 秒、最大 {max_mb}MB 的 MP4/MOV/WebM 视频。系统会按原片选择更高的目标清晰度，最高 2K，并按秒计费。\n\n随时发送 /cancel 退出。",
       "too_large": "⚠️ 视频不能超过 40MB，请压缩后重试。",
-      "too_long": "⚠️ 首版只支持最长 5 秒的视频，请裁剪后重试。",
+      "too_long": "⚠️ 只支持最长 20 秒的视频，请裁剪后重试。",
       "submitting": "🚀 视频已收到，正在提交 2 倍高清化任务，请耐心等待..."
     },
     "edit_image": {

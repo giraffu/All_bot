@@ -57,6 +57,10 @@ async def submit_generation_task(
     task_application: TaskApplication | None = None,
     advanced_video_profile_loader=None,
     probe_video_duration_func: Callable[[str], Awaitable[float | None]] | None = None,
+    probe_video_metadata_func: Callable[
+        [str], Awaitable[tuple[int | None, int | None, int | None]]
+    ]
+    | None = None,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -72,6 +76,7 @@ async def submit_generation_task(
             ),
             advanced_video_profile_loader=advanced_video_profile_loader,
             probe_video_duration_func=probe_video_duration_func,
+            probe_video_metadata_func=probe_video_metadata_func,
         )
         inputs = prepared.inputs
         images = prepared.images

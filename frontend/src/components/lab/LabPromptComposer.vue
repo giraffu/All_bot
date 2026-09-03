@@ -78,7 +78,7 @@ const emit = defineEmits<{
   removeReference: [index: number]
   reorderReference: [fromIndex: number, toIndex: number]
   removeUploadSlot: [slotId: LabUploadSlotId]
-  assetVideoMetadata: [slotId: LabUploadSlotId, durationSeconds: number | null]
+  assetVideoMetadata: [slotId: LabUploadSlotId, durationSeconds: number | null, width: number | null, height: number | null]
   optimizePrompt: []
   restoreOriginalPrompt: []
 }>()
@@ -108,7 +108,13 @@ const normalizeVideoDuration = (value: number) => (
 
 const handleAssetVideoLoadedMetadata = (slotId: LabUploadSlotId, event: Event) => {
   const video = event.currentTarget as HTMLVideoElement | null
-  emit('assetVideoMetadata', slotId, normalizeVideoDuration(video?.duration ?? Number.NaN))
+  emit(
+    'assetVideoMetadata',
+    slotId,
+    normalizeVideoDuration(video?.duration ?? Number.NaN),
+    video?.videoWidth || null,
+    video?.videoHeight || null,
+  )
 }
 
 const compactUploadLabel = (label: string) => label

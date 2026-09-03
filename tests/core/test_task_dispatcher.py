@@ -134,13 +134,14 @@ async def test_ltx25_video_upscale_strategy_isolated_submission(monkeypatch):
         "saved_input_images": ["/tmp/source.mp4"],
         "prompt": "keep the exact same composition",
         "duration": 5,
+        "resolution": "1080p",
     }
 
-    assert strategy.get_cost(inputs) == 40
+    assert strategy.get_cost(inputs) == 50
     assert strategy.get_file_paths_to_upload({"images": ["owned/source.mp4"]}) == [
         "owned/source.mp4"
     ]
-    assert strategy.get_metadata(inputs)["upscale_factor"] == 2
+    assert strategy.get_metadata(inputs)["billing_resolution"] == "1080p"
     result = await strategy.submit_task("task-1", inputs, priority=7)
 
     assert result == "backend-upscale-id"
@@ -149,8 +150,29 @@ async def test_ltx25_video_upscale_strategy_isolated_submission(monkeypatch):
         video_path="/tmp/source.mp4",
         prompt="keep the exact same composition",
         length=5,
+        resolution="1080p",
         priority=7,
     )
+
+
+def test_ltx25_video_upscale_strategy_accepts_up_to_twenty_seconds():
+    strategy = Ltx25VideoUpscaleStrategy()
+
+    for duration in (1, 5, 10, 15, 20):
+        inputs = {"duration": duration, "resolution": "1080p"}
+        assert strategy.get_cost(inputs) == duration * 10
+        assert strategy.get_metadata(inputs)["requested_duration"] == duration
+
+    with pytest.raises(ValueError, match="1 至 20 秒"):
+        strategy.get_cost({"duration": 21, "resolution": "1080p"})
+
+
+def test_ltx25_video_upscale_strategy_prices_output_pixels_per_second():
+    strategy = Ltx25VideoUpscaleStrategy()
+
+    assert strategy.get_cost({"duration": 10, "resolution": "720p"}) == 50
+    assert strategy.get_cost({"duration": 10, "resolution": "1080p"}) == 100
+    assert strategy.get_cost({"duration": 10, "resolution": "2k"}) == 180
 
 
 @pytest.mark.asyncio

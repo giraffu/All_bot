@@ -120,6 +120,14 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
         == 48
     )
     assert _variant(offers["action_transfer"], duration="20")["default_cost"] == 260
+    upscale = offers["video_upscale"]
+    assert [dimension["key"] for dimension in upscale["dimensions"]] == [
+        "resolution",
+        "duration",
+    ]
+    assert _variant(upscale, resolution="720p", duration="10")["default_cost"] == 50
+    assert _variant(upscale, resolution="1080p", duration="10")["default_cost"] == 100
+    assert _variant(upscale, resolution="2k", duration="10")["default_cost"] == 180
 
 
 def test_condition_specific_prices_resolve_for_web_and_bot():
@@ -128,6 +136,20 @@ def test_condition_specific_prices_resolve_for_web_and_bot():
     one_image = _variant(offers["free_edit_v2_5"], input_count="1")["variant_id"]
     two_images = _variant(offers["free_edit_v2_5"], input_count="2")["variant_id"]
     config = {"prices": {one_image: 4, two_images: 11}}
+
+    upscale_variant = _variant(
+        offers["video_upscale"], resolution="1080p", duration="10"
+    )["variant_id"]
+    assert (
+        resolve_configured_task_cost(
+            {"prices": {upscale_variant: 123}},
+            task_type="ltx25_video_upscale",
+            inputs={"images": ["clip.mp4"], "resolution": "1080p", "duration": 10},
+            client_type="web",
+            default_cost=100,
+        )
+        == 123
+    )
 
     assert (
         resolve_configured_task_cost(

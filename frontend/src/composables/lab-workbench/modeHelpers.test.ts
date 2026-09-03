@@ -181,6 +181,7 @@ describe('lab workbench mode helpers', () => {
     expect(getLabCostHintKey('edit_v3')).toBe('lab.workbench.cost_hints.edit_v3')
     expect(getLabCostHintKey('custom_video')).toBe('lab.workbench.cost_hints.custom_video')
     expect(getLabCostHintKey('ltx_video')).toBe('lab.workbench.cost_hints.ltx_video')
+    expect(getLabCostHintKey('ltx25_video_upscale')).toBe('lab.workbench.cost_hints.ltx25_video_upscale')
     expect(getLabCostHintKey('scail2_action_transfer')).toBe('lab.workbench.cost_hints.scail2_video')
     expect(getLabCostHintKey('scail2_face_swap_v2')).toBe('lab.workbench.cost_hints.scail2_video')
     expect(getLabCostHintKey('txt2img')).toBe('')

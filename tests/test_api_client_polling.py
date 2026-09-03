@@ -72,6 +72,32 @@ async def test_ltx_t2v_api_client_forwards_fixed_seed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ltx25_upscale_api_client_forwards_target_resolution(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=SimpleNamespace(json=lambda: {"task_id": "task-upscale"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    await client.submit_ltx25_video_upscale(
+        "task-upscale",
+        video_path="source.mp4",
+        prompt="preserve",
+        length=10,
+        resolution="2k",
+    )
+
+    assert request.await_args.kwargs["json"] == {
+        "task_id": "task-upscale",
+        "video": "source.mp4",
+        "prompt": "preserve",
+        "length": 10,
+        "resolution": "2k",
+        "priority": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_ltx_t2v_api_client_forwards_ordered_msr_inputs(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(

@@ -6,6 +6,7 @@ from src.domain_config.ltx25_video_upscale import (
     LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT,
     normalize_ltx25_video_upscale_duration,
     normalize_ltx25_video_upscale_prompt,
+    normalize_ltx25_video_upscale_resolution,
 )
 from src.domain_config.scail2_video import (
     SCAIL2_FIXED_HEIGHT,
@@ -508,6 +509,7 @@ def patch_ltx25_video_upscale_workflow(
     if not source_video:
         raise ValueError("LTX-2.5 视频高清化缺少输入视频。")
     normalize_ltx25_video_upscale_duration(params.get("length", params.get("duration")))
+    normalize_ltx25_video_upscale_resolution(params.get("resolution"))
     prompt = normalize_ltx25_video_upscale_prompt(params.get("prompt"))
     negative_prompt = str(
         params.get("negative_prompt") or LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT

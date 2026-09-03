@@ -325,7 +325,7 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         model_manifest_key=EXPECTED_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
         expected_gpu_type_ids=EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
         allow_expected_gpu_subset=True,
-        task_summary="submit one LTX-2.5 IC V2V 2x upscale Web task",
+        task_summary="submit one selectable-resolution LTX-2.5 IC V2V Web task",
         worker_disable_summary=(
             "temporarily disable cloud-test workers supporting "
             "ltx25_video_upscale"
@@ -365,6 +365,7 @@ class RunPodCanaryOptions:
     web_bearer_token: str = ""
     agent_token: str = ""
     input_object_key: str = ""
+    ltx25_resolution: str = "1080p"
     scail2_reference_object_key: str = ""
     scail2_motion_video_object_key: str = ""
     output_dir: Path = Path("/tmp/allbot_runpod_canary")
@@ -454,6 +455,11 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
             getattr(args, "input_object_key", None)
             or os.getenv("RUNPOD_CANARY_INPUT_OBJECT_KEY")
             or ""
+        ),
+        ltx25_resolution=(
+            getattr(args, "ltx25_resolution", None)
+            or os.getenv("RUNPOD_CANARY_LTX25_RESOLUTION")
+            or "1080p"
         ),
         scail2_reference_object_key=(
             getattr(args, "scail2_reference_object_key", None)
@@ -620,6 +626,7 @@ class RunPodCanaryRunner:
             prompt=self.options.prompt,
             negative_prompt=self.options.negative_prompt,
             result_bucket=EXPECTED_TEST_BUCKET,
+            ltx25_resolution=self.options.ltx25_resolution,
         )
 
     def _canary_cases(self) -> RunPodCloudTestCanaryCaseBuilder:
