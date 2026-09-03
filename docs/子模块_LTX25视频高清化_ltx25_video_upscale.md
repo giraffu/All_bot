@@ -13,6 +13,11 @@ Web 使用练功房结构化 `target_video` 上传槽；主 Bot 使用
 `ltx25_video_upscale` 初始为不可见，服务端和 Bot 还要求
 `LTX25_VIDEO_UPSCALE_ENABLED=true`。只有模型许可、镜像和 canary 均通过后才能
 同时打开入口和执行开关。
+Web 服务端在素材 promotion、扣费和 Central 派发之前通过对象存储短签与 ffprobe
+读取真实视频时长；超过 5 秒的成片直接返回明确参数错误，探测失败也 fail closed。
+为兼容 24fps/121 帧及音频封装尾部，只允许最多 5.25 秒的编码容差，Worker 使用
+同一 domain config 上限并仍将输入规范化为固定 121 帧；不能以客户端上报的固定
+`duration=5` 代替真实媒体校验。
 `config-contract` 必须将该开关同时投影到 `web-api` 和 `main-bot`；
 只写入宿主机总 env 但未出现在这两个容器中时，入口仍按关闭处理。
 

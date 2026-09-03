@@ -7,6 +7,10 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+)
+
 try:
     from agent_artifact_lifecycle import (
         artifact_ref_from_comfy_response,
@@ -19,7 +23,9 @@ except ImportError:  # pragma: no cover - package import in focused tests
     )
 
 
-LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS = 5.25
+LTX25_UPSCALE_MAX_SOURCE_DURATION_SECONDS = (
+    LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS
+)
 LTX25_UPSCALE_ENCODING_CUTOFF_SECONDS = 5.1
 
 

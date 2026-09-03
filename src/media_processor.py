@@ -52,6 +52,33 @@ def _extract_video_metadata_with_ffprobe(input_source: str) -> tuple[int | None,
     return stream.get("width"), stream.get("height"), duration
 
 
+def _extract_video_duration_seconds_with_ffprobe(input_source: str) -> float | None:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            input_source,
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+    raw_duration = (json.loads(result.stdout or "{}").get("format") or {}).get(
+        "duration"
+    )
+    if raw_duration is None:
+        return None
+    duration = float(raw_duration)
+    return duration if duration > 0 else None
+
+
 def extract_media_metadata_from_bytes(
     media_bytes: bytes,
     media_type: str,
@@ -119,6 +146,25 @@ async def extract_media_metadata_from_storage(
         return await asyncio.to_thread(_extract_image_metadata_from_file, local_path)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+async def extract_video_duration_seconds_from_storage(
+    output_file: str,
+) -> float | None:
+    if not output_file:
+        return None
+    bucket_name, object_name = resolve_storage_object(output_file)
+    storage_service = _get_media_storage_service()
+    input_url = await asyncio.to_thread(
+        storage_service.get_presigned_url,
+        object_name,
+        1.0,
+        bucket_name,
+    )
+    return await asyncio.to_thread(
+        _extract_video_duration_seconds_with_ffprobe,
+        input_url,
+    )
 
 
 async def extract_media_metadata_from_storage_best_effort(

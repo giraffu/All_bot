@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.core.task_core_types import CoreDomainError
+from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
+)
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
 
@@ -171,6 +174,7 @@ async def prepare_web_submission_request(
     env_enabled: Callable[[str], bool],
     advanced_video_profile_loader=None,
     prepare_h3_extension_func=None,
+    probe_video_duration_func: Callable[[str], Awaitable[float | None]] | None = None,
 ) -> PreparedWebSubmission:
     _assert_task_access(
         req.task_type,
@@ -285,6 +289,21 @@ async def prepare_web_submission_request(
     images = list(inputs.get("images") or [])
     if req.task_type == "ltx25_video_upscale" and len(images) != 1:
         raise CoreDomainError("视频高清化需要且只允许上传一个视频。")
+    if req.task_type == "ltx25_video_upscale":
+        if probe_video_duration_func is None:
+            from src.media_processor import (
+                extract_video_duration_seconds_from_storage,
+            )
+
+            probe_video_duration_func = extract_video_duration_seconds_from_storage
+        try:
+            source_duration = await probe_video_duration_func(images[0])
+        except Exception as exc:
+            raise CoreDomainError("无法读取视频时长，请重新上传视频后再试。") from exc
+        if source_duration is None or source_duration <= 0:
+            raise CoreDomainError("无法读取视频时长，请重新上传视频后再试。")
+        if source_duration > LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
+            raise CoreDomainError("视频高清化当前只支持最长 5 秒的视频。")
     if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
         raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")
     if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:
