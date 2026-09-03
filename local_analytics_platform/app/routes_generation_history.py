@@ -30,7 +30,11 @@ MEDIA_COLUMNS_SQL = """
     coalesce(snapshot_history.input_missing_count,0)::int input_snapshot_missing_count,
     coalesce(snapshot_history.output_asset_count,0)::int output_snapshot_count,
     coalesce(snapshot_history.output_backed_up_count,0)::int output_snapshot_backed_up_count,
-    coalesce(snapshot_history.output_missing_count,0)::int output_snapshot_missing_count
+    coalesce(snapshot_history.output_missing_count,0)::int output_snapshot_missing_count,
+    input_preview.content_url input_preview_url,
+    input_preview.media_kind input_preview_kind,
+    output_preview.content_url output_preview_url,
+    output_preview.media_kind output_preview_kind
 """
 
 MEDIA_JOIN_SQL = """
@@ -52,6 +56,67 @@ SNAPSHOT_HISTORY_JOIN_SQL = """
      and snapshot_history.snapshot_id=(
        select snapshot_id from analytics_snapshot_backup_sets
        where ready and history_status_ready order by created_at desc limit 1)
+"""
+
+MEDIA_PREVIEW_JOIN_SQL = r"""
+    left join lateral (
+      select candidate.content_url, candidate.media_kind
+      from (
+        select '/api/snapshot-assets/' || snapshot_ref.id || '/content' content_url,
+          case when lower(snapshot_ref.original_ref) ~ '\.(mp4|webm|mov|m4v)(\?.*)?$'
+            then 'video' else 'image' end media_kind,
+          0 source_priority, snapshot_ref.ordinal
+        from analytics_snapshot_backup_refs snapshot_ref
+        join analytics_snapshot_backup_objects snapshot_object
+          on snapshot_object.snapshot_id=snapshot_ref.snapshot_id
+         and snapshot_object.object_key=snapshot_ref.object_key
+        where snapshot_ref.history_id=h.id
+          and snapshot_ref.snapshot_id=snapshot_history.snapshot_id
+          and snapshot_ref.role='input'
+          and snapshot_object.backup_status='backed_up'
+          and lower(snapshot_ref.original_ref) ~ '\.(png|jpe?g|webp|gif|avif|bmp|mp4|webm|mov|m4v)(\?.*)?$'
+        union all
+        select '/api/archive/assets/' || archive_asset.id || '/content' content_url,
+          case when archive_blob.mime_type like 'video/%' then 'video' else 'image' end media_kind,
+          1 source_priority, archive_asset.ordinal
+        from analytics_media_asset_catalog archive_asset
+        join analytics_media_blobs archive_blob on archive_blob.sha256=archive_asset.sha256
+        where archive_asset.history_id=h.id and archive_asset.role='input'
+          and archive_asset.status='archived_verified'
+          and (archive_blob.mime_type like 'image/%' or archive_blob.mime_type like 'video/%')
+      ) candidate
+      order by candidate.source_priority, candidate.ordinal
+      limit 1
+    ) input_preview on true
+    left join lateral (
+      select candidate.content_url, candidate.media_kind
+      from (
+        select '/api/snapshot-assets/' || snapshot_ref.id || '/content' content_url,
+          case when lower(snapshot_ref.original_ref) ~ '\.(mp4|webm|mov|m4v)(\?.*)?$'
+            then 'video' else 'image' end media_kind,
+          0 source_priority, snapshot_ref.ordinal
+        from analytics_snapshot_backup_refs snapshot_ref
+        join analytics_snapshot_backup_objects snapshot_object
+          on snapshot_object.snapshot_id=snapshot_ref.snapshot_id
+         and snapshot_object.object_key=snapshot_ref.object_key
+        where snapshot_ref.history_id=h.id
+          and snapshot_ref.snapshot_id=snapshot_history.snapshot_id
+          and snapshot_ref.role<>'input'
+          and snapshot_object.backup_status='backed_up'
+          and lower(snapshot_ref.original_ref) ~ '\.(png|jpe?g|webp|gif|avif|bmp|mp4|webm|mov|m4v)(\?.*)?$'
+        union all
+        select '/api/archive/assets/' || archive_asset.id || '/content' content_url,
+          case when archive_blob.mime_type like 'video/%' then 'video' else 'image' end media_kind,
+          1 source_priority, archive_asset.ordinal
+        from analytics_media_asset_catalog archive_asset
+        join analytics_media_blobs archive_blob on archive_blob.sha256=archive_asset.sha256
+        where archive_asset.history_id=h.id and archive_asset.role<>'input'
+          and archive_asset.status='archived_verified'
+          and (archive_blob.mime_type like 'image/%' or archive_blob.mime_type like 'video/%')
+      ) candidate
+      order by candidate.source_priority, candidate.ordinal
+      limit 1
+    ) output_preview on true
 """
 
 FILTER_SQL = """
@@ -162,6 +227,7 @@ async def generation_history(
                 left join users u on u.id=h.user_id
                 {MEDIA_JOIN_SQL}
                 {SNAPSHOT_HISTORY_JOIN_SQL}
+                {MEDIA_PREVIEW_JOIN_SQL}
                 order by type_counts.generation_count desc,h.created_at desc,h.id desc limit $1::int offset $2::int
             """
             rows_args = (GENERATION_HISTORY_PAGE_SIZE, offset)
@@ -175,6 +241,7 @@ async def generation_history(
                 from history h left join users u on u.id=h.user_id
                 {MEDIA_JOIN_SQL}
                 {SNAPSHOT_HISTORY_JOIN_SQL}
+                {MEDIA_PREVIEW_JOIN_SQL}
                 where ($1::text='' or coalesce(h.type,'unknown')=$1::text)
                 order by h.created_at desc,h.id desc limit $2::int offset $3::int
             """
@@ -251,6 +318,7 @@ async def generation_history(
       from history h left join users u on u.id=h.user_id {type_join}
       {MEDIA_JOIN_SQL}
       {SNAPSHOT_HISTORY_JOIN_SQL}
+      {MEDIA_PREVIEW_JOIN_SQL}
       where {filter_sql}
       order by {order_sql} limit $12::int offset $13::int
     """

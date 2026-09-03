@@ -74,6 +74,11 @@ QQCC 私有 Bot owner WebApp Host 由 `PRIVATE_QQCC_BOT_OWNER_HOST` / `PRIVATE_Q
 
 当前 `cloudflared-local-analytics.service` 是用户级 systemd 服务；若 `loginctl show-user hfy -p Linger` 返回 `Linger=no`，则不能把它等同于系统级开机自启服务。需要更强韧性时，应在具备 sudo 条件后迁移为 system service 或启用 linger。
 
+History 归档媒体可通过该受控公网入口在输入/输出单元格内预览。正文接口仍要求
+应用层签名 session，边缘继续要求 Cloudflare Access；响应必须使用
+`Cache-Control: private, no-store`，浏览器只获得 opaque 媒体 ID，不获得 NAS
+endpoint、对象键或凭据。loopback 快照网关与 NAS 服务不得增加 public hostname。
+
 ## 4. 安全边界
 
 - 不把 token 明文写入 `.env.cloud.*`、Compose env、systemd unit、Git、文档、日志或聊天。

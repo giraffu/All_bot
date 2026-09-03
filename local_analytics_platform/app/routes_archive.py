@@ -21,12 +21,6 @@ from .auth import AuthConfig, read_session_token
 
 router = APIRouter()
 RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
-CLOUDFLARE_HEADERS = (
-    "cf-ray",
-    "cf-connecting-ip",
-    "cf-ipcountry",
-    "cf-visitor",
-)
 
 
 def _validated_snapshot_gateway() -> tuple[str, int, str]:
@@ -76,7 +70,9 @@ def _snapshot_gateway_response(
             if response.status == 404
             else "NAS snapshot content is temporarily unavailable"
         )
-        raise HTTPException(status_code=404 if response.status == 404 else 503, detail=detail)
+        raise HTTPException(
+            status_code=404 if response.status == 404 else 503, detail=detail
+        )
 
     def body() -> Iterable[bytes]:
         try:
@@ -91,14 +87,6 @@ def _snapshot_gateway_response(
         "content_length": response.getheader("Content-Length"),
         "content_range": response.getheader("Content-Range"),
     }
-
-
-def require_lan_archive_request(request: Request) -> None:
-    if any(request.headers.get(name) for name in CLOUDFLARE_HEADERS):
-        raise HTTPException(
-            status_code=403,
-            detail="full archive content is available from the authenticated LAN only",
-        )
 
 
 def require_archive_auth(request: Request) -> None:
@@ -351,7 +339,7 @@ async def history_media(
 
 @router.get(
     "/api/snapshot-assets/{snapshot_ref_id}/content",
-    dependencies=[Depends(require_lan_archive_request), Depends(require_archive_auth)],
+    dependencies=[Depends(require_archive_auth)],
 )
 async def snapshot_asset_content(
     snapshot_ref_id: int,
@@ -375,7 +363,9 @@ async def snapshot_asset_content(
         )
     )
     if not asset:
-        raise HTTPException(status_code=404, detail="verified snapshot content not found")
+        raise HTTPException(
+            status_code=404, detail="verified snapshot content not found"
+        )
     status_code = 200
     if range_header:
         match = RANGE_PATTERN.match(range_header)
@@ -396,6 +386,7 @@ async def snapshot_asset_content(
     )
     headers = {
         "Accept-Ranges": "bytes",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
     }
     if response.get("content_range"):
@@ -427,7 +418,7 @@ async def archive_asset(asset_id: int):
 
 @router.get(
     "/api/archive/assets/{asset_id}/content",
-    dependencies=[Depends(require_lan_archive_request), Depends(require_archive_auth)],
+    dependencies=[Depends(require_archive_auth)],
 )
 async def archive_asset_content(
     asset_id: int, range_header: str | None = Header(default=None, alias="Range")
@@ -475,6 +466,7 @@ async def archive_asset_content(
     filename = PurePosixPath(str(asset["original_ref"])).name or f"asset-{asset_id}"
     headers = {
         "Accept-Ranges": "bytes",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
     }
     if response.get("ContentRange"):

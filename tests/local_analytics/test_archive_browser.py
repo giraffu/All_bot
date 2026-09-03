@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from local_analytics_platform.app import main as analytics_main
 from local_analytics_platform.app import routes_archive
+from local_analytics_platform.app.auth import AuthConfig, create_session_token
 
 
 @pytest.mark.asyncio
@@ -20,12 +21,13 @@ async def test_archive_browser_fails_closed_when_local_login_is_disabled(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_archive_content_rejects_cloudflare_tunnel_before_database_access(
+async def test_archive_content_through_cloudflare_still_requires_application_login(
     monkeypatch,
 ):
     monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_ENABLED", "true")
     monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_USERNAME", "admin")
     monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_PASSWORD_HASH", "unused")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_SESSION_SECRET", "test-session-secret")
     async with AsyncClient(
         transport=ASGITransport(app=analytics_main.app), base_url="http://test"
     ) as client:
@@ -34,8 +36,53 @@ async def test_archive_content_rejects_cloudflare_tunnel_before_database_access(
             headers={"CF-Ray": "abc-SJC", "CF-Connecting-IP": "203.0.113.2"},
         )
 
-    assert response.status_code == 403
-    assert "LAN" in response.json()["detail"]
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_snapshot_content_allows_authenticated_cloudflare_access_without_public_caching(
+    monkeypatch,
+):
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_ENABLED", "true")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_USERNAME", "admin")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_PASSWORD_HASH", "unused")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setattr(
+        routes_archive,
+        "_fetchrow",
+        AsyncMock(
+            return_value={
+                "original_ref": "100/input_images/a.jpg",
+                "object_key": "100/input_images/a.jpg",
+                "backup_status": "backed_up",
+                "batch_number": 12,
+                "byte_size": 5,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        routes_archive,
+        "_snapshot_gateway_response",
+        lambda **_kwargs: {
+            "body": iter([b"image"]),
+            "content_length": 5,
+            "content_range": None,
+        },
+    )
+    config = AuthConfig.from_env()
+    token = create_session_token(config, username="admin")
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app), base_url="http://test"
+    ) as client:
+        client.cookies.set(config.cookie_name, token)
+        response = await client.get(
+            "/api/snapshot-assets/501/content",
+            headers={"CF-Ray": "abc-SJC", "CF-Connecting-IP": "203.0.113.2"},
+        )
+
+    assert response.status_code == 200
+    assert response.content == b"image"
+    assert response.headers["cache-control"] == "private, no-store"
 
 
 @pytest.mark.asyncio
@@ -109,31 +156,31 @@ async def test_history_media_filters_role_groups_and_only_exposes_verified_local
         ),
     )
     official_assets = [
-            {
-                "id": 101,
-                "role": "input",
-                "ordinal": 0,
-                "original_ref": "web_uploads/input.png",
-                "status": "archived_verified",
-                "sha256": "a" * 64,
-                "byte_size": 12,
-                "mime_type": "image/png",
-                "nas_bucket": "private-bucket",
-                "nas_key": "blobs/private-key.png",
-            },
-            {
-                "id": 102,
-                "role": "output",
-                "ordinal": 0,
-                "original_ref": "task-results/task-42/primary.png",
-                "status": "pending_probe",
-                "sha256": None,
-                "byte_size": None,
-                "mime_type": None,
-                "nas_bucket": None,
-                "nas_key": None,
-            },
-        ]
+        {
+            "id": 101,
+            "role": "input",
+            "ordinal": 0,
+            "original_ref": "web_uploads/input.png",
+            "status": "archived_verified",
+            "sha256": "a" * 64,
+            "byte_size": 12,
+            "mime_type": "image/png",
+            "nas_bucket": "private-bucket",
+            "nas_key": "blobs/private-key.png",
+        },
+        {
+            "id": 102,
+            "role": "output",
+            "ordinal": 0,
+            "original_ref": "task-results/task-42/primary.png",
+            "status": "pending_probe",
+            "sha256": None,
+            "byte_size": None,
+            "mime_type": None,
+            "nas_bucket": None,
+            "nas_key": None,
+        },
+    ]
     fetch = AsyncMock(side_effect=[[], official_assets])
     monkeypatch.setattr(routes_archive, "_fetch", fetch)
 
@@ -150,7 +197,9 @@ async def test_history_media_filters_role_groups_and_only_exposes_verified_local
 
 
 @pytest.mark.asyncio
-async def test_archive_content_returns_service_unavailable_when_nas_read_fails(monkeypatch):
+async def test_archive_content_returns_service_unavailable_when_nas_read_fails(
+    monkeypatch,
+):
     monkeypatch.setattr(
         routes_archive,
         "_fetchrow",
@@ -212,17 +261,22 @@ async def test_archive_content_forwards_valid_video_range_headers(monkeypatch):
     )
     monkeypatch.setattr(routes_archive, "_nas_client", lambda: client)
 
-    response = await routes_archive.archive_asset_content(101, range_header="bytes=0-31")
+    response = await routes_archive.archive_asset_content(
+        101, range_header="bytes=0-31"
+    )
 
     assert response.status_code == 206
     assert response.headers["content-range"] == "bytes 0-31/100"
     assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.media_type == "video/mp4"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value", ["bytes=-", "bytes=20-10", "items=0-10"])
-async def test_archive_content_rejects_invalid_ranges_before_nas_access(monkeypatch, value):
+async def test_archive_content_rejects_invalid_ranges_before_nas_access(
+    monkeypatch, value
+):
     monkeypatch.setattr(
         routes_archive,
         "_fetchrow",

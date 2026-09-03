@@ -14,8 +14,11 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260903-archive-preview-v1" in html
-    assert 'type="module" src="/static/js/bootstrap.js?v=20260903-archive-preview-v1"' in html
+    assert "/static/styles.css?v=20260903-table-media-preview-v1" in html
+    assert (
+        'type="module" src="/static/js/bootstrap.js?v=20260903-table-media-preview-v1"'
+        in html
+    )
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
     assert "await response.text()" in app_js
     assert "JSON.parse(rawBody)" in app_js
@@ -29,8 +32,12 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert 'data-tab="prompt-vectors"' in html
     assert 'data-tab="generation-history"' in html
     assert 'data-panel="generation-history"' in html
-    assert html.index('data-tab="generation-history"') > html.index('data-tab="generation"')
-    assert html.index('data-tab="generation-history"') < html.index('data-tab="prompts"')
+    assert html.index('data-tab="generation-history"') > html.index(
+        'data-tab="generation"'
+    )
+    assert html.index('data-tab="generation-history"') < html.index(
+        'data-tab="prompts"'
+    )
     assert 'id="generationHistoryTaskTypeSelect"' in html
     assert 'id="generationHistoryH3MainModelSelect"' in html
     assert 'id="generationHistorySortSelect"' in html
@@ -43,12 +50,16 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "用户昵称" in html
     assert "输入地址" in html
     assert "输出地址" in html
+    assert "归档媒体" not in html
+    assert "查看全部" not in app_js
     assert "/api/generation-history" in app_js
     assert "role_group: roleGroup" in app_js
     assert 'data-role-group="${roleGroup}"' in app_js
+    assert 'row[isInput ? "input_preview_url" : "output_preview_url"]' in app_js
+    assert 'class="generation-history-media-preview"' in app_js
     assert 'asset.content_url || ""' in app_js
     assert 'class="archive-media-preview-trigger"' in app_js
-    assert 'data-archive-image-preview' in app_js
+    assert "data-archive-image-preview" in app_js
     assert "generationHistoryPreviewDialog" in app_js
     assert "打开本地原件" not in app_js
     assert "官方归档可用" in app_js
@@ -57,8 +68,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "generationHistoryPage" in app_js
     assert 'value="type_count_desc"' in html
     assert 'class="generation-history-prompt-text"' in app_js
-    assert 'h3_main_model' in app_js
-    assert 'H3 主模型' in html
+    assert "h3_main_model" in app_js
+    assert "H3 主模型" in html
     assert 'escapeHtml(row.user_id ?? "-")' in app_js
     assert "-webkit-line-clamp: 4" in styles
     assert "提示词向量化" in html
@@ -79,8 +90,18 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert 'id="promptTokenCustomTermCategoryTabs"' in html
     assert 'id="promptTokenCustomTermSubcategoryTabs"' in html
     assert 'id="promptTokenCustomTermPagination"' in html
-    assert "<th>分类</th>" not in html.split('id="promptTokenCustomTermRows"', 1)[0].rsplit("<table", 1)[-1]
-    assert "<th>子分类</th>" not in html.split('id="promptTokenCustomTermRows"', 1)[0].rsplit("<table", 1)[-1]
+    assert (
+        "<th>分类</th>"
+        not in html.split('id="promptTokenCustomTermRows"', 1)[0].rsplit("<table", 1)[
+            -1
+        ]
+    )
+    assert (
+        "<th>子分类</th>"
+        not in html.split('id="promptTokenCustomTermRows"', 1)[0].rsplit("<table", 1)[
+            -1
+        ]
+    )
     assert 'id="promptTokenCustomTermLoadButton"' not in html
     assert 'id="promptTokenCustomTermAddButton"' in html
     assert 'id="promptTokenCustomTermSaveButton"' in html
@@ -120,9 +141,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "/api/prompt-token-deletions/restore" in app_js
     assert "/api/prompt-decomposition" in app_js
     assert "/api/prompt-decomposition/saved" in app_js
-    load_prompt_tokens_body = app_js.split("async function loadPromptTokens() {", 1)[1].split(
-        "\nasync function loadPromptTokenDeletions", 1
-    )[0]
+    load_prompt_tokens_body = app_js.split("async function loadPromptTokens() {", 1)[
+        1
+    ].split("\nasync function loadPromptTokenDeletions", 1)[0]
     assert "/api/prompt-token-custom-terms" not in load_prompt_tokens_body
     assert "/api/prompt-token-aliases" not in load_prompt_tokens_body
     assert "/api/prompt-token-deletions" not in load_prompt_tokens_body
@@ -138,12 +159,12 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "renderPromptDecompositionFacets" in app_js
     assert "renderPromptDecompositionDrawer" in app_js
     assert "savePromptDecompositionTemplate" in app_js
-    delete_token_body = app_js.split("async function deletePromptToken(token) {", 1)[1].split(
-        "\nasync function restorePromptToken", 1
-    )[0]
-    restore_token_body = app_js.split("async function restorePromptToken(token) {", 1)[1].split(
-        "\nfunction getPromptParams", 1
-    )[0]
+    delete_token_body = app_js.split("async function deletePromptToken(token) {", 1)[
+        1
+    ].split("\nasync function restorePromptToken", 1)[0]
+    restore_token_body = app_js.split("async function restorePromptToken(token) {", 1)[
+        1
+    ].split("\nfunction getPromptParams", 1)[0]
     assert "state.promptTokenPage = 1" not in delete_token_body
     assert "state.promptTokenPage = 1" not in restore_token_body
     assert "await reloadPromptTokensPreservingPage()" in delete_token_body
@@ -221,7 +242,10 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert 'fetchJson("/api/prompts", getTemplatePromptParams' not in app_js
     assert "function tableRows(rows = [], renderer)" in app_js
     assert "function renderPromptTaskTypeOptions()" in app_js
-    assert "state.promptTaskTypes = state.prompts?.distributions?.task_type || []" in app_js
+    assert (
+        "state.promptTaskTypes = state.prompts?.distributions?.task_type || []"
+        in app_js
+    )
     assert "state.promptTaskTypes = generation.by_type || []" not in app_js
 
     for mount_id in [
@@ -257,7 +281,10 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
 
     assert 'id="userRechargeRates"' in html
     assert 'id="userSummary" class="metric-grid user-metric-grid"' in html
-    assert 'id="userRechargeRates" class="metric-grid user-metric-grid user-rate-grid"' in html
+    assert (
+        'id="userRechargeRates" class="metric-grid user-metric-grid user-rate-grid"'
+        in html
+    )
     assert 'id="daysSelectControl"' in html
     assert 'id="logoutButton"' in html
     assert 'id="userDateRangeControls"' in html
@@ -320,5 +347,5 @@ def test_local_analytics_login_static_page_exists():
 
     assert "本地数据分析平台" in login_html
     assert "/api/auth/login" in login_html
-    assert "autocomplete=\"username\"" in login_html
-    assert "autocomplete=\"current-password\"" in login_html
+    assert 'autocomplete="username"' in login_html
+    assert 'autocomplete="current-password"' in login_html

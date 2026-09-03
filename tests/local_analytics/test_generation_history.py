@@ -28,6 +28,10 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
         assert "output_address" in query
         assert "input_verified_count" in query
         assert "output_verified_count" in query
+        assert "input_preview_url" in query
+        assert "output_preview_url" in query
+        assert "input_preview" in query
+        assert "output_preview" in query
         return [
             {
                 "id": 99,
@@ -49,6 +53,10 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
                 "input_verified_count": 1,
                 "output_asset_count": 3,
                 "output_verified_count": 2,
+                "input_preview_url": "/api/snapshot-assets/501/content",
+                "input_preview_kind": "image",
+                "output_preview_url": "/api/archive/assets/102/content",
+                "output_preview_kind": "video",
             }
         ]
 
@@ -72,11 +80,18 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
     assert payload["rows"][0]["output_address"].endswith("role_group=output")
     assert payload["rows"][0]["input_verified_count"] == 1
     assert payload["rows"][0]["output_verified_count"] == 2
+    assert payload["rows"][0]["input_preview_kind"] == "image"
+    assert payload["rows"][0]["output_preview_kind"] == "video"
     assert payload["task_types"][0] == {"task_type": "edit", "generation_count": 120}
     assert payload["h3_main_models"] == [
         {"main_model": "10eros_int8", "generation_count": 7}
     ]
-    assert payload["pagination"] == {"page": 2, "limit": 10, "total": 21, "total_pages": 3}
+    assert payload["pagination"] == {
+        "page": 2,
+        "limit": 10,
+        "total": 21,
+        "total_pages": 3,
+    }
     assert payload["filters"] == {
         "task_type": "edit",
         "h3_main_model": "",
@@ -85,7 +100,9 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_generation_history_defaults_to_all_types_latest_first_and_ten_rows(monkeypatch):
+async def test_generation_history_defaults_to_all_types_latest_first_and_ten_rows(
+    monkeypatch,
+):
     async def fake_fetchrow(query, *args):
         assert args == ("",)
         return {"total": 2}
@@ -196,7 +213,16 @@ async def test_generation_history_filters_by_persisted_h3_main_model(monkeypatch
         assert "_minimax_h3_context" in query
         assert "minimax_h3_i2v" in query
         assert args == (
-            "", None, "", None, None, None, "", "", "", False,
+            "",
+            None,
+            "",
+            None,
+            None,
+            None,
+            "",
+            "",
+            "",
+            False,
             "10eros_int8",
         )
         return {"total": 1}
@@ -222,7 +248,9 @@ async def test_generation_history_filters_by_persisted_h3_main_model(monkeypatch
             10,
             0,
         )
-        return [{"id": 7, "task_type": "minimax_h3_i2v", "h3_main_model": "10eros_int8"}]
+        return [
+            {"id": 7, "task_type": "minimax_h3_i2v", "h3_main_model": "10eros_int8"}
+        ]
 
     monkeypatch.setattr(analytics_main, "_fetchrow", fake_fetchrow)
     monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
