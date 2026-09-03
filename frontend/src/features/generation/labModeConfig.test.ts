@@ -145,7 +145,7 @@ describe('labModeConfig', () => {
     expect(getLabModeConfig('scail2_action_transfer').baseCost).toBe(40)
     expect(getLtx25VideoUpscaleCost(10.125, '720p')).toBe(50)
     expect(getLtx25VideoUpscaleCost(10.125, '1080p')).toBe(100)
-    expect(getLtx25VideoUpscaleCost(10.125, '2k')).toBe(180)
+    expect(getLtx25VideoUpscaleCost(10.125, '2k')).toBe(360)
     expect(getLtx25VideoUpscaleResolutionOptions(768, 448).map(item => item.value)).toEqual([
       '720p', '1080p', '2k',
     ])

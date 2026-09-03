@@ -127,7 +127,7 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
     ]
     assert _variant(upscale, resolution="720p", duration="10")["default_cost"] == 50
     assert _variant(upscale, resolution="1080p", duration="10")["default_cost"] == 100
-    assert _variant(upscale, resolution="2k", duration="10")["default_cost"] == 180
+    assert _variant(upscale, resolution="2k", duration="10")["default_cost"] == 360
 
 
 def test_condition_specific_prices_resolve_for_web_and_bot():

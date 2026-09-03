@@ -147,7 +147,7 @@ export const LTX_VIDEO_DURATION_OPTIONS = [
 export const LTX25_VIDEO_UPSCALE_RESOLUTION_OPTIONS = [
   { value: '720p', label: '720p', longEdge: 1280, creditsPerSecond: 5 },
   { value: '1080p', label: '1080p', longEdge: 1920, creditsPerSecond: 10 },
-  { value: '2k', label: '2K', longEdge: 2560, creditsPerSecond: 18 },
+  { value: '2k', label: '2K', longEdge: 2560, creditsPerSecond: 36 },
 ] as const
 
 export const getLtx25VideoUpscaleResolutionOptions = (
