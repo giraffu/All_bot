@@ -81,3 +81,27 @@ async def test_local_analytics_auth_logout_clears_session(monkeypatch):
     assert logout_response.status_code == 200
     assert "local_analytics_session=" in logout_response.headers["set-cookie"]
     assert session_response.json()["authenticated"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("base_url", "expects_secure"), [("http://test", False), ("https://test", True)])
+async def test_secure_cookie_setting_still_allows_authenticated_lan_http(
+    monkeypatch, base_url, expects_secure
+):
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_ENABLED", "true")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_USERNAME", "admin")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_PASSWORD", "secret-pass")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_COOKIE_SECURE", "true")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app), base_url=base_url
+    ) as client:
+        response = await client.post(
+            "/api/auth/login", json={"username": "admin", "password": "secret-pass"}
+        )
+        session = await client.get("/api/auth/session")
+
+    cookie = response.headers["set-cookie"]
+    assert ("; Secure" in cookie) is expects_secure
+    assert session.json()["authenticated"] is True

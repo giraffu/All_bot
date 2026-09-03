@@ -54,6 +54,9 @@ LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
     "analytics_history_media_r2_retirement_plans",
     "analytics_history_media_r2_retirement_batches",
     "analytics_history_media_r2_retirement_objects",
+    "analytics_snapshot_backup_sets",
+    "analytics_snapshot_backup_objects",
+    "analytics_snapshot_backup_refs",
 )
 
 

@@ -65,6 +65,10 @@ async def test_archive_status_exposes_progress_backlog_capacity_and_alerts(monke
                 "manual_review": 0,
                 "oldest_backlog_seconds": 90000,
             },
+            {
+                "snapshot_id": "snapshot-1",
+                "status_counts": '{"backed_up":7,"file_missing":2}',
+            },
         ]
     )
     monkeypatch.setattr(routes_archive, "_fetchrow", fetchrow)
@@ -76,6 +80,7 @@ async def test_archive_status_exposes_progress_backlog_capacity_and_alerts(monke
     assert result["usage_ratio"] == 0.8
     assert result["pause_reason"] == "nas_usage_80_stop_cold"
     assert result["outbox"]["backlog"] == 3
+    assert result["snapshot_backup"]["status_counts"]["backed_up"] == 7
     assert result["latest_run"]["stats"] == {"bytes_per_second": 5}
     assert result["throughput_bytes_per_second"] == 5
     assert result["alerts"]["checksum_error"] is True
@@ -103,8 +108,7 @@ async def test_history_media_filters_role_groups_and_only_exposes_verified_local
             }
         ),
     )
-    fetch = AsyncMock(
-        return_value=[
+    official_assets = [
             {
                 "id": 101,
                 "role": "input",
@@ -130,12 +134,12 @@ async def test_history_media_filters_role_groups_and_only_exposes_verified_local
                 "nas_key": None,
             },
         ]
-    )
+    fetch = AsyncMock(side_effect=[[], official_assets])
     monkeypatch.setattr(routes_archive, "_fetch", fetch)
 
     result = await routes_archive.history_media(42, role_group=role_group)
 
-    assert expected_fragment in " ".join(fetch.await_args.args[0].split())
+    assert expected_fragment in " ".join(fetch.await_args_list[1].args[0].split())
     assert result["role_group"] == role_group
     assert result["assets"][0]["local_available"] is True
     assert result["assets"][0]["content_url"] == "/api/archive/assets/101/content"
@@ -243,3 +247,98 @@ async def test_archive_content_rejects_invalid_ranges_before_nas_access(monkeypa
         await routes_archive.archive_asset_content(1, range_header=value)
 
     assert exc_info.value.status_code == 416
+
+
+@pytest.mark.asyncio
+async def test_history_media_prefers_snapshot_status_rows(monkeypatch):
+    monkeypatch.setattr(
+        routes_archive,
+        "_fetchrow",
+        AsyncMock(
+            return_value={
+                "id": 42,
+                "task_id": "task-42",
+                "user_id": 7,
+                "type": "edit",
+                "created_at": "2026-08-06T00:00:00Z",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        routes_archive,
+        "_fetch",
+        AsyncMock(
+            side_effect=[
+                [
+                    {
+                        "id": 501,
+                        "role": "input",
+                        "ordinal": 0,
+                        "original_ref": "100/input_images/a.png",
+                        "object_key": "100/input_images/a.png",
+                        "backup_status": "backed_up",
+                        "batch_number": 12,
+                        "sha256": "b" * 64,
+                        "byte_size": 25,
+                        "snapshot_label": "snapshot-1",
+                    },
+                    {
+                        "id": 502,
+                        "role": "output",
+                        "ordinal": 0,
+                        "original_ref": "100/output_images/missing.png",
+                        "object_key": "100/output_images/missing.png",
+                        "backup_status": "file_missing",
+                        "batch_number": None,
+                        "sha256": None,
+                        "byte_size": None,
+                        "snapshot_label": "snapshot-1",
+                    },
+                ],
+                [],
+            ]
+        ),
+    )
+
+    result = await routes_archive.history_media(42, role_group="all")
+
+    assert result["media_source"] == "snapshot_backup"
+    assert result["assets"][0]["status"] == "backed_up"
+    assert result["assets"][0]["local_available"] is True
+    assert result["assets"][0]["content_url"] == "/api/snapshot-assets/501/content"
+    assert result["assets"][1]["status"] == "file_missing"
+    assert result["assets"][1]["content_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_content_proxies_only_verified_batch_receipts(monkeypatch):
+    monkeypatch.setattr(
+        routes_archive,
+        "_fetchrow",
+        AsyncMock(
+            return_value={
+                "original_ref": "100/output_images/a.mp4",
+                "object_key": "100/output_images/a.mp4",
+                "backup_status": "backed_up",
+                "batch_number": 12,
+                "byte_size": 100,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        routes_archive,
+        "_snapshot_gateway_response",
+        lambda **kwargs: {
+            "body": iter([b"video"]),
+            "content_length": 32,
+            "content_range": "bytes 0-31/100",
+        },
+    )
+
+    response = await routes_archive.snapshot_asset_content(
+        501, range_header="bytes=0-31"
+    )
+
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 0-31/100"
+    assert response.media_type == "video/mp4"

@@ -133,6 +133,35 @@ async def test_generation_history_rejects_unknown_sort():
 
 
 @pytest.mark.asyncio
+async def test_generation_history_filters_snapshot_backup_status(monkeypatch):
+    async def fake_fetchrow(query, *args):
+        assert "analytics_snapshot_backup_refs" in query
+        assert "snapshot_object.backup_status=$12::text" in query
+        assert args[11] == "file_missing"
+        return {"total": 4}
+
+    async def fake_fetch(query, *args):
+        if "generation_history_h3_main_models" in query or "group by 1" in query:
+            return []
+        assert "snapshot_backed_up_count" in query
+        assert args[11] == "file_missing"
+        return []
+
+    monkeypatch.setattr(analytics_main, "_fetchrow", fake_fetchrow)
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/generation-history?snapshot_backup_status=file_missing"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["filters"]["snapshot_backup_status"] == "file_missing"
+
+
+@pytest.mark.asyncio
 async def test_generation_history_can_sort_all_rows_by_task_type_count(monkeypatch):
     async def fake_fetchrow(query, *args):
         return {"total": 20}
@@ -165,7 +194,10 @@ async def test_generation_history_filters_by_persisted_h3_main_model(monkeypatch
     async def fake_fetchrow(query, *args):
         assert "_minimax_h3_context" in query
         assert "minimax_h3_i2v" in query
-        assert args == ("", None, "", None, None, None, "", "", "", False, "10eros_int8")
+        assert args == (
+            "", None, "", None, None, None, "", "", "", False,
+            "10eros_int8", "",
+        )
         return {"total": 1}
 
     async def fake_fetch(query, *args):
@@ -186,6 +218,7 @@ async def test_generation_history_filters_by_persisted_h3_main_model(monkeypatch
             "",
             False,
             "10eros_int8",
+            "",
             10,
             0,
         )

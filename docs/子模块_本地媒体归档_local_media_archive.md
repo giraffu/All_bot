@@ -111,6 +111,15 @@ state。提升并发前先用 8 路观测 HTTP 限流、超时和 NAS 回读校�
 - prompt、类型、用户、task ID、时间和可见性留在 History/目录映射中，不写入
   blob key；因此可按原引用恢复到 R2。
 
+独立的 R2 History 快照备份不复用上述内容寻址归档。它把冻结数据库快照引用的
+R2 key 原样保存到 `batch-NNNNNN/<object-key>`，并以 NAS 目录 inventory 的验收
+结果为恢复证据；不会更新生产 History、官方归档 catalog、outbox 或 R2 清理账本。
+本地分析平台通过 `scripts/refresh_r2_history_snapshot_analytics.py` 将冻结 manifest、
+对象 inventory、下载 state 与 verified batch 投影为 `analytics_snapshot_backup_*`
+派生表。只有 `snapshot_objects.status=completed` 且批次 ledger 为 `verified` 的对象
+可标为 `backed_up` 并提供 LAN 原件；inventory absent/终态 404、尚未下载和基础设施
+失败必须分别显示，不能混成同一种 404。
+
 ## 4. 历史盘点与丢失状态
 
 先运行 `media_archive_catalog.py init`，再按月份对应的 History ID 范围运行

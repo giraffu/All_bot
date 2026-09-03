@@ -8,7 +8,7 @@
 - 用户画像人群规模趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；快照记录周期活跃、从未活跃和沉睡用户等人群状态。`visualizations.trend` 会按用户画像 Tab 选择的日期范围合并每日数据与最近快照，表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
 - 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
-- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；支持 History/task/用户、任务类型、H3 主模型、归档角色/状态和异常筛选。H3 型号读取 `History.extra_outputs._minimax_h3_context.main_model`，未写入该字段的旧 H3 历史可按“未记录”筛选，平台不推测或回填型号。媒体详情读取 `/api/generation-history/{id}/media`，原件由 `/api/archive/assets/{id}/content` 从 NAS 流式返回并支持 Range；Cloudflare Tunnel 请求会在鉴权前被拒绝。`GET /api/archive/status` 展示归档进度、字节、吞吐、outbox 积压、来源异常、容量门禁和暂停原因；收藏数量表示单条记录是否收藏的 `0/1`。R2 治理 Tab 通过登录保护的 `GET /api/r2-governance/status` 读取 `R2_TEMP_CLEANUP_EVIDENCE_ROOT` 下私有 JSON，只展示 inventory、staging、候选/删除/阻断和 `web_uploads/` report-only 趋势，不返回对象 key 或 R2 地址；Compose 将宿主机 `data/r2-governance/` 只读挂载到该目录，受控同步到这里的 JSON 必须是脱敏摘要。若同步器写入 `central-result-storage-metrics.json`，同页还展示 Central 按稳定错误码聚合的持久化失败/拒绝计数。
+- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；支持 History/task/用户、任务类型、H3 主模型、官方归档角色/状态、NAS 快照备份状态和异常筛选。H3 型号读取 `History.extra_outputs._minimax_h3_context.main_model`，未写入该字段的旧 H3 历史可按“未记录”筛选，平台不推测或回填型号。媒体详情读取 `/api/generation-history/{id}/media`；正式归档原件由 `/api/archive/assets/{id}/content` 从 NAS MinIO 返回，独立快照原件由 `/api/snapshot-assets/{id}/content` 经 loopback 网关从已验收批次只读返回，两者都支持 Range。Cloudflare Tunnel 请求会在鉴权前被拒绝。`GET /api/archive/status` 展示归档和快照备份摘要；收藏数量表示单条记录是否收藏的 `0/1`。R2 治理 Tab 通过登录保护的 `GET /api/r2-governance/status` 读取 `R2_TEMP_CLEANUP_EVIDENCE_ROOT` 下私有 JSON，只展示 inventory、staging、候选/删除/阻断和 `web_uploads/` report-only 趋势，不返回对象 key 或 R2 地址；Compose 将宿主机 `data/r2-governance/` 只读挂载到该目录，受控同步到这里的 JSON 必须是脱敏摘要。若同步器写入 `central-result-storage-metrics.json`，同页还展示 Central 按稳定错误码聚合的持久化失败/拒绝计数。
 - 页面顶部周期控件按当前 Tab 独立保存；用户画像 Tab 使用开始/结束日期，其他 Tab 使用统计周期下拉；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。
@@ -52,6 +52,13 @@ export LOCAL_ANALYTICS_AUTH_COOKIE_SECURE=true
 `NAS_MINIO_CA_FILE`。浏览器不会获得 MinIO 凭据，禁止把私有归档发布到公网。
 
 Cloudflare 公网入口建议使用独立 hostname，例如 `analytics.aivison.it.com`，Tunnel 回源本地主服务器 `http://127.0.0.1:8098`。Public hostname 发布前必须先创建 Cloudflare Access self-hosted app，限制管理员邮箱/身份组并启用 MFA；不要把 `8098` 或 shadow 数据库端口直接暴露到公网。
+
+快照索引首次构建和后续增量刷新由宿主机运行
+`scripts/refresh_r2_history_snapshot_analytics.py`；它写入的只是 shadow 派生表，文件仍在
+NAS。`scripts/serve_r2_history_snapshot_nas.py` 必须只绑定 `127.0.0.1`，使用独立
+`SNAPSHOT_MEDIA_GATEWAY_TOKEN`，并指向只读用途的 NAS SSH alias。未显式设置网关
+token 时，两端从既有 session secret 派生域隔离 token；Compose 不挂载 NAS SSH
+私钥。公网可查看状态，原件仅允许已登录 LAN 请求。
 
 ## Prompt Mart
 
