@@ -3,6 +3,14 @@ export interface HistoryInputRecord {
   input_file?: string | null
   input_file_url?: string | null
   input_file_preview_url?: string | null
+  input_media?: Array<{
+    file: string
+    url: string
+    preview_url?: string | null
+    resolve_url?: string | null
+    kind: 'image' | 'video' | 'audio'
+    label?: string | null
+  }> | null
 }
 
 export interface HistoryInputMediaItem {
@@ -10,6 +18,8 @@ export interface HistoryInputMediaItem {
   url: string
   previewUrl: string
   label: string
+  kind?: 'image' | 'video' | 'audio'
+  resolveUrl?: string
 }
 
 const splitMediaValues = (value: string | null | undefined): string[] =>
@@ -18,6 +28,17 @@ const splitMediaValues = (value: string | null | undefined): string[] =>
 export const buildHistoryInputMedia = (
   record: HistoryInputRecord,
 ): HistoryInputMediaItem[] => {
+  if (record.input_media) {
+    return record.input_media.map((media) => ({
+      file: media.file,
+      url: media.url,
+      previewUrl: media.preview_url || '',
+      resolveUrl: media.resolve_url || '',
+      label: media.label || '',
+      kind: media.kind,
+    }))
+  }
+
   const files = splitMediaValues(record.input_file).filter(Boolean)
   const urls = splitMediaValues(record.input_file_url)
   const previewUrls = splitMediaValues(record.input_file_preview_url)

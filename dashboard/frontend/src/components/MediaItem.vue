@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import { api } from '../api/client'
 import { isVideo } from '../utils/helpers'
-import { PlayCircleOutlined } from '@ant-design/icons-vue'
+import { PlayCircleOutlined, SoundOutlined } from '@ant-design/icons-vue'
 
 interface Props {
   file: string
@@ -10,31 +11,54 @@ interface Props {
   previewUrl?: string
   label?: string
   size?: string
+  kind?: 'image' | 'video' | 'audio'
+  resolveUrl?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   previewUrl: '',
   label: '',
   size: 'w-32 h-32',
+  resolveUrl: '',
 })
 
 const videoOpen = ref(false)
+const audioOpen = ref(false)
+const resolvedUrl = ref(props.url)
 const previewFailed = ref(false)
-const videoFile = computed(() => isVideo(props.file))
+const audioFile = computed(() => props.kind === 'audio')
+const videoFile = computed(() =>
+  props.kind === 'video' || (!props.kind && isVideo(props.file)),
+)
 const displayImageUrl = computed(() =>
   props.previewUrl && !previewFailed.value ? props.previewUrl : props.url,
 )
 
 watch(
-  () => props.previewUrl,
+  () => [props.previewUrl, props.url, props.resolveUrl],
   () => {
     previewFailed.value = false
+    resolvedUrl.value = props.url
   },
 )
 
-const openVideo = () => {
-  if (props.url) {
+const resolveOriginalUrl = async () => {
+  if (resolvedUrl.value) return resolvedUrl.value
+  if (!props.resolveUrl) return ''
+  const response = await api.get(props.resolveUrl)
+  resolvedUrl.value = String(response.data?.url || '')
+  return resolvedUrl.value
+}
+
+const openVideo = async () => {
+  if (await resolveOriginalUrl()) {
     videoOpen.value = true
+  }
+}
+
+const openAudio = async () => {
+  if (await resolveOriginalUrl()) {
+    audioOpen.value = true
   }
 }
 
@@ -48,7 +72,18 @@ const markPreviewFailed = () => {
     <span v-if="label" class="text-[10px] text-gray-500 uppercase font-bold">{{ label }}</span>
     <div :class="[size, 'bg-gray-100 rounded-lg overflow-hidden border border-gray-200 relative group shadow-sm']">
       <button
-        v-if="videoFile"
+        v-if="audioFile"
+        type="button"
+        data-testid="media-audio-trigger"
+        class="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 border-0 bg-gradient-to-br from-indigo-700 to-slate-950 text-white"
+        aria-label="打开音频预览"
+        @click="openAudio"
+      >
+        <sound-outlined class="text-3xl" />
+        <span class="text-[9px] font-bold uppercase">Audio</span>
+      </button>
+      <button
+        v-else-if="videoFile"
         type="button"
         data-testid="media-video-trigger"
         class="w-full h-full border-0 p-0 bg-gray-900 cursor-pointer relative"
@@ -97,13 +132,32 @@ const markPreviewFailed = () => {
     >
       <video
         v-if="videoOpen"
-        :src="url"
+        :src="resolvedUrl"
         class="w-full max-h-[78vh] rounded-lg bg-black"
         controls
         autoplay
         preload="metadata"
         playsinline
       ></video>
+    </a-modal>
+
+    <a-modal
+      v-model:open="audioOpen"
+      data-testid="media-audio-modal"
+      :title="file"
+      :footer="null"
+      width="min(560px, 92vw)"
+      centered
+      destroy-on-close
+    >
+      <audio
+        v-if="audioOpen"
+        :src="resolvedUrl"
+        class="w-full"
+        controls
+        autoplay
+        preload="metadata"
+      ></audio>
     </a-modal>
   </div>
 </template>

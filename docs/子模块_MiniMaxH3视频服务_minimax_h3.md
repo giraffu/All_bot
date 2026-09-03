@@ -96,6 +96,11 @@ H3 成功 History 的 `extra_outputs._minimax_h3_context` 当前为 version 3，
 显示与筛选 H3 主模型；version 1/2 的旧记录没有该字段，必须显示为“未记录”，不得按默认
 BF16 回填或推测。
 
+管理后台历史页不能只读 `History.input_file`：REF2V 参考音频从已校验的
+`_minimax_h3_context.reference_audio` 生成 typed `input_media`，扩展段根据
+`prev_task_id` 显示父段“输入视频”。父段视频在管理员点击时才通过 Dashboard 历史媒体
+路由解析，列表不预加载原视频。
+
 ## 不可变发布和运维
 
 H3 发布顺序固定为：

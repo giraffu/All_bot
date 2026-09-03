@@ -6,7 +6,10 @@ from collections.abc import Awaitable, Callable
 from fastapi import HTTPException
 from sqlalchemy import desc, func, select
 
-from dashboard.backend.presenters.history_presenter import build_history_item_payload
+from dashboard.backend.presenters.history_presenter import (
+    build_history_item_payload,
+    build_history_output_file_url,
+)
 from src.database.models import History, PrivateBotTaskSubmission, User, WorkerLog
 from src.services.qqcc_regenerate_metadata import QQCC_REGENERATE_CONTEXT_KEY
 from src.services.storage import storage
@@ -14,6 +17,57 @@ from src.web_api.presenters.media_presenter import resolve_history_media_urls
 
 logger = logging.getLogger("dashboard.history")
 HistoryCountCacheKey = tuple[object, ...]
+
+
+async def get_history_media_url(
+    *,
+    task_id: str,
+    db,
+    storage_service=None,
+    resolve_media_urls_func=resolve_history_media_urls,
+    logger_override: logging.Logger | None = None,
+) -> str | None:
+    active_logger = logger_override or logger
+    if storage_service is None:
+        storage_service = storage
+    history = (
+        (
+            await db.execute(
+                select(History)
+                .where(History.task_id == task_id)
+                .order_by(History.id.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if history is None:
+        await db.rollback()
+        return None
+
+    output_file = history.output_file
+    history_type = history.type
+    await db.rollback()
+    try:
+        resolved_url, _preview_url = await resolve_media_urls_func(
+            task_id=task_id,
+            output_file=output_file,
+            history_type=history_type,
+            r2_lookup_strategy="s3_cached",
+        )
+        if resolved_url:
+            return resolved_url
+    except Exception as exc:
+        active_logger.warning(
+            "History media redirect lookup degraded for task_id=%s: %s",
+            task_id,
+            exc,
+        )
+    return build_history_output_file_url(
+        output_file=output_file,
+        storage_service=storage_service,
+    )
 
 
 class HistoryCountCache:
@@ -36,7 +90,8 @@ class HistoryCountCache:
         now = time.monotonic()
         if len(self._values) >= self._max_items and cache_key not in self._values:
             expired_keys = [
-                key for key, (expires_at, _) in self._values.items()
+                key
+                for key, (expires_at, _) in self._values.items()
                 if expires_at <= now
             ]
             for key in expired_keys:
@@ -87,9 +142,7 @@ def _history_count_cache_key(
     source: str | None,
     username: str | None,
 ) -> HistoryCountCacheKey:
-    type_key = (
-        tuple(sorted(type.split(","))) if type and type != "all" else ()
-    )
+    type_key = tuple(sorted(type.split(","))) if type and type != "all" else ()
     worker_key = worker_id if worker_id and worker_id != "all" else ""
     username_key = (username or "").strip().lstrip("@").lower()
     return (type_key, rating, is_public, worker_key, source or "", username_key)
@@ -207,16 +260,12 @@ async def run_history_count_cache_warmer(
                 count_cache=count_cache,
                 session_factory=session_factory,
             )
-            active_logger.info(
-                "Dashboard history count cache warmed: total=%s", total
-            )
+            active_logger.info("Dashboard history count cache warmed: total=%s", total)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             delay_seconds = retry_interval_seconds
-            active_logger.warning(
-                "Dashboard history count cache warm failed: %s", exc
-            )
+            active_logger.warning("Dashboard history count cache warm failed: %s", exc)
         await asyncio.sleep(delay_seconds)
 
 
@@ -273,9 +322,7 @@ async def get_all_history_payload(
         )
         private_client_type = (
             select(PrivateBotTaskSubmission.client_type)
-            .where(
-                PrivateBotTaskSubmission.registry_task_id == History.task_id
-            )
+            .where(PrivateBotTaskSubmission.registry_task_id == History.task_id)
             .limit(1)
             .scalar_subquery()
         )
@@ -373,9 +420,7 @@ async def get_user_history_payload(
         )
         private_client_type = (
             select(PrivateBotTaskSubmission.client_type)
-            .where(
-                PrivateBotTaskSubmission.registry_task_id == History.task_id
-            )
+            .where(PrivateBotTaskSubmission.registry_task_id == History.task_id)
             .order_by(PrivateBotTaskSubmission.id.desc())
             .limit(1)
             .scalar_subquery()
