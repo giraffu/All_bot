@@ -21,6 +21,7 @@ from .runpod_profile_catalog import (
     RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
     RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_MANIFEST_KEY,
     RUNPOD_LTX25_VIDEO_UPSCALE_MODEL_PREFIX,
+    RUNPOD_LTX25_VIDEO_UPSCALE_TASK_COMPLETION_TIMEOUT_SECONDS,
     RUNPOD_LTX25_VIDEO_UPSCALE_VOLUME_GB,
     RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
     RUNPOD_MINIMAX_H3_COMFY_EXTRA_ARGS,
@@ -553,6 +554,10 @@ class RunPodPodRequestBuilder:
             )
             if self.settings.wan22_video_v2_comfy_extra_args:
                 env["COMFY_EXTRA_ARGS"] = self.settings.wan22_video_v2_comfy_extra_args
+        if profile.task_type == "ltx25_video_upscale":
+            env["TASK_COMPLETION_TIMEOUT_SECONDS"] = str(
+                RUNPOD_LTX25_VIDEO_UPSCALE_TASK_COMPLETION_TIMEOUT_SECONDS
+            )
         if profile.task_type == "pornmaster_flux2_edit_bf16":
             env["COMFY_EXTRA_ARGS"] = (
                 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
