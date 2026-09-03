@@ -14,8 +14,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260806-nas-history-media-v2" in html
-    assert 'type="module" src="/static/js/bootstrap.js?v=20260903-snapshot-media-v1"' in html
+    assert "/static/styles.css?v=20260903-archive-preview-v1" in html
+    assert 'type="module" src="/static/js/bootstrap.js?v=20260903-archive-preview-v1"' in html
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
     assert "await response.text()" in app_js
     assert "JSON.parse(rawBody)" in app_js
@@ -37,6 +37,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert 'id="generationHistorySnapshotStatusSelect"' in html
     assert 'id="generationHistoryRows"' in html
     assert 'id="generationHistoryPagination"' in html
+    assert 'id="generationHistoryPreviewDialog"' in html
+    assert 'id="generationHistoryPreviewImage"' in html
     assert "用户 ID" in html
     assert "用户昵称" in html
     assert "输入地址" in html
@@ -45,6 +47,10 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "role_group: roleGroup" in app_js
     assert 'data-role-group="${roleGroup}"' in app_js
     assert 'asset.content_url || ""' in app_js
+    assert 'class="archive-media-preview-trigger"' in app_js
+    assert 'data-archive-image-preview' in app_js
+    assert "generationHistoryPreviewDialog" in app_js
+    assert "打开本地原件" not in app_js
     assert "官方归档可用" in app_js
     assert "NAS 已备份" in app_js
     assert "snapshot_backup_status" in app_js

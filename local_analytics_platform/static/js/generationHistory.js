@@ -201,8 +201,12 @@ export function createGenerationHistoryModule({
       $("#generationHistoryMediaBody").innerHTML = payload.assets.length ? payload.assets.map((asset) => {
         const contentUrl = asset.content_url || "";
         const safeContentUrl = escapeHtml(contentUrl);
+        const previewLabel = `${asset.role} #${fmt(asset.ordinal)}`;
         const preview = contentUrl && (asset.mime_type || "").startsWith("image/")
-          ? `<img loading="lazy" src="${safeContentUrl}" alt="${escapeHtml(asset.role)}" />`
+          ? `<button type="button" class="archive-media-preview-trigger" data-archive-image-preview="${safeContentUrl}" data-preview-label="${escapeHtml(previewLabel)}" aria-label="放大查看 ${escapeHtml(previewLabel)}">
+              <img loading="lazy" src="${safeContentUrl}" alt="${escapeHtml(previewLabel)}" />
+              <span>点击放大查看原图</span>
+            </button>`
           : contentUrl && (asset.mime_type || "").startsWith("video/")
             ? `<video controls preload="metadata" src="${safeContentUrl}"></video>` : "";
         return `<article class="archive-media-card">${preview}<strong>${escapeHtml(asset.role)} #${fmt(asset.ordinal)}</strong>
@@ -210,12 +214,28 @@ export function createGenerationHistoryModule({
           <div class="small"><span class="muted">原始引用：</span>${escapeHtml(asset.original_ref)}</div>
           <div class="mono small">${asset.byte_size ? `${fmt(asset.byte_size)} bytes` : "-"} · ${escapeHtml(asset.sha256 || "无 SHA-256")}</div>
           <div class="small">来源：${escapeHtml(asset.found_source || "-")}</div>
-          ${contentUrl ? `<a href="${safeContentUrl}" target="_blank" rel="noopener">打开本地原件</a>` : '<span class="muted small">本地原件尚不可用</span>'}</article>`;
+          ${contentUrl ? '<span class="muted small">原件已在当前页面提供预览</span>' : '<span class="muted small">本地原件尚不可用</span>'}</article>`;
       }).join("") : '<div class="empty">此 History 尚无目录资产，请先运行盘点。</div>';
       dialog.showModal();
     } catch (error) { setError(error); }
   });
+  $("#generationHistoryMediaBody")?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-archive-image-preview]");
+    if (!button) return;
+    const previewImage = $("#generationHistoryPreviewImage");
+    const previewDialog = $("#generationHistoryPreviewDialog");
+    const previewLabel = button.dataset.previewLabel || "归档原图";
+    previewImage.src = button.dataset.archiveImagePreview;
+    previewImage.alt = previewLabel;
+    $("#generationHistoryPreviewTitle").textContent = previewLabel;
+    previewDialog.showModal();
+  });
   $("#generationHistoryMediaClose")?.addEventListener("click", () => $("#generationHistoryMediaDialog")?.close());
+  $("#generationHistoryPreviewClose")?.addEventListener("click", () => $("#generationHistoryPreviewDialog")?.close());
+  $("#generationHistoryPreviewDialog")?.addEventListener("close", () => {
+    const previewImage = $("#generationHistoryPreviewImage");
+    previewImage.removeAttribute("src");
+  });
   $("#generationHistoryPagination")?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-history-page]");
     if (!button || button.disabled) return;

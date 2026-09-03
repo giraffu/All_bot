@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260806-nas-history-media-v2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260903-archive-preview-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -730,6 +730,12 @@
           <dialog id="generationHistoryMediaDialog" class="archive-media-dialog">
             <div class="archive-media-dialog-head"><strong id="generationHistoryMediaTitle">媒体归档</strong><button type="button" id="generationHistoryMediaClose">关闭</button></div>
             <div id="generationHistoryMediaBody" class="archive-media-grid"></div>
+          </dialog>
+          <dialog id="generationHistoryPreviewDialog" class="archive-media-preview-dialog">
+            <div class="archive-media-dialog-head"><strong id="generationHistoryPreviewTitle">原图预览</strong><button type="button" id="generationHistoryPreviewClose">关闭</button></div>
+            <div class="archive-media-preview-stage">
+              <img id="generationHistoryPreviewImage" alt="归档原图" />
+            </div>
           </dialog>
         </section>
 
@@ -1461,6 +1467,6 @@
       </div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script type="module" src="/static/js/bootstrap.js?v=20260903-snapshot-media-v1"></script>
+    <script type="module" src="/static/js/bootstrap.js?v=20260903-archive-preview-v1"></script>
   </body>
 </html>

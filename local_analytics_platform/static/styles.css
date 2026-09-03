@@ -805,6 +805,13 @@ main {
 .archive-media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; overflow: auto; }
 .archive-media-card { display: grid; gap: 7px; min-width: 0; padding: 12px; border: 1px solid #d9e1ea; border-radius: 10px; }
 .archive-media-card img, .archive-media-card video { width: 100%; max-height: 220px; object-fit: contain; background: #0f172a; border-radius: 7px; }
+.archive-media-preview-trigger { display: grid; gap: 7px; width: 100%; padding: 0; color: var(--accent); background: transparent; border: 0; cursor: zoom-in; text-align: center; }
+.archive-media-preview-trigger img { aspect-ratio: 16 / 10; }
+.archive-media-preview-trigger span { font-size: 12px; font-weight: 700; }
+.archive-media-preview-dialog { width: min(1320px, 96vw); height: min(900px, 92vh); border: 0; border-radius: 14px; padding: 18px; }
+.archive-media-preview-dialog::backdrop { background: rgba(15, 23, 42, .82); }
+.archive-media-preview-stage { display: grid; place-items: center; height: calc(100% - 52px); overflow: auto; border-radius: 10px; background: #0f172a; }
+.archive-media-preview-stage img { display: block; width: auto; max-width: 100%; height: auto; max-height: 100%; object-fit: contain; }
 .archive-media-card .mono { overflow-wrap: anywhere; }
 .archive-status { width: fit-content; padding: 2px 7px; border-radius: 999px; background: #eef2f7; }
 .archive-status-archived_verified { color: #0f766e; background: #ccfbf1; }
