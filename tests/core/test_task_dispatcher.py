@@ -155,16 +155,16 @@ async def test_ltx25_video_upscale_strategy_isolated_submission(monkeypatch):
     )
 
 
-def test_ltx25_video_upscale_strategy_accepts_up_to_twenty_seconds():
+def test_ltx25_video_upscale_strategy_accepts_up_to_fifteen_seconds():
     strategy = Ltx25VideoUpscaleStrategy()
 
-    for duration in (1, 5, 10, 15, 20):
+    for duration in (1, 5, 10, 15):
         inputs = {"duration": duration, "resolution": "1080p"}
         assert strategy.get_cost(inputs) == duration * 10
         assert strategy.get_metadata(inputs)["requested_duration"] == duration
 
-    with pytest.raises(ValueError, match="1 至 20 秒"):
-        strategy.get_cost({"duration": 21, "resolution": "1080p"})
+    with pytest.raises(ValueError, match="1 至 15 秒"):
+        strategy.get_cost({"duration": 16, "resolution": "1080p"})
 
 
 def test_ltx25_video_upscale_strategy_prices_output_pixels_per_second():

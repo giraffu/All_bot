@@ -89,17 +89,17 @@ async def test_ltx25_upscale_web_submission_accepts_h3_encoding_tail():
 
 
 @pytest.mark.asyncio
-async def test_ltx25_upscale_web_submission_accepts_twenty_second_encoding_tail():
+async def test_ltx25_upscale_web_submission_accepts_fifteen_second_encoding_tail():
     prepared = await prepare_web_submission_request(
         _request(["task-results/source/original.mp4"]),
         internal_user_id=7,
         operator_canary_authorized=False,
         env_enabled=lambda name: name == "LTX25_VIDEO_UPSCALE_ENABLED",
-        probe_video_duration_func=lambda _source: _async_value(20.25),
-        probe_video_metadata_func=lambda _source: _async_value((768, 448, 20)),
+        probe_video_duration_func=lambda _source: _async_value(15.25),
+        probe_video_metadata_func=lambda _source: _async_value((768, 448, 15)),
     )
 
-    assert prepared.inputs["duration"] == 20
+    assert prepared.inputs["duration"] == 15
 
 
 @pytest.mark.asyncio
@@ -132,13 +132,13 @@ async def test_ltx25_upscale_rejects_target_not_above_verified_source_resolution
 
 
 @pytest.mark.asyncio
-async def test_ltx25_upscale_over_twenty_seconds_never_reaches_billing_or_promotion(monkeypatch):
+async def test_ltx25_upscale_over_fifteen_seconds_never_reaches_billing_or_promotion(monkeypatch):
     monkeypatch.setenv("LTX25_VIDEO_UPSCALE_ENABLED", "true")
-    probe = AsyncMock(return_value=20.251)
+    probe = AsyncMock(return_value=15.251)
     promote = AsyncMock()
     application = SimpleNamespace(submit=AsyncMock())
 
-    with pytest.raises(CoreDomainError, match="最长 20 秒"):
+    with pytest.raises(CoreDomainError, match="最长 15 秒"):
         await task_submission_service.submit_generation_task(
             req=TaskGenerateRequest(
                 task_type="ltx25_video_upscale",

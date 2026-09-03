@@ -20,20 +20,32 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "ltx25_video_upscale_runtime"
-VERSION = "2026-08-31-int8-ic-v1"
+VERSION = "2026-09-04-adaptive-hybrid-v2"
 MIN_FREE_BYTES = 50 * 1024**3
 LTX25_REVISION = "e8dc69fd26150afbfa20351f6bc9ac384257f9fd"
 IC_LORA_REVISION = "74c4e68ee7dd99f3997d5a1bb1a3784941822222"
+SPATIAL_UPSCALER_REVISION = "5948be4ced3a4493d1f836df64378ff136ddb770"
 
 
-def _spec(relative_path: str, sha256: str, size_bytes: int, *, ic: bool = False):
-    repository = (
-        "Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler"
-        if ic
-        else "Lightricks/LTX-2.5"
-    )
-    revision = IC_LORA_REVISION if ic else LTX25_REVISION
-    source_path = Path(relative_path).name if ic else relative_path
+def _spec(
+    relative_path: str,
+    sha256: str,
+    size_bytes: int,
+    *,
+    ic: bool = False,
+    spatial: bool = False,
+):
+    if spatial:
+        repository = "Lightricks/LTX-2.3"
+        revision = SPATIAL_UPSCALER_REVISION
+    else:
+        repository = (
+            "Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler"
+            if ic
+            else "Lightricks/LTX-2.5"
+        )
+        revision = IC_LORA_REVISION if ic else LTX25_REVISION
+    source_path = Path(relative_path).name if (ic or spatial) else relative_path
     return {
         "relative_path": relative_path,
         "sha256": sha256,
@@ -68,6 +80,12 @@ FILES = (
         "984851b769ea2bcb4c9e0a239a7676239e42c6a6001ddc69943b41ff0b283c1d",
         327_322_640,
         ic=True,
+    ),
+    _spec(
+        "latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+        "5f416311fa8172b65af67530758964708d29a317b830d689a51143b7f91913ed",
+        995_743_560,
+        spatial=True,
     ),
 )
 
@@ -154,6 +172,7 @@ def main() -> None:
             "revisions": {
                 "ltx25": LTX25_REVISION,
                 "pixel_spatial_upscaler": IC_LORA_REVISION,
+                "latent_spatial_upscaler": SPATIAL_UPSCALER_REVISION,
             },
             "license_acceptance_required": True,
         },

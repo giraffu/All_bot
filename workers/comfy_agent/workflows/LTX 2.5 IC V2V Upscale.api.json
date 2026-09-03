@@ -67,7 +67,7 @@
   "9100": {
     "class_type": "MathExpression|pysssss",
     "inputs": {
-      "expression": "a * 2",
+      "expression": "a",
       "a": [
         "5548:5029",
         0
@@ -77,7 +77,7 @@
   "9101": {
     "class_type": "MathExpression|pysssss",
     "inputs": {
-      "expression": "a * 2",
+      "expression": "a",
       "a": [
         "5548:5029",
         1
@@ -642,6 +642,14 @@
   },
   "5516:4829": {
     "inputs": {
+      "model": [
+        "5004:5606",
+        0
+      ],
+      "vae": [
+        "5004:5601",
+        0
+      ],
       "noise": [
         "5516:4832",
         0
@@ -658,12 +666,18 @@
         "5516:4984",
         0
       ],
-      "latent_image": [
-        "9002:4528",
-        0
-      ]
+      "latents": ["9002:5012", 2],
+      "temporal_tile_size": 208,
+      "temporal_overlap": 16,
+      "guiding_strength": 1.0,
+      "temporal_overlap_cond_strength": 0.5,
+      "cond_image_strength": 1.0,
+      "horizontal_tiles": 1,
+      "vertical_tiles": 1,
+      "spatial_overlap": 1,
+      "optional_guiding_latents": ["9002:5012", 2]
     },
-    "class_type": "SamplerCustomAdvanced",
+    "class_type": "LTXVLoopingSampler",
     "_meta": {
       "title": "SamplerCustomAdvanced"
     }
@@ -691,7 +705,7 @@
         1
       ],
       "latent": [
-        "5516:4845",
+        "5516:4829",
         0
       ]
     },
@@ -724,7 +738,7 @@
       ],
       "bit_depth": 8,
       "images": [
-        "5518:5538",
+        "7000",
         0
       ],
       "audio": [
@@ -744,8 +758,8 @@
       "temporal_size": 128,
       "temporal_overlap": 32,
       "samples": [
-        "5516:5000",
-        2
+        "6005",
+        0
       ],
       "vae": [
         "5004:5601",
@@ -755,6 +769,86 @@
     "class_type": "VAEDecodeTiled",
     "_meta": {
       "title": "VAE Decode (Tiled)"
+    }
+  },
+  "6000": {
+    "class_type": "LatentUpscaleModelLoader",
+    "inputs": {"model_name": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}
+  },
+  "6001": {
+    "class_type": "LTXVLatentUpsampler",
+    "inputs": {
+      "samples": ["5516:5000", 2],
+      "upscale_model": ["6000", 0],
+      "vae": ["5004:5601", 0]
+    }
+  },
+  "6002": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "cfg": 1.0,
+      "model": ["5004:5602", 0],
+      "positive": ["5014:1241", 0],
+      "negative": ["5014:1241", 1]
+    }
+  },
+  "6003": {
+    "class_type": "KSamplerSelect",
+    "inputs": {"sampler_name": "euler_ancestral"}
+  },
+  "6004": {
+    "class_type": "ManualSigmas",
+    "inputs": {"sigmas": "0.65, 0.5735, 0.525, 0.0"}
+  },
+  "6005": {
+    "class_type": "LTXVLoopingSampler",
+    "inputs": {
+      "model": ["5004:5602", 0],
+      "vae": ["5004:5601", 0],
+      "noise": ["5516:4832", 0],
+      "sampler": ["6003", 0],
+      "sigmas": ["6004", 0],
+      "guider": ["6002", 0],
+      "latents": ["6001", 0],
+      "temporal_tile_size": 208,
+      "temporal_overlap": 16,
+      "guiding_strength": 1.0,
+      "temporal_overlap_cond_strength": 0.5,
+      "cond_image_strength": 1.0,
+      "horizontal_tiles": 1,
+      "vertical_tiles": 1,
+      "spatial_overlap": 1
+    }
+  },
+  "7001": {
+    "class_type": "ImageCrop",
+    "inputs": {
+      "image": ["5518:5538", 0],
+      "width": 1536,
+      "height": 896,
+      "x": 0,
+      "y": 0
+    }
+  },
+  "7000": {
+    "class_type": "DaSiWa_RTX_UpscalerRefiner",
+    "inputs": {
+      "images": ["7001", 0],
+      "denoise": false,
+      "denoise_quality": "Ultra",
+      "deblur": false,
+      "deblur_quality": "Ultra",
+      "upscale": "VSR",
+      "upscale_quality": "Ultra",
+      "resize_type": "Manual",
+      "scale": 1.0,
+      "megapixels": 2.0,
+      "width": 1920,
+      "height": 1080,
+      "divisible_by": "8",
+      "ratio_preset": "16:9",
+      "resize_method": "Center Crop (Fill)",
+      "device_id": 0
     }
   }
 }

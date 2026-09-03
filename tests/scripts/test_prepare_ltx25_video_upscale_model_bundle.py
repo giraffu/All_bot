@@ -25,7 +25,10 @@ def test_ltx25_upscale_manifest_matches_pinned_gated_downloads():
     }
     assert module.LTX25_REVISION == "e8dc69fd26150afbfa20351f6bc9ac384257f9fd"
     assert module.IC_LORA_REVISION == "74c4e68ee7dd99f3997d5a1bb1a3784941822222"
-    assert sum(item["size_bytes"] for item in module.FILES) == 39_041_416_124
+    assert module.SPATIAL_UPSCALER_REVISION == (
+        "5948be4ced3a4493d1f836df64378ff136ddb770"
+    )
+    assert sum(item["size_bytes"] for item in module.FILES) == 40_037_159_684
     source = (ROOT / "scripts/prepare_ltx25_video_upscale_model_bundle.py").read_text()
     assert "Authorization" in source
     assert "print(token)" not in source

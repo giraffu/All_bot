@@ -196,13 +196,11 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     )
     assert ltx_t2v["env"]["POOL_RUNTIME_PROFILE"] == "ltx_t2v"
     assert ltx25["env"]["TASK_COMPLETION_TIMEOUT_SECONDS"] == "3600"
-    assert ltx25["gpuTypeIds"] == [
-        "NVIDIA RTX PRO 6000 Blackwell Server Edition"
-    ]
+    assert ltx25["gpuTypeIds"] == ["NVIDIA GeForce RTX 5090"]
     assert (
         ltx25["env"]["COMFY_EXTRA_ARGS"]
         == RUNPOD_LTX25_VIDEO_UPSCALE_COMFY_EXTRA_ARGS
-        == "--reserve-vram 8"
+        == "--reserve-vram 1"
     )
     assert (
         ltx_t2v["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
@@ -262,7 +260,10 @@ def test_ltx25_upscale_request_allows_one_verified_gpu_for_canary_selection():
 
 @pytest.mark.parametrize(
     "gpu_type",
-    ("NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 5090"),
+    (
+        "NVIDIA GeForce RTX 4090",
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    ),
 )
 def test_ltx25_upscale_request_rejects_unverified_gpu_selection(gpu_type):
     settings = _settings_for_profile("ltx25_video_upscale")

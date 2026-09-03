@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 
 
 LTX25_VIDEO_UPSCALE_TASK_TYPE = "ltx25_video_upscale"
 LTX25_VIDEO_UPSCALE_DURATION_SECONDS = 5
-LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS = 20
+LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS = 15
 LTX25_VIDEO_UPSCALE_SOURCE_DURATION_TOLERANCE_SECONDS = 0.25
 LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS = (
     LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS
@@ -13,11 +14,14 @@ LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS = (
 )
 LTX25_VIDEO_UPSCALE_FPS = 24
 LTX25_VIDEO_UPSCALE_DEFAULT_RESOLUTION = "1080p"
-LTX25_VIDEO_UPSCALE_RESOLUTION_LONG_EDGES = {
-    "720p": 1280,
-    "1080p": 1920,
-    "2k": 2560,
+LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES = {
+    "720p": 720,
+    "1080p": 1080,
+    "2k": 1440,
 }
+LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE = 2560
+LTX25_VIDEO_UPSCALE_HYBRID_SCALE_THRESHOLD = 2.0
+LTX25_VIDEO_UPSCALE_MODEL_MAX_LONG_EDGE = 864
 LTX25_VIDEO_UPSCALE_CREDITS_PER_SECOND = {
     "720p": 5,
     "1080p": 10,
@@ -42,6 +46,26 @@ LTX25_VIDEO_UPSCALE_NEGATIVE_PROMPT = (
 )
 
 
+@dataclass(frozen=True)
+class Ltx25VideoUpscalePlan:
+    resolution: str
+    mode: str
+    source_width: int
+    source_height: int
+    target_width: int
+    target_height: int
+    scale: float
+    model_width: int | None = None
+    model_height: int | None = None
+    latent_width: int | None = None
+    latent_height: int | None = None
+    content_width: int | None = None
+    content_height: int | None = None
+    pad_x: int = 0
+    pad_y: int = 0
+    vsr_scale: float = 1.0
+
+
 def normalize_ltx25_video_upscale_prompt(value: object) -> str:
     prompt = str(value or "").strip()
     if len(prompt) > 2_000:
@@ -53,9 +77,9 @@ def normalize_ltx25_video_upscale_duration(value: object) -> int:
     try:
         duration = int(str(value or LTX25_VIDEO_UPSCALE_DURATION_SECONDS).rstrip("s"))
     except (TypeError, ValueError) as exc:
-        raise ValueError("视频高清化支持 1 至 20 秒视频。") from exc
+        raise ValueError("视频高清化支持 1 至 15 秒视频。") from exc
     if not 1 <= duration <= LTX25_VIDEO_UPSCALE_MAX_DURATION_SECONDS:
-        raise ValueError("视频高清化支持 1 至 20 秒视频。")
+        raise ValueError("视频高清化支持 1 至 15 秒视频。")
     return duration
 
 
@@ -68,7 +92,7 @@ def normalize_ltx25_video_upscale_source_duration(value: object) -> int:
     if not math.isfinite(source_duration) or source_duration <= 0:
         raise ValueError("无法读取视频时长。")
     if source_duration > LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS:
-        raise ValueError("视频高清化当前只支持最长 20 秒的视频。")
+        raise ValueError("视频高清化当前只支持最长 15 秒的视频。")
     duration = math.ceil(
         source_duration
         - LTX25_VIDEO_UPSCALE_SOURCE_DURATION_TOLERANCE_SECONDS
@@ -94,7 +118,7 @@ def normalize_ltx25_video_upscale_resolution(value: object) -> str:
         "2560x1440": "2k",
     }
     normalized = aliases.get(normalized, normalized)
-    if normalized not in LTX25_VIDEO_UPSCALE_RESOLUTION_LONG_EDGES:
+    if normalized not in LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES:
         raise ValueError("视频高清化清晰度只支持 720p、1080p 或 2K。")
     return normalized
 
@@ -119,11 +143,10 @@ def get_ltx25_video_upscale_available_resolutions(
         raise ValueError("无法读取视频分辨率。") from exc
     if width <= 0 or height <= 0:
         raise ValueError("无法读取视频分辨率。")
-    source_long_edge = max(width, height)
     return tuple(
         resolution
-        for resolution, long_edge in LTX25_VIDEO_UPSCALE_RESOLUTION_LONG_EDGES.items()
-        if long_edge > source_long_edge
+        for resolution in LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES
+        if _target_scale(width, height, resolution) > 1.0
     )
 
 
@@ -150,16 +173,143 @@ def get_ltx25_video_upscale_model_input_dimensions(
     source_height: object,
     resolution: object,
 ) -> tuple[int, int]:
-    width = int(source_width)
-    height = int(source_height)
+    plan = build_ltx25_video_upscale_plan(source_width, source_height, resolution)
+    if plan.model_width is None or plan.model_height is None:
+        return plan.target_width, plan.target_height
+    return plan.model_width, plan.model_height
+
+
+def _positive_dimensions(source_width: object, source_height: object) -> tuple[int, int]:
+    try:
+        width = int(source_width)
+        height = int(source_height)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("无法读取视频分辨率。") from exc
     if width <= 0 or height <= 0:
         raise ValueError("无法读取视频分辨率。")
+    return width, height
+
+
+def _round_even(value: float) -> int:
+    return max(2, int(round(value / 2.0)) * 2)
+
+
+def _target_scale(width: int, height: int, resolution: object) -> float:
     normalized = normalize_ltx25_video_upscale_resolution(resolution)
-    model_long_edge = LTX25_VIDEO_UPSCALE_RESOLUTION_LONG_EDGES[normalized] // 2
-    if width >= height:
-        model_width = model_long_edge
-        model_height = max(32, int(model_width * height / width / 32) * 32)
+    short_edge = min(width, height)
+    long_edge = max(width, height)
+    return min(
+        LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES[normalized] / short_edge,
+        LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE / long_edge,
+    )
+
+
+def get_ltx25_video_upscale_target_dimensions(
+    source_width: object,
+    source_height: object,
+    resolution: object,
+) -> tuple[int, int]:
+    """Fit the source ratio into the selected short-edge/QHD envelope."""
+    width, height = _positive_dimensions(source_width, source_height)
+    normalized = normalize_ltx25_video_upscale_resolution(resolution)
+    source_ratio = width / height
+    for common_ratio in (16 / 9, 9 / 16, 3 / 2, 2 / 3, 1.0):
+        if abs(source_ratio - common_ratio) / common_ratio <= 0.01:
+            source_ratio = common_ratio
+            break
+    target_short = LTX25_VIDEO_UPSCALE_RESOLUTION_SHORT_EDGES[normalized]
+    if source_ratio >= 1:
+        target_width = target_short * source_ratio
+        target_height = float(target_short)
     else:
-        model_height = model_long_edge
-        model_width = max(32, int(model_height * width / height / 32) * 32)
-    return model_width, model_height
+        target_width = float(target_short)
+        target_height = target_short / source_ratio
+    envelope_scale = min(1.0, LTX25_VIDEO_UPSCALE_MAX_LONG_EDGE / max(
+        target_width, target_height
+    ))
+    return (
+        _round_even(target_width * envelope_scale),
+        _round_even(target_height * envelope_scale),
+    )
+
+
+def _hybrid_model_canvas(
+    width: int,
+    height: int,
+    target_width: int,
+    target_height: int,
+) -> tuple[int, int]:
+    source_long = max(width, height)
+    target_long = max(target_width, target_height)
+    lower_long = target_long / 4
+    upper_long = min(
+        LTX25_VIDEO_UPSCALE_MODEL_MAX_LONG_EDGE,
+        target_long / 2,
+    )
+    desired_long = min(upper_long, max(lower_long, source_long))
+    canvas_long = max(32, int(round(desired_long / 32)) * 32)
+    if canvas_long > upper_long:
+        canvas_long = max(32, int(upper_long / 32) * 32)
+    desired_short = canvas_long * min(width, height) / source_long
+    canvas_short = max(32, int(round(desired_short / 32)) * 32)
+    if width >= height:
+        return canvas_long, canvas_short
+    return canvas_short, canvas_long
+
+
+def build_ltx25_video_upscale_plan(
+    source_width: object,
+    source_height: object,
+    resolution: object,
+) -> Ltx25VideoUpscalePlan:
+    width, height = _positive_dimensions(source_width, source_height)
+    normalized = normalize_ltx25_video_upscale_resolution(resolution)
+    target_width, target_height = get_ltx25_video_upscale_target_dimensions(
+        width, height, normalized
+    )
+    scale = _target_scale(width, height, normalized)
+    if scale <= 1.0:
+        raise ValueError("目标清晰度必须高于原视频，且最高为 2K。")
+    if scale <= LTX25_VIDEO_UPSCALE_HYBRID_SCALE_THRESHOLD:
+        return Ltx25VideoUpscalePlan(
+            resolution=normalized,
+            mode="vsr_only",
+            source_width=width,
+            source_height=height,
+            target_width=target_width,
+            target_height=target_height,
+            scale=scale,
+            vsr_scale=scale,
+        )
+
+    model_width, model_height = _hybrid_model_canvas(
+        width,
+        height,
+        target_width,
+        target_height,
+    )
+    latent_width = model_width * 2
+    latent_height = model_height * 2
+    fit_scale = min(model_width / width, model_height / height)
+    content_width = min(model_width, _round_even(width * fit_scale))
+    content_height = min(model_height, _round_even(height * fit_scale))
+    pad_x = (model_width - content_width) // 2
+    pad_y = (model_height - content_height) // 2
+    return Ltx25VideoUpscalePlan(
+        resolution=normalized,
+        mode="ltx_hybrid",
+        source_width=width,
+        source_height=height,
+        target_width=target_width,
+        target_height=target_height,
+        scale=scale,
+        model_width=model_width,
+        model_height=model_height,
+        latent_width=latent_width,
+        latent_height=latent_height,
+        content_width=content_width,
+        content_height=content_height,
+        pad_x=pad_x,
+        pad_y=pad_y,
+        vsr_scale=max(target_width / latent_width, target_height / latent_height),
+    )

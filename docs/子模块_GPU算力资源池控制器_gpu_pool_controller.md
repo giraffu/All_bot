@@ -283,7 +283,7 @@ execution task type；
 - `all` 的 LTX 2.3 子栈与 `ltx_unified` 使用同一份
   `ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json` 和三份
   extracted-10Eros workflow；LTX 2.5 高清化另外合并独立的
-  `ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json`；
+  `ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json`；
   不再同时声明旧 `ltx_video` 与 `ltx_t2v` manifest。多 manifest 同步继续按
   相对路径、大小和 SHA-256 复用既有对象，只补统一 manifest 的真实差集，
   普通 T2V 保留 Sulphur workflow，IC 使用纯官方单阶段 Ingredients

@@ -2,16 +2,14 @@
 
 ## 1. 能力边界
 
-公开任务类型和执行类型均为 `ltx25_video_upscale`。当前只接收一个最长 20 秒、
+公开任务类型和执行类型均为 `ltx25_video_upscale`。当前只接收一个最长 15 秒、
 最大 40MB 的视频，统一为 24fps，并按真实媒体时长选择 `24 * 秒数 + 1` 帧的
 模型网格。用户可在高于源视频长边的档位中选择 720p、1080p 或 2K，最高不超过
-2K；价格按服务端核验后的整秒时长和目标档位计算，分别为 5、10、36 灵石/秒。
-2K 最大档实测需要 96 GB 显存节点，不能回落到 32 GB RTX 5090；价格除约
-1.78 倍的像素负载外，还覆盖大显存节点约 2 倍的小时成本和失败重试余量。
+2K；价格按服务端核验后的原片整秒时长和目标档位计算，内部补帧和窗口重叠不计费。
+当前 5、10、36 灵石/秒只是 canary 前费率，须按新链路实测成本复核后再开放。
 RunPod profile 必须投影 `TASK_COMPLETION_TIMEOUT_SECONDS=3600` 和
-`COMFY_EXTRA_ARGS=--reserve-vram 8`；20 秒 2K 工作流的实测推理会超过通用
-Worker 的 1800 秒默认值，未预留显存时还会在 96 GB 节点模型加载阶段把剩余显存
-压到不足一次 4.28 GiB 分配。动态显存模式下 `--lowvram` 不生效，不能作为替代。
+`COMFY_EXTRA_ARGS=--reserve-vram 1`。旧版直接在最终 2K 尺寸扩散的 20 秒链路曾在
+96GB 节点 OOM，该结论不适用于本版受限中分辨率、时间分窗和 VSR 收尾链路。
 它的主要定位是对本项目当前 H3 beta4 生成的已定稿成片做第二次 IC V2V，
 不依赖或回退到早期 beta2 模型与工作流。
 它是独立 GPU profile，不替换 H3、`ltx_video`、SCAIL-2 或传统超分任务。
@@ -22,9 +20,9 @@ Web 使用练功房结构化 `target_video` 上传槽；主 Bot 使用
 `LTX25_VIDEO_UPSCALE_ENABLED=true`。只有模型许可、镜像和 canary 均通过后才能
 同时打开入口和执行开关。
 Web 服务端在素材 promotion、扣费和 Central 派发之前通过对象存储短签与 ffprobe
-读取真实视频宽、高和时长；超过 20 秒的成片直接返回明确参数错误，探测失败也
-fail closed。为兼容音频封装尾部，只允许最多 20.25 秒的编码容差；计费秒数取
-`ceil(真实时长 - 0.25)` 并约束到 1 至 20 秒，不能以客户端上报的 duration 或
+读取真实视频宽、高和时长；超过 15 秒的成片直接返回明确参数错误，探测失败也
+fail closed。为兼容音频封装尾部，只允许最多 15.25 秒的编码容差；计费秒数取
+`ceil(真实时长 - 0.25)` 并约束到 1 至 15 秒，不能以客户端上报的 duration 或
 source size 代替真实媒体校验。目标档位必须严格高于源视频长边；源视频已达到或
 超过 2K 时拒绝提交。
 `config-contract` 必须将该开关同时投影到 `web-api` 和 `main-bot`；
@@ -35,10 +33,11 @@ source size 代替真实媒体校验。目标档位必须严格高于源视频�
 canonical API workflow 是
 `workers/comfy_agent/workflows/LTX 2.5 IC V2V Upscale.api.json`，mapping 和
 patcher 固定注入输入视频、正负提示词、seed、IC-LoRA 强度 `1.0` 和输出前缀。
-Worker 在上传 ComfyUI 前通过 ffmpeg 将素材规范化为 24fps、动态帧数和 Div32
-模型输入尺寸。工作流内部仍固定执行 2 倍 IC V2V，因此 Worker 会先把源视频按
-比例缩放到目标档位长边的一半；最终长边分别接近 1280、1920 或 2560，短边受
-Div64 输出网格约束。用户看到的是目标档位选择，不是固定的“源宽高乘 2”。无声
+Worker 在上传 ComfyUI 前通过 ffmpeg 将素材规范化为 24fps 和 `8n+1` 动态帧数。
+目标档以短边 720/1080/1440 计算并保持原始宽高比，长边封顶 2560。目标缩放不超过
+2 倍时直接逐帧 RTX VSR；超过 2 倍时才在长边不超过 864 的 Div32 画布执行 IC 8 步，
+用 LTX-2.3 潜空间模型放大 2 倍并采样 3 步，裁掉适配任意比例产生的黑边，最后由
+RTX VSR 精确收敛到目标尺寸。15 秒输入使用 208 帧窗口和 16 帧重叠。无声
 视频会补静音轨；最终 `CreateVideo` 复用源视频音轨，不使用采样器生成的音频作为
 结果。
 
@@ -58,12 +57,12 @@ profile、模型包和镜像入口分别是：
 
 镜像不包含模型权重，只烘焙固定 revision 的 ComfyUI、ComfyUI-LTXVideo、Worker
 runtime 和 workflow。模型 manifest 固定为
-`ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json`，五个文件合计约
-39GB，全部按 size 和 SHA256 校验。基础 LTX-2.5 和 Pixel Spatial Upscaler 仓库
+`ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json`，六个文件合计约
+40GB，全部按 size 和 SHA256 校验。基础 LTX-2.5、IC-LoRA 和 LTX-2.3 潜空间模型
 均需先在 Hugging Face 接受许可，再使用只读 `HF_TOKEN` 下载；token 不写入 Git、
 日志或镜像。
 
-GPU 固定为 96 GB RTX PRO 6000 Blackwell；32 GB RTX 5090 已通过最大负载反证排除。
+测试 profile 固定为 32GB RTX 5090；15 秒混合链路须由最大负载 canary 确认。
 容器盘至少 100GB、volume 至少 60GB。profile 默认不参加 autoscaler，首次发布必须
 使用 digest-pinned 镜像，先以
 disabled Worker 按计划开放的时长/分辨率组合跑 canary，至少覆盖默认档和最大负载；
@@ -134,4 +133,4 @@ RunPod operator，并把 `ltx25_video_upscale` 加入 verified profile allowlist
 最小验证包括 task registry、60 个时长/分辨率计价 variant、Central request、
 dispatcher、workflow mapping/patcher、ffmpeg 输入规范化、Web 载荷、Bot 菜单配置、
 RunPod pod request、前端构建和 `scripts/doc_quality_checker.py`。只验证代码或请求
-渲染不能证明 20 秒/2K 最大负载可用；必须以目标测试 GPU 的实际 canary 为准。
+渲染不能证明 15 秒/2K 最大负载可用；必须以目标测试 GPU 的实际 canary 为准。

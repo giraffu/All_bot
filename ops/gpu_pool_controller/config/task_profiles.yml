@@ -12,22 +12,24 @@ profiles:
       - LTXICLoRALoaderModelOnly
       - LTXAddVideoICLoRAGuide
       - LTXVImgToVideoInplace
-      - LTXVConcatAVLatent
-      - LTXVSeparateAVLatent
       - LTXVCropGuides
+      - LTXVLoopingSampler
+      - LatentUpscaleModelLoader
+      - LTXVLatentUpsampler
+      - DaSiWa_RTX_UpscalerRefiner
+      - ImageCrop
       - LoadVideo
       - GetVideoComponents
       - CreateVideo
       - SaveVideo
       - ImageFromBatch
       - MathExpression|pysssss
-      - SamplerCustomAdvanced
     workflow: workers/comfy_agent/workflows/LTX 2.5 IC V2V Upscale.api.json
     min_vram_gb: 24
     image_ref: ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:pending
     all_in_one_image_ref: ghcr.io/giraffu/allbot-gpu-ltx25-video-upscale:pending
-    model_prefix: ltx25_video_upscale/2026-08-31-int8-ic-v1
-    model_manifest_key: ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json
+    model_prefix: ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2
+    model_manifest_key: ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json
 
   all:
     runtime_profile: all
@@ -93,7 +95,7 @@ profiles:
       - scail2/2026-06-17-test/manifest.json
       - i2i_pro/2026-06-14-test/manifest.json
       - ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json
-      - ltx25_video_upscale/2026-08-31-int8-ic-v1/manifest.json
+      - ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json
 
   scail2_flex:
     runtime_profile: scail2_flex
