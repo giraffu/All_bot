@@ -32,6 +32,12 @@ def test_classify_snapshot_state_requires_completed_object_and_verified_batch():
     )
 
 
+def test_snapshot_schema_materializes_one_status_row_per_history():
+    normalized = " ".join(snapshot_analytics.SCHEMA_SQL.split())
+    assert "analytics_snapshot_backup_history_status" in normalized
+    assert "primary key(snapshot_id,history_id)" in normalized
+
+
 def test_gateway_path_and_range_are_bounded():
     assert safe_remote_object_path("snapshots/batches", 12, "100/output_images/a.mp4") == (
         "snapshots/batches/batch-000012/100/output_images/a.mp4"
@@ -79,7 +85,11 @@ async def test_refresh_checkpoints_each_verified_batch(monkeypatch, tmp_path):
             self.executions = []
 
         async def fetchrow(self, *_args):
-            return {"ready": True, "last_verified_batch": 10}
+            return {
+                "ready": True,
+                "last_verified_batch": 10,
+                "history_status_ready": True,
+            }
 
         async def fetch(self, *_args):
             return []

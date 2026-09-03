@@ -57,6 +57,7 @@ LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
     "analytics_snapshot_backup_sets",
     "analytics_snapshot_backup_objects",
     "analytics_snapshot_backup_refs",
+    "analytics_snapshot_backup_history_status",
 )
 
 
