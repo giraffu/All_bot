@@ -12,10 +12,12 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 from typing import Any
 
 import asyncpg
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.r2_history_snapshot_backup import iter_manifest_objects
 
 

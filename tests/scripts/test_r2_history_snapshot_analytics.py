@@ -1,3 +1,7 @@
+from pathlib import Path
+import subprocess
+import sys
+
 from scripts.refresh_r2_history_snapshot_analytics import classify_snapshot_state
 from scripts.serve_r2_history_snapshot_nas import (
     parse_byte_range,
@@ -48,3 +52,18 @@ def test_gateway_rejects_path_traversal_and_invalid_ranges():
             pass
         else:
             raise AssertionError(f"invalid range accepted: {value}")
+
+
+def test_refresh_script_can_start_outside_repository(tmp_path):
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "refresh_r2_history_snapshot_analytics.py"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
