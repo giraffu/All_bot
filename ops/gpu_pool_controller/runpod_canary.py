@@ -950,6 +950,7 @@ class RunPodCanaryRunner:
                 }
                 if http_status is not None:
                     summary["runpod_worker_fetch"]["last_http_status"] = http_status
+                self._fail_if_pod_terminal_before_worker(pod_id, summary)
                 self._sleep(self.options.poll_interval_seconds)
                 continue
             last_workers = workers
@@ -969,6 +970,7 @@ class RunPodCanaryRunner:
                         summary, "central_runpod_worker", "ok", summary["runpod_worker"]
                     )
                     return worker
+            self._fail_if_pod_terminal_before_worker(pod_id, summary)
             self._sleep(self.options.poll_interval_seconds)
         diagnostics: dict[str, Any] = {
             "expected_agent_id": expected_agent_id,
@@ -988,6 +990,28 @@ class RunPodCanaryRunner:
         raise RunPodCanaryError(
             "runpod worker heartbeat timeout: "
             + json.dumps(diagnostics, ensure_ascii=False)
+        )
+
+    def _fail_if_pod_terminal_before_worker(
+        self,
+        pod_id: str,
+        summary: dict[str, Any],
+    ) -> None:
+        payload = self.provider.pod_readiness(pod_id=pod_id)
+        self._require_ok(payload, "runpod pod-readiness failed while awaiting worker")
+        readiness = payload.get("readiness") or {}
+        signals = readiness.get("signals") or {}
+        desired_status = str(
+            payload.get("desired_status") or signals.get("desired_status") or ""
+        ).upper()
+        if desired_status not in {"EXITED", "STOPPED", "TERMINATED", "DELETED"}:
+            return
+        summary["runpod_worker_pod_status"] = {
+            "pod_id": str(payload.get("pod_id") or pod_id),
+            "desired_status": desired_status,
+        }
+        raise RunPodCanaryError(
+            f"runpod pod {pod_id} {desired_status.lower()} before worker heartbeat"
         )
 
     def _disable_test_workers(self, summary: dict[str, Any]) -> list[dict[str, Any]]:
