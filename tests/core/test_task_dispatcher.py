@@ -172,7 +172,7 @@ def test_ltx25_video_upscale_strategy_prices_output_pixels_per_second():
 
     assert strategy.get_cost({"duration": 10, "resolution": "720p"}) == 50
     assert strategy.get_cost({"duration": 10, "resolution": "1080p"}) == 100
-    assert strategy.get_cost({"duration": 10, "resolution": "2k"}) == 180
+    assert strategy.get_cost({"duration": 10, "resolution": "2k"}) == 360
 
 
 @pytest.mark.asyncio
