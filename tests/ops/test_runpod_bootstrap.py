@@ -47,6 +47,12 @@ RUNTIME_REFRESH_MODULES = {
         "ef8b23ed217bece3461bff46ebd14715a98342e24eeea44a6b4d451228abede6",
         True,
     ),
+    "minimax_h3_runtime_refresh": (
+        "allbot-gpu-minimax-h3",
+        "minimax_h3",
+        "c19e747dcac67a6efcbe3a360de0ce56180d06e9e70f2cda7665a8a16c05686a",
+        True,
+    ),
     "img2img_runtime_refresh": (
         "allbot-gpu-img2img-lora",
         "img2img_lora",
