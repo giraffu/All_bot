@@ -53,11 +53,8 @@ def test_ltx25_upscale_image_is_model_free_and_runtime_pinned():
         "/opt/allbot/runpod_bootstrap_from_git.sh"
     ) in dockerfile
     assert "test -x /opt/allbot/runpod_bootstrap_from_git.sh" in dockerfile
-    assert (
-        "ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/"
-        "allbot-comfy-runpod-wan22-aio-video@sha256:"
-        "5f959c7936e6ce271cbbb0d595993b48c4e408d6aded9476de949493d76400b4"
-    ) in dockerfile
+    assert "2984ec4c4b93292421888f38db74a5e8802a8ff8" in dockerfile
+    assert "NODE_SOURCE_IMAGE" not in dockerfile
     assert dockerfile.index(
         "rm -rf /opt/allbot/runtime/runpod_worker"
     ) < dockerfile.index(
