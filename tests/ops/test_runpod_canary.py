@@ -1305,6 +1305,52 @@ def test_wan22_canary_disables_only_matching_cloud_test_non_runpod_workers():
     ]
 
 
+def test_ltx25_canary_also_disables_matching_lan_aio_test_worker():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(
+            task_type="ltx25_video_upscale",
+            quiet=True,
+            worker_ids=("cloud_worker_test_01",),
+            worker_ids_explicit=False,
+        ),
+    )
+    runner._fetch_workers = lambda: [  # type: ignore[method-assign]
+        {
+            "agent_id": "lan_aio_test_ltx25_video_upscale_lan-gpu-226-gpu0",
+            "types": "ltx25_video_upscale",
+            "provider": "lan_aio",
+        },
+        {
+            "agent_id": "runpod_test_ltx25_video_upscale_pod-1",
+            "types": "ltx25_video_upscale",
+            "provider": "runpod",
+        },
+        {
+            "agent_id": "lan_aio_prod_ltx25_video_upscale_lan-gpu-226-gpu0",
+            "types": "ltx25_video_upscale",
+            "provider": "lan_aio",
+        },
+    ]
+    runner._get_agent_control = lambda agent_id: {  # type: ignore[method-assign]
+        "state": "enabled",
+        "reason": "",
+    }
+    disabled = []
+    runner._set_agent_control = (  # type: ignore[method-assign]
+        lambda agent_id, state, **_kwargs: disabled.append((agent_id, state))
+    )
+
+    controls = runner._disable_test_workers({})
+
+    assert [item["agent_id"] for item in controls] == [
+        "lan_aio_test_ltx25_video_upscale_lan-gpu-226-gpu0"
+    ]
+    assert disabled == [
+        ("lan_aio_test_ltx25_video_upscale_lan-gpu-226-gpu0", "disabled")
+    ]
+
+
 def test_i2i_pro_canary_disables_only_matching_cloud_test_non_runpod_workers():
     runner = RunPodCanaryRunner(
         FakeRunPodProvider(),

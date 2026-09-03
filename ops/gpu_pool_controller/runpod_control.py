@@ -124,7 +124,10 @@ def worker_types(worker: dict[str, Any]) -> set[str]:
 def is_cloud_test_non_runpod_worker(worker: dict[str, Any]) -> bool:
     agent_id = str(worker.get("agent_id") or "")
     provider = str(worker.get("provider") or "")
-    return agent_id.startswith("cloud_worker_test_") and provider != "runpod"
+    is_test_lane = agent_id.startswith(
+        ("cloud_worker_test_", "lan_aio_test_")
+    )
+    return is_test_lane and provider != "runpod"
 
 
 def worker_supports_any_expected_type(
