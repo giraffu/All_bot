@@ -1,7 +1,11 @@
 import pytest
 
 from src.domain_config.ltx25_video_upscale import (
+    LTX25_VIDEO_UPSCALE_IC_GUIDE_TEMPORAL_MULTIPLIER,
+    LTX25_VIDEO_UPSCALE_MODEL_SPATIOTEMPORAL_BUDGET,
+    LTX25_VIDEO_UPSCALE_TEMPORAL_COMPRESSION,
     build_ltx25_video_upscale_plan,
+    get_ltx25_video_upscale_frame_count,
     get_ltx25_video_upscale_available_resolutions,
     get_ltx25_video_upscale_target_dimensions,
     normalize_ltx25_video_upscale_duration,
@@ -42,17 +46,19 @@ def test_near_target_sources_use_vsr_without_diffusion_regeneration():
 
 
 @pytest.mark.parametrize(
-    ("source", "resolution", "target", "model_canvas"),
+    ("source", "resolution", "duration", "target", "model_canvas"),
     [
-        ((854, 480), "1080p", (1920, 1080), (864, 480)),
-        ((910, 512), "2k", (2560, 1440), (864, 480)),
-        ((576, 864), "2k", (1440, 2160), (576, 864)),
+        ((854, 480), "1080p", 5, (1920, 1080), (640, 352)),
+        ((910, 512), "2k", 5, (2560, 1440), (640, 352)),
+        ((576, 864), "2k", 5, (1440, 2160), (384, 576)),
+        ((768, 448), "2k", 10, (2468, 1440), (448, 256)),
+        ((768, 448), "2k", 15, (2468, 1440), (384, 224)),
     ],
 )
-def test_low_resolution_sources_use_bounded_hybrid_canvas(
-    source, resolution, target, model_canvas
+def test_low_resolution_sources_use_duration_bounded_hybrid_canvas(
+    source, resolution, duration, target, model_canvas
 ):
-    plan = build_ltx25_video_upscale_plan(*source, resolution)
+    plan = build_ltx25_video_upscale_plan(*source, resolution, duration=duration)
 
     assert plan.mode == "ltx_hybrid"
     assert (plan.target_width, plan.target_height) == target
@@ -63,7 +69,7 @@ def test_low_resolution_sources_use_bounded_hybrid_canvas(
     assert plan.content_height <= plan.model_height
     assert plan.content_width + plan.pad_x * 2 <= plan.model_width
     assert plan.content_height + plan.pad_y * 2 <= plan.model_height
-    assert 1 <= plan.vsr_scale <= 2
+    assert 1 <= plan.vsr_scale <= 4
 
 
 def test_duration_limit_matches_h3_and_accepts_the_encoding_tail():
@@ -74,3 +80,30 @@ def test_duration_limit_matches_h3_and_accepts_the_encoding_tail():
         normalize_ltx25_video_upscale_duration(16)
     with pytest.raises(ValueError, match="最长 15 秒"):
         normalize_ltx25_video_upscale_source_duration(15.251)
+
+
+def test_every_supported_duration_stays_inside_the_single_window_token_budget():
+    previous_area = None
+    for duration in range(1, 16):
+        plan = build_ltx25_video_upscale_plan(
+            768,
+            448,
+            "2k",
+            duration=duration,
+        )
+        frame_count = get_ltx25_video_upscale_frame_count(duration)
+        latent_frames = (
+            (frame_count - 1) // LTX25_VIDEO_UPSCALE_TEMPORAL_COMPRESSION
+        ) + 1
+        combined_latent_frames = (
+            latent_frames * LTX25_VIDEO_UPSCALE_IC_GUIDE_TEMPORAL_MULTIPLIER
+        )
+        area = plan.model_width * plan.model_height
+
+        assert area * combined_latent_frames <= (
+            LTX25_VIDEO_UPSCALE_MODEL_SPATIOTEMPORAL_BUDGET
+        )
+        assert plan.vsr_scale <= 4
+        if previous_area is not None:
+            assert area <= previous_area
+        previous_area = area

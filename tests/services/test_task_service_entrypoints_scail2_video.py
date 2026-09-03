@@ -50,8 +50,8 @@ async def test_process_ltx25_upscale_task_uses_per_second_resolution_price(monke
     assert flow.request.task_type == MODE_LTX25_VIDEO_UPSCALE
     assert flow.request.inputs["duration"] == 10
     assert flow.request.inputs["resolution"] == "2k"
-    assert flow.request.cost_override == 180
-    assert flow.runtime_state.actual_cost == 180
+    assert flow.request.cost_override == 360
+    assert flow.runtime_state.actual_cost == 360
     assert flow.billing.requested_duration == 10
     assert flow.billing.billing_resolution == "2k"
 

@@ -74,8 +74,9 @@ def test_ltx25_video_upscale_patcher_locks_source_prompt_seed_and_output():
     assert patched["5516:4984"]["inputs"]["sigmas"].count(",") == 8
     assert patched["6004"]["inputs"]["sigmas"].count(",") == 3
     assert patched["5516:4829"]["class_type"] == "LTXVLoopingSampler"
-    assert patched["5516:4829"]["inputs"]["temporal_tile_size"] == 208
+    assert patched["5516:4829"]["inputs"]["temporal_tile_size"] == 1000
     assert patched["5516:4829"]["inputs"]["adain_factor"] == 0.1
+    assert patched["6005"]["inputs"]["temporal_tile_size"] == 1000
     assert patched["6005"]["inputs"]["temporal_overlap"] == 16
     assert patched["6005"]["inputs"]["adain_factor"] == 0.1
     assert patched["6002"]["inputs"]["model"] == ["5004:5602", 0]

@@ -152,6 +152,7 @@ def prepare_ltx25_video_upscale_input(
             video_stream.get("width"),
             video_stream.get("height"),
             normalized_resolution,
+            duration=normalized_duration,
         )
         if plan.mode == "ltx_hybrid":
             model_width = int(plan.model_width or 0)

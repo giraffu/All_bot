@@ -49,8 +49,8 @@ def test_prepare_ltx25_upscale_video_locks_24fps_121_frames_and_adaptive_canvas(
     assert ffmpeg[ffmpeg.index("-frames:v") + 1] == "121"
     video_filter = ffmpeg[ffmpeg.index("-vf") + 1]
     assert "fps=24" in video_filter
-    assert "scale='768:448':force_original_aspect_ratio=decrease" in video_filter
-    assert "pad='768:448'" in video_filter
+    assert "scale='640:384':force_original_aspect_ratio=decrease" in video_filter
+    assert "pad='640:384'" in video_filter
     assert plan["_ltx25_mode"] == "ltx_hybrid"
     assert plan["_ltx25_target_width"] == 1852
     assert plan["_ltx25_target_height"] == 1080
@@ -183,14 +183,19 @@ def test_prepare_ltx25_upscale_accepts_h3_encoding_tail_and_trims_to_121_frames(
 
 
 @pytest.mark.parametrize(
-    ("source_duration", "expected_frames", "expected_cutoff"),
+    ("source_duration", "expected_frames", "expected_cutoff", "expected_scale"),
     [
-        (10.125, "241", "10.1"),
-        (15.166667, "361", "15.1"),
+        (10.125, "241", "10.1", "448:256"),
+        (15.166667, "361", "15.1", "384:224"),
     ],
 )
 def test_prepare_ltx25_upscale_uses_dynamic_8n_plus_1_frame_grid(
-    tmp_path, monkeypatch, source_duration, expected_frames, expected_cutoff
+    tmp_path,
+    monkeypatch,
+    source_duration,
+    expected_frames,
+    expected_cutoff,
+    expected_scale,
 ):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"source-video")
@@ -224,14 +229,15 @@ def test_prepare_ltx25_upscale_uses_dynamic_8n_plus_1_frame_grid(
     ffmpeg = commands[1]
     assert ffmpeg[ffmpeg.index("-frames:v") + 1] == expected_frames
     assert ffmpeg[ffmpeg.index("-t") + 1] == expected_cutoff
+    assert f"scale='{expected_scale}'" in ffmpeg[ffmpeg.index("-vf") + 1]
 
 
 @pytest.mark.parametrize(
     ("resolution", "expected_scale"),
     [
         ("720p", "768:448"),
-        ("1080p", "768:448"),
-        ("2k", "768:448"),
+        ("1080p", "640:384"),
+        ("2k", "640:384"),
     ],
 )
 def test_prepare_ltx25_upscale_resizes_model_input_for_selected_output(
