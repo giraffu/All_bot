@@ -1038,7 +1038,7 @@
         "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "ltx_t2v": "Standard T2V costs 10/20/30/40 credits for 5/10/15/20 seconds; character mode costs 12/24/36/48 credits.",
-        "ltx25_video_upscale": "Charged by whole source seconds: 5 credits/s at 720p, 10 credits/s at 1080p, and 18 credits/s at 2K.",
+        "ltx25_video_upscale": "Charged by whole source seconds: 5 credits/s at 720p, 10 credits/s at 1080p, and 36 credits/s at 2K.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
         "scail2_video": "Fixed at 512x896. Action Transfer supports 5s/8s/10s/15s/20s for 40/80/120/180/260 credits. Video Replacement and Video Face Swap support 5s/8s."
       },

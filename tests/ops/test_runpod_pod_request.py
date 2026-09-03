@@ -16,6 +16,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS,
+    RUNPOD_LTX25_VIDEO_UPSCALE_COMFY_EXTRA_ARGS,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -195,6 +196,13 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     )
     assert ltx_t2v["env"]["POOL_RUNTIME_PROFILE"] == "ltx_t2v"
     assert ltx25["env"]["TASK_COMPLETION_TIMEOUT_SECONDS"] == "3600"
+    assert ltx25["gpuTypeIds"] == [
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+    ]
+    assert (
+        ltx25["env"]["COMFY_EXTRA_ARGS"]
+        == RUNPOD_LTX25_VIDEO_UPSCALE_COMFY_EXTRA_ARGS
+    )
     assert (
         ltx_t2v["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
         == RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
@@ -234,7 +242,7 @@ def test_ltx_t2v_request_rejects_profile_contract_drift(overrides, error):
 
 
 def test_ltx25_upscale_request_allows_one_verified_gpu_for_canary_selection():
-    verified_gpu = RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[1]
+    verified_gpu = RUNPOD_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[0]
     settings = _settings_for_profile("ltx25_video_upscale")
     settings = RunPodSettings(
         **{
@@ -251,12 +259,16 @@ def test_ltx25_upscale_request_allows_one_verified_gpu_for_canary_selection():
     assert body["gpuTypeIds"] == [verified_gpu]
 
 
-def test_ltx25_upscale_request_rejects_unverified_gpu_selection():
+@pytest.mark.parametrize(
+    "gpu_type",
+    ("NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 5090"),
+)
+def test_ltx25_upscale_request_rejects_unverified_gpu_selection(gpu_type):
     settings = _settings_for_profile("ltx25_video_upscale")
     settings = RunPodSettings(
         **{
             **settings.__dict__,
-            "gpu_type_ids_ltx25_video_upscale": ("NVIDIA GeForce RTX 4090",),
+            "gpu_type_ids_ltx25_video_upscale": (gpu_type,),
         }
     )
 

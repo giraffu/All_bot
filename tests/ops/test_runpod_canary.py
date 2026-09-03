@@ -542,7 +542,7 @@ def test_runpod_canary_ltx25_upscale_dry_run_preflights_disabled_profile():
 
 
 def test_runpod_canary_ltx25_accepts_one_verified_gpu_for_node_selection():
-    verified_gpu = EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[1]
+    verified_gpu = EXPECTED_LTX25_VIDEO_UPSCALE_GPU_TYPE_IDS[0]
     settings = RunPodSettings(
         gpu_type_ids_ltx25_video_upscale=(verified_gpu,),
     )
