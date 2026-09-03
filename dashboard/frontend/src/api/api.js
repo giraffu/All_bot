@@ -139,6 +139,11 @@ export const fetchHistoryAll = async (
   username = null,
   requestConfig = {},
 ) => {
+  const {
+    h3InputKind = null,
+    h3ChainKind = null,
+    ...httpRequestConfig
+  } = requestConfig
   return get(withQuery('/api/history/all', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
@@ -148,7 +153,9 @@ export const fetchHistoryAll = async (
     if (workerId && workerId !== 'all') appendQueryParam(params, 'worker_id', workerId)
     if (source && source !== 'all') appendQueryParam(params, 'source', source)
     appendQueryParam(params, 'username', username)
-  }), requestConfig)
+    appendQueryParam(params, 'h3_input_kind', h3InputKind)
+    appendQueryParam(params, 'h3_chain_kind', h3ChainKind)
+  }), httpRequestConfig)
 }
 
 export const deleteUser = async (userId) => del(`/api/users/${userId}`)

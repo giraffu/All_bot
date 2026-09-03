@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onBeforeUnmount, onMounted } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { formatDate } from '../utils/helpers'
 import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
@@ -28,11 +28,33 @@ const selectedWorker = ref(null)
 const selectedSource = ref(null)
 const usernameInput = ref('')
 const selectedUsername = ref(null)
+const selectedH3Facet = ref(null)
 const workerOptions = ref([{ label: '全部节点', value: null }])
 const sourceOptions = HISTORY_SOURCE_OPTIONS
 let activeHistoryRequest = null
 
 const typeOptions = TASK_TYPE_OPTIONS
+const isH3ReferenceFocused = computed(
+  () => selectedTypes.value.length === 1 && selectedTypes.value[0] === 'minimax_h3_ref2v',
+)
+
+const h3FacetOptions = [
+  {
+    label: '参考输入',
+    options: [
+      { label: '图片参考', value: 'input:image' },
+      { label: '音频参考', value: 'input:audio' },
+      { label: '视频参考', value: 'input:video' },
+    ],
+  },
+  {
+    label: '扩展链路',
+    options: [
+      { label: '扩展分段视频', value: 'chain:segment' },
+      { label: '最终拼接视频', value: 'chain:stitched' },
+    ],
+  },
+]
 
 const ratingOptions = [
   { label: '全部评价', value: null },
@@ -55,6 +77,12 @@ const loadData = async (page = 1) => {
   loading.value = true
   try {
     const typeParam = selectedTypes.value.length > 0 ? selectedTypes.value.join(',') : null
+    const requestConfig = { signal: requestController.signal }
+    if (isH3ReferenceFocused.value && selectedH3Facet.value?.startsWith('input:')) {
+      requestConfig.h3InputKind = selectedH3Facet.value.slice('input:'.length)
+    } else if (isH3ReferenceFocused.value && selectedH3Facet.value?.startsWith('chain:')) {
+      requestConfig.h3ChainKind = selectedH3Facet.value.slice('chain:'.length)
+    }
     const data = await fetchHistoryAll(
       page,
       pageSize.value,
@@ -64,7 +92,7 @@ const loadData = async (page = 1) => {
       selectedWorker.value,
       selectedSource.value,
       selectedUsername.value,
-      { signal: requestController.signal },
+      requestConfig,
     )
     if (activeHistoryRequest !== requestController) return
     history.value = data.items
@@ -98,6 +126,17 @@ const handleFilterChange = () => {
   loadData(1)
 }
 
+const handleTypeFilterChange = () => {
+  if (!isH3ReferenceFocused.value) {
+    selectedH3Facet.value = null
+  }
+  loadData(1)
+}
+
+const handleH3FacetChange = () => {
+  loadData(1)
+}
+
 const handleUsernameSearch = (value) => {
   const normalizedValue = value.trim().replace(/^@/, '')
   usernameInput.value = normalizedValue
@@ -120,6 +159,7 @@ const resetFilters = () => {
   selectedSource.value = null
   usernameInput.value = ''
   selectedUsername.value = null
+  selectedH3Facet.value = null
   loadData(1)
 }
 
@@ -243,7 +283,7 @@ onBeforeUnmount(() => {
                 data-testid="history-type-filter"
                 style="min-width: 240px; max-width: 360px"
                 placeholder="全部类型"
-                @change="handleFilterChange"
+                @change="handleTypeFilterChange"
                 :options="typeOptions"
                 size="small"
                 show-search
@@ -254,6 +294,27 @@ onBeforeUnmount(() => {
                 class="custom-select"
               />
             </div>
+
+            <template v-if="isH3ReferenceFocused">
+              <div class="h-4 w-[1px] shrink-0 bg-violet-200 mx-1"></div>
+
+              <div
+                data-testid="history-h3-facet-filter"
+                class="flex shrink-0 items-center gap-2"
+              >
+                <span class="text-violet-600 text-xs font-medium">H3筛选:</span>
+                <a-select
+                  v-model:value="selectedH3Facet"
+                  style="width: 148px"
+                  placeholder="全部参考/结果"
+                  :options="h3FacetOptions"
+                  size="small"
+                  allow-clear
+                  class="custom-select"
+                  @change="handleH3FacetChange"
+                />
+              </div>
+            </template>
 
             <div class="h-4 w-[1px] shrink-0 bg-gray-200 mx-1"></div>
 
@@ -325,7 +386,7 @@ onBeforeUnmount(() => {
             </div>
 
             <a-button 
-              v-if="selectedUsername !== null || selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null || selectedSource !== null"
+              v-if="selectedUsername !== null || selectedTypes.length > 0 || selectedH3Facet !== null || selectedRating !== null || selectedPublic !== null || selectedWorker !== null || selectedSource !== null"
               size="small" 
               type="text" 
               danger 

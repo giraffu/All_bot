@@ -98,6 +98,7 @@ sequenceDiagram
 - Dashboard 历史生成页的分页记录保持实时查询；高成本精确总数使用 5 分钟进程内短缓存与 single-flight，并由 Dashboard 后台每 4 分钟预热默认无筛选总数。筛选组合首次使用时按精确口径计算后短缓存，因此总数最多短暂滞后 5 分钟，但不能缓存或延迟当前页记录。
 - Dashboard 历史生成页的 `GET /api/history/all` 支持 `username` 精确匹配；服务端去除首尾空白和可选前导 `@`，再通过 `lower(username)` 索引做大小写不敏感查询，并把归一后的用户名纳入精确总数缓存键。前端提交搜索或清空搜索时回到第一页，继续使用服务端分页，不能只过滤浏览器当前页。
 - History 的类型筛选计数由 `history(type)` 索引承载；前端切换筛选时取消上一条未完成请求，避免旧响应覆盖当前选择。H3 参考图生视频按 `History.input_file` 的实际顺序逐项展示，并明确标记为“参考图 1/2…”，即使某个派生 URL 缺失也不能吞掉后续参考图。
+- 管理后台单独选择 H3 REF2V 类型时，历史页显示一个按“参考输入”和“扩展链路”分组的 H3 二级筛选，并继续走服务端分页。`GET /api/history/all` 的 `h3_input_kind=image|audio|video` 分别按输入图片、已校验上下文中的 `reference_audio`、扩展上下文中的 `prev_task_id` 筛选；`h3_chain_kind=segment|stitched` 分别筛选带 `prev_task_id` 的扩展分段和带 `_minimax_h3_chain_stitch` 标记的最终拼接视频。最终拼接历史当前使用 `minimax_h3_i2v` 类型，因此 `stitched` 必须以拼接标记覆盖 REF2V 的普通类型条件；两项二级筛选都必须进入精确总数缓存键。
 - Dashboard 历史响应使用 typed `input_media` 统一描述输入图片、视频和音频。H3 REF2V 的参考音频从已校验的 `extra_outputs._minimax_h3_context.reference_audio` 恢复；扩展段根据同一上下文的 `prev_task_id` 显示“输入视频”。父段视频只返回受 Dashboard 鉴权保护的 `/api/history/media/{task_id}` 惰性解析地址，列表不能预取原视频或把父段对象地址复制到新历史记录。
 - Dashboard 历史集合在完成 SQL 查询后先结束只读事务，再通过 R2 S3 existence cache/singleflight 并发解析输出原件与缩略图；响应使用 `output_file_url` / `output_file_preview_url`，输入同时返回原件 `input_file_url` 与不做公网 HEAD 的文件级缩略图候选 `input_file_preview_url`。列表图片优先加载缩略图，点击后才显示原图；列表不得挂载原视频 `<video>`，无视频缩略图时显示占位符，管理员点击后才在当前页面弹窗加载带 controls 的原视频。缩略图缺失或对象存储异常只降级到原图/占位符，不能阻断历史接口。
 - 用户列表的“历史记录”弹窗使用 `GET /api/history/{user_id}` 的真实总数分页，
