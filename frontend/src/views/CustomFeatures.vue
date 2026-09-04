@@ -232,7 +232,7 @@ const showPromptOptimizer = computed(() => (
                 { value: 'standard', label: t('lab.workbench.minimax_h3_resolution_presets.standard') },
                 { value: 'hd', label: t('lab.workbench.minimax_h3_resolution_presets.hd') },
               ]" />
-              <a-select v-if="minimaxH3Mode === 't2v' || minimaxH3Mode === 'ref2v'" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
+              <a-select v-if="!h3IsExtension && (minimaxH3Mode === 't2v' || minimaxH3Mode === 'ref2v')" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
               <div v-else class="flex min-h-8 items-center rounded-md border border-white/10 px-3 text-xs text-slate-400">
                 {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}
               </div>

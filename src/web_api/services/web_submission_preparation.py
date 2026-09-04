@@ -10,6 +10,7 @@ from src.domain_config.ltx25_video_upscale import (
     normalize_ltx25_video_upscale_source_duration,
     resolve_ltx25_video_upscale_resolution,
 )
+from src.domain_config.minimax_h3 import MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
 
@@ -189,6 +190,17 @@ async def prepare_web_submission_request(
     )
     inputs = dict(req.inputs)
     if req.task_type.startswith("minimax_h3_"):
+        is_h3_extension = bool(
+            str(inputs.get("minimax_h3_prev_task_id") or "").strip()
+        )
+        if is_h3_extension and (
+            inputs.get("reference_refs") not in (None, [], ())
+            or inputs.get("reference_audio_ref") not in (None, "")
+        ):
+            raise CoreDomainError("尾帧锚定扩展不支持额外参考图或参考音频。")
+        if inputs.get(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT) not in (None, ""):
+            raise CoreDomainError("不得直接指定 H3 内部执行类型。")
+        inputs.pop(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT, None)
         if inputs.get("reference_video") is not None:
             raise CoreDomainError("不得直接指定 H3 参考视频存储路径。")
         if advanced_video_profile_loader is None:
@@ -250,6 +262,8 @@ async def prepare_web_submission_request(
         inputs["images"] = list(extension.images)
         if extension.reference_video:
             inputs["reference_video"] = extension.reference_video
+        if extension.execution_task_type:
+            inputs[MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT] = extension.execution_task_type
         if extension.aspect_ratio:
             inputs["aspect_ratio"] = extension.aspect_ratio
         h3_extension_metadata = dict(extension.metadata)

@@ -67,6 +67,20 @@ def test_ref2v_extension_keeps_new_reference_images_with_server_reference_video(
     assert plan.reference_video == "/tmp/previous-tail.mp4"
 
 
+def test_ref2v_extension_plan_keeps_business_identity_for_i2v_tail_anchor():
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="continue after the previous segment",
+        images=["/tmp/previous-tail.png"],
+        execution_task_type="minimax_h3_i2v",
+    )
+
+    assert plan.task_type == "minimax_h3_ref2v"
+    assert plan.execution_task_type == "minimax_h3_i2v"
+    assert plan.images == ("/tmp/previous-tail.png",)
+    assert plan.cost == 11
+
+
 @pytest.mark.parametrize("image_count", [0, 5])
 def test_ref2v_rejects_zero_or_five_images(image_count):
     with pytest.raises(AdvancedVideoProSubmissionError, match="1 至 4"):
@@ -214,6 +228,32 @@ async def test_ref2v_submit_forwards_extension_reference_video():
     )
 
     assert process.await_args.kwargs["reference_video"] == "/tmp/previous-tail.mp4"
+
+
+@pytest.mark.asyncio
+async def test_ref2v_tail_anchor_submit_forwards_internal_execution_type():
+    process = AsyncMock(return_value=(b"video", "output.mp4"))
+    plan = build_advanced_video_pro_submission_plan(
+        mode="ref2v",
+        prompt="continue",
+        images=["/tmp/previous-tail.png"],
+        execution_task_type="minimax_h3_i2v",
+    )
+
+    await submit_advanced_video_pro_plan(
+        plan,
+        context=object(),
+        chat_id=1,
+        user_id=2,
+        username="alice",
+        process_task_func=process,
+    )
+
+    kwargs = process.await_args.kwargs
+    assert kwargs["task_type"] == "minimax_h3_ref2v"
+    assert kwargs["minimax_h3_execution_task_type"] == "minimax_h3_i2v"
+    assert kwargs["result_meta"]["minimax_h3_mode"] == "ref2v"
+    assert kwargs["result_meta"]["minimax_h3_execution_mode"] == "i2v"
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ from src.services.minimax_h3_history_context_service import (
     build_minimax_h3_history_context,
     extract_minimax_h3_history_context,
     merge_minimax_h3_history_context_into_extra_outputs,
+    resolve_valid_minimax_h3_history_context,
 )
 
 
@@ -60,6 +61,32 @@ def test_minimax_h3_context_supports_ref2v_fixed_aspect_templates():
         "reference_audio": "task-inputs/task-ref2v/1.m4a",
         "lora_items": [],
     }
+
+
+def test_minimax_h3_extension_context_preserves_i2v_execution_mode():
+    metadata = {
+        "minimax_h3_mode": "ref2v",
+        "minimax_h3_execution_mode": "i2v",
+        "minimax_h3_main_model": "10eros_int8",
+        "requested_duration": 10,
+        "minimax_h3_resolution_preset": "standard",
+        "minimax_h3_aspect_ratio": "16:9",
+        "lora_items": [{"name": "footjob", "strength": 0.7}],
+        "minimax_h3_prev_task_id": "segment-2",
+        "minimax_h3_chain_task_ids": ["segment-1", "segment-2"],
+    }
+
+    context = build_minimax_h3_history_context(
+        task_type="minimax_h3_ref2v",
+        metadata=metadata,
+    )
+
+    assert context["mode"] == "ref2v"
+    assert context["execution_mode"] == "i2v"
+    assert resolve_valid_minimax_h3_history_context(
+        task_type="minimax_h3_ref2v",
+        extra_outputs={"_minimax_h3_context": context},
+    ) == context
 
 
 def test_minimax_h3_context_rejects_local_reference_audio_paths():

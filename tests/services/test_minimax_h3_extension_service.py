@@ -43,7 +43,9 @@ def _history(
 
 
 @pytest.mark.asyncio
-async def test_web_extension_injects_owned_video_reference_and_builds_canonical_chain(monkeypatch):
+async def test_web_extension_anchors_owned_tail_frame_and_builds_canonical_chain(
+    monkeypatch,
+):
     parent = _history(allow_contribute=False)
     monkeypatch.setattr(
         service,
@@ -58,8 +60,9 @@ async def test_web_extension_injects_owned_video_reference_and_builds_canonical_
         client_images=[],
     )
 
-    assert prepared.images == ()
-    assert prepared.reference_video == "task-results/segment-1/primary.mp4"
+    assert prepared.images == ("task-results/segment-1/last_frame.png",)
+    assert prepared.reference_video is None
+    assert prepared.execution_task_type == "minimax_h3_i2v"
     assert prepared.aspect_ratio == "16:9"
     assert prepared.metadata == {
         "minimax_h3_prev_task_id": "segment-1",
@@ -105,6 +108,38 @@ async def test_web_extension_keeps_tail_frame_path_for_optional_end_frame(monkey
     assert prepared.aspect_ratio is None
 
 
+@pytest.mark.asyncio
+async def test_bot_extension_downloads_only_tail_frame_for_i2v_anchor(
+    monkeypatch, tmp_path
+):
+    parent = _history()
+    monkeypatch.setattr(service, "FSM_TEMP_DIR", tmp_path)
+    monkeypatch.setattr(
+        service.user_core,
+        "get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=7), False)),
+    )
+    monkeypatch.setattr(
+        service,
+        "load_owned_minimax_h3_history_for_internal_user",
+        AsyncMock(return_value=parent),
+    )
+    download = MagicMock()
+    monkeypatch.setattr(service.storage, "download_file", download)
+
+    seed = await service.prepare_minimax_h3_extension_fsm_data(
+        prev_task_id="segment-1",
+        telegram_user_id=99,
+        username="alice",
+    )
+
+    assert len(seed.fsm_data["images"]) == 1
+    assert seed.fsm_data["images"][0] == seed.fsm_data["extension_start_frame"]
+    assert seed.fsm_data["reference_video"] is None
+    assert seed.fsm_data["minimax_h3_execution_task_type"] == "minimax_h3_i2v"
+    assert download.call_count == 1
+
+
 def test_video_extension_uses_nearest_supported_parent_aspect():
     history = _history(task_type="minimax_h3_i2v", width=720, height=1280)
 
@@ -146,7 +181,9 @@ def test_h3_chain_context_rejects_disconnected_parent():
 
 
 @pytest.mark.asyncio
-async def test_h3_stitch_downloads_segments_in_order_before_media_normalization(monkeypatch):
+async def test_h3_stitch_downloads_segments_in_order_before_media_normalization(
+    monkeypatch,
+):
     first = _history(task_id="segment-1")
     second = _history(task_id="segment-2")
     get_bytes = MagicMock(side_effect=[b"first", b"second"])

@@ -88,7 +88,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_entry_opens_video_reference_settings_without_mode_choice(
+async def test_h3_extension_entry_opens_tail_anchor_settings_without_mode_choice(
     monkeypatch,
 ):
     reply = AsyncMock()
@@ -109,8 +109,9 @@ async def test_h3_extension_entry_opens_video_reference_settings_without_mode_ch
         "duration": 10,
         "preset": "standard",
         "aspect": "16:9",
-        "images": [],
-        "reference_video": "/tmp/owned-tail.mp4",
+        "images": ["/tmp/owned-tail.png"],
+        "reference_video": None,
+        "minimax_h3_execution_task_type": "minimax_h3_i2v",
         "extension_start_frame": "/tmp/owned-tail.png",
         "reference_descriptions": [],
         "is_extension": True,
@@ -138,14 +139,18 @@ async def test_h3_extension_entry_opens_video_reference_settings_without_mode_ch
 
     assert state == AdvancedVideoProState.WAIT_SETTINGS
     assert query.answer.await_count == 1
-    assert context.user_data[fsm.DATA_KEY]["images"] == []
-    assert context.user_data[fsm.DATA_KEY]["reference_video"] == "/tmp/owned-tail.mp4"
+    assert context.user_data[fsm.DATA_KEY]["images"] == ["/tmp/owned-tail.png"]
+    assert context.user_data[fsm.DATA_KEY]["reference_video"] is None
+    assert (
+        context.user_data[fsm.DATA_KEY]["minimax_h3_execution_task_type"]
+        == "minimax_h3_i2v"
+    )
     callbacks = [
         button.callback_data
         for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert "已载入上一段末尾约 5 秒作为视频参考" in reply.await_args.args[1]
+    assert "已锁定上一段尾帧作为新视频起始帧" in reply.await_args.args[1]
     assert callbacks == [
         "avp_duration_5",
         "avp_duration_10",
@@ -154,25 +159,21 @@ async def test_h3_extension_entry_opens_video_reference_settings_without_mode_ch
         "avp_preset_small",
         "avp_preset_standard",
         "avp_preset_hd",
-        "avp_aspect_16:9",
-        "avp_aspect_9:16",
-        "avp_aspect_1:1",
-        "avp_aspect_4:3",
-        "avp_aspect_3:4",
         "avp_settings_done",
     ]
+    assert "比例：跟随首帧" in reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_legacy_first_last_callback_falls_back_to_video_reference():
+async def test_h3_extension_legacy_first_last_callback_falls_back_to_tail_anchor():
     data = {
         "mode": "ref2v",
         "duration": 5,
         "preset": "preview",
         "aspect": "16:9",
-        "images": [],
+        "images": ["/tmp/owned-tail.png"],
         "reference_descriptions": [],
-        "reference_video": "/tmp/owned-tail.mp4",
+        "reference_video": None,
         "extension_start_frame": "/tmp/owned-tail.png",
         "is_extension": True,
         "runtime_profiles": {
@@ -192,15 +193,15 @@ async def test_h3_extension_legacy_first_last_callback_falls_back_to_video_refer
 
     assert state == AdvancedVideoProState.WAIT_SETTINGS
     assert data["mode"] == "ref2v"
-    assert data["images"] == []
+    assert data["images"] == ["/tmp/owned-tail.png"]
     query.answer.assert_awaited_once_with(
-        "首尾帧续写已取消，已切换为视频参考续写。",
+        "首尾帧续写已取消，已切换为尾帧锚定续写。",
         show_alert=True,
     )
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
+async def test_h3_extension_tail_anchor_settings_offer_send_prompt_button(
     monkeypatch,
 ):
     edit = AsyncMock()
@@ -210,9 +211,9 @@ async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
         "duration": 5,
         "preset": "preview",
         "aspect": "16:9",
-        "images": [],
+        "images": ["/tmp/owned-tail.png"],
         "reference_descriptions": [],
-        "reference_video": "/tmp/owned-tail.mp4",
+        "reference_video": None,
         "extension_start_frame": "/tmp/owned-tail.png",
         "is_extension": True,
         "runtime_profiles": {
@@ -231,7 +232,7 @@ async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
     )
 
     assert state == AdvancedVideoProState.WAIT_SETTINGS
-    assert "直接发送新提示词" in edit.await_args.args[1]
+    assert "尾帧已锁定为新视频起始帧" in edit.await_args.args[1]
     buttons = [
         button
         for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
@@ -250,22 +251,19 @@ async def test_h3_extension_video_reference_settings_offer_send_prompt_button(
 
 
 @pytest.mark.asyncio
-async def test_h3_extension_reference_image_continues_existing_reference_flow(
+async def test_h3_extension_rejects_additional_reference_image(
     monkeypatch,
 ):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
-    monkeypatch.setattr(
-        fsm,
-        "download_telegram_file_to_fsm_temp",
-        AsyncMock(return_value="/tmp/new-reference.png"),
-    )
+    download = AsyncMock(return_value="/tmp/new-reference.png")
+    monkeypatch.setattr(fsm, "download_telegram_file_to_fsm_temp", download)
     data = {
         "mode": "ref2v",
-        "images": [],
+        "images": ["/tmp/owned-tail.png"],
         "reference_descriptions": [],
         "reference_audio": None,
-        "reference_video": "/tmp/owned-tail.mp4",
+        "reference_video": None,
         "is_extension": True,
     }
     context = SimpleNamespace(
@@ -282,10 +280,11 @@ async def test_h3_extension_reference_image_continues_existing_reference_flow(
 
     state = await fsm.receive_image(update, context)
 
-    assert state == AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
-    assert data["images"] == ["/tmp/new-reference.png"]
-    assert data["reference_video"] == "/tmp/owned-tail.mp4"
-    assert "完成选图后进入可选参考语音步骤" in reply.await_args.args[1]
+    assert state == AdvancedVideoProState.WAIT_SETTINGS
+    assert data["images"] == ["/tmp/owned-tail.png"]
+    assert data["reference_video"] is None
+    download.assert_not_awaited()
+    assert "无需再上传参考图" in reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -305,8 +304,9 @@ async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeyp
     data = {
         "mode": "ref2v",
         "prompt": "continue forward",
-        "images": [],
-        "reference_video": "/tmp/owned-tail.mp4",
+        "images": ["/tmp/owned-tail.png"],
+        "reference_video": None,
+        "minimax_h3_execution_task_type": "minimax_h3_i2v",
         "reference_descriptions": [],
         "duration": 5,
         "preset": "preview",
@@ -321,6 +321,10 @@ async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeyp
     state = await fsm._submit_generation(update, context, data)
 
     assert state == ConversationHandler.END
+    plan = submit.call_args.args[0]
+    assert plan.task_type == "minimax_h3_ref2v"
+    assert plan.execution_task_type == "minimax_h3_i2v"
+    assert plan.images == ("/tmp/owned-tail.png",)
     assert submit.call_args.kwargs["allow_contribute"] is False
     assert submit.call_args.kwargs["result_meta"] == {
         "minimax_h3_prev_task_id": "h3-parent",

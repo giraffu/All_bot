@@ -48,6 +48,12 @@ def build_history_input_media_payload(*, history, storage_service) -> list[dict]
         else {}
     )
     reference_audio = str(context.get("reference_audio") or "").strip()
+    previous_task_id = str(context.get("prev_task_id") or "").strip()
+    is_h3_tail_anchor = (
+        is_h3_ref2v
+        and context.get("execution_mode") == "i2v"
+        and bool(previous_task_id)
+    )
     media = []
     reference_image_index = 0
     for index, file_name in enumerate(input_files):
@@ -58,8 +64,11 @@ def build_history_input_media_payload(*, history, storage_service) -> list[dict]
         )
         label = ""
         if is_h3_ref2v and kind == "image":
-            reference_image_index += 1
-            label = f"参考图 {reference_image_index}"
+            if is_h3_tail_anchor:
+                label = "上一段尾帧"
+            else:
+                reference_image_index += 1
+                label = f"参考图 {reference_image_index}"
         elif is_h3_ref2v and kind == "video":
             label = "输入视频"
         elif is_h3_ref2v and kind == "audio":
@@ -78,7 +87,6 @@ def build_history_input_media_payload(*, history, storage_service) -> list[dict]
     if not is_h3_ref2v:
         return media
 
-    previous_task_id = str(context.get("prev_task_id") or "").strip()
     if previous_task_id and not any(item["kind"] == "video" for item in media):
         media.append(
             {
@@ -89,7 +97,7 @@ def build_history_input_media_payload(*, history, storage_service) -> list[dict]
                     f"/api/history/media/{quote(previous_task_id, safe='')}"
                 ),
                 "kind": "video",
-                "label": "输入视频",
+                "label": "父段视频" if is_h3_tail_anchor else "输入视频",
             }
         )
 

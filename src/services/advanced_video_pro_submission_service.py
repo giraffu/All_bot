@@ -45,6 +45,7 @@ def validate_advanced_video_pro_frame_aspects(
 class AdvancedVideoProSubmissionPlan:
     mode: str
     task_type: str
+    execution_task_type: str
     prompt: str
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
@@ -73,6 +74,7 @@ def build_advanced_video_pro_submission_plan(
     addon_model: str | None = None,
     addon_strength: float | None = None,
     addon_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+    execution_task_type: str | None = None,
 ) -> AdvancedVideoProSubmissionPlan:
     normalized_mode = str(mode or "").strip().lower()
     task_type = MODE_TASK_TYPES.get(normalized_mode)
@@ -110,9 +112,20 @@ def build_advanced_video_pro_submission_plan(
         spec = build_minimax_h3_spec(task_type, inputs)
     except MiniMaxH3ValidationError as exc:
         raise AdvancedVideoProSubmissionError(str(exc)) from exc
+    normalized_execution_task_type = str(execution_task_type or task_type).strip()
+    if normalized_execution_task_type != task_type and not (
+        task_type == MINIMAX_H3_REF2V
+        and normalized_execution_task_type == MINIMAX_H3_I2V
+        and len(spec.images) == 1
+        and spec.reference_video is None
+        and spec.reference_audio is None
+        and not spec.reference_descriptions
+    ):
+        raise AdvancedVideoProSubmissionError("不支持该高级图生视频pro内部执行方式。")
     return AdvancedVideoProSubmissionPlan(
         mode=spec.mode,
         task_type=spec.task_type,
+        execution_task_type=normalized_execution_task_type,
         prompt=normalized_prompt,
         images=spec.images,
         reference_descriptions=spec.reference_descriptions,
@@ -158,6 +171,10 @@ async def submit_advanced_video_pro_plan(
         "minimax_h3_main_model": plan.main_model,
         "lora_items": list(plan.addon_items),
     }
+    if plan.execution_task_type != plan.task_type:
+        persisted_result_meta["minimax_h3_execution_mode"] = (
+            plan.execution_task_type.removeprefix("minimax_h3_")
+        )
     return await process_task_func(
         context=context,
         chat_id=chat_id,
@@ -170,6 +187,11 @@ async def submit_advanced_video_pro_plan(
         reference_audio=plan.reference_audio,
         is_video=True,
         task_type=plan.task_type,
+        minimax_h3_execution_task_type=(
+            plan.execution_task_type
+            if plan.execution_task_type != plan.task_type
+            else None
+        ),
         duration=plan.duration,
         resolution_preset=plan.resolution_preset,
         aspect_ratio=plan.aspect_ratio,

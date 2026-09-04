@@ -8,6 +8,7 @@ MINIMAX_H3_T2V = "minimax_h3_t2v"
 MINIMAX_H3_I2V = "minimax_h3_i2v"
 MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
 MINIMAX_H3_REF2V = "minimax_h3_ref2v"
+MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT = "minimax_h3_execution_task_type"
 MINIMAX_H3_PUBLIC_TASK_TYPES = (
     MINIMAX_H3_T2V,
     MINIMAX_H3_I2V,
