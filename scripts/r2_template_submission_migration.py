@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -169,12 +169,177 @@ def _normalized_etag(head: dict) -> str:
     return str(head.get("ETag") or "").strip().strip('"')
 
 
+def _retirement_preflight_one(
+    client,
+    bucket: str,
+    source_key: str,
+    item: dict,
+    state_row: tuple,
+    live_size: int,
+) -> tuple[str, dict]:
+    target_key = str(item.get("target_key") or "")
+    byte_size = int(item.get("byte_size", -1))
+    digest = str(item.get("sha256") or "")
+    state_target, state_size, status, source_sha, target_sha = state_row
+    if (
+        target_key != destination_key(source_key)
+        or state_target != target_key
+        or int(state_size) != byte_size
+        or status not in {"verified", "retirement_started", "retired"}
+        or source_sha != digest
+        or target_sha != digest
+        or not _SHA256_RE.fullmatch(digest)
+    ):
+        raise ValueError("retirement plan object no longer matches migration state")
+
+    target_head = _head_optional(client, bucket, target_key)
+    if (
+        target_head is None
+        or int(target_head.get("ContentLength", -1)) != byte_size
+        or _sha256(client, bucket, target_key) != digest
+    ):
+        raise RuntimeError("RETIREMENT_TARGET_CHANGED")
+
+    source_head = _head_optional(client, bucket, source_key)
+    if source_head is None:
+        if status not in {"retirement_started", "retired"}:
+            raise RuntimeError("RETIREMENT_SOURCE_MISSING_BEFORE_START")
+        return source_key, {"present": False}
+    if status == "retired":
+        raise RuntimeError("RETIREMENT_SOURCE_REAPPEARED")
+    if (
+        int(live_size) != byte_size
+        or int(source_head.get("ContentLength", -1)) != byte_size
+        or _sha256(client, bucket, source_key) != digest
+    ):
+        raise RuntimeError("RETIREMENT_SOURCE_CHANGED")
+    return source_key, {
+        "present": True,
+        "etag": _normalized_etag(source_head),
+        "byte_size": byte_size,
+    }
+
+
+def _run_retirement_preflight_batch(
+    client,
+    bucket: str,
+    inputs: list[tuple[str, dict, tuple, int]],
+    *,
+    workers: int,
+) -> dict[str, dict]:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                _retirement_preflight_one,
+                client,
+                bucket,
+                source_key,
+                item,
+                state_row,
+                live_size,
+            )
+            for source_key, item, state_row, live_size in inputs
+        ]
+        return dict(future.result() for future in as_completed(futures))
+
+
+def _retire_source_one(
+    client,
+    bucket: str,
+    source_key: str,
+    item: dict,
+    preflight: dict,
+) -> str:
+    target_key = str(item["target_key"])
+    digest = str(item["sha256"])
+    current_head = _head_optional(client, bucket, source_key)
+    if current_head is None:
+        raise RuntimeError("RETIREMENT_SOURCE_DISAPPEARED_AFTER_PREFLIGHT")
+    frozen_etag = str(preflight["etag"])
+    if (
+        int(current_head.get("ContentLength", -1)) != int(item["byte_size"])
+        or (frozen_etag and _normalized_etag(current_head) != frozen_etag)
+    ):
+        raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
+    if not frozen_etag and _sha256(client, bucket, source_key) != digest:
+        raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
+    client.delete_object(Bucket=bucket, Key=source_key)
+    if _head_optional(client, bucket, source_key) is not None:
+        raise RuntimeError("RETIREMENT_SOURCE_STILL_EXISTS")
+    target_head = _head_optional(client, bucket, target_key)
+    if (
+        target_head is None
+        or int(target_head.get("ContentLength", -1)) != int(item["byte_size"])
+        or _sha256(client, bucket, target_key) != digest
+    ):
+        raise RuntimeError("RETIREMENT_TARGET_CHANGED_AFTER_DELETE")
+    return source_key
+
+
+def _run_retirement_delete_batch(
+    client,
+    bucket: str,
+    inputs: list[tuple[str, dict, dict]],
+    *,
+    workers: int,
+    on_started,
+    on_retired,
+    on_failure,
+) -> None:
+    iterator = iter(inputs)
+    first_error: Exception | None = None
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        active = {}
+
+        def submit_next() -> bool:
+            try:
+                source_key, item, preflight = next(iterator)
+            except StopIteration:
+                return False
+            on_started(source_key)
+            future = executor.submit(
+                _retire_source_one,
+                client,
+                bucket,
+                source_key,
+                item,
+                preflight,
+            )
+            active[future] = source_key
+            return True
+
+        for _ in range(workers):
+            if not submit_next():
+                break
+        while active:
+            completed, _ = wait(active, return_when=FIRST_COMPLETED)
+            for future in completed:
+                source_key = active.pop(future)
+                if future.cancelled():
+                    continue
+                try:
+                    on_retired(future.result())
+                except Exception as exc:
+                    on_failure(source_key, exc)
+                    if first_error is None:
+                        first_error = exc
+            if first_error is not None:
+                for future in active:
+                    future.cancel()
+                continue
+            while len(active) < workers and submit_next():
+                pass
+    if first_error is not None:
+        raise first_error
+
+
 def execute_retirement_plan(
     client,
     db: sqlite3.Connection,
     *,
     bucket: str,
     plan: dict,
+    workers: int = 1,
 ) -> dict:
     if (
         bucket != BUCKET
@@ -210,56 +375,22 @@ def execute_retirement_plan(
     if unexpected:
         raise ValueError("new template source objects appeared after plan freeze")
 
-    preflight: dict[str, dict] = {}
+    preflight_inputs = []
     for source_key, item in plan_by_source.items():
-        target_key = str(item.get("target_key") or "")
-        byte_size = int(item.get("byte_size", -1))
-        digest = str(item.get("sha256") or "")
-        state_target, state_size, status, source_sha, target_sha = state_rows[source_key]
-        if (
-            target_key != destination_key(source_key)
-            or state_target != target_key
-            or int(state_size) != byte_size
-            or status not in {"verified", "retirement_started", "retired"}
-            or source_sha != digest
-            or target_sha != digest
-            or not _SHA256_RE.fullmatch(digest)
-        ):
-            raise ValueError("retirement plan object no longer matches migration state")
+        preflight_inputs.append(
+            (source_key, item, state_rows[source_key], live_sources.get(source_key, -1))
+        )
+    preflight = _run_retirement_preflight_batch(
+        client,
+        bucket,
+        preflight_inputs,
+        workers=workers,
+    )
 
-        target_head = _head_optional(client, bucket, target_key)
-        if (
-            target_head is None
-            or int(target_head.get("ContentLength", -1)) != byte_size
-            or _sha256(client, bucket, target_key) != digest
-        ):
-            raise RuntimeError("RETIREMENT_TARGET_CHANGED")
-
-        source_head = _head_optional(client, bucket, source_key)
-        if source_head is None:
-            if status not in {"retirement_started", "retired"}:
-                raise RuntimeError("RETIREMENT_SOURCE_MISSING_BEFORE_START")
-            preflight[source_key] = {"present": False}
-            continue
-        if status == "retired":
-            raise RuntimeError("RETIREMENT_SOURCE_REAPPEARED")
-        if (
-            int(live_sources.get(source_key, -1)) != byte_size
-            or int(source_head.get("ContentLength", -1)) != byte_size
-            or _sha256(client, bucket, source_key) != digest
-        ):
-            raise RuntimeError("RETIREMENT_SOURCE_CHANGED")
-        preflight[source_key] = {
-            "present": True,
-            "etag": _normalized_etag(source_head),
-            "byte_size": byte_size,
-        }
-
-    deleted = 0
+    deleted_sources = []
     already_absent = 0
+    retirement_inputs = []
     for source_key, item in plan_by_source.items():
-        target_key = str(item["target_key"])
-        digest = str(item["sha256"])
         if not preflight[source_key]["present"]:
             already_absent += 1
             db.execute(
@@ -268,47 +399,48 @@ def execute_retirement_plan(
             )
             db.commit()
             continue
-        current_head = _head_optional(client, bucket, source_key)
-        if current_head is None:
-            raise RuntimeError("RETIREMENT_SOURCE_DISAPPEARED_AFTER_PREFLIGHT")
-        frozen_etag = str(preflight[source_key]["etag"])
-        if (
-            int(current_head.get("ContentLength", -1)) != int(item["byte_size"])
-            or (frozen_etag and _normalized_etag(current_head) != frozen_etag)
-        ):
-            raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
-        if not frozen_etag and _sha256(client, bucket, source_key) != digest:
-            raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
+        retirement_inputs.append((source_key, item, preflight[source_key]))
+
+    def mark_started(source_key: str) -> None:
         db.execute(
             "update objects set status='retirement_started',error=null,updated_at=? where source_key=?",
             (datetime.now(timezone.utc).isoformat(), source_key),
         )
         db.commit()
-        client.delete_object(Bucket=bucket, Key=source_key)
-        if _head_optional(client, bucket, source_key) is not None:
-            raise RuntimeError("RETIREMENT_SOURCE_STILL_EXISTS")
-        target_head = _head_optional(client, bucket, target_key)
-        if (
-            target_head is None
-            or int(target_head.get("ContentLength", -1)) != int(item["byte_size"])
-            or _sha256(client, bucket, target_key) != digest
-        ):
-            raise RuntimeError("RETIREMENT_TARGET_CHANGED_AFTER_DELETE")
+
+    def mark_retired(source_key: str) -> None:
         db.execute(
             "update objects set status='retired',error=null,updated_at=? where source_key=?",
             (datetime.now(timezone.utc).isoformat(), source_key),
         )
         db.commit()
-        deleted += 1
+        deleted_sources.append(source_key)
+
+    def mark_failed(source_key: str, exc: Exception) -> None:
+        db.execute(
+            "update objects set error=?,updated_at=? where source_key=?",
+            (type(exc).__name__, datetime.now(timezone.utc).isoformat(), source_key),
+        )
+        db.commit()
+
+    _run_retirement_delete_batch(
+        client,
+        bucket,
+        retirement_inputs,
+        workers=workers,
+        on_started=mark_started,
+        on_retired=mark_retired,
+        on_failure=mark_failed,
+    )
 
     return {
         "status": "completed",
         "approved_plan_sha256": str(plan["plan_sha256"]),
         "object_count": len(objects),
         "bytes": int(plan["bytes"]),
-        "deleted_count": deleted,
+        "deleted_count": len(deleted_sources),
         "already_absent_count": already_absent,
-        "post_delete_verified_count": deleted + already_absent,
+        "post_delete_verified_count": len(deleted_sources) + already_absent,
     }
 
 
@@ -568,6 +700,7 @@ def run(args) -> dict:
                 db,
                 bucket=args.bucket,
                 plan=plan,
+                workers=args.workers,
             )
             report["database_references_before"] = database_references
             report["database_references_after"] = asyncio.run(
