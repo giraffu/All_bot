@@ -7,6 +7,7 @@ from local_analytics_platform.app.prompt_mart import PROMPT_NORMALIZATION_VERSIO
 from local_analytics_platform.app.prompt_vectors import (
     CREATE_PROMPT_VECTOR_SCHEMA_SQL,
     DEFAULT_VECTOR_MODEL_ID,
+    PROMPT_TOKEN_OCCURRENCE_SCOPE_SQL,
     PROMPT_TOKEN_UNAVAILABLE_TASK,
     PROMPT_TOKEN_VERSION,
     PromptVectorConfig,
@@ -411,11 +412,26 @@ def test_prompt_token_task_scope_maps_history_types_to_current_available_tasks()
     assert prompt_token_task_scope_key("pornmaster_flux2_multi_edit") == "edit_v2"
     assert prompt_token_task_scope_key("text_to_image") == "txt2img"
     assert prompt_token_task_scope_key("ltx_video_flf2v") == "ltx_video"
+    assert prompt_token_task_scope_key("minimax_h3_t2v") == "minimax_h3"
+    assert prompt_token_task_scope_key("minimax_h3_i2v") == "minimax_h3"
+    assert prompt_token_task_scope_key("minimax_h3_flf2v") == "minimax_h3"
+    assert prompt_token_task_scope_key("minimax_h3_ref2v") == "minimax_h3"
     assert prompt_token_task_scope_key("scail2_action_transfer_long") == "scail2_action_transfer"
     assert prompt_token_task_scope_key("i2i_draw") == PROMPT_TOKEN_UNAVAILABLE_TASK
     assert prompt_token_task_scope_key("legacy_removed_mode") == PROMPT_TOKEN_UNAVAILABLE_TASK
     assert prompt_token_scope_label("edit") == "自由P图"
+    assert prompt_token_scope_label("minimax_h3") == "高级图生视频 Pro"
     assert prompt_token_scope_label(PROMPT_TOKEN_UNAVAILABLE_TASK) == "无可用任务"
+
+
+def test_prompt_token_scopes_read_structured_minimax_h3_addons_without_double_counting_tasks():
+    sql = PROMPT_TOKEN_OCCURRENCE_SCOPE_SQL.lower()
+
+    assert "_minimax_h3_context" in sql
+    assert "lora_items" in sql
+    assert "task_scopes as" in sql
+    assert "model_scopes as" in sql
+    assert "select distinct" in sql
 
 
 def test_refresh_prompt_vectors_treats_asyncpg_connection_errors_as_retryable():

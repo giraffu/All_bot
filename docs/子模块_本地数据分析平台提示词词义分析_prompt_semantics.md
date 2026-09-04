@@ -204,6 +204,7 @@ where enabled = true and coalesce(category, '') = '';
 模板候选 v1 是只读聚合，不调用 LLM，不生成线上模板。它依赖词元分类和 scope：
 
 - scope 由任务类别和可选附加模型决定。
+- 高级图生视频 Pro 的 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、`minimax_h3_ref2v` 统一归入 `minimax_h3` scope；附加模型从 `extra_outputs._minimax_h3_context.lora_items` 的稳定 ID 读取。同一 History 的任务 scope 只能计数一次，多选附加模型分别进入各自 model scope，禁止因展开数组重复累计任务使用次数。
 - 模板 key 由 task scope、model key 和规范化槽位词元集合决定。
 - 软删除词、技术流程词、低标签价值宽泛词不应进入模板槽位。
 - `自由P图`、`自由P图 v2` 等编辑类任务默认强调主体对象和保持口径，再围绕动作姿势、成人主题、身体部分、镜头构图、风格质量等槽位形成候选。

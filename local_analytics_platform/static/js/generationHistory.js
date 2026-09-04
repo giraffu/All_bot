@@ -1,3 +1,5 @@
+import { taskTypeLabel } from "./taskTypes.js?v=20260905-minimax-h3-v1";
+
 const $ = (selector) => document.querySelector(selector);
 
 const H3_MAIN_MODEL_LABELS = {
@@ -46,7 +48,7 @@ export function createGenerationHistoryModule({
     const options = [
       '<option value="">所有任务类别</option>',
       ...(state.generationHistory?.task_types || []).map((row) => (
-        `<option value="${escapeHtml(row.task_type)}">${escapeHtml(row.task_type)}（${fmt(row.generation_count)}）</option>`
+        `<option value="${escapeHtml(row.task_type)}">${escapeHtml(taskTypeLabel(row.task_type))}（${fmt(row.generation_count)}）</option>`
       )),
     ];
     select.innerHTML = options.join("");
@@ -109,7 +111,7 @@ export function createGenerationHistoryModule({
           <span class="mono generation-history-user-id">${escapeHtml(row.user_id ?? "-")}</span>
         </td>
         <td>
-          <strong>${escapeHtml(row.task_type || "unknown")}</strong>
+          <strong>${escapeHtml(taskTypeLabel(row.task_type || "unknown"))}</strong>
           <div class="muted small">该类 ${fmt(taskTypeCounts.get(row.task_type) || 0)} 条</div>
         </td>
         <td>

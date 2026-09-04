@@ -19,6 +19,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from .prompt_mart import PROMPT_NORMALIZATION_VERSION
+from .task_type_catalog import MINIMAX_H3_TASK_SCOPE, MINIMAX_H3_TASK_TYPES
 
 
 DEFAULT_VECTOR_MODEL_KEY = "text-embedding-qwen3-embedding-8b"
@@ -457,6 +458,10 @@ PROMPT_TOKEN_MODEL_LABELS = {
     "ltx2.3/st0mach_bulge_ltx23_v1.1.safetensors": "腹部鼓起",
     "ltx2.3/sfbehind_LTX2_3_v0_1.safetensors": "后入",
     "ltx2.3/nsfw_anal_insertion_ltx23_v1.0.safetensors": "肛交插入",
+    "deepthroat": "深喉",
+    "pov_missionary": "POV 传教士体位",
+    "footjob": "足交",
+    "cumshot": "射精",
 }
 PROMPT_TOKEN_MODEL_ALIASES = {
     "逼真": "qwen/YARN_1.0.safetensors",
@@ -475,6 +480,7 @@ PROMPT_TOKEN_TASK_SCOPE_LABELS = {
     "custom_video": "图生视频",
     "wan22_video_v2": "图生视频 v2",
     "ltx_video": "高级图生视频",
+    MINIMAX_H3_TASK_SCOPE: "高级图生视频 Pro",
     "scail2_action_transfer": "动作迁移",
     "scail2_video_replacement": "视频换人",
     "scail2_face_swap_v2": "视频换脸",
@@ -493,6 +499,7 @@ PROMPT_TOKEN_TASK_SCOPE_ORDER = {
             "custom_video",
             "wan22_video_v2",
             "ltx_video",
+            MINIMAX_H3_TASK_SCOPE,
             "scail2_action_transfer",
             "scail2_video_replacement",
             "scail2_face_swap_v2",
@@ -531,6 +538,7 @@ PROMPT_TOKEN_TASK_SCOPE_ALIASES = {
     "ltx_video": "ltx_video",
     "ltx_video_flf2v": "ltx_video",
     "ltx_video_v2v_audio": "ltx_video",
+    **{task_type: MINIMAX_H3_TASK_SCOPE for task_type in MINIMAX_H3_TASK_TYPES},
     "scail2_action_transfer": "scail2_action_transfer",
     "scail2_action_transfer_long": "scail2_action_transfer",
     "scail2_video_replacement": "scail2_video_replacement",
@@ -1562,6 +1570,87 @@ async def fetch_prompt_token_custom_terms(conn: Any) -> list[PromptTokenCustomTe
     return validate_prompt_token_custom_terms(rows)
 
 
+PROMPT_TOKEN_OCCURRENCE_SCOPE_SQL = """
+with occurrence_base as (
+    select
+        history_id,
+        prompt_hash,
+        coalesce(task_type, 'unknown') as task_type,
+        nullif(
+            btrim(
+                substring(
+                    coalesce(raw_prompt, prompt, '')
+                    from '^\\[模型:\\s*([^\\]]+)\\]'
+                )
+            ),
+            ''
+        ) as prefix_model_tag,
+        coalesce(extra_outputs, '{}'::jsonb) as extra_outputs,
+        user_id
+    from analytics_prompt_occurrence
+    where prompt_hash = any($1::text[])
+      and allow_contribute is distinct from false
+      and builtin_template_key is null
+),
+task_scopes as (
+    select
+        prompt_hash,
+        task_type,
+        null::text as model_tag,
+        true as task_scope,
+        count(*)::bigint as uses,
+        count(distinct user_id)::bigint as users
+    from occurrence_base
+    group by prompt_hash, task_type
+),
+model_occurrences as (
+    select distinct
+        occurrence.history_id,
+        occurrence.prompt_hash,
+        occurrence.task_type,
+        model.model_tag,
+        occurrence.user_id
+    from occurrence_base occurrence
+    cross join lateral (
+        select model_tag
+        from (
+            select occurrence.prefix_model_tag as model_tag
+            union all
+            select nullif(btrim(item->>'name'), '') as model_tag
+            from jsonb_array_elements(
+                case
+                    when occurrence.task_type like 'minimax_h3_%'
+                     and jsonb_typeof(
+                         occurrence.extra_outputs->'_minimax_h3_context'->'lora_items'
+                     ) = 'array'
+                    then occurrence.extra_outputs->'_minimax_h3_context'->'lora_items'
+                    else '[]'::jsonb
+                end
+            ) item
+        ) available_models
+        where model_tag is not null
+        group by model_tag
+    ) model
+),
+model_scopes as (
+    select
+        prompt_hash,
+        task_type,
+        model_tag,
+        false as task_scope,
+        count(*)::bigint as uses,
+        count(distinct user_id)::bigint as users
+    from model_occurrences
+    group by prompt_hash, task_type, model_tag
+)
+select prompt_hash, task_type, model_tag, task_scope, uses, users
+from task_scopes
+union all
+select prompt_hash, task_type, model_tag, task_scope, uses, users
+from model_scopes
+"""
+
+
 async def _refresh_prompt_token_stats_unindexed(
     conn: Any,
     *,
@@ -1642,39 +1731,7 @@ async def _refresh_prompt_token_stats_unindexed(
                 continue
             raw_tokens_by_prompt[prompt_hash] = [str(token) for token in (cache_row["raw_tokens"] or [])]
         occurrence_scope_rows = await conn.fetch(
-            """
-            with occurrence_scopes as (
-                select
-                    prompt_hash,
-                    coalesce(task_type, 'unknown') as task_type,
-                    nullif(
-                        btrim(
-                            substring(
-                                coalesce(raw_prompt, prompt, '')
-                                from '^\\[模型:\\s*([^\\]]+)\\]'
-                            )
-                        ),
-                        ''
-                    ) as model_tag,
-                    user_id
-                from analytics_prompt_occurrence
-                where prompt_hash = any($1::text[])
-                  and allow_contribute is distinct from false
-                  and builtin_template_key is null
-            )
-            select
-                prompt_hash,
-                task_type,
-                case when grouping(model_tag) = 1 then null else model_tag end as model_tag,
-                (grouping(model_tag) = 1) as task_scope,
-                count(*)::bigint as uses,
-                count(distinct user_id)::bigint as users
-            from occurrence_scopes
-            group by grouping sets (
-                (prompt_hash, task_type),
-                (prompt_hash, task_type, model_tag)
-            )
-            """,
+            PROMPT_TOKEN_OCCURRENCE_SCOPE_SQL,
             prompt_hashes,
         )
         scope_data_by_prompt: dict[str, dict[str, Any]] = {

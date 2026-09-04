@@ -41,6 +41,25 @@ def test_generation_history_table_fits_desktop_and_can_copy_prompts():
     assert "copyTextToClipboard," in bootstrap_js
 
 
+def test_advanced_video_pro_task_types_have_readable_ui_labels():
+    task_types_js = (STATIC_DIR / "js" / "taskTypes.js").read_text(encoding="utf-8")
+    bootstrap_js = (STATIC_DIR / "js" / "bootstrap.js").read_text(encoding="utf-8")
+    history_js = (STATIC_DIR / "js" / "generationHistory.js").read_text(
+        encoding="utf-8"
+    )
+
+    for task_type, mode_label in (
+        ("minimax_h3_t2v", "文生视频"),
+        ("minimax_h3_i2v", "首帧图生视频"),
+        ("minimax_h3_flf2v", "首尾帧视频"),
+        ("minimax_h3_ref2v", "参考图生视频"),
+    ):
+        assert task_type in task_types_js
+        assert mode_label in task_types_js
+    assert "taskTypeLabel" in bootstrap_js
+    assert "taskTypeLabel" in history_js
+
+
 def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
@@ -52,7 +71,7 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "/static/vendor/echarts.min.js" in html
     assert "/static/styles.css?v=20260905-compact-sidebar-v1" in html
     assert (
-        'type="module" src="/static/js/bootstrap.js?v=20260905-compact-sidebar-v1"'
+        'type="module" src="/static/js/bootstrap.js?v=20260905-minimax-h3-v1"'
         in html
     )
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js

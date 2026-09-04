@@ -6,44 +6,11 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
 
+from .task_type_catalog import GENERATION_OPERATION_TYPES
+
 
 Fetch = Callable[..., Awaitable[list[Any]]]
 FetchRow = Callable[..., Awaitable[Any | None]]
-
-GENERATION_OPERATION_TYPES = [
-    "edit",
-    "custom_video",
-    "img2img_lora",
-    "face_swap",
-    "image",
-    "video_lora",
-    "undress",
-    "perfect_video_insert",
-    "i2i_pro",
-    "ltx_video",
-    "closeup_blowjob",
-    "masturbation",
-    "blowjob",
-    "undress_tongue",
-    "doggy_style",
-    "wan22_video_v2",
-    "txt2img",
-    "i2i_draw",
-    "face_video_step1",
-    "penetration",
-    "scail2_action_transfer",
-    "text_to_image",
-    "face_video",
-    "scail2_video_replacement",
-    "fuck",
-    "scail2_face_swap_v2",
-    "face_show",
-    "face_tongue",
-    "video_pro",
-    "video_edit",
-    "video_insert",
-    "image_to_video",
-]
 
 USER_PROFILE_SEGMENTS = {
     "all": "true",
