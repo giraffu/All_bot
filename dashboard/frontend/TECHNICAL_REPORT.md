@@ -64,6 +64,8 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **GET** | `/api/stats` | 全局统计数据 | 返回 `today_users`, `total_credits`, `generation_distribution`, `avg_daily_distribution`, `credit_distribution`, `avg_daily_credit_distribution`, `credit_holding_distribution` 等 |
 | **GET** | `/api/stats/history` | 历史趋势数据 | `days=7` (默认), 返回每日新增用户、生成量、消耗积分、**用户增长率**等 |
+| **GET** | `/api/stats/task_credit_distribution` | 按任务统计每日灵石消耗 | `date_str=YYYY-MM-DD`；返回生成任务负向扣费的 gross 灵石分布 |
+| **GET** | `/api/stats/task_gpu_efficiency` | 按任务统计灵石/GPU小时 | `date_str=YYYY-MM-DD`；成功 History × 生产 P50 标尺，返回 5090 等效估算、标尺版本与覆盖率 |
 | **GET** | `/api/users` | 用户列表 | `skip`, `limit`, 返回包含 `inviter_info`, `referral_count`, `invited_total_usdt` 的用户对象 |
 | **DELETE** | `/api/users/{id}` | 删除用户 | **高危**: 级联删除历史、签到、推荐关系等所有关联数据 |
 | **GET** | `/api/bot/queue` | 队列状态 | 调用 `image_service` 获取 ComfyUI 实时排队数 |

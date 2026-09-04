@@ -5,6 +5,8 @@ import DailyTypeChart from './DailyTypeChart.vue'
 import HourlyChart from './HourlyChart.vue'
 import CumulativeTypeChart from './CumulativeTypeChart.vue'
 import CumulativeHourlyChart from './CumulativeHourlyChart.vue'
+import TaskGpuEfficiencyChart from './TaskGpuEfficiencyChart.vue'
+import TaskCreditConsumptionChart from './TaskCreditConsumptionChart.vue'
 import GenerationDistributionChart from './GenerationDistributionChart.vue'
 import AvgDailyDistributionChart from './AvgDailyDistributionChart.vue'
 import CreditDistributionChart from './CreditDistributionChart.vue'
@@ -54,6 +56,15 @@ const updateHistoryTimeRange = (value) => {
       </div>
       <div class="h-80">
         <HourlyChart title="分时生成量" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="h-80">
+        <TaskGpuEfficiencyChart title="任务灵石效率（5090 等效）" />
+      </div>
+      <div class="h-80">
+        <TaskCreditConsumptionChart title="生成类型灵石消耗" />
       </div>
     </div>
 

@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from dashboard.backend.routers import stats as stats_router
 from dashboard.backend.services import stats_service
 from dashboard.backend.services import stats_service_activity
+from dashboard.backend.services import stats_service_task_efficiency
 from dashboard.backend.services.stats_service_consumption import (
     GENERATION_CONSUMPTION_OPERATION_TYPES,
     build_generation_consumption_log_filter,
@@ -185,3 +186,124 @@ async def test_get_stats_history_wraps_loader_exception(monkeypatch):
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "boom"
+
+
+def test_task_analytics_normalizes_billing_and_history_aliases():
+    assert stats_service_task_efficiency.normalize_task_analytics_type("edit") == "img2img"
+    assert (
+        stats_service_task_efficiency.normalize_task_analytics_type("faceswap_step1")
+        == "face_swap"
+    )
+    assert (
+        stats_service_task_efficiency.normalize_task_analytics_type("ltx_video_flf2v")
+        == "ltx_video"
+    )
+    assert (
+        stats_service_task_efficiency.normalize_task_analytics_type("minimax_h3_ref2v")
+        == "minimax_h3_ref2v"
+    )
+
+
+def test_build_task_credit_distribution_aggregates_aliases():
+    rows = [
+        SimpleNamespace(task_type="edit", credits=8),
+        SimpleNamespace(task_type="image", credits=6),
+        SimpleNamespace(task_type="minimax_h3_i2v", credits=42),
+    ]
+
+    result = stats_service_task_efficiency.build_task_credit_distribution(rows)
+
+    assert result == {"img2img": 14, "minimax_h3_i2v": 42}
+
+
+def test_build_task_gpu_efficiency_uses_5090_equivalent_calibration():
+    credit_rows = [
+        SimpleNamespace(task_type="minimax_h3_i2v", credits=90),
+        SimpleNamespace(task_type="edit", credits=20),
+        SimpleNamespace(task_type="character_reference_build", credits=18),
+    ]
+    history_rows = [
+        SimpleNamespace(task_type="minimax_h3_i2v", task_count=6),
+        SimpleNamespace(task_type="image", task_count=4),
+        SimpleNamespace(task_type="character_reference_build", task_count=1),
+    ]
+
+    result = stats_service_task_efficiency.build_task_gpu_efficiency(
+        credit_rows=credit_rows,
+        history_rows=history_rows,
+    )
+
+    h3 = result["items"]["minimax_h3_i2v"]
+    assert h3["credits"] == 90
+    assert h3["task_count"] == 6
+    assert h3["gpu_hours"] == pytest.approx(0.2475, abs=0.0001)
+    assert h3["value"] == pytest.approx(363.64, abs=0.01)
+
+    image = result["items"]["img2img"]
+    assert image["credits"] == 20
+    assert image["task_count"] == 4
+    assert image["value"] == pytest.approx(1704.55, abs=0.01)
+
+    assert result["uncovered_credits"] == 18
+    assert result["calibration"] == "production_p50_5090_equivalent_v1"
+
+
+@pytest.mark.asyncio
+async def test_task_credit_distribution_query_uses_half_open_day_and_debits_only():
+    db = _FakeStatsDB()
+
+    await stats_service_task_efficiency.load_task_credit_distribution_stats(
+        db=db,
+        target_date=stats_service.date(2026, 6, 10),
+    )
+
+    sql = _compile_postgresql(db.statements[0]).lower()
+    assert "from user_logs" in sql
+    assert "credit_change < 0" in sql
+    assert "credit_change > 0" not in sql
+    assert "user_logs.created_at >=" in sql
+    assert "user_logs.created_at <" in sql
+
+
+@pytest.mark.asyncio
+async def test_get_task_efficiency_routes_through_loader(monkeypatch):
+    stats_router._stats_cache.clear()
+    stats_router._stats_cache_locks.clear()
+    expected = {"items": {"minimax_h3_i2v": {"value": 720}}}
+    loader = AsyncMock(return_value=expected)
+    monkeypatch.setattr(
+        stats_router,
+        "load_task_gpu_efficiency_stats_by_date_str",
+        loader,
+    )
+    db = object()
+
+    result = await stats_router.get_task_gpu_efficiency_stats(
+        date_str="2026-01-01",
+        db=db,
+    )
+
+    assert result == expected
+    loader.assert_awaited_once_with(db=db, date_str="2026-01-01")
+
+
+@pytest.mark.asyncio
+async def test_get_task_credit_distribution_routes_through_loader(monkeypatch):
+    stats_router._stats_cache.clear()
+    stats_router._stats_cache_locks.clear()
+    expected = {"values": {"minimax_h3_i2v": 120}}
+    loader = AsyncMock(return_value=expected)
+    monkeypatch.setattr(
+        stats_router,
+        "load_task_credit_distribution_stats_by_date_str",
+        loader,
+    )
+    db = object()
+
+    result = await stats_router.get_task_credit_distribution_stats(
+        date_str="2026-01-01",
+        db=db,
+    )
+
+    assert result == expected
+    loader.assert_awaited_once_with(db=db, date_str="2026-01-01")

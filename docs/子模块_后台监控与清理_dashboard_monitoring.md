@@ -94,6 +94,13 @@ sequenceDiagram
 - 不把旧字段名固定成唯一契约
 - Dashboard 大盘 stats 属于高成本查询，后端使用短 TTL 进程内缓存与 single-flight 合并并发请求；前端 stats 请求不得强制附加 `_t` 缓存击穿参数。
 - Dashboard 的灵石消耗统计以 `user_logs` 账本为准：生成任务负向流水计入消耗，`refund%` 退款流水抵扣消耗；`history` 仅用于成功生成量、类型分布与小时分布，不再用“视频 6 / 图片 2”硬编码反推灵石。
+- 数据大盘新增按日期、最多三日并排对比的两个任务饼图：
+  `GET /api/stats/task_credit_distribution` 按 `user_logs` 中生成任务的实际负向扣费
+  聚合任务类型，返回的是 gross 消耗；退款流水缺少稳定的原任务类型，因此只在全局净消耗
+  中抵扣，不能被错误分摊到某个任务。`GET /api/stats/task_gpu_efficiency` 以同日成功
+  `history` 数量乘生产审计的任务级 P50 占卡标尺，折算成 RTX 5090 等效 GPU 小时，再计算
+  `灵石 / GPU·小时`。该图必须明确显示 `estimated`、标尺版本、覆盖与未覆盖灵石，不得使用
+  包含排队等待的 legacy `worker_logs.duration` 冒充 GPU 时间；无可靠标尺的任务不进入效率饼图。
 - Dashboard 历史生成页通过既有数据推导展示来源，不给 `history` 新增列：`web` / `bot` 直接来自 `History.source`，官方懒人 Bot 由 `History.extra_outputs._qqcc_regenerate` 识别，用户私有懒人 Bot 再通过 `PrivateBotTaskSubmission.registry_task_id` 关联并显示精确 `bot:qqcc-private:<id>`。`GET /api/history/all` 的 `source` 支持 `web`、`bot`、`bot:qqcc`、`bot:qqcc-private` 和精确私有 Bot client type；私有账本已按保留策略清理的陈旧记录不能反推出租户 ID，应按剩余历史标记降级展示。
 - Dashboard 历史生成页的分页记录保持实时查询；高成本精确总数使用 5 分钟进程内短缓存与 single-flight，并由 Dashboard 后台每 4 分钟预热默认无筛选总数。筛选组合首次使用时按精确口径计算后短缓存，因此总数最多短暂滞后 5 分钟，但不能缓存或延迟当前页记录。
 - Dashboard 历史生成页的 `GET /api/history/all` 支持 `username` 精确匹配；服务端去除首尾空白和可选前导 `@`，再通过 `lower(username)` 索引做大小写不敏感查询，并把归一后的用户名纳入精确总数缓存键。前端提交搜索或清空搜索时回到第一页，继续使用服务端分页，不能只过滤浏览器当前页。
