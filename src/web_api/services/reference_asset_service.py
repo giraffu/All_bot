@@ -24,6 +24,7 @@ from src.web_api.services.prompt_optimization_service import (
     PROMPT_MEDIA_MAX_BYTES,
     normalize_owned_prompt_media_key,
 )
+from src.domain_config.minimax_h3 import MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,37 @@ class ResolvedH3ReferenceSet:
 
 
 _H3_REFERENCE_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "mp4", "ogg", "oga", "opus"}
+_H3_REFERENCE_VIDEO_EXTENSIONS = {"mp4", "mov", "webm", "mkv", "m4v"}
+
+
+async def resolve_h3_reference_video_ref(
+    *,
+    user_id: int,
+    reference_video_ref: dict,
+    object_size: Callable[[str, str], Awaitable[int | None]] = storage.async_object_size,
+) -> str:
+    if (
+        not isinstance(reference_video_ref, dict)
+        or set(reference_video_ref) != {"source", "object_key"}
+        or reference_video_ref.get("source") != "upload"
+    ):
+        raise CoreDomainError("参考视频引用格式无效。")
+    try:
+        object_key = normalize_owned_user_upload_key(
+            str(reference_video_ref.get("object_key") or ""),
+            user_id=user_id,
+            allowed_extensions=_H3_REFERENCE_VIDEO_EXTENSIONS,
+        )
+    except ValueError as exc:
+        if str(exc) == "object key extension is not allowed":
+            raise CoreDomainError("参考视频仅支持 MP4/MOV/WebM/MKV/M4V。") from exc
+        raise CoreDomainError("参考视频必须属于当前用户。") from exc
+    size = await object_size(MINIO_BUCKET, object_key)
+    if size is None:
+        raise CoreDomainError("参考视频不存在或暂不可读取。")
+    if size > MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES:
+        raise CoreDomainError("参考视频不能超过 40 MB。")
+    return object_key
 
 
 async def resolve_h3_reference_audio_ref(

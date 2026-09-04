@@ -15,7 +15,7 @@ import {
   type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
 } from '@/features/generation/labModeConfig'
-import type { LabAssetUploadSlot, UploadedReference, UploadedReferenceAudio, UploadedSlotAsset } from './types'
+import type { LabAssetUploadSlot, UploadedReference, UploadedReferenceAudio, UploadedReferenceVideo, UploadedSlotAsset } from './types'
 import { useLabSubmitPayload } from './useLabSubmitPayload'
 
 const messageMock = vi.hoisted(() => ({
@@ -50,6 +50,7 @@ type SubmitHarness = {
   minimaxH3ReferenceDescriptions: Ref<string[]>
   minimaxH3AddonItems: Ref<MiniMaxH3AddonItem[]>
   minimaxH3ReferenceAudio: Ref<UploadedReferenceAudio | null>
+  minimaxH3ReferenceVideo: Ref<UploadedReferenceVideo | null>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -105,6 +106,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
   const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
   const minimaxH3ReferenceAudio = ref<UploadedReferenceAudio | null>(null)
+  const minimaxH3ReferenceVideo = ref<UploadedReferenceVideo | null>(null)
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -140,6 +142,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3AspectRatio,
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio,
+    minimaxH3ReferenceVideo,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -175,6 +178,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ReferenceDescriptions,
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio,
+    minimaxH3ReferenceVideo,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -334,6 +338,12 @@ describe('useLabSubmitPayload', () => {
       preview: 'blob:voice',
       name: 'voice.m4a',
     }
+    harness.minimaxH3ReferenceVideo.value = {
+      key: 'web_uploads/7/motion.mp4',
+      preview: 'blob:motion',
+      name: 'motion.mp4',
+      durationSeconds: 12,
+    }
 
     await harness.handleSubmit()
 
@@ -352,6 +362,10 @@ describe('useLabSubmitPayload', () => {
         reference_audio_ref: {
           source: 'upload',
           object_key: 'web_uploads/7/voice.m4a',
+        },
+        reference_video_ref: {
+          source: 'upload',
+          object_key: 'web_uploads/7/motion.mp4',
         },
         prompt: 'the two characters speak softly',
       }),

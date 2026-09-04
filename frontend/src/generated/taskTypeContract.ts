@@ -71,15 +71,15 @@ export const MINIMAX_H3_PRICE_CONTRACT = {
     },
     "10": {
       "preview": 14,
-      "small": 17,
-      "standard": 27,
-      "hd": 33
+      "small": 21,
+      "standard": 36,
+      "hd": 47
     },
     "15": {
-      "preview": 19,
-      "small": 27,
-      "standard": 42,
-      "hd": 59
+      "preview": 23,
+      "small": 36,
+      "standard": 63,
+      "hd": 89
     }
   },
   "ref2v": {

@@ -25,6 +25,7 @@ from src.domain_config.ltx_t2v import (
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
     MINIMAX_H3_REF2V_PRICE_BY_DURATION,
+    get_minimax_h3_cost,
 )
 from src.domain_config.scail2_video import SCAIL2_COST_BY_DURATION_SECONDS
 from src.domain_config.wan22_aio_video import (
@@ -236,13 +237,19 @@ def _advanced_video_pro_offer() -> dict[str, Any]:
             else (("no", "no"),)
         )
         for duration, prices in matrix.items():
-            for resolution, cost in prices.items():
+            for resolution in prices:
                 for reference_audio, reference_video in material_options:
                     variants.append(
                         _variant(
                             offer_id,
                             task_types=(task_type,),
-                            default_cost=cost,
+                            default_cost=get_minimax_h3_cost(
+                                task_type,
+                                duration=duration,
+                                resolution_preset=resolution,
+                                reference_audio=reference_audio == "yes",
+                                reference_video=reference_video == "yes",
+                            ),
                             mode=mode,
                             resolution=resolution,
                             duration=duration,

@@ -64,6 +64,12 @@ const AudioStub = defineComponent({
   emits: ['remove'],
   template: '<button class="audio-stub" @click="$emit(\'remove\')">audio</button>'
 })
+const VideoStub = defineComponent({
+  name: 'H3ReferenceVideoUpload',
+  props: ['item', 'uploading', 'beforeUpload'],
+  emits: ['remove'],
+  template: '<button class="video-stub" @click="$emit(\'remove\')">video</button>'
+})
 
 const context = {
   raw: { task_type: 'minimax_h3_flf2v', post_id: 44 },
@@ -87,6 +93,7 @@ const mountPanel = (panelContext = context) => mount(TemplateAdvancedVideoProPan
       TemplateApplyActionFooter: FooterStub,
       TemplateApplyResultSection: true,
       H3ReferenceAudioUpload: AudioStub,
+      H3ReferenceVideoUpload: VideoStub,
     }
   }
 })

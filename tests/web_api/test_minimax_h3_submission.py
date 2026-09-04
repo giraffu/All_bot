@@ -169,7 +169,7 @@ async def test_minimax_h3_tail_anchor_extension_rejects_extra_reference_assets()
         },
     )
 
-    with pytest.raises(CoreDomainError, match="不支持额外参考图或参考音频"):
+    with pytest.raises(CoreDomainError, match="不支持额外参考图、参考音频或参考视频"):
         await prepare_web_submission_request(
             req,
             internal_user_id=7,
@@ -227,6 +227,54 @@ async def test_minimax_h3_ref2v_resolves_single_audio_ref_without_rewriting_prom
     )
 
 
+@pytest.mark.asyncio
+async def test_minimax_h3_ref2v_resolves_video_ref_and_enforces_40_second_limit(
+    monkeypatch,
+):
+    from src.web_api.services import reference_asset_service
+
+    resolve = AsyncMock(return_value="web_uploads/7/motion.mp4")
+    monkeypatch.setattr(reference_asset_service, "resolve_h3_reference_video_ref", resolve)
+    probe_duration = AsyncMock(return_value=40.0)
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="follow the motion in <Video 1>",
+        inputs={
+            "images": ["web_uploads/7/subject.png"],
+            "reference_video_ref": {
+                "source": "upload",
+                "object_key": "web_uploads/7/motion.mp4",
+            },
+        },
+    )
+
+    prepared = await prepare_web_submission_request(
+        req,
+        internal_user_id=7,
+        operator_canary_authorized=True,
+        env_enabled=lambda _name: True,
+        advanced_video_profile_loader=AsyncMock(
+            return_value={"main_model": "10eros_int8", "addon_items": []}
+        ),
+        probe_video_duration_func=probe_duration,
+    )
+
+    assert prepared.inputs["reference_video"] == "web_uploads/7/motion.mp4"
+    assert "reference_video_ref" not in prepared.inputs
+    probe_duration.assert_awaited_once_with("web_uploads/7/motion.mp4")
+
+    probe_duration.return_value = 40.01
+    with pytest.raises(CoreDomainError, match="最长支持 40 秒"):
+        await prepare_web_submission_request(
+            req,
+            internal_user_id=7,
+            operator_canary_authorized=True,
+            env_enabled=lambda _name: True,
+            advanced_video_profile_loader=AsyncMock(
+                return_value={"main_model": "10eros_int8", "addon_items": []}
+            ),
+            probe_video_duration_func=probe_duration,
+        )
 @pytest.mark.asyncio
 async def test_minimax_h3_template_can_reuse_gallery_reference_audio(monkeypatch):
     from src.web_api.services import reference_asset_service

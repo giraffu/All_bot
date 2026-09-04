@@ -53,9 +53,9 @@ export function useTemplateApplyUpload(sessionIdSource: MaybeRefOrGetter<string>
 
   const uploadFile = async (
     file: File,
-    options: { slot: string }
+    options: { slot: string; maxSizeBytes?: number }
   ): Promise<{ uploadId: string; objectKey: string | null }> => {
-    if (file.size > MAX_UPLOAD_SIZE) {
+    if (file.size > (options.maxSizeBytes ?? MAX_UPLOAD_SIZE)) {
       message.error(t('template_apply.common.file_too_large'))
       return {
         uploadId: '',

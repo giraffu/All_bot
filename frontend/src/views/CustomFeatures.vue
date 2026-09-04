@@ -18,6 +18,7 @@ import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
 import H3CharacterViewPicker from '@/components/lab/H3CharacterViewPicker.vue'
 import H3ReferenceAudioUpload from '@/components/lab/H3ReferenceAudioUpload.vue'
+import H3ReferenceVideoUpload from '@/components/lab/H3ReferenceVideoUpload.vue'
 import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
 import {
@@ -88,6 +89,10 @@ const {
   minimaxH3ReferenceAudioUploading,
   beforeUploadMinimaxH3ReferenceAudio,
   clearMinimaxH3ReferenceAudio,
+  minimaxH3ReferenceVideo,
+  minimaxH3ReferenceVideoUploading,
+  beforeUploadMinimaxH3ReferenceVideo,
+  clearMinimaxH3ReferenceVideo,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -134,7 +139,9 @@ const promptLockedHint = computed(() => (
     : t('template_apply.common.prompt_locked_image_hint')
 ))
 const showPromptOptimizer = computed(() => (
-  isPromptOptimizerAvailable.value && !minimaxH3ReferenceAudio.value
+  isPromptOptimizerAvailable.value
+  && !minimaxH3ReferenceAudio.value
+  && !minimaxH3ReferenceVideo.value
 ))
 
 </script>
@@ -249,6 +256,13 @@ const showPromptOptimizer = computed(() => (
               :uploading="minimaxH3ReferenceAudioUploading"
               :before-upload="beforeUploadMinimaxH3ReferenceAudio"
               @remove="clearMinimaxH3ReferenceAudio"
+            />
+            <H3ReferenceVideoUpload
+              v-if="minimaxH3Mode === 'ref2v' && !h3IsExtension"
+              :item="minimaxH3ReferenceVideo"
+              :uploading="minimaxH3ReferenceVideoUploading"
+              :before-upload="beforeUploadMinimaxH3ReferenceVideo"
+              @remove="clearMinimaxH3ReferenceVideo"
             />
           </div>
         </template>

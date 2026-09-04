@@ -7,14 +7,31 @@ export interface ImageDimensions {
 
 export type MiniMaxH3PriceMode = keyof typeof MINIMAX_H3_PRICE_CONTRACT
 
+export type MiniMaxH3PriceModifiers = {
+  referenceAudio?: boolean
+  referenceVideo?: boolean
+}
+
 export const getMinimaxH3Cost = (
   mode: MiniMaxH3PriceMode,
   preset: string | null,
   duration: number | null,
+  modifiers: MiniMaxH3PriceModifiers = {},
 ): number => {
   const matrix = MINIMAX_H3_PRICE_CONTRACT[mode] as Record<string, Record<string, number>>
   const durationCosts = matrix[String(duration)] ?? matrix['5']
-  return durationCosts?.[preset || ''] ?? durationCosts?.preview ?? 0
+  const baseCost = durationCosts?.[preset || ''] ?? durationCosts?.preview ?? 0
+  let numerator = baseCost
+  let denominator = 1
+  if (modifiers.referenceAudio) {
+    numerator *= 11
+    denominator *= 10
+  }
+  if (modifiers.referenceVideo) {
+    numerator *= 8
+    denominator *= 5
+  }
+  return Math.ceil(numerator / denominator)
 }
 
 export const areFrameAspectRatiosCompatible = (
@@ -34,8 +51,9 @@ export const getMinimaxH3TemplateCost = (
   preset: string | null,
   duration: number | null,
   mode: MiniMaxH3PriceMode = 'normal',
+  modifiers: MiniMaxH3PriceModifiers = {},
 ): number => {
-  return getMinimaxH3Cost(mode, preset, duration)
+  return getMinimaxH3Cost(mode, preset, duration, modifiers)
 }
 
 export const readImageDimensions = (file: File): Promise<ImageDimensions> => (

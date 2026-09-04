@@ -136,6 +136,10 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   minimaxH3ReferenceAudioUploading: ref(false),
   beforeUploadMinimaxH3ReferenceAudio: vi.fn(),
   clearMinimaxH3ReferenceAudio: vi.fn(),
+  minimaxH3ReferenceVideo: ref(null),
+  minimaxH3ReferenceVideoUploading: ref(false),
+  beforeUploadMinimaxH3ReferenceVideo: vi.fn(),
+  clearMinimaxH3ReferenceVideo: vi.fn(),
   isPromptOptimizerAvailable: ref(false),
   templateNotice: ref(''),
   templateWarning: ref(''),
@@ -264,6 +268,10 @@ const mountView = () => mount(CustomFeatures, {
       H3ReferenceAudioUpload: {
         props: ['item'],
         template: '<div class="h3-audio-stub"><span v-if="item">&lt;Audio 1&gt;</span></div>',
+      },
+      H3ReferenceVideoUpload: {
+        props: ['item'],
+        template: '<div class="h3-video-stub"><span v-if="item">&lt;Video 1&gt;</span></div>',
       },
       LabModeRail: true,
       TaskResultPreviewPanel: {
@@ -398,6 +406,22 @@ describe('CustomFeatures advanced video effects', () => {
 
     expect(wrapper.find('.h3-audio-stub').exists()).toBe(true)
     expect(wrapper.text()).toContain('<Audio 1>')
+  })
+
+  it('shows the optional reference video upload only in direct REF2V', () => {
+    workbench = createMinimaxWorkbench()
+    workbench.minimaxH3Mode.value = 'ref2v'
+    workbench.minimaxH3ReferenceVideo.value = {
+      key: 'web_uploads/7/motion.mp4',
+      preview: 'blob:motion',
+      name: 'motion.mp4',
+      durationSeconds: 12,
+    }
+
+    const wrapper = mountView()
+
+    expect(wrapper.find('.h3-video-stub').exists()).toBe(true)
+    expect(wrapper.text()).toContain('<Video 1>')
   })
 
   it('does not expose first-last mode switching during H3 extension', () => {

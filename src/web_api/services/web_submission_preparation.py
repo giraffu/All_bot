@@ -10,7 +10,10 @@ from src.domain_config.ltx25_video_upscale import (
     normalize_ltx25_video_upscale_source_duration,
     resolve_ltx25_video_upscale_resolution,
 )
-from src.domain_config.minimax_h3 import MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT,
+    MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS,
+)
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
 
@@ -196,8 +199,9 @@ async def prepare_web_submission_request(
         if is_h3_extension and (
             inputs.get("reference_refs") not in (None, [], ())
             or inputs.get("reference_audio_ref") not in (None, "")
+            or inputs.get("reference_video_ref") not in (None, "")
         ):
-            raise CoreDomainError("尾帧锚定扩展不支持额外参考图或参考音频。")
+            raise CoreDomainError("尾帧锚定扩展不支持额外参考图、参考音频或参考视频。")
         if inputs.get(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT) not in (None, ""):
             raise CoreDomainError("不得直接指定 H3 内部执行类型。")
         inputs.pop(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT, None)
@@ -238,6 +242,34 @@ async def prepare_web_submission_request(
                 is_template=req.is_template,
             )
             inputs.pop("reference_audio_ref", None)
+        reference_video_ref = inputs.get("reference_video_ref")
+        if reference_video_ref is not None:
+            if req.task_type != "minimax_h3_ref2v":
+                raise CoreDomainError("参考视频仅支持参考图生视频。")
+            from src.web_api.services.reference_asset_service import (
+                resolve_h3_reference_video_ref,
+            )
+
+            reference_video = await resolve_h3_reference_video_ref(
+                user_id=internal_user_id,
+                reference_video_ref=reference_video_ref,
+            )
+            if probe_video_duration_func is None:
+                from src.media_processor import (
+                    extract_video_duration_seconds_from_storage,
+                )
+
+                probe_video_duration_func = extract_video_duration_seconds_from_storage
+            try:
+                reference_video_duration = await probe_video_duration_func(reference_video)
+            except Exception as exc:
+                raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。") from exc
+            if reference_video_duration is None or reference_video_duration <= 0:
+                raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。")
+            if reference_video_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS:
+                raise CoreDomainError("参考视频最长支持 40 秒。")
+            inputs["reference_video"] = reference_video
+            inputs.pop("reference_video_ref", None)
     h3_extension_metadata: dict[str, Any] | None = None
     h3_allow_contribute: bool | None = None
     h3_prev_task_id = str(inputs.pop("minimax_h3_prev_task_id", "") or "").strip()

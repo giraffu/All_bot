@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -19,6 +20,7 @@ from src.web_api.routers import tasks as tasks_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services import task_submission_service
+from src.web_api.services.web_submission_preparation import PreparedWebSubmission
 from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
@@ -59,6 +61,50 @@ class _FakeSession:
 
 def _build_current_user():
     return type("User", (), {"id": 123, "username": "tester"})()
+
+
+@pytest.mark.asyncio
+async def test_web_h3_promotes_reference_video_and_audio_before_dispatch(monkeypatch):
+    monkeypatch.setattr(
+        task_submission_service,
+        "prepare_web_submission_request",
+        AsyncMock(return_value=PreparedWebSubmission(
+            inputs={
+                "images": ["web_uploads/123/subject.png"],
+                "reference_video": "web_uploads/123/motion.mp4",
+                "reference_audio": "web_uploads/123/voice.m4a",
+            },
+            images=["web_uploads/123/subject.png"],
+            is_template=False,
+        )),
+    )
+    promote = AsyncMock(return_value=[
+        "task-inputs/h3-1/0.png",
+        "task-inputs/h3-1/1.mp4",
+        "task-inputs/h3-1/2.m4a",
+    ])
+    application = SimpleNamespace(
+        submit=AsyncMock(return_value={"task_id": "h3-1", "cost": 161})
+    )
+
+    await task_submission_service.submit_generation_task(
+        req=TaskGenerateRequest(task_type="minimax_h3_ref2v", prompt="scene", inputs={}),
+        current_user=_build_current_user(),
+        get_balance=AsyncMock(return_value=100),
+        task_id_override="h3-1",
+        promote_staged_inputs_func=promote,
+        task_application=application,
+    )
+
+    promote.assert_awaited_once()
+    assert promote.await_args.kwargs["input_refs"] == [
+        "web_uploads/123/subject.png",
+        "web_uploads/123/motion.mp4",
+        "web_uploads/123/voice.m4a",
+    ]
+    command = application.submit.await_args.args[0]
+    assert command.inputs["reference_video"] == "task-inputs/h3-1/1.mp4"
+    assert command.inputs["reference_audio"] == "task-inputs/h3-1/2.m4a"
 
 
 @pytest.mark.asyncio

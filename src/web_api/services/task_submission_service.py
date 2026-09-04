@@ -95,7 +95,12 @@ async def submit_generation_task(
             promote_staged_inputs_func or promote_staged_user_inputs
         )
         reference_audio = inputs.get("reference_audio")
-        staged_input_refs = [*images, *([reference_audio] if reference_audio else [])]
+        reference_video = inputs.get("reference_video")
+        staged_input_refs = [
+            *images,
+            *([reference_video] if reference_video else []),
+            *([reference_audio] if reference_audio else []),
+        ]
         if staged_input_refs:
             promoted_input_refs = await promote_staged_inputs_func(
                 input_refs=staged_input_refs,
@@ -106,8 +111,12 @@ async def submit_generation_task(
             )
             images = promoted_input_refs[: len(images)]
             inputs["images"] = images
+            next_index = len(images)
+            if reference_video:
+                inputs["reference_video"] = promoted_input_refs[next_index]
+                next_index += 1
             if reference_audio:
-                inputs["reference_audio"] = promoted_input_refs[-1]
+                inputs["reference_audio"] = promoted_input_refs[next_index]
 
         pipeline = await prepare_web_pipeline(
             task_type=req.task_type,
