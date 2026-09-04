@@ -17,6 +17,7 @@ export function createGenerationHistoryModule({
   escapeHtml,
   fmt,
   fmtDate,
+  copyTextToClipboard,
   setError,
 }) {
   function params() {
@@ -72,7 +73,7 @@ export function createGenerationHistoryModule({
     if (!body) return;
     const rows = state.generationHistory?.rows || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="15" class="empty">暂无历史生成记录</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="empty">暂无历史生成记录</td></tr>';
       return;
     }
     const taskTypeCounts = new Map(
@@ -103,21 +104,39 @@ export function createGenerationHistoryModule({
     };
     body.innerHTML = rows.map((row) => `
       <tr>
-        <td class="mono generation-history-user-id">${escapeHtml(row.user_id ?? "-")}</td>
-        <td>${escapeHtml(row.nickname || "-")}</td>
+        <td class="generation-history-user-summary">
+          <strong>${escapeHtml(row.nickname || "未设置昵称")}</strong>
+          <span class="mono generation-history-user-id">${escapeHtml(row.user_id ?? "-")}</span>
+        </td>
         <td>
           <strong>${escapeHtml(row.task_type || "unknown")}</strong>
           <div class="muted small">该类 ${fmt(taskTypeCounts.get(row.task_type) || 0)} 条</div>
         </td>
-        <td>${escapeHtml(row.h3_main_model ? h3MainModelLabel(row.h3_main_model) : "-")}</td>
-        <td>${escapeHtml(row.source || "-")}</td>
-        <td class="generation-history-prompt"><div class="generation-history-prompt-text">${escapeHtml(row.prompt || "-")}</div></td>
-        <td>${escapeHtml(row.billing_resolution || "-")}</td>
-        <td>${fmt(row.duration)}</td>
-        <td>${fmt(row.width)}</td>
-        <td>${fmt(row.height)}</td>
-        <td>${fmt(row.favorite_count)}</td>
-        <td>${fmt(row.rating)}</td>
+        <td>
+          <div class="generation-history-model-source">
+            <span>${escapeHtml(row.h3_main_model ? h3MainModelLabel(row.h3_main_model) : "未记录模型")}</span>
+            <span class="muted small">来源：${escapeHtml(row.source || "-")}</span>
+          </div>
+        </td>
+        <td class="generation-history-prompt">
+          <div class="generation-history-prompt-actions">
+            <div class="generation-history-prompt-text">${escapeHtml(row.prompt || "-")}</div>
+            ${row.prompt ? `<button type="button" class="generation-history-prompt-copy" data-history-prompt-copy="${escapeHtml(row.id)}" aria-label="复制该提示词">复制</button>` : ""}
+          </div>
+        </td>
+        <td>
+          <div class="generation-history-spec">
+            <strong>${escapeHtml(row.billing_resolution || "未记录")}</strong>
+            <span class="muted small">时长 ${fmt(row.duration)}</span>
+            <span class="muted small">${fmt(row.width)} × ${fmt(row.height)}</span>
+          </div>
+        </td>
+        <td>
+          <div class="generation-history-interaction">
+            <span>收藏 ${fmt(row.favorite_count)}</span>
+            <span>反馈 ${fmt(row.rating)}</span>
+          </div>
+        </td>
         <td class="generation-history-time">${fmtDate(row.created_at)}</td>
         <td class="generation-history-address">${renderMediaAddress(row, "input")}</td>
         <td class="generation-history-address">${renderMediaAddress(row, "output")}</td>
@@ -196,6 +215,26 @@ export function createGenerationHistoryModule({
     $(selector)?.addEventListener("change", resetAndLoad);
   });
   $("#generationHistoryRows")?.addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("button[data-history-prompt-copy]");
+    if (copyButton) {
+      const row = (state.generationHistory?.rows || []).find(
+        (candidate) => String(candidate.id) === copyButton.dataset.historyPromptCopy
+      );
+      const prompt = String(row?.prompt || "");
+      if (!prompt) return;
+      try {
+        await copyTextToClipboard(prompt);
+        copyButton.textContent = "已复制";
+        copyButton.classList.add("is-copied");
+        window.setTimeout(() => {
+          copyButton.textContent = "复制";
+          copyButton.classList.remove("is-copied");
+        }, 1600);
+      } catch (error) {
+        setError(error);
+      }
+      return;
+    }
     const button = event.target.closest("button[data-history-media]");
     if (!button) return;
     const historyId = button.dataset.historyMedia;

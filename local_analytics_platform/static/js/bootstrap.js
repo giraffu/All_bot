@@ -3,7 +3,7 @@ import { fetchJson, logoutLocalAnalytics } from "./api.js?v=20260709-prompt-deco
 import { createCreditFlowLoader } from "./creditFlow.js?v=20260709-prompt-decomposition-v1";
 import { createFinanceModule } from "./finance.js?v=20260709-prompt-decomposition-v1";
 import { createGenerationModule } from "./generation.js?v=20260709-prompt-decomposition-v1";
-import { createGenerationHistoryModule } from "./generationHistory.js?v=20260903-table-media-preview-v1";
+import { createGenerationHistoryModule } from "./generationHistory.js?v=20260905-history-table-fit-v1";
 import { createMediaLoader } from "./media.js?v=20260709-prompt-decomposition-v1";
 import { createR2GovernanceLoader } from "./r2Governance.js?v=20260807-r2-governance-v1";
 import { createPromptSlimLoader } from "./promptSlim.js?v=20260709-prompt-decomposition-v1";
@@ -4400,6 +4400,7 @@ const { loadGenerationHistory } = createGenerationHistoryModule({
   escapeHtml,
   fmt,
   fmtDate,
+  copyTextToClipboard,
   setError,
 });
 const loadPrompts = createPromptsLoader({
