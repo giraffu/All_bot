@@ -97,6 +97,11 @@ def build_pricing_context(task_type: str, inputs: dict[str, Any]) -> dict[str, s
     if task_type.startswith("minimax_h3_"):
         context["reference_audio"] = "yes" if inputs.get("reference_audio") else "no"
         context["reference_video"] = "yes" if inputs.get("reference_video") else "no"
+        context["reference_video_duration"] = (
+            str(inputs.get("reference_video_duration") or 5)
+            if inputs.get("reference_video")
+            else "none"
+        )
     return context
 
 

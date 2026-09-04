@@ -1,4 +1,5 @@
 import asyncio
+from functools import partial
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
     TransferConfig = None
     BotoConfig = None
 from agent_input_preparation import (
-    prepare_h3_reference_video_tail,
+    prepare_h3_reference_video_clip,
     prepare_ltx25_video_upscale_input,
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
@@ -934,11 +935,15 @@ class ComfyAgent:
         comfy_input_dir: str = COMFY_INPUT_DIR,
         task_type: str | None = None,
     ) -> None:
-        prepare_input_file_func = prepare_h3_reference_video_tail
+        prepare_input_file_func = None
+        if task_type and task_type.startswith("minimax_h3_"):
+            prepare_input_file_func = partial(
+                prepare_h3_reference_video_clip,
+                duration_seconds=params.get("reference_video_duration"),
+            )
         if task_type == "ltx25_video_upscale":
-            prepare_input_file_func = lambda key, path: prepare_ltx25_video_upscale_input(
-                key,
-                path,
+            prepare_input_file_func = partial(
+                prepare_ltx25_video_upscale_input,
                 resolution=params.get("resolution"),
                 plan_output=params,
             )

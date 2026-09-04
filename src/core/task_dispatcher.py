@@ -1124,6 +1124,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "aspect_ratio": "source",
             "reference_descriptions": [],
             "reference_video": None,
+            "reference_video_duration": None,
             "reference_audio": None,
         }
         try:
@@ -1186,6 +1187,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "minimax_h3_end_source_height": inputs.get("end_source_height"),
             "reference_descriptions": list(spec.reference_descriptions),
             "reference_video": spec.reference_video,
+            "reference_video_duration": spec.reference_video_duration_seconds,
             "reference_audio": spec.reference_audio,
             "lora_items": [
                 {"name": item.name, "strength": item.strength}
@@ -1213,6 +1215,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             images=spec.images,
             reference_descriptions=spec.reference_descriptions,
             reference_video=spec.reference_video,
+            reference_video_duration=spec.reference_video_duration_seconds,
             reference_audio=spec.reference_audio,
             duration=spec.duration_seconds,
             resolution_preset=spec.resolution_preset,

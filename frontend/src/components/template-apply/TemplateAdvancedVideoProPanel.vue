@@ -19,8 +19,9 @@ import TemplateApplyResultSection from '@/components/template-apply/TemplateAppl
 import TemplateApplyUploadSection from '@/components/template-apply/TemplateApplyUploadSection.vue'
 import H3ReferenceAudioUpload from '@/components/lab/H3ReferenceAudioUpload.vue'
 import H3ReferenceVideoUpload from '@/components/lab/H3ReferenceVideoUpload.vue'
-import type { UploadedReferenceAudio, UploadedReferenceVideo } from '@/composables/lab-workbench/types'
+import type { H3ReferenceVideoClipDuration, UploadedReferenceAudio, UploadedReferenceVideo } from '@/composables/lab-workbench/types'
 import {
+  H3_REFERENCE_VIDEO_CLIP_DURATIONS,
   H3_REFERENCE_VIDEO_MAX_BYTES,
   H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS,
   readVideoDurationSeconds,
@@ -77,6 +78,12 @@ const referenceAudio = ref<UploadedReferenceAudio | null>(
     : null,
 )
 const referenceVideo = ref<UploadedReferenceVideo | null>(null)
+const referenceVideoClipDuration = ref<H3ReferenceVideoClipDuration>(5)
+const referenceVideoClipDurationOptions = computed(() => (
+  H3_REFERENCE_VIDEO_CLIP_DURATIONS.filter(
+    duration => duration <= (referenceVideo.value?.durationSeconds ?? 0) + 1e-6,
+  )
+))
 const lockedPrompt = computed(() => props.context.prompt || '')
 const lockedDuration = computed(() => props.context.requestedDuration || 5)
 const lockedResolution = computed(() => props.context.resolutionPreset || 'preview')
@@ -87,7 +94,7 @@ const taskCost = computed(() => getMinimaxH3TemplateCost(
   isReferenceVideo.value ? 'ref2v' : 'normal',
   {
     referenceAudio: Boolean(referenceAudio.value),
-    referenceVideo: Boolean(referenceVideo.value),
+    referenceVideoDuration: referenceVideo.value ? referenceVideoClipDuration.value : null,
   },
 ))
 
@@ -200,6 +207,7 @@ const clearReferenceVideo = () => {
     URL.revokeObjectURL(referenceVideo.value.preview)
   }
   referenceVideo.value = null
+  referenceVideoClipDuration.value = 5
 }
 
 const beforeUploadReferenceVideo = async (file: File) => {
@@ -215,6 +223,10 @@ const beforeUploadReferenceVideo = async (file: File) => {
     message.warning(t('lab.workbench.validation.minimax_h3_reference_video_too_long'))
     return false
   }
+  if (durationSeconds + 1e-6 < H3_REFERENCE_VIDEO_CLIP_DURATIONS[0]) {
+    message.warning(t('lab.workbench.validation.minimax_h3_reference_video_too_short'))
+    return false
+  }
   const { objectKey } = await uploadFile(file, {
     slot: 'reference_video',
     maxSizeBytes: H3_REFERENCE_VIDEO_MAX_BYTES,
@@ -228,6 +240,7 @@ const beforeUploadReferenceVideo = async (file: File) => {
     durationSeconds,
     referenceRef: { source: 'upload', object_key: objectKey },
   }
+  referenceVideoClipDuration.value = durationSeconds >= 5 ? 5 : 3
   return false
 }
 
@@ -278,7 +291,10 @@ const handleGenerate = async () => {
         ? { reference_audio_ref: referenceAudio.value.referenceRef }
         : {}),
       ...(isReferenceVideo.value && referenceVideo.value?.referenceRef
-        ? { reference_video_ref: referenceVideo.value.referenceRef }
+        ? {
+            reference_video_ref: referenceVideo.value.referenceRef,
+            reference_video_duration: referenceVideoClipDuration.value,
+          }
         : {}),
     },
     isTemplate: true,
@@ -353,6 +369,9 @@ onBeforeUnmount(() => {
             :item="referenceVideo"
             :uploading="Boolean(uploadingSlots.reference_video)"
             :before-upload="beforeUploadReferenceVideo"
+            :clip-duration="referenceVideoClipDuration"
+            :clip-duration-options="referenceVideoClipDurationOptions"
+            @update:clip-duration="referenceVideoClipDuration = $event"
             @remove="clearReferenceVideo"
           />
         </template>

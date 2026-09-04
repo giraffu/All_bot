@@ -3,21 +3,34 @@ import { DeleteOutlined, UploadOutlined, VideoCameraOutlined } from '@ant-design
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { UploadedReferenceVideo } from '@/composables/lab-workbench/types'
+import type {
+  H3ReferenceVideoClipDuration,
+  UploadedReferenceVideo,
+} from '@/composables/lab-workbench/types'
 
-defineProps<{
+const props = defineProps<{
   item: UploadedReferenceVideo | null
   uploading: boolean
   beforeUpload: (file: File) => Promise<boolean>
+  clipDuration: H3ReferenceVideoClipDuration
+  clipDurationOptions: readonly H3ReferenceVideoClipDuration[]
 }>()
 
-defineEmits<{ remove: [] }>()
+const emit = defineEmits<{
+  remove: []
+  'update:clipDuration': [value: H3ReferenceVideoClipDuration]
+}>()
 
 const { t } = useI18n()
 const promptReminder = computed(() => t(
   'lab.workbench.minimax_h3_reference_video_prompt_reminder',
-  { videoTag: '<Video 1>' },
+  { videoTag: '<Video 1>', duration: props.clipDuration },
 ))
+
+const updateClipDuration = (event: { target?: { value?: number } }) => {
+  const value = Number(event.target?.value) as H3ReferenceVideoClipDuration
+  if (props.clipDurationOptions.includes(value)) emit('update:clipDuration', value)
+}
 </script>
 
 <template>
@@ -53,6 +66,20 @@ const promptReminder = computed(() => t(
           <template #icon><DeleteOutlined /></template>
         </a-button>
       </div>
+    </div>
+
+    <div v-if="item" class="mt-3 rounded-lg border border-white/10 p-3">
+      <div class="mb-2 text-xs font-medium text-slate-300">
+        {{ $t('lab.workbench.minimax_h3_reference_video_clip_duration') }}
+      </div>
+      <a-radio-group :value="clipDuration" button-style="solid" size="small" @change="updateClipDuration">
+        <a-radio-button v-for="seconds in clipDurationOptions" :key="seconds" :value="seconds">
+          {{ $t('lab.workbench.minimax_h3_reference_video_seconds', { duration: seconds }) }}
+        </a-radio-button>
+      </a-radio-group>
+      <p class="mt-2 text-xs text-slate-400">
+        {{ $t('lab.workbench.minimax_h3_reference_video_clip_hint', { duration: clipDuration }) }}
+      </p>
     </div>
 
     <a-alert v-if="item" class="mt-3" type="info" show-icon :message="promptReminder" />

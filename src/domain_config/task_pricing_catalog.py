@@ -232,13 +232,23 @@ def _advanced_video_pro_offer() -> dict[str, Any]:
             else MINIMAX_H3_NORMAL_PRICE_BY_DURATION
         )
         material_options = (
-            tuple(product(("no", "yes"), ("no", "yes")))
+            tuple(
+                (reference_audio, reference_video, reference_video_duration)
+                for reference_audio in ("no", "yes")
+                for reference_video, reference_video_duration in (
+                    ("no", "none"),
+                    ("yes", "3"),
+                    ("yes", "5"),
+                    ("yes", "10"),
+                    ("yes", "15"),
+                )
+            )
             if mode == "ref2v"
-            else (("no", "no"),)
+            else (("no", "no", "none"),)
         )
         for duration, prices in matrix.items():
             for resolution in prices:
-                for reference_audio, reference_video in material_options:
+                for reference_audio, reference_video, reference_video_duration in material_options:
                     variants.append(
                         _variant(
                             offer_id,
@@ -249,12 +259,18 @@ def _advanced_video_pro_offer() -> dict[str, Any]:
                                 resolution_preset=resolution,
                                 reference_audio=reference_audio == "yes",
                                 reference_video=reference_video == "yes",
+                                reference_video_duration=(
+                                    None
+                                    if reference_video_duration == "none"
+                                    else reference_video_duration
+                                ),
                             ),
                             mode=mode,
                             resolution=resolution,
                             duration=duration,
                             reference_audio=reference_audio,
                             reference_video=reference_video,
+                            reference_video_duration=reference_video_duration,
                         )
                     )
     return _offer(
@@ -280,6 +296,17 @@ def _advanced_video_pro_offer() -> dict[str, Any]:
             ),
             _dimension("reference_audio", "参考音频", YES_NO_OPTIONS),
             _dimension("reference_video", "参考视频", YES_NO_OPTIONS),
+            _dimension(
+                "reference_video_duration",
+                "参考视频片段",
+                (
+                    _option("none", "未添加"),
+                    _option(3, "开头 3 秒"),
+                    _option(5, "开头 5 秒"),
+                    _option(10, "开头 10 秒"),
+                    _option(15, "开头 15 秒"),
+                ),
+            ),
         ),
         variants,
     )

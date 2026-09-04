@@ -26,6 +26,8 @@ export type UploadedReferenceAudio = {
     | { source: 'gallery_post'; post_id: number }
 }
 
+export type H3ReferenceVideoClipDuration = 3 | 5 | 10 | 15
+
 export type UploadedReferenceVideo = {
   key: string
   preview: string

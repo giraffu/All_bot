@@ -42,10 +42,15 @@ MINIMAX_H3_REF2V_PRICE_BY_DURATION = {
 }
 MINIMAX_H3_REFERENCE_AUDIO_PRICE_NUMERATOR = 11
 MINIMAX_H3_REFERENCE_AUDIO_PRICE_DENOMINATOR = 10
-MINIMAX_H3_REFERENCE_VIDEO_PRICE_NUMERATOR = 8
-MINIMAX_H3_REFERENCE_VIDEO_PRICE_DENOMINATOR = 5
+MINIMAX_H3_REFERENCE_VIDEO_ALLOWED_DURATIONS = (3, 5, 10, 15)
+MINIMAX_H3_REFERENCE_VIDEO_PRICE_RATIOS = {
+    3: (7, 5),
+    5: (8, 5),
+    10: (11, 5),
+    15: (14, 5),
+}
 MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS = 40
-MINIMAX_H3_REFERENCE_VIDEO_CLIP_SECONDS = 5
+MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS = 5
 MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES = 40 * 1024 * 1024
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
@@ -166,6 +171,7 @@ class MiniMaxH3Spec:
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
     reference_video: str | None
+    reference_video_duration_seconds: int | None
     reference_audio: str | None
     main_model: str
     model_name: str
@@ -259,6 +265,26 @@ def normalize_minimax_h3_duration_seconds(value: Any) -> int:
     return duration
 
 
+def normalize_minimax_h3_reference_video_duration_seconds(value: Any) -> int:
+    try:
+        duration = int(
+            str(
+                value
+                if value is not None
+                else MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS
+            ).removesuffix("s")
+        )
+    except (TypeError, ValueError) as exc:
+        raise MiniMaxH3ValidationError(
+            "参考视频片段时长必须为 3、5、10 或 15 秒。"
+        ) from exc
+    if duration not in MINIMAX_H3_REFERENCE_VIDEO_ALLOWED_DURATIONS:
+        raise MiniMaxH3ValidationError(
+            "参考视频片段时长必须为 3、5、10 或 15 秒。"
+        )
+    return duration
+
+
 def get_minimax_h3_cost(
     task_type: str,
     *,
@@ -266,11 +292,14 @@ def get_minimax_h3_cost(
     resolution_preset: Any = "preview",
     reference_audio: bool = False,
     reference_video: bool = False,
+    reference_video_duration: Any = None,
 ) -> int:
     if task_type not in MINIMAX_H3_PUBLIC_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     if task_type != MINIMAX_H3_REF2V and (reference_audio or reference_video):
         raise MiniMaxH3ValidationError("参考音视频加价仅支持参考图生视频。")
+    if not reference_video and reference_video_duration not in (None, ""):
+        raise MiniMaxH3ValidationError("上传参考视频后才能选择参考片段时长。")
     normalized_duration = normalize_minimax_h3_duration_seconds(duration)
     preset = str(resolution_preset or "preview").strip().lower()
     if preset not in MINIMAX_H3_PIXEL_PRESETS:
@@ -289,8 +318,14 @@ def get_minimax_h3_cost(
         numerator *= MINIMAX_H3_REFERENCE_AUDIO_PRICE_NUMERATOR
         denominator *= MINIMAX_H3_REFERENCE_AUDIO_PRICE_DENOMINATOR
     if reference_video:
-        numerator *= MINIMAX_H3_REFERENCE_VIDEO_PRICE_NUMERATOR
-        denominator *= MINIMAX_H3_REFERENCE_VIDEO_PRICE_DENOMINATOR
+        clip_duration = normalize_minimax_h3_reference_video_duration_seconds(
+            reference_video_duration
+        )
+        video_numerator, video_denominator = (
+            MINIMAX_H3_REFERENCE_VIDEO_PRICE_RATIOS[clip_duration]
+        )
+        numerator *= video_numerator
+        denominator *= video_denominator
     return (numerator + denominator - 1) // denominator
 
 
@@ -357,6 +392,17 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
 
     images = _images(inputs)
     reference_video = str(inputs.get("reference_video") or "").strip() or None
+    raw_reference_video_duration = inputs.get("reference_video_duration")
+    if reference_video is None:
+        if raw_reference_video_duration not in (None, ""):
+            raise MiniMaxH3ValidationError("上传参考视频后才能选择参考片段时长。")
+        reference_video_duration = None
+    else:
+        reference_video_duration = (
+            normalize_minimax_h3_reference_video_duration_seconds(
+                raw_reference_video_duration
+            )
+        )
     reference_audio = str(inputs.get("reference_audio") or "").strip() or None
     descriptions = _string_tuple(
         inputs.get("reference_descriptions"), field="reference_descriptions"
@@ -419,10 +465,12 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
             resolution_preset=preset,
             reference_audio=reference_audio is not None,
             reference_video=reference_video is not None,
+            reference_video_duration=reference_video_duration,
         ),
         images=images,
         reference_descriptions=descriptions,
         reference_video=reference_video,
+        reference_video_duration_seconds=reference_video_duration,
         reference_audio=reference_audio,
         main_model=main_model,
         model_name=(

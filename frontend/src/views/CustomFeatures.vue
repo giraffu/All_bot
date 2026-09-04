@@ -91,6 +91,8 @@ const {
   clearMinimaxH3ReferenceAudio,
   minimaxH3ReferenceVideo,
   minimaxH3ReferenceVideoUploading,
+  minimaxH3ReferenceVideoClipDuration,
+  minimaxH3ReferenceVideoClipDurationOptions,
   beforeUploadMinimaxH3ReferenceVideo,
   clearMinimaxH3ReferenceVideo,
   templateNotice,
@@ -262,6 +264,9 @@ const showPromptOptimizer = computed(() => (
               :item="minimaxH3ReferenceVideo"
               :uploading="minimaxH3ReferenceVideoUploading"
               :before-upload="beforeUploadMinimaxH3ReferenceVideo"
+              :clip-duration="minimaxH3ReferenceVideoClipDuration"
+              :clip-duration-options="minimaxH3ReferenceVideoClipDurationOptions"
+              @update:clip-duration="minimaxH3ReferenceVideoClipDuration = $event"
               @remove="clearMinimaxH3ReferenceVideo"
             />
           </div>

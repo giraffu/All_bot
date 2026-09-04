@@ -8,7 +8,7 @@ import time
 import pytest
 
 from workers.comfy_agent.agent_input_preparation import (
-    prepare_h3_reference_video_tail,
+    prepare_h3_reference_video_clip,
     prepare_ltx25_video_upscale_input,
     prepare_task_inputs,
     process_single_input_asset,
@@ -313,13 +313,17 @@ def test_prepare_ltx25_upscale_keeps_near_target_source_for_vsr_only(
     )
 
 
-def test_prepare_h3_reference_video_tail_uses_last_five_seconds(tmp_path, monkeypatch):
+@pytest.mark.parametrize("duration", [3, 5, 10, 15])
+def test_prepare_h3_reference_video_clip_uses_first_selected_seconds(
+    tmp_path, monkeypatch, duration
+):
     source = tmp_path / "previous.mp4"
     source.write_bytes(b"source-video")
 
     def run(command, **kwargs):
-        assert command[command.index("-sseof") + 1] == "-5"
-        assert command[command.index("-t") + 1] == "5"
+        assert "-sseof" not in command
+        assert command[command.index("-ss") + 1] == "0"
+        assert command[command.index("-t") + 1] == str(duration)
         assert kwargs["timeout"] == 120
         Path(command[-1]).write_bytes(b"tail-video")
         return type("Result", (), {"returncode": 0, "stderr": b""})()
@@ -329,18 +333,20 @@ def test_prepare_h3_reference_video_tail_uses_last_five_seconds(tmp_path, monkey
         run,
     )
 
-    result = prepare_h3_reference_video_tail("reference_video", str(source))
+    result = prepare_h3_reference_video_clip(
+        "reference_video", str(source), duration_seconds=duration
+    )
 
-    assert result.endswith("__tail5s.mp4")
+    assert result.endswith(f"__head{duration}s.mp4")
     assert Path(result).read_bytes() == b"tail-video"
 
 
-def test_prepare_h3_reference_video_tail_leaves_other_inputs_unchanged(tmp_path):
+def test_prepare_h3_reference_video_clip_leaves_other_inputs_unchanged(tmp_path):
     source = tmp_path / "voice.m4a"
-    assert prepare_h3_reference_video_tail("reference_audio", str(source)) == str(source)
+    assert prepare_h3_reference_video_clip("reference_audio", str(source)) == str(source)
 
 
-def test_prepare_h3_reference_video_tail_fails_closed(tmp_path, monkeypatch):
+def test_prepare_h3_reference_video_clip_fails_closed(tmp_path, monkeypatch):
     source = tmp_path / "previous.mp4"
     source.write_bytes(b"source-video")
     monkeypatch.setattr(
@@ -351,9 +357,11 @@ def test_prepare_h3_reference_video_tail_fails_closed(tmp_path, monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="invalid video"):
-        prepare_h3_reference_video_tail("reference_video", str(source))
+        prepare_h3_reference_video_clip(
+            "reference_video", str(source), duration_seconds=10
+        )
 
-    assert not (tmp_path / "previous__tail5s.mp4").exists()
+    assert not (tmp_path / "previous__head10s.mp4").exists()
 
 
 async def _noop_upload(**_kwargs):

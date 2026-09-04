@@ -69,6 +69,7 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
         "duration",
         "reference_audio",
         "reference_video",
+        "reference_video_duration",
     ]
     assert (
         _variant(
@@ -78,6 +79,7 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
             duration="5",
             reference_audio="no",
             reference_video="no",
+            reference_video_duration="none",
         )["default_cost"]
         == 10
     )
@@ -89,8 +91,9 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
             duration="15",
             reference_audio="yes",
             reference_video="yes",
+            reference_video_duration="15",
         )["default_cost"]
-        == 161
+        == 281
     )
     assert (
         _variant(
@@ -212,6 +215,31 @@ def test_condition_specific_prices_resolve_for_web_and_bot():
             default_cost=60,
         )
         == 77
+    )
+
+    h3_reference_video_variant = _variant(
+        offers["advanced_video_pro"],
+        mode="ref2v",
+        resolution="hd",
+        duration="15",
+        reference_audio="no",
+        reference_video="yes",
+        reference_video_duration="15",
+    )["variant_id"]
+    assert (
+        resolve_configured_task_cost(
+            {"prices": {h3_reference_video_variant: 333}},
+            task_type="minimax_h3_ref2v",
+            inputs={
+                "reference_video": "task-inputs/h3/motion.mp4",
+                "reference_video_duration": 15,
+                "resolution_preset": "hd",
+                "duration": 15,
+            },
+            client_type="web",
+            default_cost=255,
+        )
+        == 333
     )
 
 
