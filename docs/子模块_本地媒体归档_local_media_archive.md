@@ -765,6 +765,8 @@ retirement 事实表必须随 shadow 换库保留。
 `R2_TEMPLATE_SUBMISSION_RETIREMENT_ENABLED=true`；计划外新源、状态行漂移、数据库
 引用重新出现、源或目标大小/SHA 变化均在首次删除前失败关闭。每个源删除前写入可恢复
 状态，删除后必须确认源 HEAD 404 并重新计算目标完整 SHA，完成回执以 0600 原子写入。
+退役删前全量校验与删后逐对象复核使用同一 `--workers` 上限；SQLite 仍由主线程提交，
+首个失败后不再调度新的删除，只收敛当时已经在途的有界请求。
 
 `scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
 `user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量

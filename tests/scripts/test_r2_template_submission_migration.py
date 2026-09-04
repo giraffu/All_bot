@@ -49,6 +49,33 @@ def test_template_migration_copy_batch_uses_bounded_workers(monkeypatch):
     assert 2 <= len(thread_ids) <= 4
 
 
+def test_template_retirement_preflight_uses_bounded_workers(monkeypatch):
+    import scripts.r2_template_submission_migration as migration
+
+    thread_ids = set()
+    lock = threading.Lock()
+
+    def fake_preflight(client, bucket, source_key, item, state_row, live_size):
+        del client, bucket, item, state_row, live_size
+        with lock:
+            thread_ids.add(threading.get_ident())
+        time.sleep(0.02)
+        return source_key, {"present": True, "etag": source_key}
+
+    monkeypatch.setattr(migration, "_retirement_preflight_one", fake_preflight)
+    inputs = [
+        (f"temps/{index}", {}, (None, 0, "verified", "a", "a"), 0)
+        for index in range(8)
+    ]
+
+    result = migration._run_retirement_preflight_batch(
+        object(), "user-data-prod", inputs, workers=4
+    )
+
+    assert len(result) == len(inputs)
+    assert 2 <= len(thread_ids) <= 4
+
+
 def test_template_submission_migration_preserves_relative_key():
     assert destination_key("temps/user/final.png") == "template-submissions/user/final.png"
     with pytest.raises(ValueError):
