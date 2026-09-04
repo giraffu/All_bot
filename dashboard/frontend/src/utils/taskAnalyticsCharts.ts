@@ -7,9 +7,14 @@ type CreditDistributionResponse = {
 type EfficiencyItem = {
   value: number
   credits: number
+  gross_credits: number
   gpu_hours: number
   task_count: number
+  successful_task_count: number
+  worker_count: number
+  telemetry_coverage: number
   estimated: boolean
+  gpu_time_source: string
 }
 
 type GpuEfficiencyResponse = {
@@ -27,8 +32,12 @@ export type CreditPieSlice = BasePieSlice
 
 export type GpuEfficiencyPieSlice = BasePieSlice & {
   credits: number
+  grossCredits: number
   gpuHours: number
   taskCount: number
+  successfulTaskCount: number
+  workerCount: number
+  telemetryCoverage: number
   estimated: boolean
 }
 
@@ -56,8 +65,12 @@ export const buildGpuEfficiencyPieData = (
   name: taskLabel(taskType),
   value: Number(item.value || 0),
   credits: Number(item.credits || 0),
+  grossCredits: Number(item.gross_credits || 0),
   gpuHours: Number(item.gpu_hours || 0),
   taskCount: Number(item.task_count || 0),
+  successfulTaskCount: Number(item.successful_task_count || 0),
+  workerCount: Number(item.worker_count || 0),
+  telemetryCoverage: Number(item.telemetry_coverage || 0),
   estimated: Boolean(item.estimated),
   itemStyle: { color: taskColor(taskType) },
 }))

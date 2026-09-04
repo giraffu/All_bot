@@ -14,7 +14,7 @@
     </template>
     <div class="chart-stack">
       <v-chart class="chart" :option="option" autoresize :loading="loading" />
-      <p class="chart-note">GPU 小时按生产 P50 占卡标尺折算为 RTX 5090 等效值；{{ coverageText }}</p>
+      <p class="chart-note">GPU 小时按每笔任务 running → gpu_done 实测，并以实际执行 Worker 的显卡折算为 RTX 5090；{{ coverageText }}</p>
     </div>
   </DashboardChartFrame>
 </template>
@@ -41,9 +41,14 @@ const props = withDefaults(defineProps<{ title?: string }>(), {
 type EfficiencyItem = {
   value: number
   credits: number
+  gross_credits: number
   gpu_hours: number
   task_count: number
+  successful_task_count: number
+  worker_count: number
+  telemetry_coverage: number
   estimated: boolean
+  gpu_time_source: string
 }
 
 type EfficiencyResponse = {
@@ -92,9 +97,12 @@ const option = computed(() => {
       formatter: ({ seriesName, data }: any) => [
         seriesName,
         `${data.name}: <b>${Number(data.value).toLocaleString()}</b> 灵石/GPU·小时`,
-        `任务 ${Number(data.taskCount).toLocaleString()} 笔`,
-        `灵石 ${Number(data.credits).toLocaleString()}，GPU ${Number(data.gpuHours).toFixed(3)} 小时`,
-        data.estimated ? '5090 等效估算' : '',
+        `精确任务 ${Number(data.taskCount).toLocaleString()} / 成功任务 ${Number(data.successfulTaskCount).toLocaleString()} 笔`,
+        `实际执行 Worker ${Number(data.workerCount).toLocaleString()} 个`,
+        `归因灵石 ${Number(data.credits).toLocaleString()} / 当日总灵石 ${Number(data.grossCredits).toLocaleString()}`,
+        `5090 等效 GPU ${Number(data.gpuHours).toFixed(3)} 小时`,
+        `执行阶段覆盖 ${(Number(data.telemetryCoverage) * 100).toFixed(1)}%`,
+        data.estimated ? '灵石按精确任务覆盖率同比例归因' : '全量任务精确归因',
       ].filter(Boolean).join('<br/>'),
     },
     legend: { orient: 'vertical', top: 'middle', left: 'left', type: 'scroll' },
@@ -121,7 +129,7 @@ const coverageText = computed(() => selectedDates.value.map((dateKey) => {
   const data = chartDataMap.value[dateKey]
   if (!data || data.total_credits <= 0) return `${formatDate(dateKey)} 暂无扣费数据`
   const percent = (data.covered_credits / data.total_credits * 100).toFixed(1)
-  return `${formatDate(dateKey)} 覆盖 ${percent}%（未覆盖 ${data.uncovered_credits.toLocaleString()} 灵石）`
+  return `${formatDate(dateKey)} 精确归因 ${percent}%（未覆盖 ${data.uncovered_credits.toLocaleString()} 灵石）`
 }).join('；'))
 </script>
 

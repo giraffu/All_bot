@@ -10,7 +10,18 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import WorkerLog
 from src.services.redis_connection import build_redis_client
 
+from dashboard.backend.services.worker_gpu_telemetry import (
+    GPU_PHASE_TTL_SECONDS,
+    build_gpu_phase_marker,
+    gpu_phase_key,
+    resolve_worker_gpu_equivalence,
+)
+
 logger = logging.getLogger("dashboard.worker_listener")
+
+
+def _now_timestamp() -> float:
+    return datetime.now().timestamp()
 
 
 def _build_task_info_from_event(event_data):
@@ -129,7 +140,13 @@ async def resolve_task_info(task_id: str, event_data: dict, r_worker, r_bot) -> 
     }
 
 
-def build_worker_log(task_id: str, event_data: dict, task_info: dict) -> WorkerLog:
+def build_worker_log(
+    task_id: str,
+    event_data: dict,
+    task_info: dict,
+    *,
+    gpu_phase: dict | None = None,
+) -> WorkerLog:
     worker_id = task_info.get("worker_id", "unknown")
     task_type = task_info.get("type", "unknown")
     created_at_val = task_info.get("created_at")
@@ -141,11 +158,35 @@ def build_worker_log(task_id: str, event_data: dict, task_info: dict) -> WorkerL
     else:
         created_at_ts = None
 
-    start_time = datetime.fromtimestamp(created_at_ts) if created_at_ts else datetime.now()
-    end_time = datetime.now()
-    duration = int((end_time - start_time).total_seconds())
+    started_at = None
+    finished_at = None
+    if gpu_phase:
+        try:
+            started_at = float(gpu_phase.get("started_at"))
+            finished_at = float(gpu_phase.get("finished_at"))
+        except (TypeError, ValueError):
+            started_at = None
+            finished_at = None
+
+    has_exact_gpu_phase = bool(
+        started_at is not None and finished_at is not None and finished_at >= started_at
+    )
+    if has_exact_gpu_phase:
+        start_time = datetime.fromtimestamp(started_at)
+        end_time = datetime.fromtimestamp(finished_at)
+        duration = max(1, round(finished_at - started_at))
+    else:
+        start_time = (
+            datetime.fromtimestamp(created_at_ts) if created_at_ts else datetime.now()
+        )
+        end_time = datetime.now()
+        duration = max(0, int((end_time - start_time).total_seconds()))
     error_msg = event_data.get("error_msg", "") or task_info.get("error_msg", "")
     final_status = "success" if event_data.get("status") == "done" else "failed"
+    if final_status == "success" and has_exact_gpu_phase:
+        equivalence = resolve_worker_gpu_equivalence(worker_id)
+        if equivalence is not None:
+            error_msg = build_gpu_phase_marker(equivalence)
 
     return WorkerLog(
         worker_id=worker_id,
@@ -196,6 +237,14 @@ async def process_message(message, r_worker, r_bot):
 
         event_data = json.loads(data)
         status = event_data.get("status")
+        execution_phase = event_data.get("execution_phase")
+
+        if status == "running" and execution_phase in {"running", "gpu_done"}:
+            phase_key = gpu_phase_key(task_id)
+            field = "started_at" if execution_phase == "running" else "finished_at"
+            await r_worker.hsetnx(phase_key, field, str(_now_timestamp()))
+            await r_worker.expire(phase_key, GPU_PHASE_TTL_SECONDS)
+            return
 
         if status in ["done", "error"]:
             lock_key = f"worker_listener:lock:{task_id}:{status}"
@@ -209,7 +258,18 @@ async def process_message(message, r_worker, r_bot):
                 status,
             )
             task_info = await resolve_task_info(task_id, event_data, r_worker, r_bot)
-            await persist_worker_log_once(build_worker_log(task_id, event_data, task_info))
+            phase_key = gpu_phase_key(task_id)
+            gpu_phase = await r_worker.hgetall(phase_key)
+            persisted = await persist_worker_log_once(
+                build_worker_log(
+                    task_id,
+                    event_data,
+                    task_info,
+                    gpu_phase=gpu_phase,
+                )
+            )
+            if persisted:
+                await r_worker.delete(phase_key)
 
     except json.JSONDecodeError:
         logger.error(

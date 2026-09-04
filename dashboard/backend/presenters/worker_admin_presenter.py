@@ -1,4 +1,5 @@
 from dashboard.backend.schemas import WorkerHistoryItemResponse
+from dashboard.backend.services.worker_gpu_telemetry import visible_worker_error
 
 
 def build_worker_history_item(log) -> WorkerHistoryItemResponse:
@@ -11,5 +12,5 @@ def build_worker_history_item(log) -> WorkerHistoryItemResponse:
         start_time=log.start_time.isoformat() if log.start_time else None,
         end_time=log.end_time.isoformat() if log.end_time else None,
         duration=log.duration,
-        error_message=log.error_message,
+        error_message=visible_worker_error(log.error_message),
     )

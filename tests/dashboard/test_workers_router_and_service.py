@@ -69,12 +69,22 @@ def test_build_worker_history_item_serializes_datetime_fields():
     assert result.worker_id == "worker-1"
 
 
+def test_build_worker_history_item_hides_internal_gpu_telemetry_marker():
+    result = worker_admin_presenter.build_worker_history_item(
+        _build_log(error_message="dashboard_gpu_phase_v1|gpu=rtx_5090|factor=1")
+    )
+
+    assert result.error_message is None
+
+
 @pytest.mark.asyncio
 async def test_get_worker_history_payload_builds_paginated_response():
-    db = _FakeWorkersDb([
-        _ScalarResult(1),
-        _WorkerRowsResult([_build_log()]),
-    ])
+    db = _FakeWorkersDb(
+        [
+            _ScalarResult(1),
+            _WorkerRowsResult([_build_log()]),
+        ]
+    )
 
     result = await worker_admin_service.get_worker_history_payload(
         worker_id="worker-1",

@@ -32,9 +32,14 @@ describe('task analytics chart transforms', () => {
         minimax_h3_ref2v: {
           value: 742.5,
           credits: 330,
+          gross_credits: 440,
           gpu_hours: 0.4444,
           task_count: 12,
+          successful_task_count: 16,
+          worker_count: 3,
+          telemetry_coverage: 0.75,
           estimated: true,
+          gpu_time_source: 'worker_gpu_phase',
         },
       },
     })
@@ -45,8 +50,12 @@ describe('task analytics chart transforms', () => {
         name: '高级图生视频pro · 参考图生视频',
         value: 742.5,
         credits: 330,
+        grossCredits: 440,
         gpuHours: 0.4444,
         taskCount: 12,
+        successfulTaskCount: 16,
+        workerCount: 3,
+        telemetryCoverage: 0.75,
         estimated: true,
       }),
     ])
