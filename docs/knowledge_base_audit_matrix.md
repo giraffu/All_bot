@@ -58,8 +58,8 @@
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、支付宝直连白名单、affiliate、USDT 人工出款 | billing core、payment providers、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery 一致性、R2、apply-context | Gallery core/services、migration、audit/storage scripts | current | 社区/媒体 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
-| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界与分层新鲜度 | local analytics routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
-| `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界、生成任务消费口径与分层新鲜度 | local analytics task catalog/routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
+| `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理与任务/model scope 归并 | prompt rule/materialization code | current | 词元治理 |
 | `docs/子模块_本地媒体归档_local_media_archive.md` | History 媒体目录、NAS MinIO、恢复与冷清理 | archive core/outbox/API/Worker/Compose | runtime-verification-required | 全量媒体归档 |
 
 ## 模型、GPU 与运行环境

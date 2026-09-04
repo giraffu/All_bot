@@ -66,6 +66,7 @@ health 回读，不从本文复制历史快照。
 | 用户画像与人群下钻 | `routes_users.py`、`user_profile_analytics.py` |
 | 灵石和充值 | `routes_credit_flow.py`、`routes_finance.py` |
 | 生成分析与 History 明细 | `routes_generation.py`、`routes_generation_history.py` |
+| 生成消费任务口径 | `task_type_catalog.py`；生成分析、灵石收支和用户画像共用 |
 | Prompt Mart、瘦身、向量、词元、模板和拆解 | `routes_prompts.py` 及 `prompt_*.py` |
 | 归档媒体 | `routes_archive.py` |
 | R2 治理摘要 | `routes_r2_governance.py` |
@@ -116,6 +117,7 @@ Cloudflare Access 和应用登录，响应使用 `private, no-store`；opaque re
   PostgreSQL 活动和目标端点延迟；日志检查不授权 restart、清表或重建。
 - shadow 同步、派生表重建、旧表清理、Compose 重启和公网入口变更都是 mutation。
   生产/Cloudflare/数据库 mutation 仍需用户明确授权。
+- 高级图生视频 Pro 的 T2V、I2V、FLF2V、REF2V 四种稳定类型必须全部进入生成消费口径；History、Prompt Mart 和瘦身表保持模式级类型，词元/模板候选再统一归并到“高级图生视频 Pro”scope。H3 附加模型只从版本化 `_minimax_h3_context.lora_items` 读取，不从提示词正文猜测。
 - 当前功能清单以实际路由注册和静态页面 Tab 为准；不要从 archive changelog 恢复
   已退役 API。
 

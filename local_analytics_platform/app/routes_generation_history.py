@@ -6,10 +6,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, Query
 
 from .analytics_common import _fetch, _fetchrow, _gather_limited, _row, _rows
+from .task_type_catalog import MINIMAX_H3_TASK_TYPES
 
 
 router = APIRouter()
 GENERATION_HISTORY_PAGE_SIZE = 10
+MINIMAX_H3_TASK_TYPES_SQL = ", ".join(
+    f"'{task_type}'" for task_type in MINIMAX_H3_TASK_TYPES
+)
 
 MEDIA_COLUMNS_SQL = """
     '/api/generation-history/' || h.id || '/media?role_group=input' input_address,
@@ -119,7 +123,7 @@ MEDIA_PREVIEW_JOIN_SQL = r"""
     ) output_preview on true
 """
 
-FILTER_SQL = """
+FILTER_SQL = f"""
   ($1::text = '' or coalesce(h.type, 'unknown') = $1::text)
   and ($2::bigint is null or h.id = $2::bigint)
   and ($3::text = '' or coalesce(h.task_id, '') = $3::text)
@@ -137,9 +141,7 @@ FILTER_SQL = """
     and a.status in ('source_offline','provisional_missing','confirmed_lost','checksum_error')))
   and ($11::text = '' or (
     $11::text = '__unrecorded__'
-    and coalesce(h.type, '') in (
-      'minimax_h3_t2v', 'minimax_h3_i2v', 'minimax_h3_flf2v', 'minimax_h3_ref2v'
-    )
+    and coalesce(h.type, '') in ({MINIMAX_H3_TASK_TYPES_SQL})
     and coalesce(h.extra_outputs->'_minimax_h3_context'->>'main_model', '') = ''
   ) or coalesce(h.extra_outputs->'_minimax_h3_context'->>'main_model', '') = $11::text)
   and __SNAPSHOT_FILTER__

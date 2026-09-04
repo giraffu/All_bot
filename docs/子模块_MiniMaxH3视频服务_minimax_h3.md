@@ -135,6 +135,10 @@ H3 成功 History 的 `extra_outputs._minimax_h3_context` 当前为 version 3，
 显示与筛选 H3 主模型；version 1/2 的旧记录没有该字段，必须显示为“未记录”，不得按默认
 BF16 回填或推测。
 
+本地分析平台必须把四种公开任务类型全部纳入生成消费白名单，同时保留模式级 History
+和趋势；提示词词元/模板候选把四种模式归并为统一的“高级图生视频 Pro”scope，并从
+`_minimax_h3_context.lora_items` 读取附加模型筛选，不从提示词正文推测模型。
+
 管理后台历史页不能只读 `History.input_file`：REF2V 参考音频从已校验的
 `_minimax_h3_context.reference_audio` 生成 typed `input_media`，扩展段的实际生成图片
 输入是父段尾帧。尾帧锚定扩展会在 version 3 上可选记录 `execution_mode=i2v`，后台据此

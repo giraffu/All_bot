@@ -3,7 +3,7 @@ import { fetchJson, logoutLocalAnalytics } from "./api.js?v=20260709-prompt-deco
 import { createCreditFlowLoader } from "./creditFlow.js?v=20260709-prompt-decomposition-v1";
 import { createFinanceModule } from "./finance.js?v=20260709-prompt-decomposition-v1";
 import { createGenerationModule } from "./generation.js?v=20260709-prompt-decomposition-v1";
-import { createGenerationHistoryModule } from "./generationHistory.js?v=20260905-history-table-fit-v1";
+import { createGenerationHistoryModule } from "./generationHistory.js?v=20260905-minimax-h3-v1";
 import { createMediaLoader } from "./media.js?v=20260709-prompt-decomposition-v1";
 import { createR2GovernanceLoader } from "./r2Governance.js?v=20260807-r2-governance-v1";
 import { createPromptSlimLoader } from "./promptSlim.js?v=20260709-prompt-decomposition-v1";
@@ -11,6 +11,7 @@ import { createPromptVectorsModule } from "./promptVectors.js?v=20260709-prompt-
 import { createPromptsLoader } from "./prompts.js?v=20260709-prompt-decomposition-v1";
 import { createTabController } from "./tabs.js?v=20260709-prompt-decomposition-v1";
 import { createTemplatesLoader } from "./templates.js?v=20260709-prompt-decomposition-v1";
+import { taskTypeLabel, taskTypeListLabel } from "./taskTypes.js?v=20260905-minimax-h3-v1";
 import { createUsersLoader } from "./users.js?v=20260709-prompt-decomposition-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -1072,7 +1073,7 @@ function renderUserProfileDetail(payload = {}) {
       { label: "Bot", value: fmt(generationSummary.bot_generations) },
       { label: "公开", value: fmt(generationSummary.public_generations) },
     ])}
-    ${renderCompactList(generation.type_distribution || [], (row) => renderCompactItem(row.task_type, fmtDate(row.last_generation_at), `${fmt(row.generations)} 次`))}
+    ${renderCompactList(generation.type_distribution || [], (row) => renderCompactItem(taskTypeLabel(row.task_type), fmtDate(row.last_generation_at), `${fmt(row.generations)} 次`))}
     ${renderCompactList(generation.source_distribution || [], (row) => renderCompactItem(row.source, "来源", `${fmt(row.generations)} 次`))}
     ${renderCompactList(generation.hour_distribution || [], (row) => renderCompactItem(`${fmt(row.hour)} 时`, "生成时段", `${fmt(row.generations)} 次`))}
     ${renderCompactList(generation.weekday_distribution || [], (row) => renderCompactItem(`星期 ${fmt(row.weekday)}`, "生成星期", `${fmt(row.generations)} 次`))}
@@ -1099,7 +1100,7 @@ function renderUserProfileDetail(payload = {}) {
       { label: "评论", value: fmt(communitySummary.comments) },
       { label: "信号", value: fmt(communitySummary.gallery_signal) },
     ])}
-    ${renderCompactList(community.samples || [], (row) => renderCompactItem(row.task_type || row.media_type || "投稿", `${row.task_id || "-"} · ${fmtDate(row.created_at)}`, `赞 ${fmt(row.likes_count)} / 应用 ${fmt(row.applied_count)}`))}
+    ${renderCompactList(community.samples || [], (row) => renderCompactItem(taskTypeLabel(row.task_type) || row.media_type || "投稿", `${row.task_id || "-"} · ${fmtDate(row.created_at)}`, `赞 ${fmt(row.likes_count)} / 应用 ${fmt(row.applied_count)}`))}
   `);
 
   const unlockSection = renderProfileSection("提示词解锁", `
@@ -1109,8 +1110,8 @@ function renderUserProfileDetail(payload = {}) {
       { label: "最近购买", value: fmtDate(unlockSummary.latest_purchase_at) },
       { label: "最近售出", value: fmtDate(unlockSummary.latest_sale_at) },
     ])}
-    ${renderCompactList(unlock.recent_purchases || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${row.task_type || "-"} · 作者 ${fmt(row.author_id)}`, `${fmt(row.cost_credits)} 灵石`))}
-    ${renderCompactList(unlock.recent_sales || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${row.task_type || "-"} · 买家 ${row.buyer_username || fmt(row.buyer_id)}`, `${fmt(row.cost_credits)} 灵石`))}
+    ${renderCompactList(unlock.recent_purchases || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${taskTypeLabel(row.task_type) || "-"} · 作者 ${fmt(row.author_id)}`, `${fmt(row.cost_credits)} 灵石`))}
+    ${renderCompactList(unlock.recent_sales || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${taskTypeLabel(row.task_type) || "-"} · 买家 ${row.buyer_username || fmt(row.buyer_id)}`, `${fmt(row.cost_credits)} 灵石`))}
   `);
 
   const socialSection = renderProfileSection("关注关系", `
@@ -1402,7 +1403,7 @@ function renderGeneration() {
 
   $("#generationTypes").innerHTML = tableRows(state.generation?.by_type, (row) => `
     <tr>
-      <td class="mono">${escapeHtml(row.task_type)}</td>
+      <td class="mono">${escapeHtml(taskTypeLabel(row.task_type))}</td>
       <td>
         <strong>${fmt(row.generations)}</strong>
         <div class="muted small">${fmt(row.creators)} 用户</div>
@@ -1428,7 +1429,7 @@ function renderGeneration() {
 
   $("#generationCredits").innerHTML = tableRows(state.generation?.credits, (row) => `
     <tr>
-      <td class="mono">${escapeHtml(row.task_type)}</td>
+      <td class="mono">${escapeHtml(taskTypeLabel(row.task_type))}</td>
       <td>${fmt(row.debit_events)}</td>
       <td>${fmt(row.credits_spent)}</td>
       <td>${fmtAmount(row.avg_credits_per_event)}</td>
@@ -1487,7 +1488,7 @@ function renderGeneration() {
   $("#generationRecentHighSignal").innerHTML = tableRows(state.generation?.recent_high_signal, (row) => `
     <tr>
       <td>
-        <strong class="mono">${escapeHtml(row.task_type)}</strong>
+        <strong class="mono">${escapeHtml(taskTypeLabel(row.task_type))}</strong>
         <div class="muted small">${escapeHtml(row.media_type || "unknown")} · ${escapeHtml(row.task_id || "-")}</div>
       </td>
       <td>${renderUserIdentity(row)}</td>
@@ -1553,7 +1554,7 @@ function renderGenerationCharts(compareRows = null, compareKind = "hourly-period
       trigger: "item",
       formatter: (params) => {
         const row = bubbleRows[params.dataIndex] || {};
-        return `${escapeHtml(row.task_type)}<br/>生成 ${fmt(row.generations)}<br/>输出率 ${fmtPercent(row.result_rate)}<br/>失败率 ${fmtPercent(row.worker_failure_rate)}<br/>灵石 ${fmt(row.credits_spent)}`;
+        return `${escapeHtml(taskTypeLabel(row.task_type))}<br/>生成 ${fmt(row.generations)}<br/>输出率 ${fmtPercent(row.result_rate)}<br/>失败率 ${fmtPercent(row.worker_failure_rate)}<br/>灵石 ${fmt(row.credits_spent)}`;
       },
     },
     grid: { left: 54, right: 34, top: 22, bottom: 42, containLabel: true },
@@ -1570,10 +1571,10 @@ function renderGenerationCharts(compareRows = null, compareKind = "hourly-period
   if (compareKind === "types") {
     const rows = compareRows || [];
     const compareDates = Array.from(new Set(rows.map((row) => row.date)));
-    const taskTypes = Array.from(new Set(rows.map((row) => row.task_type))).slice(0, 12);
+    const taskTypes = Array.from(new Set(rows.map((row) => taskTypeLabel(row.task_type)))).slice(0, 12);
     renderChart("generationCompareChart", buildStackedBarOption({
       dates: compareDates,
-      rows: rows.map((row) => ({ ...row, category: row.task_type, value: row.generations })),
+      rows: rows.map((row) => ({ ...row, category: taskTypeLabel(row.task_type), value: row.generations })),
       categories: taskTypes,
     }));
     return;
@@ -1601,7 +1602,7 @@ function renderPromptDistributions() {
   const distributions = state.prompts?.distributions || {};
   renderDistribution("#promptLengthDistribution", distributions.length || []);
   renderDistribution("#promptReuseDistribution", distributions.reuse || []);
-  renderDistribution("#promptTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptTaskTypeDistribution", (distributions.task_type || []).map((row) => ({ ...row, label: taskTypeLabel(row.label) })));
   renderDistribution("#promptScopeDistribution", distributions.template_scope || []);
 }
 
@@ -1616,7 +1617,8 @@ function renderPromptTaskTypeOptions() {
     if (!value || seen.has(value)) return;
     seen.add(value);
     const count = row.generations ?? row.count;
-    const label = count === undefined ? value : `${value} (${fmt(count)})`;
+    const displayValue = taskTypeLabel(value);
+    const label = count === undefined ? displayValue : `${displayValue} (${fmt(count)})`;
     options.push(`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`);
   });
   if (existing && !seen.has(existing)) {
@@ -1664,7 +1666,7 @@ function renderPromptVariantRows(payload) {
     <article class="prompt-variant-item">
       <div class="prompt-variant-meta">
         <strong>${fmt(variant.uses)} 次 / ${fmt(variant.users)} 人</strong>
-        <span>${(variant.task_types || []).slice(0, 3).map(escapeHtml).join(" / ") || "-"} · ${fmtDate(variant.last_seen)}</span>
+        <span>${escapeHtml(taskTypeListLabel((variant.task_types || []).slice(0, 3)))} · ${fmtDate(variant.last_seen)}</span>
       </div>
       <div class="prompt-variant-text">${escapeHtml(variant.raw_prompt || variant.raw_preview || "")}</div>
     </article>
@@ -1744,7 +1746,7 @@ function renderPrompts() {
       </td>
       <td>
         <strong>${fmt(row.uses)}</strong> 次
-        <div class="muted small">${fmt(row.users)} 人 · ${(row.task_types || []).slice(0, 3).map(escapeHtml).join(" / ") || "-"}</div>
+        <div class="muted small">${fmt(row.users)} 人 · ${escapeHtml(taskTypeListLabel((row.task_types || []).slice(0, 3)))}</div>
       </td>
       <td>${promptInteractionText(row)}</td>
       <td>${promptScopePills(row)}</td>
@@ -1782,7 +1784,7 @@ function renderPromptDetail() {
       <dt>复用</dt><dd>${fmt(item.uses)} 次 / ${fmt(item.users)} 人</dd>
       <dt>变体</dt><dd>归一化 ${fmt(item.variant_count || 1)} 种</dd>
       <dt>时间</dt><dd>${fmtDate(item.first_seen)} - ${fmtDate(item.last_seen)}</dd>
-      <dt>任务</dt><dd>${(item.task_types || []).map(escapeHtml).join(" / ") || "-"}</dd>
+      <dt>任务</dt><dd>${escapeHtml(taskTypeListLabel(item.task_types))}</dd>
       <dt>互动</dt><dd>赞 ${fmt(item.likes)} / 踩 ${fmt(item.dislikes)} / 应用 ${fmt(item.applies)} / 解锁 ${fmt(item.prompt_unlocks)}</dd>
       <dt>收藏</dt><dd>${fmt(item.favorite_records)} 条 · 公开 ${fmt(item.public_records)} 条 · Gallery ${fmt(item.gallery_posts)} 条</dd>
       <dt>来源</dt><dd>${promptScopePills(item)}</dd>
@@ -2012,7 +2014,7 @@ function renderTemplateCandidateDrawer() {
         <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
       </td>
       <td>
-        <strong>${(row.task_types || []).map(escapeHtml).join(" / ") || "-"}</strong>
+        <strong>${escapeHtml(taskTypeListLabel(row.task_types))}</strong>
         <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
         <div class="muted small">${fmtDate(row.last_seen)}</div>
       </td>
@@ -2131,7 +2133,7 @@ function renderTemplateReviewMarksDrawer() {
         <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
       </td>
       <td>
-        <strong>${escapeHtml((row.task_types || []).join(" / ") || row.scope_label || "-")}</strong>
+        <strong>${escapeHtml(taskTypeListLabel(row.task_types, row.scope_label || "-"))}</strong>
         <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
         <div class="muted small">暂存 ${fmtDate(row.marked_at)}</div>
       </td>
@@ -2398,7 +2400,7 @@ function renderMedia() {
     <tr>
       <td>${fmtDate(row.created_at)}</td>
       <td>
-        <strong class="mono">${escapeHtml(row.task_type || "-")}</strong>
+        <strong class="mono">${escapeHtml(taskTypeLabel(row.task_type) || "-")}</strong>
         <div class="muted small">${escapeHtml(row.source || "-")}</div>
       </td>
       <td>${renderMediaRefs(row.input_refs)}</td>
@@ -2462,7 +2464,10 @@ function renderPromptSlimOptionSet(selector, rows = [], staticOptions = []) {
   const existing = select.value;
   const seen = new Set();
   const options = [];
-  staticOptions.concat(rows.map((row) => ({ value: row.label, label: row.label }))).forEach((option) => {
+  staticOptions.concat(rows.map((row) => ({
+    value: row.label,
+    label: row.display_label || row.label,
+  }))).forEach((option) => {
     if (option.value === undefined || option.value === null || seen.has(option.value)) return;
     seen.add(option.value);
     options.push(`<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`);
@@ -2480,7 +2485,7 @@ function renderPromptSlimFilterOptions() {
   const distributions = state.promptSlim?.distributions || {};
   renderPromptSlimOptionSet(
     "#promptSlimTaskTypeSelect",
-    distributions.task_type || [],
+    (distributions.task_type || []).map((row) => ({ ...row, display_label: taskTypeLabel(row.label) })),
     [{ value: "", label: "全部" }]
   );
   renderPromptSlimOptionSet(
@@ -2515,7 +2520,7 @@ function renderPromptSlimDistributions() {
     label: promptSlimStageLabel(row.label),
   })));
   renderDistribution("#promptSlimReasonDistribution", distributions.reason || []);
-  renderDistribution("#promptSlimTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptSlimTaskTypeDistribution", (distributions.task_type || []).map((row) => ({ ...row, label: taskTypeLabel(row.label) })));
   renderDistribution("#promptSlimSourceDistribution", (distributions.source_scope || []).map((row) => ({
     ...row,
     label: promptSlimSourceLabel(row.label),
@@ -2585,7 +2590,7 @@ function renderPromptSlim() {
       </td>
       <td>
         <strong>${fmt(row.uses)}</strong> 次
-        <div class="muted small">${fmt(row.users)} 人 · ${(row.task_types || []).slice(0, 3).map(escapeHtml).join(" / ") || "-"}</div>
+        <div class="muted small">${fmt(row.users)} 人 · ${escapeHtml(taskTypeListLabel((row.task_types || []).slice(0, 3)))}</div>
       </td>
       <td>${renderPromptSlimSignalText(row)}</td>
       <td>${renderPromptSlimGalleryText(row)}</td>
@@ -2672,7 +2677,7 @@ function renderPromptVectorSummary() {
 
 function renderPromptVectorDistributions() {
   const distributions = state.promptVectors?.distributions || {};
-  renderDistribution("#promptVectorTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptVectorTaskTypeDistribution", (distributions.task_type || []).map((row) => ({ ...row, label: taskTypeLabel(row.label) })));
   renderDistribution("#promptVectorStatusDistribution", distributions.status || []);
 }
 
@@ -3724,7 +3729,7 @@ function renderPromptTokenPromptDrawer() {
         <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
       </td>
       <td>
-        <strong>${(row.task_types || []).map(escapeHtml).join(" / ") || "-"}</strong>
+        <strong>${escapeHtml(taskTypeListLabel(row.task_types))}</strong>
         <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
         <div class="muted small">${fmtDate(row.last_seen)}</div>
       </td>
