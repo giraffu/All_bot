@@ -757,6 +757,13 @@ retirement 事实表必须随 shadow 换库保留。
 状态库分别保存源/目标摘要和关联 contribution ID。只有全量对象 verified 后才能用
 独立 `--switch-db-references` 门禁锁定并切换旧数据库引用；审批同样持有行锁，已审核
 记录幂等返回，复制或事务失败不得重复发奖。
+数据库引用切换为零后，源退役仍使用同一脚本的独立
+`--plan-retirement --retirement-plan-out` 冻结完整 `temps/` 行集、对象/字节聚合与
+计划 SHA。执行只接受同一 0600 计划、精确
+`DELETE_VERIFIED_TEMPLATE_SUBMISSION_SOURCES_user-data-prod:<plan-sha>` 和独立
+`R2_TEMPLATE_SUBMISSION_RETIREMENT_ENABLED=true`；计划外新源、状态行漂移、数据库
+引用重新出现、源或目标大小/SHA 变化均在首次删除前失败关闭。每个源删除前写入可恢复
+状态，删除后必须确认源 HEAD 404 并重新计算目标完整 SHA，完成回执以 0600 原子写入。
 
 `scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
 `user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量

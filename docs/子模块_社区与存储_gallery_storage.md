@@ -103,6 +103,8 @@ sequenceDiagram
   `temps/` 的数据库记录，源对象保留到后续独立清理窗口。迁移 dry-run 还必须
   报告生产数据库引用数、源对象缺失、目标存在/缺失、目标大小冲突和“已存在但
   尚未完整 SHA 验证”的数量；这些摘要不能替代 execute 阶段的完整双 SHA 验收。
+  切换完成后的 `temps/` 删除必须另行冻结 plan SHA，并在删前重查数据库零引用与
+  源/目标完整摘要；删后确认源不存在且目标摘要保持不变，不能复用通用临时清理确认值。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
 - Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `user_id` 精确筛选，以及 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
 - Dashboard 广场内容管理与举报管理统一通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts`、`affected_histories` 与 `resolved_reports`，并在同一事务中处理该作者全部 pending 举报。

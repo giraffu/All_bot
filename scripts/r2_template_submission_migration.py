@@ -7,9 +7,11 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 
 import boto3
@@ -20,6 +22,8 @@ from botocore.exceptions import ClientError
 BUCKET = "user-data-prod"
 SOURCE_PREFIX = "temps/"
 TARGET_PREFIX = "template-submissions/"
+RETIREMENT_SCHEMA = "allbot-r2-template-submission-retirement/v1"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def destination_key(source_key: str) -> str:
@@ -42,6 +46,269 @@ def validate_switch_gate(*, bucket: str, enabled: bool, confirmation: str) -> No
         raise ValueError("template database switch is restricted and disabled")
     if confirmation != f"SWITCH_VERIFIED_TEMPLATE_SUBMISSIONS_{bucket}":
         raise ValueError("exact template database switch confirmation is required")
+
+
+def validate_retirement_gate(
+    *,
+    bucket: str,
+    enabled: bool,
+    confirmation: str,
+    plan_sha256: str,
+) -> None:
+    if bucket != BUCKET or not enabled:
+        raise ValueError("template source retirement is restricted and disabled")
+    expected = (
+        f"DELETE_VERIFIED_TEMPLATE_SUBMISSION_SOURCES_{bucket}:{plan_sha256}"
+    )
+    if not hmac.compare_digest(confirmation, expected):
+        raise ValueError("exact plan-bound template source retirement confirmation is required")
+
+
+def _canonical_json_sha256(value: dict) -> str:
+    payload = dict(value)
+    payload.pop("plan_sha256", None)
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def seal_retirement_plan(plan: dict) -> dict:
+    sealed = dict(plan)
+    sealed["plan_sha256"] = _canonical_json_sha256(sealed)
+    return sealed
+
+
+def load_retirement_plan(path: Path, expected_sha256: str) -> dict:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    actual = _canonical_json_sha256(plan)
+    if (
+        plan.get("schema") != RETIREMENT_SCHEMA
+        or plan.get("mode") != "dry-run"
+        or plan.get("plan_sha256") != actual
+    ):
+        raise ValueError("retirement plan is invalid or modified")
+    if not expected_sha256 or not hmac.compare_digest(actual, expected_sha256):
+        raise ValueError("retirement plan SHA-256 does not match")
+    return plan
+
+
+def _atomic_private_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(path.parent, 0o700)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
+def build_retirement_plan(
+    db: sqlite3.Connection,
+    *,
+    bucket: str,
+    scanned: int,
+    database_references: int,
+) -> dict:
+    if bucket != BUCKET:
+        raise ValueError("template source retirement is restricted to user-data-prod")
+    if database_references:
+        raise ValueError("template source retirement requires zero database references")
+    rows = db.execute(
+        """select source_key,target_key,byte_size,status,source_sha256,target_sha256
+             from objects order by source_key"""
+    ).fetchall()
+    if len(rows) != int(scanned):
+        raise ValueError("template source inventory does not fully match migration state")
+    objects = []
+    for source_key, target_key, byte_size, status, source_sha, target_sha in rows:
+        if (
+            status != "verified"
+            or target_key != destination_key(str(source_key))
+            or not _SHA256_RE.fullmatch(str(source_sha or ""))
+            or source_sha != target_sha
+        ):
+            raise ValueError("template source retirement requires full verified migration")
+        objects.append(
+            {
+                "source_key": str(source_key),
+                "target_key": str(target_key),
+                "byte_size": int(byte_size),
+                "sha256": str(source_sha),
+            }
+        )
+    return seal_retirement_plan(
+        {
+            "schema": RETIREMENT_SCHEMA,
+            "mode": "dry-run",
+            "bucket": bucket,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "database_references": 0,
+            "object_count": len(objects),
+            "bytes": sum(item["byte_size"] for item in objects),
+            "objects": objects,
+        }
+    )
+
+
+def _source_inventory(client, bucket: str) -> dict[str, int]:
+    result: dict[str, int] = {}
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=SOURCE_PREFIX):
+        for item in page.get("Contents", []):
+            key = str(item.get("Key") or "")
+            if key and key != SOURCE_PREFIX:
+                result[key] = int(item.get("Size") or 0)
+    return result
+
+
+def _normalized_etag(head: dict) -> str:
+    return str(head.get("ETag") or "").strip().strip('"')
+
+
+def execute_retirement_plan(
+    client,
+    db: sqlite3.Connection,
+    *,
+    bucket: str,
+    plan: dict,
+) -> dict:
+    if (
+        bucket != BUCKET
+        or plan.get("bucket") != bucket
+        or plan.get("schema") != RETIREMENT_SCHEMA
+        or plan.get("mode") != "dry-run"
+        or plan.get("plan_sha256") != _canonical_json_sha256(plan)
+    ):
+        raise ValueError("retirement plan is invalid or modified")
+    objects = list(plan.get("objects") or [])
+    if (
+        int(plan.get("object_count", -1)) != len(objects)
+        or int(plan.get("bytes", -1))
+        != sum(int(item.get("byte_size", -1)) for item in objects)
+        or int(plan.get("database_references", -1)) != 0
+    ):
+        raise ValueError("retirement plan aggregate is invalid")
+    plan_by_source = {str(item.get("source_key") or ""): item for item in objects}
+    if "" in plan_by_source or len(plan_by_source) != len(objects):
+        raise ValueError("retirement plan contains invalid or duplicate sources")
+
+    state_rows = {
+        str(row[0]): row[1:]
+        for row in db.execute(
+            """select source_key,target_key,byte_size,status,source_sha256,target_sha256
+                 from objects order by source_key"""
+        )
+    }
+    if set(state_rows) != set(plan_by_source):
+        raise ValueError("retirement plan no longer matches migration state")
+    live_sources = _source_inventory(client, bucket)
+    unexpected = set(live_sources) - set(plan_by_source)
+    if unexpected:
+        raise ValueError("new template source objects appeared after plan freeze")
+
+    preflight: dict[str, dict] = {}
+    for source_key, item in plan_by_source.items():
+        target_key = str(item.get("target_key") or "")
+        byte_size = int(item.get("byte_size", -1))
+        digest = str(item.get("sha256") or "")
+        state_target, state_size, status, source_sha, target_sha = state_rows[source_key]
+        if (
+            target_key != destination_key(source_key)
+            or state_target != target_key
+            or int(state_size) != byte_size
+            or status not in {"verified", "retirement_started", "retired"}
+            or source_sha != digest
+            or target_sha != digest
+            or not _SHA256_RE.fullmatch(digest)
+        ):
+            raise ValueError("retirement plan object no longer matches migration state")
+
+        target_head = _head_optional(client, bucket, target_key)
+        if (
+            target_head is None
+            or int(target_head.get("ContentLength", -1)) != byte_size
+            or _sha256(client, bucket, target_key) != digest
+        ):
+            raise RuntimeError("RETIREMENT_TARGET_CHANGED")
+
+        source_head = _head_optional(client, bucket, source_key)
+        if source_head is None:
+            if status not in {"retirement_started", "retired"}:
+                raise RuntimeError("RETIREMENT_SOURCE_MISSING_BEFORE_START")
+            preflight[source_key] = {"present": False}
+            continue
+        if status == "retired":
+            raise RuntimeError("RETIREMENT_SOURCE_REAPPEARED")
+        if (
+            int(live_sources.get(source_key, -1)) != byte_size
+            or int(source_head.get("ContentLength", -1)) != byte_size
+            or _sha256(client, bucket, source_key) != digest
+        ):
+            raise RuntimeError("RETIREMENT_SOURCE_CHANGED")
+        preflight[source_key] = {
+            "present": True,
+            "etag": _normalized_etag(source_head),
+            "byte_size": byte_size,
+        }
+
+    deleted = 0
+    already_absent = 0
+    for source_key, item in plan_by_source.items():
+        target_key = str(item["target_key"])
+        digest = str(item["sha256"])
+        if not preflight[source_key]["present"]:
+            already_absent += 1
+            db.execute(
+                "update objects set status='retired',error=null,updated_at=? where source_key=?",
+                (datetime.now(timezone.utc).isoformat(), source_key),
+            )
+            db.commit()
+            continue
+        current_head = _head_optional(client, bucket, source_key)
+        if current_head is None:
+            raise RuntimeError("RETIREMENT_SOURCE_DISAPPEARED_AFTER_PREFLIGHT")
+        frozen_etag = str(preflight[source_key]["etag"])
+        if (
+            int(current_head.get("ContentLength", -1)) != int(item["byte_size"])
+            or (frozen_etag and _normalized_etag(current_head) != frozen_etag)
+        ):
+            raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
+        if not frozen_etag and _sha256(client, bucket, source_key) != digest:
+            raise RuntimeError("RETIREMENT_SOURCE_IDENTITY_DRIFT")
+        db.execute(
+            "update objects set status='retirement_started',error=null,updated_at=? where source_key=?",
+            (datetime.now(timezone.utc).isoformat(), source_key),
+        )
+        db.commit()
+        client.delete_object(Bucket=bucket, Key=source_key)
+        if _head_optional(client, bucket, source_key) is not None:
+            raise RuntimeError("RETIREMENT_SOURCE_STILL_EXISTS")
+        target_head = _head_optional(client, bucket, target_key)
+        if (
+            target_head is None
+            or int(target_head.get("ContentLength", -1)) != int(item["byte_size"])
+            or _sha256(client, bucket, target_key) != digest
+        ):
+            raise RuntimeError("RETIREMENT_TARGET_CHANGED_AFTER_DELETE")
+        db.execute(
+            "update objects set status='retired',error=null,updated_at=? where source_key=?",
+            (datetime.now(timezone.utc).isoformat(), source_key),
+        )
+        db.commit()
+        deleted += 1
+
+    return {
+        "status": "completed",
+        "approved_plan_sha256": str(plan["plan_sha256"]),
+        "object_count": len(objects),
+        "bytes": int(plan["bytes"]),
+        "deleted_count": deleted,
+        "already_absent_count": already_absent,
+        "post_delete_verified_count": deleted + already_absent,
+    }
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -235,7 +502,60 @@ def run(args) -> dict:
     state_path = Path(args.state)
     db = _connect(state_path)
     try:
+        if args.execute_retirement:
+            plan = load_retirement_plan(
+                Path(args.approved_retirement_plan),
+                args.retirement_plan_sha256,
+            )
+            validate_retirement_gate(
+                bucket=args.bucket,
+                enabled=os.getenv(
+                    "R2_TEMPLATE_SUBMISSION_RETIREMENT_ENABLED", ""
+                ).lower()
+                == "true",
+                confirmation=args.retirement_confirm,
+                plan_sha256=args.retirement_plan_sha256,
+            )
+            database_references = asyncio.run(_database_reference_count())
+            if database_references:
+                raise SystemExit(
+                    "template source retirement requires zero database references"
+                )
+            report = execute_retirement_plan(
+                client,
+                db,
+                bucket=args.bucket,
+                plan=plan,
+            )
+            report["database_references_before"] = database_references
+            report["database_references_after"] = asyncio.run(
+                _database_reference_count()
+            )
+            if report["database_references_after"]:
+                raise RuntimeError("template database references reappeared during retirement")
+            _atomic_private_json(Path(args.retirement_receipt), report)
+            return report
+
         scanned = _scan(client, db, args.bucket)
+        if args.plan_retirement:
+            database_references = asyncio.run(_database_reference_count())
+            plan = build_retirement_plan(
+                db,
+                bucket=args.bucket,
+                scanned=scanned,
+                database_references=database_references,
+            )
+            plan_path = Path(args.retirement_plan_out)
+            _atomic_private_json(plan_path, plan)
+            return {
+                "mode": "retirement-dry-run",
+                "bucket": args.bucket,
+                "object_count": int(plan["object_count"]),
+                "bytes": int(plan["bytes"]),
+                "database_references": database_references,
+                "plan_sha256": str(plan["plan_sha256"]),
+                "plan": str(plan_path),
+            }
         if args.execute:
             validate_execute_gate(
                 bucket=args.bucket,
@@ -310,9 +630,33 @@ def main() -> None:
     parser.add_argument("--confirm", default="")
     parser.add_argument("--switch-db-references", action="store_true")
     parser.add_argument("--switch-confirm", default="")
+    parser.add_argument("--plan-retirement", action="store_true")
+    parser.add_argument("--retirement-plan-out", default="")
+    parser.add_argument("--execute-retirement", action="store_true")
+    parser.add_argument("--approved-retirement-plan", default="")
+    parser.add_argument("--retirement-plan-sha256", default="")
+    parser.add_argument("--retirement-confirm", default="")
+    parser.add_argument("--retirement-receipt", default="")
     args = parser.parse_args()
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")
+    if args.plan_retirement and not args.retirement_plan_out:
+        raise SystemExit("--plan-retirement requires --retirement-plan-out")
+    if args.execute_retirement and not all(
+        (
+            args.approved_retirement_plan,
+            args.retirement_plan_sha256,
+            args.retirement_confirm,
+            args.retirement_receipt,
+        )
+    ):
+        raise SystemExit(
+            "--execute-retirement requires approved plan, SHA, confirmation, and receipt"
+        )
+    if args.execute_retirement and (
+        args.execute or args.switch_db_references or args.plan_retirement
+    ):
+        raise SystemExit("template retirement cannot be combined with migration modes")
     print(json.dumps(run(args), ensure_ascii=False))
 
 
