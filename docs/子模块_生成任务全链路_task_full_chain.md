@@ -848,7 +848,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - Worker 通过 `pop` 主动拉取任务并按 `SUPPORTED_TASK_TYPES` 过滤
 - workflow 默认绑定关系由 `TASK_TYPE_WORKFLOW_FILENAMES + mappings.json + workflow_patcher.py` 共同决定；单 Worker 可用 `TASK_TYPE_WORKFLOW_OVERRIDES` 做测试/canary 覆盖
 - Web 最终可见性不仅取决于 Worker 执行成功，还取决于 monitor、history、result 公网地址和前端展示链是否完整
-- `ltx25_video_upscale` 支持单视频、最长 20 秒；服务端核验时长和分辨率，只允许
+- `ltx25_video_upscale` 支持单视频、最长 15 秒；服务端核验时长和分辨率，只允许
   高于源视频、最高 2K 的 720p/1080p/2K 档，按 5/10/36 灵石每秒计费。Web/Bot
   入口默认关闭，开关、可见性和独立 GPU profile 就绪后才允许提交。
 

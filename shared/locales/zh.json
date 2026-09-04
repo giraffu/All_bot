@@ -879,7 +879,7 @@
       "ltx_t2v_title": "文生视频",
       "ltx_t2v_desc": "直接描述画面、镜头、对白和环境音；可选人物参考表保持角色一致。",
       "ltx25_video_upscale_title": "LTX-2.5 视频高清化",
-      "ltx25_video_upscale_desc": "上传最长 20 秒的视频，按原片选择 720p、1080p 或 2K 输出，以生成式 IC V2V 保持动作和构图。",
+      "ltx25_video_upscale_desc": "上传最长 15 秒的视频，按原片选择 720p、1080p 或 2K 输出，以生成式 IC V2V 保持动作和构图。",
       "minimax_h3_title": "高级图生视频pro",
       "minimax_h3_desc": "支持文生、首帧、首尾帧和角色参考四种视频模式。",
       "character_reference_title": "人物角色图",
@@ -971,7 +971,7 @@
         "target_video": "上传要替换到的身体视频",
         "reference_image": "上传要迁移或替换成的角色图片",
         "motion_video": "上传提供动作、镜头和构图的短视频",
-        "upscale_video": "MP4/MOV/WebM，最长 20 秒、最大 40MB；可选 720p、1080p 或 2K"
+        "upscale_video": "MP4/MOV/WebM，最长 15 秒、最大 40MB；可选 720p、1080p 或 2K"
       },
       "upload_slot_buttons": {
         "face_image": "添加脸部图",
@@ -1088,7 +1088,7 @@
         "minimax_h3_reference_video_too_long": "参考视频最长支持 40 秒。",
         "minimax_h3_reference_video_too_short": "参考视频至少需要 3 秒。",
         "minimax_h3_reference_video_unreadable": "无法读取参考视频时长，请更换视频后重试。",
-        "ltx25_video_too_long": "视频高清化支持最长 20 秒的视频。",
+        "ltx25_video_too_long": "视频高清化支持最长 15 秒的视频。",
         "ltx25_video_already_2k": "原视频已达到或超过 2K，无需再选择高清化档位。"
       },
       "mode_kinds": {
@@ -1388,10 +1388,10 @@
     },
     "ltx25_upscale": {
       "disabled": "⚠️ 视频高清化节点尚未完成模型校验，暂未开放。",
-      "start": "✨ **已进入 LTX-2.5 视频高清化**\n\n请发送最长 20 秒、最大 {max_mb}MB 的 MP4/MOV/WebM 视频。系统会按原片选择更高的目标清晰度，最高 2K，并按秒计费。\n\n随时发送 /cancel 退出。",
+      "start": "✨ **已进入 LTX-2.5 视频高清化**\n\n请发送最长 15 秒、最大 {max_mb}MB 的 MP4/MOV/WebM 视频。系统会按原片选择更高的目标清晰度，最高 2K，并按秒计费。\n\n随时发送 /cancel 退出。",
       "too_large": "⚠️ 视频不能超过 40MB，请压缩后重试。",
-      "too_long": "⚠️ 只支持最长 20 秒的视频，请裁剪后重试。",
-      "submitting": "🚀 视频已收到，正在提交 2 倍高清化任务，请耐心等待..."
+      "too_long": "⚠️ 只支持最长 15 秒的视频，请裁剪后重试。",
+      "submitting": "🚀 视频已收到，正在提交高清化任务，请耐心等待..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **已进入【幻想换脸】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送 1 张您的参考图片。\n\n随时可以发送 /cancel 退出流程。",

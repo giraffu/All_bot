@@ -6,6 +6,7 @@ import pytest
 
 from src.core.task_application import TaskApplication
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
+from src.core.task_core_video_request import build_video_task_request
 from src.core.task_core_types import (
     SubmissionReconciliationPending,
     SubmissionJournal,
@@ -131,6 +132,32 @@ async def test_application_submits_command_policy_and_journal_with_owned_depende
     assert journal.events == ["before_debit", "after_debit", "before_dispatch"]
     dependencies.check_and_deduct_credits_func.assert_awaited_once_with(
         7, 3, "txt2img", "user"
+    )
+
+
+@pytest.mark.asyncio
+async def test_application_submits_high_resolution_ltx25_upscale_video():
+    dependencies = replace(
+        _dependencies(),
+        video_task_types={"ltx25_video_upscale"},
+        build_video_task_request_func=build_video_task_request,
+    )
+
+    result = await TaskApplication(dependencies=dependencies).submit(
+        TaskSubmissionCommand(
+            internal_user_id=7,
+            username="user",
+            task_type="ltx25_video_upscale",
+            inputs={"resolution": 1080, "duration": 10},
+            task_id="task-ltx25-upscale",
+        ),
+        TaskSubmissionPolicy(cost_override=50),
+        RecordingJournal(),
+    )
+
+    assert result["backend_task_id"] == "backend-1"
+    dependencies.check_and_deduct_credits_func.assert_awaited_once_with(
+        7, 50, "ltx25_video_upscale", "user"
     )
 
 
