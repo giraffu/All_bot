@@ -1,6 +1,8 @@
 import pytest
 import json
 from io import BytesIO
+import threading
+import time
 
 from scripts.r2_template_submission_migration import (
     _connect,
@@ -13,6 +15,38 @@ from scripts.r2_template_submission_migration import (
     validate_execute_gate,
     validate_switch_gate,
 )
+
+
+def test_template_migration_copy_batch_uses_bounded_workers(monkeypatch):
+    import scripts.r2_template_submission_migration as migration
+
+    thread_ids = set()
+    lock = threading.Lock()
+
+    def fake_copy(client, bucket, source_key, target_key, size):
+        del client, bucket, target_key, size
+        with lock:
+            thread_ids.add(threading.get_ident())
+        time.sleep(0.02)
+        return f"source-{source_key}", f"target-{source_key}"
+
+    monkeypatch.setattr(migration, "_copy_and_verify", fake_copy)
+    succeeded = []
+    failed = []
+    rows = [(f"temps/{index}", f"template-submissions/{index}", index) for index in range(8)]
+
+    migration._run_copy_batch(
+        object(),
+        "user-data-prod",
+        rows,
+        workers=4,
+        on_success=lambda row, digests: succeeded.append((row, digests)),
+        on_failure=lambda row, exc: failed.append((row, exc)),
+    )
+
+    assert len(succeeded) == len(rows)
+    assert failed == []
+    assert 2 <= len(thread_ids) <= 4
 
 
 def test_template_submission_migration_preserves_relative_key():

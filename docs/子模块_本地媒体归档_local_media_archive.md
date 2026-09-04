@@ -753,7 +753,8 @@ retirement 事实表必须随 shadow 换库保留。
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
 复制并对源/目标完整 SHA-256 验证，使用 0600 SQLite 断点状态；真实迁移使用独立
-精确确认值，不能借用临时清理或冷归档删除门禁。
+精确确认值，不能借用临时清理或冷归档删除门禁。`--workers` 允许 1–32 路受控
+并发（默认 1），R2 连接池随并发扩容，但 SQLite 状态仍只由主线程逐项提交。
 状态库分别保存源/目标摘要和关联 contribution ID。只有全量对象 verified 后才能用
 独立 `--switch-db-references` 门禁锁定并切换旧数据库引用；审批同样持有行锁，已审核
 记录幂等返回，复制或事务失败不得重复发奖。
