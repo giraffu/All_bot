@@ -276,7 +276,7 @@ const mountView = () => mount(CustomFeatures, {
         template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot name="icon" /><slot /></button>',
       },
       'a-select': {
-        template: '<div><slot /></div>',
+        template: '<div class="select-stub"><slot /></div>',
       },
       'a-segmented': {
         props: ['options'],
@@ -409,6 +409,8 @@ describe('CustomFeatures advanced video effects', () => {
 
     expect(wrapper.find('.segmented-stub').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('首尾帧')
+    expect(wrapper.findAll('.select-stub')).toHaveLength(2)
+    expect(wrapper.text()).toContain('lab.workbench.minimax_h3_first_frame_ratio')
   })
 })
 

@@ -231,17 +231,54 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
             "reference_audio": "ref/voice.m4a",
         }
     ) == ["ref/previous.mp4", "ref/voice.m4a"]
-    assert (
-        strategy.get_metadata(
-            {
-                "prompt": "walks through a city",
-                "saved_input_images": [],
-                "reference_video": "task-inputs/task-h3/0.mp4",
-                "reference_audio": "task-inputs/task-h3/1.m4a",
-                "aspect_ratio": "16:9",
-            }
-        )["reference_audio"]
-        == "task-inputs/task-h3/1.m4a"
+    metadata = strategy.get_metadata(
+        {
+            "prompt": "walks through a city",
+            "saved_input_images": [],
+            "reference_video": "task-inputs/task-h3/0.mp4",
+            "reference_audio": "task-inputs/task-h3/1.m4a",
+            "aspect_ratio": "16:9",
+        }
+    )
+    assert metadata["reference_audio"] == "task-inputs/task-h3/1.m4a"
+    assert "minimax_h3_execution_mode" not in metadata
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_extension_keeps_ref2v_identity_but_executes_i2v(monkeypatch):
+    submit = AsyncMock(return_value="backend-h3-extension")
+    _patch_dispatch_image_service(monkeypatch, submit_minimax_h3_task=submit)
+    strategy = MiniMaxH3Strategy(MODE_MINIMAX_H3_REF2V, seed_provider=lambda: 123)
+    inputs = {
+        "prompt": "continue walking forward",
+        "saved_input_images": ["task-inputs/task-h3/tail.png"],
+        "aspect_ratio": "16:9",
+        "resolution_preset": "preview",
+        "duration": 5,
+        "main_model": "10eros_int8",
+        "lora_items": [{"name": "footjob", "strength": 0.7}],
+        "minimax_h3_execution_task_type": MODE_MINIMAX_H3_I2V,
+    }
+
+    assert strategy.get_cost(inputs) == 11
+    metadata = strategy.get_metadata(inputs)
+    assert metadata["minimax_h3_mode"] == "ref2v"
+    assert metadata["minimax_h3_execution_mode"] == "i2v"
+
+    result = await strategy.submit_task("task-h3", inputs, priority=6)
+
+    assert result == "backend-h3-extension"
+    assert submit.await_args.kwargs["task_type"] == MODE_MINIMAX_H3_I2V
+    assert submit.await_args.kwargs["prompt"] == "continue walking forward"
+    assert submit.await_args.kwargs["images"] == ("task-inputs/task-h3/tail.png",)
+    assert submit.await_args.kwargs["reference_video"] is None
+    assert submit.await_args.kwargs["reference_audio"] is None
+    assert submit.await_args.kwargs["duration"] == 5
+    assert submit.await_args.kwargs["resolution_preset"] == "preview"
+    assert submit.await_args.kwargs["aspect_ratio"] == "source"
+    assert submit.await_args.kwargs["main_model"] == "10eros_int8"
+    assert submit.await_args.kwargs["lora_items"] == (
+        {"name": "footjob", "strength": 0.7},
     )
 
 

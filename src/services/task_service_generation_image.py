@@ -7,8 +7,10 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
     MINIMAX_H3_TASK_TYPES,
     normalize_minimax_h3_duration_seconds,
 )
@@ -81,6 +83,7 @@ async def process_standard_generation_task(
     aspect_ratio: str | None = None,
     main_model: str | None = None,
     seed: int | None = None,
+    minimax_h3_execution_task_type: str | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
@@ -192,6 +195,15 @@ async def process_standard_generation_task(
             main_model=main_model or "10eros_bf16",
             seed=seed,
         )
+        if minimax_h3_execution_task_type:
+            if not (
+                task_type == MINIMAX_H3_REF2V
+                and minimax_h3_execution_task_type == MINIMAX_H3_I2V
+            ):
+                raise ValueError("不支持该高级图生视频pro内部执行方式。")
+            extra_inputs[MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT] = (
+                minimax_h3_execution_task_type
+            )
         if lora_items is not None:
             extra_inputs["lora_items"] = lora_items
         elif lora_name:

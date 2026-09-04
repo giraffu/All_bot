@@ -87,11 +87,12 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_extension_uses_server_video_reference_and_inherits_contribution():
+async def test_minimax_h3_extension_uses_server_tail_frame_i2v_and_inherits_contribution():
     prepare_extension = AsyncMock(
         return_value=SimpleNamespace(
-            images=(),
-            reference_video="task-results/parent/primary.mp4",
+            images=("task-results/parent/last_frame.png",),
+            reference_video=None,
+            execution_task_type="minimax_h3_i2v",
             aspect_ratio="16:9",
             metadata={
                 "minimax_h3_prev_task_id": "parent",
@@ -117,8 +118,10 @@ async def test_minimax_h3_extension_uses_server_video_reference_and_inherits_con
         prepare_h3_extension_func=prepare_extension,
     )
 
-    assert prepared.images == []
-    assert prepared.inputs["reference_video"] == "task-results/parent/primary.mp4"
+    assert prepared.images == ["task-results/parent/last_frame.png"]
+    assert prepared.inputs["images"] == ["task-results/parent/last_frame.png"]
+    assert prepared.inputs["minimax_h3_execution_task_type"] == "minimax_h3_i2v"
+    assert "reference_video" not in prepared.inputs
     assert prepared.registry_metadata == {
         "minimax_h3_prev_task_id": "parent",
         "minimax_h3_chain_task_ids": ["root", "parent"],
@@ -130,6 +133,52 @@ async def test_minimax_h3_extension_uses_server_video_reference_and_inherits_con
         target_task_type="minimax_h3_ref2v",
         client_images=[],
     )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_rejects_client_execution_task_type_override():
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="continue",
+        inputs={
+            "images": ["web_uploads/7/reference.png"],
+            "minimax_h3_execution_task_type": "minimax_h3_i2v",
+        },
+    )
+
+    with pytest.raises(CoreDomainError, match="内部执行类型"):
+        await prepare_web_submission_request(
+            req,
+            internal_user_id=7,
+            operator_canary_authorized=True,
+            env_enabled=lambda _name: True,
+            advanced_video_profile_loader=AsyncMock(
+                return_value={"main_model": "10eros_bf16", "addon_items": []}
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_tail_anchor_extension_rejects_extra_reference_assets():
+    req = TaskGenerateRequest(
+        task_type="minimax_h3_ref2v",
+        prompt="continue",
+        inputs={
+            "minimax_h3_prev_task_id": "parent",
+            "reference_refs": [{"source": "upload", "object_key": "extra.png"}],
+        },
+    )
+
+    with pytest.raises(CoreDomainError, match="不支持额外参考图或参考音频"):
+        await prepare_web_submission_request(
+            req,
+            internal_user_id=7,
+            operator_canary_authorized=True,
+            env_enabled=lambda _name: True,
+            advanced_video_profile_loader=AsyncMock(
+                return_value={"main_model": "10eros_bf16", "addon_items": []}
+            ),
+        )
 
 
 @pytest.mark.asyncio

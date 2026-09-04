@@ -14,7 +14,11 @@ from src.services.task_service_generation_wan22 import (
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
 )
-from src.domain_config.minimax_h3 import MINIMAX_H3_I2V
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT,
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
+)
 
 
 @pytest.mark.asyncio
@@ -189,7 +193,9 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(
 
 
 @pytest.mark.asyncio
-async def test_h3_generation_persists_requested_duration_as_integer_seconds(monkeypatch):
+async def test_h3_generation_persists_requested_duration_as_integer_seconds(
+    monkeypatch,
+):
     captured_flow = {}
 
     async def fake_run_bot_task_application(*, flow):
@@ -234,7 +240,52 @@ async def test_h3_generation_persists_requested_duration_as_integer_seconds(monk
 
 
 @pytest.mark.asyncio
-async def test_h3_generation_forwards_all_selected_loras_without_legacy_strength(monkeypatch):
+async def test_h3_bot_extension_forwards_trusted_i2v_execution_type(monkeypatch):
+    captured_flow = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured_flow["flow"] = flow
+        return (b"video-bytes", "task-h3")
+
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.resolve_internal_user_id",
+        AsyncMock(return_value=456),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.run_bot_task_application",
+        fake_run_bot_task_application,
+    )
+
+    await process_standard_generation_task(
+        context=SimpleNamespace(
+            user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+        ),
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="continue",
+        images=["tail.png"],
+        is_video=True,
+        task_type=MINIMAX_H3_REF2V,
+        minimax_h3_execution_task_type=MINIMAX_H3_I2V,
+        resolution_preset="preview",
+        duration=5,
+        cleanup=False,
+    )
+
+    flow = captured_flow["flow"]
+    assert flow.request.task_type == MINIMAX_H3_REF2V
+    assert flow.request.inputs[MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT] == MINIMAX_H3_I2V
+
+
+@pytest.mark.asyncio
+async def test_h3_generation_forwards_all_selected_loras_without_legacy_strength(
+    monkeypatch,
+):
     captured_flow = {}
 
     async def fake_run_bot_task_application(*, flow):
@@ -262,7 +313,9 @@ async def test_h3_generation_forwards_all_selected_loras_without_legacy_strength
         {"name": "penis", "strength": 1.0},
     ]
     await process_standard_generation_task(
-        context=SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key),
+        context=SimpleNamespace(
+            user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+        ),
         chat_id=123,
         user_id=789,
         username="tester",

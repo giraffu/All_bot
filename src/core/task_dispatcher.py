@@ -60,7 +60,10 @@ from src.domain_config.ltx_t2v import (
     build_ltx_t2v_spec,
 )
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT,
+    MINIMAX_H3_I2V,
     MINIMAX_H3_MAX_SEED,
+    MINIMAX_H3_REF2V,
     MINIMAX_H3_TASK_TYPES,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
@@ -1102,6 +1105,32 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
         except MiniMaxH3ValidationError as exc:
             raise CoreDomainError(str(exc)) from exc
 
+    def _execution_task_type(self, inputs: Dict[str, Any]) -> str:
+        execution_task_type = str(
+            inputs.get(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT) or ""
+        ).strip()
+        if not execution_task_type:
+            return self.task_type
+        if self.task_type == MINIMAX_H3_REF2V and execution_task_type == MINIMAX_H3_I2V:
+            return execution_task_type
+        raise CoreDomainError("高级图生视频pro不支持该内部执行类型。")
+
+    def _execution_spec(self, inputs: Dict[str, Any]):
+        execution_task_type = self._execution_task_type(inputs)
+        if execution_task_type == self.task_type:
+            return self._spec(inputs)
+        execution_inputs = {
+            **inputs,
+            "aspect_ratio": "source",
+            "reference_descriptions": [],
+            "reference_video": None,
+            "reference_audio": None,
+        }
+        try:
+            return build_minimax_h3_spec(execution_task_type, execution_inputs)
+        except MiniMaxH3ValidationError as exc:
+            raise CoreDomainError(str(exc)) from exc
+
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         return self._spec(inputs).cost
 
@@ -1137,8 +1166,9 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         spec = self._spec(inputs)
+        execution_spec = self._execution_spec(inputs)
         seed = self._seed(inputs)
-        return {
+        metadata = {
             "saved_inputs": list(spec.images),
             "requested_duration": spec.duration_seconds,
             "minimax_h3_mode": spec.mode,
@@ -1164,17 +1194,21 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "extract_last_frame": True,
             "gallery_supported": is_gallery_supported_task_type(self.task_type),
         }
+        if execution_spec.mode != spec.mode:
+            metadata["minimax_h3_execution_mode"] = execution_spec.mode
+        return metadata
 
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
-        spec = self._spec(inputs)
+        spec = self._execution_spec(inputs)
+        execution_task_type = self._execution_task_type(inputs)
         prompt = str(inputs.get("prompt") or "").strip()
         if not prompt:
             raise CoreDomainError("高级图生视频pro提示词不得为空。")
         return await _get_dispatch_image_service().submit_minimax_h3_task(
             task_id,
-            task_type=self.task_type,
+            task_type=execution_task_type,
             prompt=prompt,
             images=spec.images,
             reference_descriptions=spec.reference_descriptions,

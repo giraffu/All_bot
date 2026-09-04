@@ -172,6 +172,37 @@ def test_build_history_item_payload_includes_h3_audio_and_extension_video_inputs
     ]
 
 
+def test_build_history_item_payload_labels_h3_i2v_extension_tail_anchor():
+    history = _build_history(
+        type="minimax_h3_ref2v",
+        input_file="task-inputs/task-2/tail.png",
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 3,
+                "mode": "ref2v",
+                "execution_mode": "i2v",
+                "main_model": "10eros_bf16",
+                "requested_duration": 5,
+                "resolution_preset": "preview",
+                "aspect_ratio": "16:9",
+                "lora_items": [],
+                "prev_task_id": "task-1",
+                "chain_task_ids": ["task-1"],
+            }
+        },
+    )
+
+    result = history_presenter.build_history_item_payload(
+        history=history,
+        storage_service=_FakeStorage(),
+    )
+
+    assert [(item["kind"], item["label"]) for item in result["input_media"]] == [
+        ("image", "上一段尾帧"),
+        ("video", "父段视频"),
+    ]
+
+
 def test_build_history_item_payload_does_not_label_legacy_h3_audio_as_an_image():
     history = _build_history(
         type="minimax_h3_ref2v",

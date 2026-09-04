@@ -77,6 +77,20 @@ SHA-256 为 `54d56b15c65923b54c9ca16b494dae641bfe9455cfcb1c19c49b1008e270bbc1`�
 `preview|small|standard|hd`。REF2V 的图片是人物/外观/道具/风格参考，不是首帧；
 I2V/FLF2V 的帧归属不能与 REF2V 混用。
 
+### 扩展生成执行语义
+
+“直接扩展”的用户态任务身份继续保持 `minimax_h3_ref2v`，因此 History 类型、
+价格、退款键、Gallery 分类和扩展链关系不变；执行层通过服务端可信字段
+`minimax_h3_execution_task_type=minimax_h3_i2v` 选择 I2V workflow，并把父段
+`extra_outputs.last_frame.path` 作为唯一首帧输入。I2V 强制使用 `aspect_ratio=source`，
+提示词、主模型、LoRA、时长和清晰度档位继续透传。普通 REF2V 生成仍按参考图、
+参考视频和参考音频契约执行，不受该条件映射影响。
+
+Web 客户端不得直接提交内部执行类型；扩展服务在校验父记录归属、尾帧存在和链关系
+后注入。主 Bot 只下载父段尾帧，不再下载最后五秒视频，也不允许在直接扩展中追加
+参考图或参考音频。Worker 最终接收 `minimax_h3_i2v`，因此现有 I2V workflow 的
+`first_frame` 是生成事实源；公开任务类型仍用于计费和结果持久化。
+
 四份 workflow 由 `scripts/build_minimax_h3_api_workflows.py` 生成。修改生成脚本后必须
 重建 JSON，并通过 `tests/workers/test_minimax_h3_workflows.py` 验证四种模式、两种
 精度、采样参数和 LoRA 链。不得手工维护与生成脚本不一致的 workflow。
@@ -97,9 +111,10 @@ H3 成功 History 的 `extra_outputs._minimax_h3_context` 当前为 version 3，
 BF16 回填或推测。
 
 管理后台历史页不能只读 `History.input_file`：REF2V 参考音频从已校验的
-`_minimax_h3_context.reference_audio` 生成 typed `input_media`，扩展段根据
-`prev_task_id` 显示父段“输入视频”。父段视频在管理员点击时才通过 Dashboard 历史媒体
-路由解析，列表不预加载原视频。
+`_minimax_h3_context.reference_audio` 生成 typed `input_media`，扩展段的实际生成图片
+输入是父段尾帧。尾帧锚定扩展会在 version 3 上可选记录 `execution_mode=i2v`，后台据此
+标记“上一段尾帧”和“父段视频”，同时根据 `prev_task_id` 保留父段视频的链路入口。
+父段视频在管理员点击时才通过 Dashboard 历史媒体路由解析，列表不预加载原视频。
 
 ## 不可变发布和运维
 

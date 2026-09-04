@@ -63,11 +63,16 @@ def build_minimax_h3_history_context(
         return {}
     metadata = metadata or {}
     mode = str(metadata.get("minimax_h3_mode") or "").strip()
+    execution_mode = str(metadata.get("minimax_h3_execution_mode") or "").strip()
     resolution_preset = str(metadata.get("minimax_h3_resolution_preset") or "").strip()
     aspect_ratio = str(metadata.get("minimax_h3_aspect_ratio") or "").strip()
     try:
         requested_duration = int(metadata.get("requested_duration"))
     except (TypeError, ValueError):
+        return {}
+    if execution_mode and not (
+        expected_mode == "ref2v" and execution_mode == "i2v"
+    ):
         return {}
     if (
         mode != expected_mode
@@ -101,6 +106,8 @@ def build_minimax_h3_history_context(
         return {}
     if reference_audio is not None and expected_mode != "ref2v":
         return {}
+    if execution_mode and reference_audio is not None:
+        return {}
     context = {
         "version": MINIMAX_H3_HISTORY_CONTEXT_VERSION,
         "mode": mode,
@@ -122,6 +129,10 @@ def build_minimax_h3_history_context(
         if not chain_task_ids or chain_task_ids[-1] != prev_task_id:
             return {}
         context["prev_task_id"] = prev_task_id
+    if execution_mode:
+        if not prev_task_id:
+            return {}
+        context["execution_mode"] = execution_mode
     if chain_task_ids:
         context["chain_task_ids"] = chain_task_ids
     return context
@@ -169,6 +180,7 @@ def resolve_valid_minimax_h3_history_context(
         task_type=task_type,
         metadata={
             "minimax_h3_mode": context.get("mode"),
+            "minimax_h3_execution_mode": context.get("execution_mode"),
             "requested_duration": context.get("requested_duration"),
             "minimax_h3_resolution_preset": context.get("resolution_preset"),
             "minimax_h3_aspect_ratio": context.get("aspect_ratio"),

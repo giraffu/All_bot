@@ -218,4 +218,20 @@ describe('TaskDetailModal Wan22 editor links', () => {
       },
     })
   })
+
+  it('requires a stored H3 tail frame before enabling extension', () => {
+    currentDetailRecord = {
+      ...currentDetailRecord,
+      task_id: 'h3-task-without-tail',
+      type: 'minimax_h3_ref2v',
+      extra_outputs: {},
+    }
+
+    const wrapper = mountModal()
+    const extendButton = wrapper.findAll('button')
+      .find(button => button.text().includes('lab.workbench.minimax_h3_extend_generation'))
+
+    expect(extendButton?.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('lab.workbench.minimax_h3_extend_missing_last_frame')
+  })
 })
