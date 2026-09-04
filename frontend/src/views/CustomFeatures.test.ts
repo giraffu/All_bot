@@ -138,6 +138,8 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   clearMinimaxH3ReferenceAudio: vi.fn(),
   minimaxH3ReferenceVideo: ref(null),
   minimaxH3ReferenceVideoUploading: ref(false),
+  minimaxH3ReferenceVideoClipDuration: ref(5),
+  minimaxH3ReferenceVideoClipDurationOptions: ref([3, 5, 10, 15]),
   beforeUploadMinimaxH3ReferenceVideo: vi.fn(),
   clearMinimaxH3ReferenceVideo: vi.fn(),
   isPromptOptimizerAvailable: ref(false),

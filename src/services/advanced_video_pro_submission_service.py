@@ -50,6 +50,7 @@ class AdvancedVideoProSubmissionPlan:
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
     reference_video: str | None
+    reference_video_duration: int | None
     reference_audio: str | None
     duration: int
     resolution_preset: str
@@ -66,6 +67,7 @@ def build_advanced_video_pro_submission_plan(
     images: list[str] | tuple[str, ...] = (),
     reference_descriptions: list[str] | tuple[str, ...] = (),
     reference_video: str | None = None,
+    reference_video_duration: int | None = None,
     reference_audio: str | None = None,
     duration: int | str = 5,
     resolution_preset: str = "preview",
@@ -97,6 +99,7 @@ def build_advanced_video_pro_submission_plan(
         "images": list(images),
         "reference_descriptions": list(reference_descriptions),
         "reference_video": reference_video,
+        "reference_video_duration": reference_video_duration,
         "reference_audio": reference_audio,
         "duration": duration,
         "resolution_preset": resolution_preset,
@@ -130,6 +133,7 @@ def build_advanced_video_pro_submission_plan(
         images=spec.images,
         reference_descriptions=spec.reference_descriptions,
         reference_video=spec.reference_video,
+        reference_video_duration=spec.reference_video_duration_seconds,
         reference_audio=spec.reference_audio,
         duration=spec.duration_seconds,
         resolution_preset=spec.resolution_preset,
@@ -184,6 +188,7 @@ async def submit_advanced_video_pro_plan(
         images=list(plan.images),
         reference_descriptions=list(plan.reference_descriptions),
         reference_video=plan.reference_video,
+        reference_video_duration=plan.reference_video_duration,
         reference_audio=plan.reference_audio,
         is_video=True,
         task_type=plan.task_type,

@@ -3,7 +3,10 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.domain_config.minimax_h3 import MINIMAX_H3_MAX_SEED
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_MAX_SEED,
+    normalize_minimax_h3_reference_video_duration_seconds,
+)
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
@@ -381,6 +384,7 @@ class MiniMaxH3Request(BaseModel):
     images: list[str] = Field(default_factory=list, max_length=5)
     reference_descriptions: list[str] = Field(default_factory=list, max_length=5)
     reference_video: Optional[str] = None
+    reference_video_duration: Optional[int] = None
     reference_audio: Optional[str] = None
     duration: int = Field(default=5)
     resolution_preset: str = "preview"
@@ -398,6 +402,13 @@ class MiniMaxH3Request(BaseModel):
     lora_items: Optional[list[LoraItem]] = Field(default=None, max_length=13)
     extract_last_frame: bool = True
     priority: int = 0
+
+    @field_validator("reference_video_duration")
+    @classmethod
+    def validate_reference_video_duration(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        return normalize_minimax_h3_reference_video_duration_seconds(value)
 
 
 class Wan22VideoV2Request(BaseModel):

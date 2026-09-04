@@ -13,9 +13,12 @@ from src.domain_config.ltx25_video_upscale import (
     LTX25_VIDEO_UPSCALE_MAX_SOURCE_DURATION_SECONDS,
     build_ltx25_video_upscale_plan,
     get_ltx25_video_upscale_frame_count,
-    get_ltx25_video_upscale_model_input_dimensions,
     normalize_ltx25_video_upscale_source_duration,
     normalize_ltx25_video_upscale_resolution,
+)
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS,
+    normalize_minimax_h3_reference_video_duration_seconds,
 )
 
 try:
@@ -44,12 +47,18 @@ def _cleanup_partial_downloads(local_path: str) -> None:
             continue
 
 
-def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
-    """Normalize an internal H3 extension reference to its final five seconds."""
+def prepare_h3_reference_video_clip(
+    param_key: str,
+    local_path: str,
+    *,
+    duration_seconds: object = MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS,
+) -> str:
+    """Normalize an H3 user reference video to its selected opening clip."""
     if param_key != "reference_video":
         return local_path
+    duration = normalize_minimax_h3_reference_video_duration_seconds(duration_seconds)
     source = Path(local_path)
-    output = source.with_name(f"{source.stem}__tail5s.mp4")
+    output = source.with_name(f"{source.stem}__head{duration}s.mp4")
     try:
         result = subprocess.run(
             [
@@ -58,12 +67,12 @@ def prepare_h3_reference_video_tail(param_key: str, local_path: str) -> str:
                 "-loglevel",
                 "error",
                 "-y",
-                "-sseof",
-                "-5",
+                "-ss",
+                "0",
                 "-i",
                 str(source),
                 "-t",
-                "5",
+                str(duration),
                 "-map",
                 "0:v:0",
                 "-map",

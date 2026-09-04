@@ -215,6 +215,7 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
             "prompt": "walks through a city",
             "saved_input_images": [],
             "reference_video": "ref/previous.mp4",
+            "reference_video_duration": 15,
             "reference_audio": "ref/voice.m4a",
             "aspect_ratio": "16:9",
         },
@@ -224,6 +225,7 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
     submit.assert_awaited_once()
     assert submit.await_args.kwargs["reference_audio"] == "ref/voice.m4a"
     assert submit.await_args.kwargs["reference_video"] == "ref/previous.mp4"
+    assert submit.await_args.kwargs["reference_video_duration"] == 15
     assert strategy.get_file_paths_to_upload(
         {
             "saved_input_images": [],
@@ -236,11 +238,13 @@ async def test_minimax_h3_ref2v_strategy_submits_new_requests(monkeypatch):
             "prompt": "walks through a city",
             "saved_input_images": [],
             "reference_video": "task-inputs/task-h3/0.mp4",
+            "reference_video_duration": 15,
             "reference_audio": "task-inputs/task-h3/1.m4a",
             "aspect_ratio": "16:9",
         }
     )
     assert metadata["reference_audio"] == "task-inputs/task-h3/1.m4a"
+    assert metadata["reference_video_duration"] == 15
     assert "minimax_h3_execution_mode" not in metadata
 
 

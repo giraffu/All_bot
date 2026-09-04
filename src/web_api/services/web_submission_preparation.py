@@ -13,6 +13,8 @@ from src.domain_config.ltx25_video_upscale import (
 from src.domain_config.minimax_h3 import (
     MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT,
     MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS,
+    MiniMaxH3ValidationError,
+    normalize_minimax_h3_reference_video_duration_seconds,
 )
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
@@ -268,8 +270,21 @@ async def prepare_web_submission_request(
                 raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。")
             if reference_video_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS:
                 raise CoreDomainError("参考视频最长支持 40 秒。")
+            try:
+                clip_duration = normalize_minimax_h3_reference_video_duration_seconds(
+                    inputs.get("reference_video_duration")
+                )
+            except MiniMaxH3ValidationError as exc:
+                raise CoreDomainError(str(exc)) from exc
+            if reference_video_duration + 1e-6 < clip_duration:
+                raise CoreDomainError(
+                    f"参考视频至少需要 {clip_duration} 秒，请缩短所选参考片段。"
+                )
             inputs["reference_video"] = reference_video
+            inputs["reference_video_duration"] = clip_duration
             inputs.pop("reference_video_ref", None)
+        elif inputs.get("reference_video_duration") not in (None, ""):
+            raise CoreDomainError("上传参考视频后才能选择参考片段时长。")
     h3_extension_metadata: dict[str, Any] | None = None
     h3_allow_contribute: bool | None = None
     h3_prev_task_id = str(inputs.pop("minimax_h3_prev_task_id", "") or "").strip()

@@ -9,8 +9,15 @@ export type MiniMaxH3PriceMode = keyof typeof MINIMAX_H3_PRICE_CONTRACT
 
 export type MiniMaxH3PriceModifiers = {
   referenceAudio?: boolean
-  referenceVideo?: boolean
+  referenceVideoDuration?: 3 | 5 | 10 | 15 | null
 }
+
+const REFERENCE_VIDEO_PRICE_RATIOS = {
+  3: [7, 5],
+  5: [8, 5],
+  10: [11, 5],
+  15: [14, 5],
+} as const
 
 export const getMinimaxH3Cost = (
   mode: MiniMaxH3PriceMode,
@@ -27,9 +34,10 @@ export const getMinimaxH3Cost = (
     numerator *= 11
     denominator *= 10
   }
-  if (modifiers.referenceVideo) {
-    numerator *= 8
-    denominator *= 5
+  if (modifiers.referenceVideoDuration) {
+    const [videoNumerator, videoDenominator] = REFERENCE_VIDEO_PRICE_RATIOS[modifiers.referenceVideoDuration]
+    numerator *= videoNumerator
+    denominator *= videoDenominator
   }
   return Math.ceil(numerator / denominator)
 }

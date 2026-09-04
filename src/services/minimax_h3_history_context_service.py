@@ -13,6 +13,7 @@ from src.domain_config.minimax_h3 import (
     MiniMaxH3ValidationError,
     normalize_minimax_h3_addon_items,
     normalize_minimax_h3_main_model,
+    normalize_minimax_h3_reference_video_duration_seconds,
 )
 
 
@@ -108,6 +109,19 @@ def build_minimax_h3_history_context(
         return {}
     if execution_mode and reference_audio is not None:
         return {}
+    raw_reference_video_duration = metadata.get("reference_video_duration")
+    reference_video_duration = None
+    if raw_reference_video_duration not in (None, ""):
+        if expected_mode != "ref2v" or execution_mode:
+            return {}
+        try:
+            reference_video_duration = (
+                normalize_minimax_h3_reference_video_duration_seconds(
+                    raw_reference_video_duration
+                )
+            )
+        except MiniMaxH3ValidationError:
+            return {}
     context = {
         "version": MINIMAX_H3_HISTORY_CONTEXT_VERSION,
         "mode": mode,
@@ -121,6 +135,8 @@ def build_minimax_h3_history_context(
     }
     if reference_audio is not None:
         context["reference_audio"] = reference_audio
+    if reference_video_duration is not None:
+        context["reference_video_duration"] = reference_video_duration
     prev_task_id = str(metadata.get("minimax_h3_prev_task_id") or "").strip()
     chain_task_ids = normalize_minimax_h3_chain_task_ids(
         metadata.get("minimax_h3_chain_task_ids")

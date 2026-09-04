@@ -937,12 +937,15 @@
       "minimax_h3_reference_audio_size": "20 MB",
       "minimax_h3_reference_audio_prompt_reminder": "已添加参考语音。建议在提示词中包含 {audioTag} 并说明它的用途（可选，不影响提交）。",
       "minimax_h3_reference_video_title": "参考视频",
-      "minimax_h3_reference_video_hint": "最长 40 秒；系统会自动截取视频末尾 5 秒作为动作和场景参考。扩展生成不使用这里的视频，仍使用上一段尾帧。",
+      "minimax_h3_reference_video_hint": "最长 40 秒；上传后可选择截取开头 3、5、10 或 15 秒，所选片段越长消耗越高。扩展生成仍只使用上一段尾帧。",
       "minimax_h3_reference_video_add": "添加参考视频",
       "minimax_h3_reference_video_replace": "替换视频",
       "minimax_h3_reference_video_remove": "移除参考视频",
       "minimax_h3_reference_video_size": "40 MB",
-      "minimax_h3_reference_video_prompt_reminder": "已添加参考视频，系统只截取末尾 5 秒。建议在提示词中包含 {videoTag} 并说明它的用途。",
+      "minimax_h3_reference_video_prompt_reminder": "已添加参考视频，将使用开头 {duration} 秒。建议在提示词中包含 {videoTag} 并说明它的用途。",
+      "minimax_h3_reference_video_clip_duration": "选择参考片段长度",
+      "minimax_h3_reference_video_seconds": "{duration} 秒",
+      "minimax_h3_reference_video_clip_hint": "系统只截取视频开头 {duration} 秒；切换时长会同步更新本次所需灵石。",
       "optional": "可选",
       "minimax_h3_resolution_presets": {"preview": "极速（约 512p）", "small": "清晰（约 600p）", "standard": "标准（约 720p）", "hd": "高清（约 810p）"},
       "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧", "ref2v": "参考图生视频"},
@@ -1082,7 +1085,8 @@
         ,"minimax_h3_images": "当前高级图生视频pro模式的参考图数量不正确"
         ,"minimax_h3_descriptions": "请为每张角色参考图填写身份与外观说明"
         ,"minimax_h3_frame_ratio": "尾帧比例需与首帧一致，请重新上传尾帧。",
-        "minimax_h3_reference_video_too_long": "参考视频最长支持 40 秒，系统会截取末尾 5 秒作为参考。",
+        "minimax_h3_reference_video_too_long": "参考视频最长支持 40 秒。",
+        "minimax_h3_reference_video_too_short": "参考视频至少需要 3 秒。",
         "minimax_h3_reference_video_unreadable": "无法读取参考视频时长，请更换视频后重试。",
         "ltx25_video_too_long": "视频高清化支持最长 20 秒的视频。",
         "ltx25_video_already_2k": "原视频已达到或超过 2K，无需再选择高清化档位。"

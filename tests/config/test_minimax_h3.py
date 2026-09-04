@@ -13,6 +13,7 @@ from src.domain_config.minimax_h3 import (
     build_minimax_h3_spec,
     get_minimax_h3_cost,
     normalize_minimax_h3_duration_seconds,
+    normalize_minimax_h3_reference_video_duration_seconds,
 )
 
 
@@ -241,6 +242,38 @@ def test_minimax_h3_ref2v_accepts_reference_video_without_images():
 
     assert spec.images == ()
     assert spec.reference_video == "task-inputs/extension/previous-tail.mp4"
+    assert spec.reference_video_duration_seconds == 5
+
+
+@pytest.mark.parametrize("duration", [3, 5, 10, 15])
+def test_minimax_h3_ref2v_accepts_supported_reference_video_durations(duration):
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "reference_video": "motion.mp4",
+            "reference_video_duration": duration,
+            "aspect_ratio": "16:9",
+        },
+    )
+
+    assert spec.reference_video_duration_seconds == duration
+
+
+@pytest.mark.parametrize("duration", [0, 4, 7, 20, "bad"])
+def test_minimax_h3_rejects_unsupported_reference_video_durations(duration):
+    with pytest.raises(MiniMaxH3ValidationError, match="3、5、10 或 15 秒"):
+        normalize_minimax_h3_reference_video_duration_seconds(duration)
+
+
+def test_minimax_h3_rejects_reference_video_duration_without_video():
+    with pytest.raises(MiniMaxH3ValidationError, match="上传参考视频"):
+        build_minimax_h3_spec(
+            MINIMAX_H3_REF2V,
+            {
+                "images": ["reference.png"],
+                "reference_video_duration": 10,
+            },
+        )
 
 
 def test_minimax_h3_ref2v_requires_an_image_or_reference_video():
@@ -431,23 +464,27 @@ def test_minimax_h3_ref2v_price_matrix_applies_public_1_1_multiplier(
 
 
 @pytest.mark.parametrize(
-    "reference_audio,reference_video,expected",
+    "reference_audio,reference_video_duration,expected",
     [
-        (False, False, 91),
-        (True, False, 101),
-        (False, True, 146),
-        (True, True, 161),
+        (False, None, 91),
+        (True, None, 101),
+        (False, 3, 128),
+        (False, 5, 146),
+        (False, 10, 201),
+        (False, 15, 255),
+        (True, 15, 281),
     ],
 )
-def test_minimax_h3_reference_media_multipliers_compose_and_round_up(
-    reference_audio, reference_video, expected
+def test_minimax_h3_reference_media_duration_multipliers_compose_and_round_up(
+    reference_audio, reference_video_duration, expected
 ):
     assert get_minimax_h3_cost(
         MINIMAX_H3_REF2V,
         duration=15,
         resolution_preset="hd",
         reference_audio=reference_audio,
-        reference_video=reference_video,
+        reference_video=reference_video_duration is not None,
+        reference_video_duration=reference_video_duration,
     ) == expected
 
 
@@ -458,12 +495,13 @@ def test_minimax_h3_spec_includes_reference_media_multipliers():
             "images": ["ref.png"],
             "reference_audio": "voice.m4a",
             "reference_video": "motion.mp4",
+            "reference_video_duration": 15,
             "resolution_preset": "hd",
             "duration": 15,
         },
     )
 
-    assert spec.cost == 161
+    assert spec.cost == 281
 
 
 def test_minimax_h3_image_modes_require_source_aspect():

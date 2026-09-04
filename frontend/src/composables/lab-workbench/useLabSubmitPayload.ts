@@ -19,6 +19,7 @@ import {
 } from '@/features/generation/labModeConfig'
 import { isScail2ModeId } from './modeHelpers'
 import type {
+  H3ReferenceVideoClipDuration,
   LabAssetUploadSlot,
   SubmitTaskFn,
   TranslateFn,
@@ -54,6 +55,7 @@ type UseLabSubmitPayloadOptions = {
   minimaxH3AddonItems?: Ref<MiniMaxH3AddonItem[]>
   minimaxH3ReferenceAudio?: Ref<UploadedReferenceAudio | null>
   minimaxH3ReferenceVideo?: Ref<UploadedReferenceVideo | null>
+  minimaxH3ReferenceVideoClipDuration?: Ref<H3ReferenceVideoClipDuration>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -93,6 +95,7 @@ export function useLabSubmitPayload({
   minimaxH3AddonItems,
   minimaxH3ReferenceAudio,
   minimaxH3ReferenceVideo,
+  minimaxH3ReferenceVideoClipDuration,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -265,6 +268,7 @@ export function useLabSubmitPayload({
                         source: 'upload' as const,
                         object_key: minimaxH3ReferenceVideo.value.key,
                       },
+                      reference_video_duration: minimaxH3ReferenceVideoClipDuration?.value ?? 5,
                     }
                   : {}),
               }

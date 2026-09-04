@@ -14,10 +14,13 @@ describe('MiniMax H3 template helpers', () => {
 
   it('composes reference audio and video multipliers with ceiling rounding', () => {
     expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceAudio: true })).toBe(101)
-    expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceVideo: true })).toBe(146)
+    expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceVideoDuration: 3 })).toBe(128)
+    expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceVideoDuration: 5 })).toBe(146)
+    expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceVideoDuration: 10 })).toBe(201)
+    expect(getMinimaxH3Cost('ref2v', 'hd', 15, { referenceVideoDuration: 15 })).toBe(255)
     expect(getMinimaxH3Cost('ref2v', 'hd', 15, {
       referenceAudio: true,
-      referenceVideo: true,
-    })).toBe(161)
+      referenceVideoDuration: 15,
+    })).toBe(281)
   })
 })

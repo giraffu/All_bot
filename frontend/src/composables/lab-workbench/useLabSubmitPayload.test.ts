@@ -15,7 +15,7 @@ import {
   type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
 } from '@/features/generation/labModeConfig'
-import type { LabAssetUploadSlot, UploadedReference, UploadedReferenceAudio, UploadedReferenceVideo, UploadedSlotAsset } from './types'
+import type { H3ReferenceVideoClipDuration, LabAssetUploadSlot, UploadedReference, UploadedReferenceAudio, UploadedReferenceVideo, UploadedSlotAsset } from './types'
 import { useLabSubmitPayload } from './useLabSubmitPayload'
 
 const messageMock = vi.hoisted(() => ({
@@ -51,6 +51,7 @@ type SubmitHarness = {
   minimaxH3AddonItems: Ref<MiniMaxH3AddonItem[]>
   minimaxH3ReferenceAudio: Ref<UploadedReferenceAudio | null>
   minimaxH3ReferenceVideo: Ref<UploadedReferenceVideo | null>
+  minimaxH3ReferenceVideoClipDuration: Ref<H3ReferenceVideoClipDuration>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -107,6 +108,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
   const minimaxH3ReferenceAudio = ref<UploadedReferenceAudio | null>(null)
   const minimaxH3ReferenceVideo = ref<UploadedReferenceVideo | null>(null)
+  const minimaxH3ReferenceVideoClipDuration = ref<H3ReferenceVideoClipDuration>(5)
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -143,6 +145,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio,
     minimaxH3ReferenceVideo,
+    minimaxH3ReferenceVideoClipDuration,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -179,6 +182,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio,
     minimaxH3ReferenceVideo,
+    minimaxH3ReferenceVideoClipDuration,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -344,6 +348,7 @@ describe('useLabSubmitPayload', () => {
       name: 'motion.mp4',
       durationSeconds: 12,
     }
+    harness.minimaxH3ReferenceVideoClipDuration.value = 10
 
     await harness.handleSubmit()
 
@@ -367,6 +372,7 @@ describe('useLabSubmitPayload', () => {
           source: 'upload',
           object_key: 'web_uploads/7/motion.mp4',
         },
+        reference_video_duration: 10,
         prompt: 'the two characters speak softly',
       }),
     }), 'lab.cards.minimax_h3_title')

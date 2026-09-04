@@ -1,10 +1,15 @@
 import { message } from 'ant-design-vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-import type { TranslateFn, UploadedReferenceVideo, UploadFileFn } from './types'
+import type {
+  H3ReferenceVideoClipDuration,
+  TranslateFn,
+  UploadedReferenceVideo,
+  UploadFileFn,
+} from './types'
 
 export const H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS = 40
-export const H3_REFERENCE_VIDEO_CLIP_SECONDS = 5
+export const H3_REFERENCE_VIDEO_CLIP_DURATIONS: readonly H3ReferenceVideoClipDuration[] = [3, 5, 10, 15]
 export const H3_REFERENCE_VIDEO_MAX_BYTES = 40 * 1024 * 1024
 
 export const readVideoDurationSeconds = (file: File): Promise<number> => (
@@ -40,12 +45,19 @@ export function useH3ReferenceVideo({
 }: UseH3ReferenceVideoOptions) {
   const referenceVideo = ref<UploadedReferenceVideo | null>(null)
   const referenceVideoUploading = ref(false)
+  const referenceVideoClipDuration = ref<H3ReferenceVideoClipDuration>(5)
+  const referenceVideoClipDurationOptions = computed(() => (
+    H3_REFERENCE_VIDEO_CLIP_DURATIONS.filter(
+      duration => duration <= (referenceVideo.value?.durationSeconds ?? 0) + 1e-6,
+    )
+  ))
 
   const clearReferenceVideo = () => {
     if (referenceVideo.value?.preview.startsWith('blob:')) {
       URL.revokeObjectURL(referenceVideo.value.preview)
     }
     referenceVideo.value = null
+    referenceVideoClipDuration.value = 5
   }
 
   const beforeUploadReferenceVideo = async (file: File) => {
@@ -56,6 +68,10 @@ export function useH3ReferenceVideo({
       const durationSeconds = await readDuration(file)
       if (durationSeconds > H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS) {
         message.warning(t('lab.workbench.validation.minimax_h3_reference_video_too_long'))
+        return false
+      }
+      if (durationSeconds + 1e-6 < H3_REFERENCE_VIDEO_CLIP_DURATIONS[0]) {
+        message.warning(t('lab.workbench.validation.minimax_h3_reference_video_too_short'))
         return false
       }
       preview = URL.createObjectURL(file)
@@ -71,6 +87,7 @@ export function useH3ReferenceVideo({
         name: file.name,
         durationSeconds,
       }
+      referenceVideoClipDuration.value = durationSeconds >= 5 ? 5 : 3
       return false
     }
     catch {
@@ -86,6 +103,8 @@ export function useH3ReferenceVideo({
   return {
     referenceVideo,
     referenceVideoUploading,
+    referenceVideoClipDuration,
+    referenceVideoClipDurationOptions,
     beforeUploadReferenceVideo,
     clearReferenceVideo,
   }

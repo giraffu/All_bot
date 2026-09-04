@@ -432,7 +432,9 @@ export function useLabWorkbench() {
           Number(duration.value),
           {
             referenceAudio: Boolean(h3ReferenceAudio.referenceAudio.value),
-            referenceVideo: Boolean(h3ReferenceVideo.referenceVideo.value),
+            referenceVideoDuration: h3ReferenceVideo.referenceVideo.value
+              ? h3ReferenceVideo.referenceVideoClipDuration.value
+              : null,
           },
         ),
         {
@@ -441,6 +443,9 @@ export function useLabWorkbench() {
           duration: duration.value,
           reference_audio: Boolean(h3ReferenceAudio.referenceAudio.value),
           reference_video: Boolean(h3ReferenceVideo.referenceVideo.value),
+          reference_video_duration: h3ReferenceVideo.referenceVideo.value
+            ? h3ReferenceVideo.referenceVideoClipDuration.value
+            : 'none',
         },
       )
     : cost.value)
@@ -696,6 +701,7 @@ export function useLabWorkbench() {
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio: h3ReferenceAudio.referenceAudio,
     minimaxH3ReferenceVideo: h3ReferenceVideo.referenceVideo,
+    minimaxH3ReferenceVideoClipDuration: h3ReferenceVideo.referenceVideoClipDuration,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -788,6 +794,8 @@ export function useLabWorkbench() {
     clearMinimaxH3ReferenceAudio: h3ReferenceAudio.clearReferenceAudio,
     minimaxH3ReferenceVideo: h3ReferenceVideo.referenceVideo,
     minimaxH3ReferenceVideoUploading: h3ReferenceVideo.referenceVideoUploading,
+    minimaxH3ReferenceVideoClipDuration: h3ReferenceVideo.referenceVideoClipDuration,
+    minimaxH3ReferenceVideoClipDurationOptions: h3ReferenceVideo.referenceVideoClipDurationOptions,
     beforeUploadMinimaxH3ReferenceVideo: h3ReferenceVideo.beforeUploadReferenceVideo,
     clearMinimaxH3ReferenceVideo: h3ReferenceVideo.clearReferenceVideo,
     templateNotice: template.templateNotice,
