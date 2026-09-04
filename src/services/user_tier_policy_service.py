@@ -30,7 +30,7 @@ def _rank(
     checkin_enabled: bool,
     checkin_credits: int,
     web_access: bool,
-    flashback_bottles: int,
+    flashback_bonus: int,
     queue_pressure_exempt: bool,
     resolutions: list[str],
     durations: list[str],
@@ -47,7 +47,7 @@ def _rank(
             "checkin_enabled": checkin_enabled,
             "checkin_credits": checkin_credits,
             "web_access": web_access,
-            "flashback_bottles": flashback_bottles,
+            "flashback_bonus": flashback_bonus,
             "queue_pressure_exempt": queue_pressure_exempt,
         },
         "video": {"resolutions": resolutions, "durations": durations},
@@ -62,7 +62,7 @@ def _identity(
     web_access: bool,
     concurrent_tasks: int,
     favorite_limit: int,
-    flashback_bottles: int,
+    flashback_bonus: int,
     queue_pressure_exempt: bool,
     resolutions: list[str],
     durations: list[str],
@@ -75,7 +75,7 @@ def _identity(
             "web_access": web_access,
             "concurrent_tasks": concurrent_tasks,
             "favorite_limit": favorite_limit,
-            "flashback_bottles": flashback_bottles,
+            "flashback_bonus": flashback_bonus,
             "queue_pressure_exempt": queue_pressure_exempt,
         },
         "video": {"resolutions": resolutions, "durations": durations},
@@ -84,8 +84,9 @@ def _identity(
 
 
 DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
-    "schema_version": 1,
-    "capacity_combination_rule": "max",
+    "schema_version": 2,
+    "capacity_combination_rule": "additive",
+    "flashback_base": 5,
     "cultivation_ranks": {
         "凡人": _rank(
             invitations=0,
@@ -95,7 +96,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             checkin_enabled=False,
             checkin_credits=10,
             web_access=False,
-            flashback_bottles=8,
+            flashback_bonus=0,
             queue_pressure_exempt=False,
             resolutions=["512p"],
             durations=["5s"],
@@ -109,7 +110,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             checkin_enabled=True,
             checkin_credits=10,
             web_access=True,
-            flashback_bottles=9,
+            flashback_bonus=2,
             queue_pressure_exempt=False,
             resolutions=["512p"],
             durations=["5s"],
@@ -126,7 +127,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             checkin_enabled=True,
             checkin_credits=12,
             web_access=True,
-            flashback_bottles=10,
+            flashback_bonus=3,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p"],
             durations=["5s", "8s"],
@@ -143,7 +144,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             checkin_enabled=True,
             checkin_credits=15,
             web_access=True,
-            flashback_bottles=12,
+            flashback_bonus=4,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p", "1024p"],
             durations=["5s", "8s", "10s"],
@@ -161,7 +162,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             checkin_enabled=True,
             checkin_credits=20,
             web_access=True,
-            flashback_bottles=14,
+            flashback_bonus=5,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p", "1024p"],
             durations=["5s", "8s", "10s"],
@@ -179,7 +180,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             web_access=False,
             concurrent_tasks=3,
             favorite_limit=100,
-            flashback_bottles=8,
+            flashback_bonus=2,
             queue_pressure_exempt=False,
             resolutions=["512p"],
             durations=["5s"],
@@ -191,7 +192,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             web_access=True,
             concurrent_tasks=5,
             favorite_limit=300,
-            flashback_bottles=10,
+            flashback_bonus=4,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p"],
             durations=["5s", "8s"],
@@ -207,7 +208,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             web_access=True,
             concurrent_tasks=8,
             favorite_limit=600,
-            flashback_bottles=12,
+            flashback_bonus=7,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p", "1024p"],
             durations=["5s", "8s", "10s"],
@@ -223,7 +224,7 @@ DEFAULT_USER_TIER_POLICY_CONFIG: dict[str, Any] = {
             web_access=True,
             concurrent_tasks=12,
             favorite_limit=1000,
-            flashback_bottles=14,
+            flashback_bonus=10,
             queue_pressure_exempt=True,
             resolutions=["512p", "720p", "1024p"],
             durations=["5s", "8s", "10s"],
@@ -295,6 +296,7 @@ def _priority_rules(value: Any, default: list[dict[str, Any]]) -> list[dict[str,
 def normalize_user_tier_policy_config(raw: Any) -> dict[str, Any]:
     values = raw if isinstance(raw, dict) else {}
     defaults = DEFAULT_USER_TIER_POLICY_CONFIG
+    uses_additive_flashback_schema = values.get("schema_version") == 2
     rank_values = values.get("cultivation_ranks")
     rank_values = rank_values if isinstance(rank_values, dict) else {}
     identity_values = values.get("membership_identities")
@@ -319,7 +321,12 @@ def normalize_user_tier_policy_config(raw: Any) -> dict[str, Any]:
                 "checkin_enabled": _bool(benefits.get("checkin_enabled"), default["benefits"]["checkin_enabled"]),
                 "checkin_credits": _int(benefits.get("checkin_credits"), default["benefits"]["checkin_credits"], 0, 10_000),
                 "web_access": _bool(benefits.get("web_access"), default["benefits"]["web_access"]),
-                "flashback_bottles": _int(benefits.get("flashback_bottles"), default["benefits"]["flashback_bottles"], 1, 100),
+                "flashback_bonus": _int(
+                    benefits.get("flashback_bonus") if uses_additive_flashback_schema else None,
+                    default["benefits"]["flashback_bonus"],
+                    0,
+                    100,
+                ),
                 "queue_pressure_exempt": _bool(benefits.get("queue_pressure_exempt"), default["benefits"]["queue_pressure_exempt"]),
             },
             "video": {
@@ -343,7 +350,12 @@ def normalize_user_tier_policy_config(raw: Any) -> dict[str, Any]:
                 "web_access": _bool(benefits.get("web_access"), default["benefits"]["web_access"]),
                 "concurrent_tasks": _int(benefits.get("concurrent_tasks"), default["benefits"]["concurrent_tasks"], 1, 100),
                 "favorite_limit": _int(benefits.get("favorite_limit"), default["benefits"]["favorite_limit"], 1, 100_000),
-                "flashback_bottles": _int(benefits.get("flashback_bottles"), default["benefits"]["flashback_bottles"], 1, 100),
+                "flashback_bonus": _int(
+                    benefits.get("flashback_bonus") if uses_additive_flashback_schema else None,
+                    default["benefits"]["flashback_bonus"],
+                    0,
+                    100,
+                ),
                 "queue_pressure_exempt": _bool(benefits.get("queue_pressure_exempt"), default["benefits"]["queue_pressure_exempt"]),
             },
             "video": {
@@ -357,8 +369,14 @@ def normalize_user_tier_policy_config(raw: Any) -> dict[str, Any]:
     low_values = low_values if isinstance(low_values, dict) else {}
     low_defaults = defaults["low_trust"]
     return {
-        "schema_version": 1,
-        "capacity_combination_rule": "max",
+        "schema_version": 2,
+        "capacity_combination_rule": "additive",
+        "flashback_base": _int(
+            values.get("flashback_base") if uses_additive_flashback_schema else None,
+            defaults["flashback_base"],
+            1,
+            100,
+        ),
         "cultivation_ranks": ranks,
         "membership_identities": identities,
         "low_trust": {
@@ -382,7 +400,7 @@ def validate_user_tier_policy_config(config: dict[str, Any]) -> None:
         for field in ("invitations", "checkins", "generations"):
             if higher["upgrade"][field] < lower["upgrade"][field]:
                 raise ValueError(f"{higher_key}的{field}门槛不能低于{lower_key}")
-        for field in ("checkin_credits", "flashback_bottles"):
+        for field in ("checkin_credits", "flashback_bonus"):
             if higher["benefits"][field] < lower["benefits"][field]:
                 raise ValueError(f"{higher_key}的{field}权益不能低于{lower_key}")
         for field in ("resolutions", "durations"):
@@ -393,7 +411,7 @@ def validate_user_tier_policy_config(config: dict[str, Any]) -> None:
     for lower_key, higher_key in zip(MEMBERSHIP_IDENTITIES[:-1], MEMBERSHIP_IDENTITIES[1:]):
         lower = identities[lower_key]
         higher = identities[higher_key]
-        for field in ("checkin_bonus", "concurrent_tasks", "favorite_limit", "flashback_bottles"):
+        for field in ("checkin_bonus", "concurrent_tasks", "favorite_limit", "flashback_bonus"):
             if higher["benefits"][field] < lower["benefits"][field]:
                 raise ValueError(f"{higher_key}的{field}权益不能低于{lower_key}")
         for field in ("resolutions", "durations"):
@@ -422,9 +440,22 @@ def get_priority_for_usage(rules: list[dict[str, Any]], usage: int) -> int:
 
 
 def resolve_flashback_limit(config: dict[str, Any], rank: str | None, identity: str | None) -> int:
-    return max(
-        get_rank_policy(config, rank)["benefits"]["flashback_bottles"],
-        get_identity_policy(config, identity)["benefits"]["flashback_bottles"],
+    normalized = normalize_user_tier_policy_config(config)
+    effective_rank = "元婴期" if rank in LEGACY_HIGH_RANKS else rank
+    rank_policy = normalized["cultivation_ranks"].get(
+        effective_rank or "",
+        normalized["cultivation_ranks"]["凡人"],
+    )
+    identity_policy = normalized["membership_identities"].get(
+        identity or "",
+        normalized["membership_identities"]["外门弟子"],
+    )
+    return sum(
+        (
+            normalized["flashback_base"],
+            rank_policy["benefits"]["flashback_bonus"],
+            identity_policy["benefits"]["flashback_bonus"],
+        )
     )
 
 
@@ -490,7 +521,11 @@ async def resolve_user_flashback_limit(db: AsyncSession, user_id: int) -> int:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
-        return DEFAULT_USER_TIER_POLICY_CONFIG["cultivation_ranks"]["凡人"]["benefits"]["flashback_bottles"]
+        return resolve_flashback_limit(
+            DEFAULT_USER_TIER_POLICY_CONFIG,
+            "凡人",
+            "外门弟子",
+        )
     payload = await load_user_tier_policy_config_payload(db)
     return resolve_flashback_limit(
         payload["config"],

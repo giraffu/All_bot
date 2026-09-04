@@ -443,8 +443,9 @@ class FeatureEntryVisibilityConfigResponse(BaseModel):
 
 
 class UserTierPolicyConfigRequest(BaseModel):
-    schema_version: Literal[1] = 1
-    capacity_combination_rule: Literal["max"] = "max"
+    schema_version: Literal[2] = 2
+    capacity_combination_rule: Literal["additive"] = "additive"
+    flashback_base: int = Field(default=5, ge=1, le=100)
     cultivation_ranks: Dict[str, Any]
     membership_identities: Dict[str, Any]
     low_trust: Dict[str, Any]

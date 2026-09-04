@@ -14,27 +14,27 @@ vi.mock('ant-design-vue/es/message', () => ({ default: messageMocks }))
 
 import UserTierPolicySettings from './UserTierPolicySettings.vue'
 
-const buildRank = (flashback: number) => ({
+const buildRank = (flashbackBonus: number) => ({
   upgrade: { invitations: 0, checkins: 0, generations: 0, channel_member: false },
   benefits: {
     checkin_enabled: true,
     checkin_credits: 10,
     web_access: true,
-    flashback_bottles: flashback,
+    flashback_bonus: flashbackBonus,
     queue_pressure_exempt: false,
   },
   video: { resolutions: ['512p'], durations: ['5s'] },
   priority_rules: [],
 })
 
-const buildIdentity = (flashback: number) => ({
+const buildIdentity = (flashbackBonus: number) => ({
   benefits: {
     mortal_checkin_access: false,
     checkin_bonus: 0,
     web_access: false,
     concurrent_tasks: 3,
     favorite_limit: 100,
-    flashback_bottles: flashback,
+    flashback_bonus: flashbackBonus,
     queue_pressure_exempt: false,
   },
   video: { resolutions: ['512p'], durations: ['5s'] },
@@ -45,20 +45,21 @@ const buildResponse = () => ({
   key: 'user_tier_policy_config:v1',
   updated_at: null,
   config: {
-    schema_version: 1,
-    capacity_combination_rule: 'max',
+    schema_version: 2,
+    capacity_combination_rule: 'additive',
+    flashback_base: 5,
     cultivation_ranks: {
-      凡人: buildRank(8),
-      练气期: buildRank(9),
-      筑基期: buildRank(10),
-      金丹期: buildRank(12),
-      元婴期: buildRank(14),
+      凡人: buildRank(0),
+      练气期: buildRank(2),
+      筑基期: buildRank(3),
+      金丹期: buildRank(4),
+      元婴期: buildRank(5),
     },
     membership_identities: {
-      外门弟子: buildIdentity(8),
-      内门弟子: buildIdentity(10),
-      核心弟子: buildIdentity(12),
-      真传弟子: buildIdentity(14),
+      外门弟子: buildIdentity(2),
+      内门弟子: buildIdentity(4),
+      核心弟子: buildIdentity(7),
+      真传弟子: buildIdentity(10),
     },
     low_trust: {
       enabled: true,
@@ -91,14 +92,17 @@ describe('UserTierPolicySettings', () => {
     expect(wrapper.text()).toContain('晋升条件')
     expect(wrapper.text()).toContain('身份到期会自动回落')
     expect(wrapper.text()).toContain('低信任免费层判定')
+    expect(wrapper.text()).toContain('基础容量')
+    expect(wrapper.text()).toContain('叠加计算')
+    expect(wrapper.text()).toContain('7–20')
 
     const vm = wrapper.vm as any
-    vm.config.cultivation_ranks['筑基期'].benefits.flashback_bottles = 11
+    vm.config.cultivation_ranks['元婴期'].benefits.flashback_bonus = 6
     await wrapper.vm.$nextTick()
     await vm.savePolicy()
 
     expect(apiMocks.updateUserTierPolicyConfig).toHaveBeenCalledOnce()
-    expect(apiMocks.updateUserTierPolicyConfig.mock.calls[0][0].cultivation_ranks['筑基期'].benefits.flashback_bottles).toBe(11)
+    expect(apiMocks.updateUserTierPolicyConfig.mock.calls[0][0].cultivation_ranks['元婴期'].benefits.flashback_bonus).toBe(6)
     expect(messageMocks.success).toHaveBeenCalledWith('等级权益已保存并生效')
   })
 })
