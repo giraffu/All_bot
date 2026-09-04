@@ -76,6 +76,37 @@ def test_template_retirement_preflight_uses_bounded_workers(monkeypatch):
     assert 2 <= len(thread_ids) <= 4
 
 
+def test_template_retirement_database_checks_share_one_event_loop(monkeypatch):
+    import asyncio
+    import scripts.r2_template_submission_migration as migration
+
+    loops = []
+    disposed = []
+
+    async def fake_reference_count():
+        loops.append(asyncio.get_running_loop())
+        return 0
+
+    async def fake_dispose():
+        disposed.append(asyncio.get_running_loop())
+
+    monkeypatch.setattr(migration, "_database_reference_count", fake_reference_count)
+    monkeypatch.setattr(migration, "_dispose_database_engine", fake_dispose)
+    monkeypatch.setattr(
+        migration,
+        "execute_retirement_plan",
+        lambda *args, **kwargs: {"status": "completed"},
+    )
+
+    report = migration._execute_retirement_with_reference_guard(
+        object(), object(), bucket="user-data-prod", plan={}, workers=4
+    )
+
+    assert report["database_references_before"] == 0
+    assert report["database_references_after"] == 0
+    assert loops[0] is loops[1] is disposed[0]
+
+
 def test_template_submission_migration_preserves_relative_key():
     assert destination_key("temps/user/final.png") == "template-submissions/user/final.png"
     with pytest.raises(ValueError):
