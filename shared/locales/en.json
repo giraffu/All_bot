@@ -935,6 +935,13 @@
       "minimax_h3_reference_audio_remove": "Remove voice reference",
       "minimax_h3_reference_audio_size": "20 MB",
       "minimax_h3_reference_audio_prompt_reminder": "Voice reference added. Consider including {audioTag} in the prompt and describing its role (optional; submission is not blocked).",
+      "minimax_h3_reference_video_title": "Reference video",
+      "minimax_h3_reference_video_hint": "Up to 40 seconds. The system uses only the final 5 seconds as motion and scene reference. Extension generation still uses the previous segment's final frame.",
+      "minimax_h3_reference_video_add": "Add reference video",
+      "minimax_h3_reference_video_replace": "Replace video",
+      "minimax_h3_reference_video_remove": "Remove reference video",
+      "minimax_h3_reference_video_size": "40 MB",
+      "minimax_h3_reference_video_prompt_reminder": "Reference video added; only its final 5 seconds will be used. Consider including {videoTag} in the prompt and describing its role.",
       "optional": "Optional",
       "minimax_h3_resolution_presets": {"preview": "Fast (about 512p)", "small": "Clear (about 600p)", "standard": "Standard (about 720p)", "hd": "HD (about 810p)"},
       "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last", "ref2v": "Reference images"},
@@ -1074,6 +1081,8 @@
         ,"minimax_h3_images": "The reference image count does not match the selected Advanced Image-to-Video Pro mode"
         ,"minimax_h3_descriptions": "Add an identity and appearance description for every character reference"
         ,"minimax_h3_frame_ratio": "The last frame must match the first frame aspect ratio. Please upload it again.",
+        "minimax_h3_reference_video_too_long": "Reference videos can be up to 40 seconds; the final 5 seconds will be used.",
+        "minimax_h3_reference_video_unreadable": "The reference video duration could not be read. Try another video.",
         "ltx25_video_too_long": "Video Upscale supports source videos up to 20 seconds.",
         "ltx25_video_already_2k": "The source video is already 2K or larger, so no upscale target is available."
       },

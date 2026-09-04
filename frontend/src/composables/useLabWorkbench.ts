@@ -64,6 +64,7 @@ import { useH3ChainEditor } from './lab-workbench/useH3ChainEditor'
 import { useLabTemplateHydration } from './lab-workbench/useLabTemplateHydration'
 import { useLabSubmitPayload } from './lab-workbench/useLabSubmitPayload'
 import { useH3ReferenceAudio } from './lab-workbench/useH3ReferenceAudio'
+import { useH3ReferenceVideo } from './lab-workbench/useH3ReferenceVideo'
 import { usePromptOptimizer } from './lab-workbench/usePromptOptimizer'
 import { getMinimaxH3Cost } from '@/utils/minimaxH3Template'
 
@@ -128,6 +129,7 @@ export function useLabWorkbench() {
     t,
   })
   const h3ReferenceAudio = useH3ReferenceAudio({ uploadFile, t })
+  const h3ReferenceVideo = useH3ReferenceVideo({ uploadFile, t })
 
   const capturePromptOptimizationDraft = (): PromptOptimizationOriginDraft => ({
     modeId: currentModeId.value,
@@ -204,6 +206,7 @@ export function useLabWorkbench() {
     await nextTick()
     references.clearReferences()
     h3ReferenceAudio.clearReferenceAudio()
+    h3ReferenceVideo.clearReferenceVideo()
     references.uploadedReferences.value = restoredReferences
   }
   const promptOptimizer = usePromptOptimizer({
@@ -224,6 +227,7 @@ export function useLabWorkbench() {
     references.clearReferences()
     slots.clearSlotAssets()
     h3ReferenceAudio.clearReferenceAudio()
+    h3ReferenceVideo.clearReferenceVideo()
     prompt.value = ''
     audioPrompt.value = ''
     selectedEditLora.value = ''
@@ -426,16 +430,17 @@ export function useLabWorkbench() {
           minimaxH3Mode.value === 'ref2v' ? 'ref2v' : 'normal',
           minimaxH3ResolutionPreset.value,
           Number(duration.value),
+          {
+            referenceAudio: Boolean(h3ReferenceAudio.referenceAudio.value),
+            referenceVideo: Boolean(h3ReferenceVideo.referenceVideo.value),
+          },
         ),
         {
           mode: minimaxH3Mode.value,
           resolution: minimaxH3ResolutionPreset.value,
           duration: duration.value,
           reference_audio: Boolean(h3ReferenceAudio.referenceAudio.value),
-          // The current Web UI has reference images and optional audio. Keep
-          // the video condition explicit so Bot/future Web inputs share the
-          // same catalog contract without guessing.
-          reference_video: false,
+          reference_video: Boolean(h3ReferenceVideo.referenceVideo.value),
         },
       )
     : cost.value)
@@ -449,6 +454,7 @@ export function useLabWorkbench() {
     references.pendingReferenceUploadCount.value
     + slots.pendingSlotUploadCount.value
     + (h3ReferenceAudio.referenceAudioUploading.value ? 1 : 0)
+    + (h3ReferenceVideo.referenceVideoUploading.value ? 1 : 0)
   ))
   const canSubmit = computed(() => {
     const hasPrompt = !currentMode.value.promptRequired || template.isTemplatePromptLocked.value || prompt.value.trim().length > 0
@@ -479,6 +485,7 @@ export function useLabWorkbench() {
     || audioPrompt.value.trim().length > 0
     || references.uploadedReferences.value.length > 0
     || h3ReferenceAudio.referenceAudio.value !== null
+    || h3ReferenceVideo.referenceVideo.value !== null
     || Object.keys(slots.uploadedSlotAssets.value).length > 0
     || selectedEditLora.value !== ''
     || selectedVideoLora.value !== getDefaultVideoLoraSelection()
@@ -559,7 +566,10 @@ export function useLabWorkbench() {
     if (nextMode !== previousMode && currentMode.value.id === 'minimax_h3') {
       references.clearReferences()
     }
-    if (nextMode !== 'ref2v') h3ReferenceAudio.clearReferenceAudio()
+    if (nextMode !== 'ref2v') {
+      h3ReferenceAudio.clearReferenceAudio()
+      h3ReferenceVideo.clearReferenceVideo()
+    }
   })
 
   const hydrateLabRoute = () => {
@@ -685,6 +695,7 @@ export function useLabWorkbench() {
     minimaxH3AspectRatio,
     minimaxH3AddonItems,
     minimaxH3ReferenceAudio: h3ReferenceAudio.referenceAudio,
+    minimaxH3ReferenceVideo: h3ReferenceVideo.referenceVideo,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -706,6 +717,7 @@ export function useLabWorkbench() {
     references.clearReferences()
     slots.clearSlotAssets()
     h3ReferenceAudio.clearReferenceAudio()
+    h3ReferenceVideo.clearReferenceVideo()
   })
 
   return {
@@ -774,6 +786,10 @@ export function useLabWorkbench() {
     minimaxH3ReferenceAudioUploading: h3ReferenceAudio.referenceAudioUploading,
     beforeUploadMinimaxH3ReferenceAudio: h3ReferenceAudio.beforeUploadReferenceAudio,
     clearMinimaxH3ReferenceAudio: h3ReferenceAudio.clearReferenceAudio,
+    minimaxH3ReferenceVideo: h3ReferenceVideo.referenceVideo,
+    minimaxH3ReferenceVideoUploading: h3ReferenceVideo.referenceVideoUploading,
+    beforeUploadMinimaxH3ReferenceVideo: h3ReferenceVideo.beforeUploadReferenceVideo,
+    clearMinimaxH3ReferenceVideo: h3ReferenceVideo.clearReferenceVideo,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

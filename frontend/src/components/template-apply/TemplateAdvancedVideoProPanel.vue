@@ -18,7 +18,13 @@ import TemplateApplyActionFooter from '@/components/template-apply/TemplateApply
 import TemplateApplyResultSection from '@/components/template-apply/TemplateApplyResultSection.vue'
 import TemplateApplyUploadSection from '@/components/template-apply/TemplateApplyUploadSection.vue'
 import H3ReferenceAudioUpload from '@/components/lab/H3ReferenceAudioUpload.vue'
-import type { UploadedReferenceAudio } from '@/composables/lab-workbench/types'
+import H3ReferenceVideoUpload from '@/components/lab/H3ReferenceVideoUpload.vue'
+import type { UploadedReferenceAudio, UploadedReferenceVideo } from '@/composables/lab-workbench/types'
+import {
+  H3_REFERENCE_VIDEO_MAX_BYTES,
+  H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS,
+  readVideoDurationSeconds,
+} from '@/composables/lab-workbench/useH3ReferenceVideo'
 
 interface UploadedFrame {
   objectKey: string
@@ -70,6 +76,7 @@ const referenceAudio = ref<UploadedReferenceAudio | null>(
       }
     : null,
 )
+const referenceVideo = ref<UploadedReferenceVideo | null>(null)
 const lockedPrompt = computed(() => props.context.prompt || '')
 const lockedDuration = computed(() => props.context.requestedDuration || 5)
 const lockedResolution = computed(() => props.context.resolutionPreset || 'preview')
@@ -78,6 +85,10 @@ const taskCost = computed(() => getMinimaxH3TemplateCost(
   lockedResolution.value,
   lockedDuration.value,
   isReferenceVideo.value ? 'ref2v' : 'normal',
+  {
+    referenceAudio: Boolean(referenceAudio.value),
+    referenceVideo: Boolean(referenceVideo.value),
+  },
 ))
 
 watch(
@@ -86,12 +97,13 @@ watch(
   { immediate: true },
 )
 watch(
-  [firstFrame, lastFrame, templateReferences, referenceAudio],
+  [firstFrame, lastFrame, templateReferences, referenceAudio, referenceVideo],
   () => templateApplyStore.setDirtyState(Boolean(
     firstFrame.value
     || lastFrame.value
     || templateReferences.value.some(reference => reference.isReplacement)
     || referenceAudio.value?.referenceRef?.source === 'upload'
+    || referenceVideo.value !== null
     || (hadTemplateReferenceAudio && referenceAudio.value === null)
   )),
   { immediate: true, deep: true },
@@ -183,6 +195,42 @@ const beforeUploadReferenceAudio = async (file: File) => {
   return false
 }
 
+const clearReferenceVideo = () => {
+  if (referenceVideo.value?.preview.startsWith('blob:')) {
+    URL.revokeObjectURL(referenceVideo.value.preview)
+  }
+  referenceVideo.value = null
+}
+
+const beforeUploadReferenceVideo = async (file: File) => {
+  let durationSeconds: number
+  try {
+    durationSeconds = await readVideoDurationSeconds(file)
+  }
+  catch {
+    message.warning(t('lab.workbench.validation.minimax_h3_reference_video_unreadable'))
+    return false
+  }
+  if (durationSeconds > H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS) {
+    message.warning(t('lab.workbench.validation.minimax_h3_reference_video_too_long'))
+    return false
+  }
+  const { objectKey } = await uploadFile(file, {
+    slot: 'reference_video',
+    maxSizeBytes: H3_REFERENCE_VIDEO_MAX_BYTES,
+  })
+  if (!objectKey) return false
+  clearReferenceVideo()
+  referenceVideo.value = {
+    key: objectKey,
+    preview: URL.createObjectURL(file),
+    name: file.name,
+    durationSeconds,
+    referenceRef: { source: 'upload', object_key: objectKey },
+  }
+  return false
+}
+
 const cleanup = async () => {
   removeFirst()
   removeLast()
@@ -192,6 +240,7 @@ const cleanup = async () => {
     }
   })
   clearReferenceAudio()
+  clearReferenceVideo()
   templateApplyStore.setDirtyState(false)
   templateApplyStore.setPendingUploads(false)
   setSubmittedTaskId(null)
@@ -227,6 +276,9 @@ const handleGenerate = async () => {
       reference_descriptions: [],
       ...(isReferenceVideo.value && referenceAudio.value?.referenceRef
         ? { reference_audio_ref: referenceAudio.value.referenceRef }
+        : {}),
+      ...(isReferenceVideo.value && referenceVideo.value?.referenceRef
+        ? { reference_video_ref: referenceVideo.value.referenceRef }
         : {}),
     },
     isTemplate: true,
@@ -296,6 +348,12 @@ onBeforeUnmount(() => {
             :uploading="Boolean(uploadingSlots.reference_audio)"
             :before-upload="beforeUploadReferenceAudio"
             @remove="clearReferenceAudio"
+          />
+          <H3ReferenceVideoUpload
+            :item="referenceVideo"
+            :uploading="Boolean(uploadingSlots.reference_video)"
+            :before-upload="beforeUploadReferenceVideo"
+            @remove="clearReferenceVideo"
           />
         </template>
         <TemplateApplyUploadSection

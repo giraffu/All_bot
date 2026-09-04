@@ -575,8 +575,8 @@ async def test_pro_prompt_submits_immediately_without_confirmation(monkeypatch):
 @pytest.mark.parametrize(
     ("mode", "duration", "preset", "expected_cost"),
     [
-        ("t2v", 10, "hd", 33),
-        ("i2v", 15, "standard", 42),
+        ("t2v", 10, "hd", 47),
+        ("i2v", 15, "standard", 63),
         ("ref2v", 5, "preview", 11),
     ],
 )

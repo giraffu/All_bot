@@ -11,6 +11,7 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_T2V,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
+    get_minimax_h3_cost,
     normalize_minimax_h3_duration_seconds,
 )
 
@@ -302,8 +303,8 @@ def test_minimax_h3_uses_fixed_10eros_beta4_hybrid_model_for_all_public_modes():
     [
         ("preview", 5, 10, 124),
         ("small", 5, 11, 124),
-        ("standard", 10, 27, 243),
-        ("hd", 15, 59, 362),
+        ("standard", 10, 36, 243),
+        ("hd", 15, 89, 362),
     ],
 )
 def test_minimax_h3_t2v_resolution_duration_cost_and_frame_grid(
@@ -377,16 +378,16 @@ def test_minimax_h3_ref2v_rejects_more_than_five_worker_images():
         (5, "standard", 15),
         (5, "hd", 17),
         (10, "preview", 14),
-        (10, "small", 17),
-        (10, "standard", 27),
-        (10, "hd", 33),
-        (15, "preview", 19),
-        (15, "small", 27),
-        (15, "standard", 42),
-        (15, "hd", 59),
+        (10, "small", 21),
+        (10, "standard", 36),
+        (10, "hd", 47),
+        (15, "preview", 23),
+        (15, "small", 36),
+        (15, "standard", 63),
+        (15, "hd", 89),
     ],
 )
-def test_minimax_h3_resolution_price_matrix_applies_public_1_1_multiplier(
+def test_minimax_h3_resolution_price_matrix_uses_default_normal_prices(
     duration, preset, normal
 ):
     assert (
@@ -427,6 +428,42 @@ def test_minimax_h3_ref2v_price_matrix_applies_public_1_1_multiplier(
         },
     )
     assert spec.cost == cost
+
+
+@pytest.mark.parametrize(
+    "reference_audio,reference_video,expected",
+    [
+        (False, False, 91),
+        (True, False, 101),
+        (False, True, 146),
+        (True, True, 161),
+    ],
+)
+def test_minimax_h3_reference_media_multipliers_compose_and_round_up(
+    reference_audio, reference_video, expected
+):
+    assert get_minimax_h3_cost(
+        MINIMAX_H3_REF2V,
+        duration=15,
+        resolution_preset="hd",
+        reference_audio=reference_audio,
+        reference_video=reference_video,
+    ) == expected
+
+
+def test_minimax_h3_spec_includes_reference_media_multipliers():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_REF2V,
+        {
+            "images": ["ref.png"],
+            "reference_audio": "voice.m4a",
+            "reference_video": "motion.mp4",
+            "resolution_preset": "hd",
+            "duration": 15,
+        },
+    )
+
+    assert spec.cost == 161
 
 
 def test_minimax_h3_image_modes_require_source_aspect():

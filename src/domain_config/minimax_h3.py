@@ -30,46 +30,23 @@ MINIMAX_H3_PIXEL_PRESETS = {
     "standard": 520_000,
     "hd": 650_000,
 }
-MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_NUMERATOR = 11
-MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_DENOMINATOR = 10
-
-
-def _apply_public_price_multiplier(price: int) -> int:
-    numerator = price * MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_NUMERATOR
-    denominator = MINIMAX_H3_PUBLIC_PRICE_MULTIPLIER_DENOMINATOR
-    return (numerator + denominator - 1) // denominator
-
-
-_MINIMAX_H3_NORMAL_BASE_PRICE_BY_DURATION = {
-    5: {"preview": 9, "small": 10, "standard": 13, "hd": 15},
-    10: {"preview": 12, "small": 15, "standard": 24, "hd": 30},
-    15: {"preview": 17, "small": 24, "standard": 38, "hd": 53},
+MINIMAX_H3_NORMAL_PRICE_BY_DURATION = {
+    5: {"preview": 10, "small": 11, "standard": 15, "hd": 17},
+    10: {"preview": 14, "small": 21, "standard": 36, "hd": 47},
+    15: {"preview": 23, "small": 36, "standard": 63, "hd": 89},
 }
-_MINIMAX_H3_REF2V_BASE_PRICE_BY_DURATION = {
-    5: {"preview": 10, "small": 11, "standard": 15, "hd": 20},
-    10: {"preview": 15, "small": 21, "standard": 33, "hd": 45},
-    15: {"preview": 23, "small": 34, "standard": 58, "hd": 82},
+MINIMAX_H3_REF2V_PRICE_BY_DURATION = {
+    5: {"preview": 11, "small": 13, "standard": 17, "hd": 22},
+    10: {"preview": 17, "small": 24, "standard": 37, "hd": 50},
+    15: {"preview": 26, "small": 38, "standard": 64, "hd": 91},
 }
-
-
-def _build_public_price_matrix(
-    base_matrix: dict[int, dict[str, int]],
-) -> dict[int, dict[str, int]]:
-    return {
-        duration: {
-            preset: _apply_public_price_multiplier(price)
-            for preset, price in prices.items()
-        }
-        for duration, prices in base_matrix.items()
-    }
-
-
-MINIMAX_H3_NORMAL_PRICE_BY_DURATION = _build_public_price_matrix(
-    _MINIMAX_H3_NORMAL_BASE_PRICE_BY_DURATION
-)
-MINIMAX_H3_REF2V_PRICE_BY_DURATION = _build_public_price_matrix(
-    _MINIMAX_H3_REF2V_BASE_PRICE_BY_DURATION
-)
+MINIMAX_H3_REFERENCE_AUDIO_PRICE_NUMERATOR = 11
+MINIMAX_H3_REFERENCE_AUDIO_PRICE_DENOMINATOR = 10
+MINIMAX_H3_REFERENCE_VIDEO_PRICE_NUMERATOR = 8
+MINIMAX_H3_REFERENCE_VIDEO_PRICE_DENOMINATOR = 5
+MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS = 40
+MINIMAX_H3_REFERENCE_VIDEO_CLIP_SECONDS = 5
+MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES = 40 * 1024 * 1024
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
     "9:16": 9 / 16,
@@ -287,9 +264,13 @@ def get_minimax_h3_cost(
     *,
     duration: Any = 5,
     resolution_preset: Any = "preview",
+    reference_audio: bool = False,
+    reference_video: bool = False,
 ) -> int:
     if task_type not in MINIMAX_H3_PUBLIC_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
+    if task_type != MINIMAX_H3_REF2V and (reference_audio or reference_video):
+        raise MiniMaxH3ValidationError("参考音视频加价仅支持参考图生视频。")
     normalized_duration = normalize_minimax_h3_duration_seconds(duration)
     preset = str(resolution_preset or "preview").strip().lower()
     if preset not in MINIMAX_H3_PIXEL_PRESETS:
@@ -301,7 +282,16 @@ def get_minimax_h3_cost(
         if task_type == MINIMAX_H3_REF2V
         else MINIMAX_H3_NORMAL_PRICE_BY_DURATION
     )
-    return matrix[normalized_duration][preset]
+    cost = matrix[normalized_duration][preset]
+    numerator = cost
+    denominator = 1
+    if reference_audio:
+        numerator *= MINIMAX_H3_REFERENCE_AUDIO_PRICE_NUMERATOR
+        denominator *= MINIMAX_H3_REFERENCE_AUDIO_PRICE_DENOMINATOR
+    if reference_video:
+        numerator *= MINIMAX_H3_REFERENCE_VIDEO_PRICE_NUMERATOR
+        denominator *= MINIMAX_H3_REFERENCE_VIDEO_PRICE_DENOMINATOR
+    return (numerator + denominator - 1) // denominator
 
 
 def _dimensions(preset: str, aspect_ratio: str) -> tuple[int, int]:
@@ -427,6 +417,8 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
             task_type,
             duration=duration,
             resolution_preset=preset,
+            reference_audio=reference_audio is not None,
+            reference_video=reference_video is not None,
         ),
         images=images,
         reference_descriptions=descriptions,

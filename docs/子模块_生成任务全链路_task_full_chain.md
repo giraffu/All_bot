@@ -3,8 +3,8 @@
 MiniMax H3 执行面使用 T2V/I2V/FLF2V/REF2V 四个独立业务/执行类型，统一走既有 Web submission Saga、Central
 队列、Worker workflow patch、结果上传和终态退款，不以 LTX alias 入队。输入数量、
 计费和 workflow 契约见 `docs/子模块_MiniMaxH3视频服务_minimax_h3.md`。REF2V 可携带
-一个高层 `reference_audio`，Worker 将其映射到 `ref_audios.ref_audio_0`；Web/Bot 仅提醒
-用户可写 `<Audio 1>`，服务端与 Worker 不检查或注入该标记。
+`reference_audio` 与 `reference_video`；Worker 使用视频末尾 5 秒，Web 服务端限制原片
+最长 40 秒。直接扩展仍只把父段尾帧作为 I2V 首帧。
 
 > 当前 `i2i_pro` 与专属 `face_swap` Worker profile 都可承接 Central 的 `face_swap` 与 `face_swap_v2`，并通过显式 workflow override 将两者运行到 `face_swap_v2.json`。上游 API、计费、退款和业务类型不变；旧远程 V1 执行池已退役。
 

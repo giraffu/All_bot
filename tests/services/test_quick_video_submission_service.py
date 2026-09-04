@@ -371,7 +371,7 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
     assert plan.mode == "minimax_h3_i2v"
     assert plan.resolution == "preview"
     assert plan.duration == "15s"
-    assert plan.total_cost == 19
+    assert plan.total_cost == 23
     assert plan.main_model == "10eros_int8"
     assert plan.negative_prompt == "blur, jitter"
     assert plan.lora_items == [

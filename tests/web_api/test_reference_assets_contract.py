@@ -12,9 +12,40 @@ from src.web_api.services.reference_asset_service import (
     build_h3_character_reference_binding,
     normalize_reference_inputs,
     resolve_h3_reference_audio_ref,
+    resolve_h3_reference_video_ref,
     resolve_h3_reference_refs,
     resolve_reference_set,
 )
+
+
+@pytest.mark.asyncio
+async def test_h3_reference_video_accepts_owned_upload_up_to_40_mb():
+    object_size = AsyncMock(return_value=40 * 1024 * 1024)
+
+    result = await resolve_h3_reference_video_ref(
+        user_id=7,
+        reference_video_ref={
+            "source": "upload",
+            "object_key": "web_uploads/7/motion.mp4",
+        },
+        object_size=object_size,
+    )
+
+    assert result == "web_uploads/7/motion.mp4"
+    object_size.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_h3_reference_video_rejects_cross_user_upload():
+    with pytest.raises(CoreDomainError, match="当前用户"):
+        await resolve_h3_reference_video_ref(
+            user_id=7,
+            reference_video_ref={
+                "source": "upload",
+                "object_key": "web_uploads/8/motion.mp4",
+            },
+            object_size=AsyncMock(return_value=1024),
+        )
 
 
 @pytest.mark.asyncio

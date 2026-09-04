@@ -90,7 +90,7 @@ def test_catalog_exposes_real_image_and_video_pricing_dimensions():
             reference_audio="yes",
             reference_video="yes",
         )["default_cost"]
-        == 91
+        == 161
     )
     assert (
         _variant(
