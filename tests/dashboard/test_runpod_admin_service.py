@@ -564,6 +564,7 @@ async def test_pause_restart_and_delete_runpod_worker_build_slot_scoped_operatio
     assert restart_command[restart_command.index("--profile") + 1] == "wan22_video_v2"
     assert restart_command[restart_command.index("--slot") + 1] == "03"
     assert delete_command[delete_command.index("--slot") + 1] == "03"
+    assert delete_command[delete_command.index("--drain-timeout") + 1] == "7200"
     assert pause_payload["operation"]["status"] == "pending"
     assert restart_payload["operation"]["action"] == "restart"
     assert delete_payload["operation"]["status"] == "pending"
@@ -694,6 +695,20 @@ async def test_autoscaler_recovery_operations_build_slot_scoped_operations():
     assert enable_command[enable_command.index("--profile") + 1] == "image_to_video"
     assert enable_command[enable_command.index("--slot") + 1] == "03"
     assert "--execute" in enable_command
+
+
+@pytest.mark.asyncio
+async def test_autoscaler_delete_uses_long_dashboard_drain_timeout():
+    operation = await runpod_admin_service.start_runpod_autoscaler_delete_operation(
+        profile="minimax_h3",
+        slot="03",
+        trigger_reason="scale_down: no backlog and idle runpod available",
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    command = operation.command
+    assert command[command.index("--drain-timeout") + 1] == "7200"
+    assert "--execute" in command
 
 
 @pytest.mark.asyncio
