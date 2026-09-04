@@ -346,6 +346,12 @@ export const fetchFeatureEntryVisibilityConfig = async () =>
 export const updateFeatureEntryVisibilityConfig = async (payload) =>
   put('/api/entry-visibility', payload)
 
+export const fetchUserTierPolicyConfig = async () =>
+  get('/api/user-tier-policy')
+
+export const updateUserTierPolicyConfig = async (payload) =>
+  put('/api/user-tier-policy', payload)
+
 /**
  * @param {{ page?: number, pageSize?: number, reason?: string | null, userId?: string | null, startDate?: string | null, endDate?: string | null }} [options]
  */

@@ -20,6 +20,7 @@ from dashboard.backend.routers import (
     alipay_direct,
     gallery,
     feature_entry_visibility,
+    user_tier_policy,
     history,
     logs,
     main_bot_menu,
@@ -194,6 +195,7 @@ app.include_router(system.router)
 app.include_router(logs.router)
 app.include_router(main_bot_menu.router)
 app.include_router(feature_entry_visibility.router)
+app.include_router(user_tier_policy.router)
 app.include_router(paid_group_guard.router)
 app.include_router(group_manage.router)
 app.include_router(workers.router)

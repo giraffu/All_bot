@@ -550,6 +550,7 @@ def build_quick_video_submission_plan(
     fsm_data: dict[str, Any],
     qqcc_config: dict[str, Any] | None,
     allowed_resolutions: list[str] | None,
+    allowed_durations: list[str] | None = None,
 ) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
     resolution, duration = normalize_quick_video_selection(
         resolution=str(fsm_data.get("resolution") or ""),
@@ -558,6 +559,16 @@ def build_quick_video_submission_plan(
     mode = str(fsm_data.get("mode") or "")
 
     if qqcc_config is None:
+        if (
+            allowed_resolutions is not None
+            and resolution not in allowed_resolutions
+        ) or (
+            allowed_durations is not None
+            and duration not in allowed_durations
+        ):
+            return QuickVideoSubmissionReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
         mode_submission = resolve_quick_video_mode_submission(mode)
         if mode_submission is None:
             return QuickVideoSubmissionReject(

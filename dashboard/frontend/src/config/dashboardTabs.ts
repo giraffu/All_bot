@@ -15,6 +15,7 @@ import {
   RobotOutlined,
   UserOutlined,
   WarningOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons-vue'
 
 export type DashboardTabKey =
@@ -41,6 +42,7 @@ export type DashboardTabKey =
   | 'reference_assets'
   | 'prompt_optimizer'
   | 'character_generation'
+  | 'user_tier_policy'
 
 export interface DashboardTabConfig {
   key: DashboardTabKey
@@ -89,6 +91,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     component: markRaw(defineAsyncComponent(() => import('../components/UserTable.vue'))),
     containerClass: PANEL_CONTAINER_CLASS,
     scrollable: false,
+  },
+  {
+    key: 'user_tier_policy',
+    label: '等级权益配置',
+    icon: SafetyCertificateOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/UserTierPolicySettings.vue'))),
+    containerClass: BASE_CONTAINER_CLASS,
+    scrollable: true,
   },
   {
     key: 'alipay_direct_users',

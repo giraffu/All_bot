@@ -269,8 +269,13 @@ class StorageService:
         return build_history_r2_cleanup_keys_impl(task_id, output_file, history_type)
 
     async def async_prune_user_web_history_r2_cache(
-        self, user_id: int, keep_recent: int = 8
+        self, user_id: int, keep_recent: int | None = None
     ) -> None:
+        if keep_recent is None:
+            from src.services.user_tier_policy_service import resolve_user_flashback_limit
+
+            async with AsyncSessionLocal() as session:
+                keep_recent = await resolve_user_flashback_limit(session, user_id)
         await async_prune_user_web_history_r2_cache_impl(
             self,
             user_id,

@@ -1,10 +1,12 @@
-from src.constants import (
-    DYNAMIC_PRIORITY_RULES,
-    WEB_ACCESS_ALLOWED_GROUPS,
-    WEB_ACCESS_ALLOWED_IDENTITIES,
-)
 from src.database.core import AsyncSessionLocal
 from src.quota import QuotaManager
+from src.services.user_tier_policy_service import (
+    CULTIVATION_RANKS,
+    get_identity_policy,
+    get_priority_for_usage,
+    get_rank_policy,
+    load_user_tier_policy_config,
+)
 
 
 LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD = 7
@@ -24,58 +26,57 @@ def has_high_quality_referral_exemption(
     *,
     referral_count: int,
     successful_invitee_count: int,
+    referral_count_threshold: int = LOW_TRUST_INVITEE_COUNT_EXEMPTION_THRESHOLD,
+    success_rate_percent_threshold: int = LOW_TRUST_INVITEE_SUCCESS_RATE_PERCENT_THRESHOLD,
 ) -> bool:
     referral_count = _coerce_int(referral_count)
     successful_invitee_count = _coerce_int(successful_invitee_count)
     return (
-        referral_count > LOW_TRUST_INVITEE_COUNT_EXEMPTION_THRESHOLD
+        referral_count > referral_count_threshold
         and successful_invitee_count * 100
-        > referral_count * LOW_TRUST_INVITEE_SUCCESS_RATE_PERCENT_THRESHOLD
+        > referral_count * success_rate_percent_threshold
     )
 
 
 class PermissionIdentityPriorityService:
-    def __init__(self, quota_manager: QuotaManager):
+    def __init__(self, quota_manager: QuotaManager, *, policy_loader=load_user_tier_policy_config):
         self.quota_manager = quota_manager
+        self.policy_loader = policy_loader
 
     async def calculate_user_priority(self, user_id: int) -> int:
+        policy = await self.policy_loader()
+        low_trust = policy["low_trust"]
         stats = await self.quota_manager.get_user_stats(user_id)
         is_low_trust_free_tier = await self.is_low_trust_free_tier_user(
             user_id,
             stats=stats,
+            policy=policy,
         )
 
-        if _coerce_int(stats.get("generation_count")) < 2:
-            base_priority = 30
+        if _coerce_int(stats.get("generation_count")) < low_trust["new_user_generation_threshold"]:
+            base_priority = low_trust["new_user_base_priority"]
             return (
                 base_priority
                 if is_low_trust_free_tier
-                else base_priority + TRUSTED_USER_PRIORITY_BONUS
+                else base_priority + low_trust["trusted_priority_bonus"]
             )
 
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)
         usage = await self.quota_manager.get_daily_usage(user_id)
 
-        group_priority = 0
-        group_rules = DYNAMIC_PRIORITY_RULES.get(group, [])
-        for limit, priority in group_rules:
-            if usage < limit:
-                group_priority = priority
-                break
-
-        identity_priority = 0
-        identity_rules = DYNAMIC_PRIORITY_RULES.get(identity, [])
-        for limit, priority in identity_rules:
-            if usage < limit:
-                identity_priority = priority
-                break
+        group_priority = get_priority_for_usage(
+            get_rank_policy(policy, group)["priority_rules"], usage
+        )
+        identity_priority = get_priority_for_usage(
+            get_identity_policy(policy, identity)["priority_rules"], usage
+        )
 
         base_priority = group_priority + identity_priority
         return (
             base_priority
             if is_low_trust_free_tier
-            else base_priority + TRUSTED_USER_PRIORITY_BONUS
+            else base_priority + low_trust["trusted_priority_bonus"]
         )
 
     async def _has_successful_order(self, user_id: int) -> bool:
@@ -95,7 +96,13 @@ class PermissionIdentityPriorityService:
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
-    async def _has_high_quality_referral_exemption(self, user_id: int) -> bool:
+    async def _has_high_quality_referral_exemption(
+        self,
+        user_id: int,
+        *,
+        referral_count_threshold: int = LOW_TRUST_INVITEE_COUNT_EXEMPTION_THRESHOLD,
+        success_rate_percent_threshold: int = LOW_TRUST_INVITEE_SUCCESS_RATE_PERCENT_THRESHOLD,
+    ) -> bool:
         async with AsyncSessionLocal() as session:
             from sqlalchemy import and_, func, select
 
@@ -121,6 +128,8 @@ class PermissionIdentityPriorityService:
             return has_high_quality_referral_exemption(
                 referral_count=referral_count,
                 successful_invitee_count=successful_invitee_count,
+                referral_count_threshold=referral_count_threshold,
+                success_rate_percent_threshold=success_rate_percent_threshold,
             )
 
     async def is_low_trust_free_tier_user(
@@ -128,22 +137,32 @@ class PermissionIdentityPriorityService:
         user_id: int,
         *,
         stats: dict | None = None,
+        policy: dict | None = None,
     ) -> bool:
+        policy = policy or await self.policy_loader()
+        low_trust = policy["low_trust"]
+        if not low_trust["enabled"]:
+            return False
         if stats is None:
             stats = await self.quota_manager.get_user_stats(user_id)
 
         if (
             _coerce_int(stats.get("checkin_count"))
-            <= LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD
+            <= low_trust["checkin_threshold"]
         ):
             return False
 
-        if await self._has_successful_order(user_id):
+        if low_trust["successful_order_exempt"] and await self._has_successful_order(user_id):
             return False
 
-        return not await self._has_high_quality_referral_exemption(user_id)
+        return not await self._has_high_quality_referral_exemption(
+            user_id,
+            referral_count_threshold=low_trust["referral_count_threshold"],
+            success_rate_percent_threshold=low_trust["successful_invitee_rate_percent_threshold"],
+        )
 
     async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
+        policy = await self.policy_loader()
         stats = await self.quota_manager.get_user_stats(user_id)
         is_channel_member = (
             is_member
@@ -152,26 +171,16 @@ class PermissionIdentityPriorityService:
         )
 
         group = "凡人"
-        if (
-            stats["invitation_count"] > 100
-            and stats["checkin_count"] > 300
-            and stats["generation_count"] > 1000
-        ):
-            group = "元婴期"
-        elif (
-            stats["invitation_count"] > 10
-            and stats["checkin_count"] > 30
-            and stats["generation_count"] > 100
-        ):
-            group = "金丹期"
-        elif (
-            stats["invitation_count"] > 1
-            and stats["checkin_count"] > 3
-            and stats["generation_count"] > 10
-        ):
-            group = "筑基期"
-        elif is_channel_member:
-            group = "练气期"
+        for candidate in reversed(CULTIVATION_RANKS[1:]):
+            upgrade = policy["cultivation_ranks"][candidate]["upgrade"]
+            if (
+                _coerce_int(stats.get("invitation_count")) >= upgrade["invitations"]
+                and _coerce_int(stats.get("checkin_count")) >= upgrade["checkins"]
+                and _coerce_int(stats.get("generation_count")) >= upgrade["generations"]
+                and (not upgrade["channel_member"] or is_channel_member)
+            ):
+                group = candidate
+                break
 
         await self.quota_manager.update_user_group(user_id, group)
         return group
@@ -212,9 +221,10 @@ class PermissionIdentityPriorityService:
             return "外门弟子"
 
     async def check_web_access(self, user_id: int) -> bool:
+        policy = await self.policy_loader()
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)
         return (
-            identity in WEB_ACCESS_ALLOWED_IDENTITIES
-            or group in WEB_ACCESS_ALLOWED_GROUPS
+            get_identity_policy(policy, identity)["benefits"]["web_access"]
+            or get_rank_policy(policy, group)["benefits"]["web_access"]
         )

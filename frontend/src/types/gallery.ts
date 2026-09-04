@@ -125,7 +125,7 @@ export interface RecentHistoryResponse {
   items: HistoryItem[]
   total: number
   page: 1
-  size: 8
+  size: number
 }
 
 export interface Wan22HistoryChainResponse {

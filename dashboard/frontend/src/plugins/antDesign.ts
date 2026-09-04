@@ -63,6 +63,7 @@ export function installAntDesign(app: App) {
   })
   registerAsyncComponent(app, 'a-divider', () => import('ant-design-vue/es/divider'))
   registerAsyncComponent(app, 'a-dropdown', () => import('ant-design-vue/es/dropdown'))
+  registerAsyncComponent(app, 'a-drawer', () => import('ant-design-vue/es/drawer'))
   app.component('a-empty', Empty)
   registerAsyncComponent(app, 'a-form', () => import('ant-design-vue/es/form'))
   registerAsyncComponent(

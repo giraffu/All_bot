@@ -58,6 +58,8 @@ class BillingCoreDependencies:
     rollback_user_concurrency_acquire_func: Callable[..., Awaitable[int]]
     deduct_credits_func: Callable[..., Awaitable[Any]]
     add_credits_func: Callable[..., Awaitable[Any]]
+    get_concurrent_task_limit_func: Callable[[str], Awaitable[int]] | None = None
+    is_queue_pressure_exempt_func: Callable[[str, str], Awaitable[bool]] | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,12 @@ def build_default_billing_core_dependencies(
         ),
         deduct_credits_func=quota_manager_impl.deduct_credits,
         add_credits_func=quota_manager_impl.add_credits,
+        get_concurrent_task_limit_func=getattr(
+            permission_service_impl, "get_concurrent_task_limit", None
+        ),
+        is_queue_pressure_exempt_func=getattr(
+            permission_service_impl, "is_queue_pressure_exempt", None
+        ),
     )
 
 
@@ -160,11 +168,30 @@ async def check_concurrency_lock(
     # 1. 检查目标执行池的排队压力与身份
     identity_str = await dependencies.get_user_identity_func(internal_user_id)
     normalized_identity = normalize_membership_identity(identity_str)
-    concurrent_task_limit = get_concurrent_task_limit_for_identity(normalized_identity)
-    if normalized_identity == "外门弟子":
-        # 凡人、练气期不可突破执行池容量限制，筑基期及以上可以。
+    concurrent_limit_loader = getattr(
+        dependencies, "get_concurrent_task_limit_func", None
+    )
+    if concurrent_limit_loader is not None:
+        concurrent_task_limit = await concurrent_limit_loader(
+            normalized_identity
+        )
+    else:
+        concurrent_task_limit = get_concurrent_task_limit_for_identity(normalized_identity)
+
+    queue_exemption_loader = getattr(
+        dependencies, "is_queue_pressure_exempt_func", None
+    )
+    if queue_exemption_loader is not None:
         user_group = await dependencies.get_user_group_func(internal_user_id)
-        if user_group in ["凡人", "练气期"]:
+        queue_pressure_exempt = await queue_exemption_loader(
+            user_group, normalized_identity
+        )
+    elif normalized_identity == "外门弟子":
+        user_group = await dependencies.get_user_group_func(internal_user_id)
+        queue_pressure_exempt = user_group not in ["凡人", "练气期"]
+    else:
+        queue_pressure_exempt = True
+    if not queue_pressure_exempt:
             profile = get_worker_pool_profile(task_type)
             if profile is None:
                 logger.warning(

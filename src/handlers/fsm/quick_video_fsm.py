@@ -12,7 +12,6 @@ from telegram.ext import (
 )
 
 from src.constants import (
-    DURATION_PERMISSIONS,
     DEFAULT_DURATION,
     DEFAULT_RESOLUTION,
     MODE_BLOWJOB,
@@ -22,7 +21,6 @@ from src.constants import (
     MODE_DOGGY_STYLE,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
-    RESOLUTION_PERMISSIONS,
     get_video_settings_keyboard,
 )
 from src.handlers.fsm.fsm_shared import (
@@ -49,8 +47,6 @@ from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-    VIDEO_DURATION_KEYS,
-    VIDEO_RESOLUTION_KEYS,
     get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
@@ -286,21 +282,11 @@ async def _resolve_quick_video_allowed_settings(
     user_group = await permission_service.get_user_group(internal_user.id)
     user_identity = await permission_service.get_user_identity(internal_user.id)
 
-    group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
-    identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
-    allowed_resolutions = [
-        res
-        for res in VIDEO_RESOLUTION_KEYS
-        if res in set(group_res_allowed + identity_res_allowed)
-    ]
-
-    group_dur_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
-    identity_dur_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
-    allowed_durations = [
-        dur
-        for dur in VIDEO_DURATION_KEYS
-        if dur in set(group_dur_allowed + identity_dur_allowed)
-    ]
+    allowed_resolutions, allowed_durations = await permission_service.get_video_permissions(
+        internal_user.id,
+        user_group=user_group,
+        user_identity=user_identity,
+    )
 
     return allowed_resolutions, allowed_durations, user_group, user_identity
 
@@ -520,8 +506,8 @@ async def _build_quick_video_settings_markup(
 ) -> InlineKeyboardMarkup:
     if qqcc_config is None:
         (
-            _allowed_resolutions,
-            _allowed_durations,
+            allowed_resolutions,
+            allowed_durations,
             user_group,
             user_identity,
         ) = await _resolve_quick_video_allowed_settings(
@@ -530,7 +516,13 @@ async def _build_quick_video_settings_markup(
             qqcc_config=None,
         )
         reply_markup = get_video_settings_keyboard(
-            user_group, user_identity, resolution, duration, context.lang
+            user_group,
+            user_identity,
+            resolution,
+            duration,
+            context.lang,
+            allowed_resolutions=allowed_resolutions,
+            allowed_durations=allowed_durations,
         )
         keyboard = list(reply_markup.inline_keyboard)
     else:
@@ -1230,6 +1222,17 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return ConversationHandler.END
         _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
+    allowed_resolutions = None
+    allowed_durations = None
+    if qqcc_config is None:
+        allowed_resolutions, allowed_durations, _group, _identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=None,
+            )
+        )
+
     if data == "qvid_start_generation":
         await query.answer(
             text=_t(context, "fsm.common.task_initializing"), cache_time=2
@@ -1245,8 +1248,8 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         resolution=str(fsm_data.get("resolution") or ""),
         duration=str(fsm_data.get("duration") or ""),
         qqcc_config_present=qqcc_config is not None,
-        allowed_resolutions=None,
-        allowed_durations=None,
+        allowed_resolutions=allowed_resolutions,
+        allowed_durations=allowed_durations,
     )
     if isinstance(settings_update, QuickVideoSettingsReject):
         if settings_update.reason == QuickVideoSubmissionRejectReason.FEATURE_DISABLED:
@@ -1327,10 +1330,21 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         qqcc_config = project_qqcc_config_for_scene_version(
             qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
         )
+    allowed_resolutions = None
+    allowed_durations = None
+    if qqcc_config is None:
+        allowed_resolutions, allowed_durations, _group, _identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=None,
+            )
+        )
     plan = build_quick_video_submission_plan(
         fsm_data=fsm_data,
         qqcc_config=qqcc_config,
-        allowed_resolutions=None,
+        allowed_resolutions=allowed_resolutions,
+        allowed_durations=allowed_durations,
     )
     if not isinstance(plan, QuickVideoSubmissionReject) and fsm_data.get(
         "is_h3_extension"

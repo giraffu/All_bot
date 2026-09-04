@@ -5,16 +5,15 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 
 # AllBot 计费与鉴权
 
-本 Skill 只保留钱与权限的稳定入口、高压不变量和验证路由。套餐价格、任务价格、
-通道配置、当前部署状态与历史迁移以代码、focused tests 和专项文档为准。
-支付、扣费、退款或身份 bug 叠加 `allbot-diagnosing-bugs`；修改副作用叠加
-`allbot-tdd`。
+价格、通道和部署状态以代码、focused tests 与专项文档为准。身份或资产 bug
+叠加 `allbot-diagnosing-bugs`；修改副作用叠加 `allbot-tdd`。
 
 ## 1. 按需阅读
 
 | 任务 | 先读 |
 | --- | --- |
 | JWT、Telegram 验签、密码与权限 | `docs/子模块_用户认证与权限_user_auth_permission.md` |
+| 修为升级、身份权益、低信任与闪回瓶容量 | `docs/business/04_BIZ_用户修为与身份权限体系.md` |
 | 订单、支付通道、会员、affiliate、退款 | `docs/子模块_计费与支付_billing_payment.md` |
 | 任务扣费、取消退款、多阶段 Saga | `docs/子模块_任务调度_task_scheduler.md` |
 | Gallery 提示词解锁与用户间转账 | `docs/子模块_社区与存储_gallery_storage.md` |
@@ -22,8 +21,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 | 付费群只读资格 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` |
 | 发布、支付轮询开关与环境配置 | `allbot-ops-deployment` 及其按需文档 |
 
-只读取命中的一行；跨域改动才组合多篇。先用 `rg` 找公开入口、调用方和 focused
-tests，再读取对应章节，不要为单一鉴权改动加载全部计费资料。
+只读命中行；跨域组合。用 `rg` 找入口、调用方和 focused tests。
 
 ## 2. 稳定入口与 seam
 
@@ -37,6 +35,8 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - Affiliate、会员、转账和退款穿过账本/provider seam；人工兑 USDT 只把原
   `PENDING OUT` 转终态。调用 core 的入口负责 provider 注册；core import 无副作用。
 - 付费群只读 `users/orders`，不产生资产副作用。
+- 动态等级权益以 `user_tier_policy_config:v1` 和
+  `user_tier_policy_service.py` 为源；身份过期或未知时回落外门。
 
 ## 3. 资产与身份不变量
 
