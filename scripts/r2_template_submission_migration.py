@@ -570,6 +570,46 @@ async def _database_reference_count() -> int:
         return int(value or 0)
 
 
+async def _dispose_database_engine() -> None:
+    from src.database.core import engine
+
+    await engine.dispose()
+
+
+def _execute_retirement_with_reference_guard(
+    client,
+    db: sqlite3.Connection,
+    *,
+    bucket: str,
+    plan: dict,
+    workers: int,
+) -> dict:
+    loop = asyncio.new_event_loop()
+    try:
+        database_references = loop.run_until_complete(_database_reference_count())
+        if database_references:
+            raise SystemExit(
+                "template source retirement requires zero database references"
+            )
+        report = execute_retirement_plan(
+            client,
+            db,
+            bucket=bucket,
+            plan=plan,
+            workers=workers,
+        )
+        report["database_references_before"] = database_references
+        report["database_references_after"] = loop.run_until_complete(
+            _database_reference_count()
+        )
+        if report["database_references_after"]:
+            raise RuntimeError("template database references reappeared during retirement")
+        return report
+    finally:
+        loop.run_until_complete(_dispose_database_engine())
+        loop.close()
+
+
 def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size: int) -> tuple[str, str]:
     source_head = client.head_object(Bucket=bucket, Key=source_key)
     if int(source_head.get("ContentLength", -1)) != size:
@@ -690,24 +730,13 @@ def run(args) -> dict:
                 confirmation=args.retirement_confirm,
                 plan_sha256=args.retirement_plan_sha256,
             )
-            database_references = asyncio.run(_database_reference_count())
-            if database_references:
-                raise SystemExit(
-                    "template source retirement requires zero database references"
-                )
-            report = execute_retirement_plan(
+            report = _execute_retirement_with_reference_guard(
                 client,
                 db,
                 bucket=args.bucket,
                 plan=plan,
                 workers=args.workers,
             )
-            report["database_references_before"] = database_references
-            report["database_references_after"] = asyncio.run(
-                _database_reference_count()
-            )
-            if report["database_references_after"]:
-                raise RuntimeError("template database references reappeared during retirement")
             _atomic_private_json(Path(args.retirement_receipt), report)
             return report
 
