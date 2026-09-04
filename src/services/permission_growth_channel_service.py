@@ -1,9 +1,11 @@
 from config import CHANNEL_INVITE_LINK, REQUIRED_CHANNEL_ID
 from src.database.core import AsyncSessionLocal
 from src.quota import QuotaManager
-
-
-CHECKIN_IDENTITIES_ALLOWED_WHEN_MORTAL = {"内门弟子", "核心弟子", "真传弟子"}
+from src.services.user_tier_policy_service import (
+    get_identity_policy,
+    get_rank_policy,
+    load_user_tier_policy_config,
+)
 
 
 class PermissionGrowthChannelService:
@@ -15,12 +17,14 @@ class PermissionGrowthChannelService:
         get_user_group_func,
         get_user_identity_func,
         get_user_credits_func,
+        policy_loader=load_user_tier_policy_config,
     ):
         self.quota_manager = quota_manager
         self.refresh_user_group_func = refresh_user_group_func
         self.get_user_group_func = get_user_group_func
         self.get_user_identity_func = get_user_identity_func
         self.get_user_credits_func = get_user_credits_func
+        self.policy_loader = policy_loader
 
     async def check_channel_reward(
         self, tg_id: int, username: str, full_name: str, internal_user_id: int = None
@@ -91,9 +95,12 @@ class PermissionGrowthChannelService:
         await self.refresh_user_group_func(internal_user_id)
         user_group = await self.get_user_group_func(internal_user_id)
         identity = await self.get_user_identity_func(internal_user_id)
+        policy = await self.policy_loader()
+        rank_policy = get_rank_policy(policy, user_group)
+        identity_policy = get_identity_policy(policy, identity)
         if (
-            user_group == "凡人"
-            and identity not in CHECKIN_IDENTITIES_ALLOWED_WHEN_MORTAL
+            not rank_policy["benefits"]["checkin_enabled"]
+            and not identity_policy["benefits"]["mortal_checkin_access"]
         ):
             invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
             msg = (
@@ -103,23 +110,8 @@ class PermissionGrowthChannelService:
             )
             return False, 0, msg, 0, 0
 
-        base_reward = 10
-        if user_group == "元婴期":
-            base_reward = 20
-        elif user_group == "金丹期":
-            base_reward = 15
-        elif user_group == "筑基期":
-            base_reward = 12
-        elif user_group == "练气期":
-            base_reward = 10
-
-        identity_bonus = 0
-        if identity == "内门弟子":
-            identity_bonus = 30
-        elif identity == "核心弟子":
-            identity_bonus = 40
-        elif identity == "真传弟子":
-            identity_bonus = 50
+        base_reward = rank_policy["benefits"]["checkin_credits"]
+        identity_bonus = identity_policy["benefits"]["checkin_bonus"]
 
         reward = base_reward + identity_bonus
 

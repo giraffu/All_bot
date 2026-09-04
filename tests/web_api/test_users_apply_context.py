@@ -144,6 +144,41 @@ async def test_get_user_history_payload_resolves_media_urls_with_keyword_argumen
 
 
 @pytest.mark.asyncio
+async def test_default_history_uses_combined_rank_and_effective_identity_limit(monkeypatch):
+    from copy import deepcopy
+
+    from src.services.user_tier_policy_service import DEFAULT_USER_TIER_POLICY_CONFIG
+
+    policy = deepcopy(DEFAULT_USER_TIER_POLICY_CONFIG)
+
+    async def _load_policy():
+        return policy
+
+    async def _fake_fetch(*, db, current_user_id, limit):
+        assert current_user_id == 123
+        assert limit == 12
+        return [], []
+
+    async def _fake_gallery(*, db, task_ids):
+        return set()
+
+    monkeypatch.setattr(users_history_service, "load_user_tier_policy_config", _load_policy)
+    monkeypatch.setattr(users_history_service, "fetch_recent_user_history", _fake_fetch)
+    monkeypatch.setattr(users_history_service, "fetch_active_public_gallery_task_ids", _fake_gallery)
+
+    response = await users_history_service.get_default_user_history_payload(
+        current_user=type(
+            "User",
+            (),
+            {"id": 123, "user_group": "筑基期", "current_identity": "核心弟子", "identity_expire_at": None},
+        )(),
+        db=object(),
+    )
+
+    assert response.size == 12
+
+
+@pytest.mark.asyncio
 async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_arguments(
     monkeypatch,
 ):

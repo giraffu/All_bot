@@ -1,7 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy import func, select, update
 
-from src.constants import DEFAULT_FAVORITE_LIMIT, FAVORITE_LIMITS_BY_IDENTITY
 from src.core.gallery_submission_effects import async_copy_to_r2_background
 from src.media_paths import (
     build_r2_media_materialization_plan,
@@ -11,15 +10,19 @@ from src.media_paths import (
 from src.media_processor import generate_and_upload_thumbnail
 from src.database.models import GalleryPost, History
 from src.services.media_archive_service import enqueue_history_media_restore
+from src.services.user_tier_policy_service import (
+    get_identity_policy,
+    load_user_tier_policy_config,
+    resolve_effective_identity,
+)
 from src.web_api.services.history_query_service import (
     fetch_owned_histories_by_task_id,
     pick_preferred_history,
 )
 
 
-def _get_favorite_limit_for_identity(identity: str | None) -> int:
-    normalized_identity = identity or "外门弟子"
-    return FAVORITE_LIMITS_BY_IDENTITY.get(normalized_identity, DEFAULT_FAVORITE_LIMIT)
+def _get_favorite_limit_for_identity(policy: dict, identity: str | None) -> int:
+    return get_identity_policy(policy, identity)["benefits"]["favorite_limit"]
 
 
 async def _count_visible_favorites_for_user(*, db, user_id: int) -> int:
@@ -33,8 +36,9 @@ async def _count_visible_favorites_for_user(*, db, user_id: int) -> int:
 
 
 async def _assert_can_add_favorite(*, db, current_user) -> None:
-    identity = getattr(current_user, "current_identity", None)
-    favorite_limit = _get_favorite_limit_for_identity(identity)
+    identity = resolve_effective_identity(current_user)
+    policy = await load_user_tier_policy_config()
+    favorite_limit = _get_favorite_limit_for_identity(policy, identity)
     favorite_count = await _count_visible_favorites_for_user(
         db=db,
         user_id=current_user.id,

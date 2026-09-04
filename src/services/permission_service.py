@@ -7,6 +7,11 @@ from src.services.permission_identity_priority_service import (
     PermissionIdentityPriorityService,
 )
 from src.services.permission_quota_service import PermissionQuotaService
+from src.services.user_tier_policy_service import (
+    get_identity_policy,
+    get_rank_policy,
+    resolve_video_permissions,
+)
 
 
 class PermissionService:
@@ -161,6 +166,29 @@ class PermissionService:
 
     async def get_user_identity(self, user_id: int) -> str:
         return await self.identity_priority.get_user_identity(user_id)
+
+    async def get_concurrent_task_limit(self, identity: str) -> int:
+        policy = await self.identity_priority.policy_loader()
+        return get_identity_policy(policy, identity)["benefits"]["concurrent_tasks"]
+
+    async def is_queue_pressure_exempt(self, group: str, identity: str) -> bool:
+        policy = await self.identity_priority.policy_loader()
+        return bool(
+            get_rank_policy(policy, group)["benefits"]["queue_pressure_exempt"]
+            or get_identity_policy(policy, identity)["benefits"]["queue_pressure_exempt"]
+        )
+
+    async def get_video_permissions(
+        self,
+        user_id: int,
+        *,
+        user_group: str | None = None,
+        user_identity: str | None = None,
+    ) -> tuple[list[str], list[str]]:
+        group = user_group or await self.get_user_group(user_id)
+        identity = user_identity or await self.get_user_identity(user_id)
+        policy = await self.identity_priority.policy_loader()
+        return resolve_video_permissions(policy, group, identity)
 
     async def perform_checkin(
         self, tg_id: int, username: str, full_name: str

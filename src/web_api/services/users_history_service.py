@@ -23,6 +23,11 @@ from src.web_api.services.history_response_builder import (
     build_favorite_gallery_payload,
     build_user_history_payload,
 )
+from src.services.user_tier_policy_service import (
+    load_user_tier_policy_config,
+    resolve_effective_identity,
+    resolve_flashback_limit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +72,16 @@ async def get_default_user_history_payload(
     current_user,
     db,
 ) -> PaginatedHistory:
+    policy = await load_user_tier_policy_config()
+    limit = resolve_flashback_limit(
+        policy,
+        getattr(current_user, "user_group", None),
+        resolve_effective_identity(current_user),
+    )
     return await get_user_history_payload(
         current_user=current_user,
         db=db,
-        limit=8,
+        limit=limit,
     )
 
 

@@ -25,11 +25,11 @@ from src.core.task_execution_types import resolve_worker_execution_task_type
 from src.database.core import AsyncSessionLocal
 from src.database.models import Order, Referral, User
 from src.services.permission_identity_priority_service import (
-    LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD,
     has_high_quality_referral_exemption,
 )
 from src.services.image_service import image_service
 from src.services.redis_connection import build_redis_client
+from src.services.user_tier_policy_service import load_user_tier_policy_config
 
 logger = logging.getLogger("dashboard.system")
 BACKEND_TASK_STATUS_CACHE_TTL_SECONDS = float(
@@ -182,6 +182,10 @@ async def get_low_trust_free_tier_user_ids(
     *,
     session_factory=AsyncSessionLocal,
 ) -> set[int]:
+    policy = await load_user_tier_policy_config()
+    low_trust = policy["low_trust"]
+    if not low_trust["enabled"]:
+        return set()
     normalized_user_ids = sorted(
         {
             user_id
@@ -193,20 +197,22 @@ async def get_low_trust_free_tier_user_ids(
         return set()
 
     async with session_factory() as session:
-        successful_order_stmt = (
-            select(Order.internal_user_id)
-            .where(
-                Order.internal_user_id.in_(normalized_user_ids),
-                Order.status == "SUCCESS",
+        successful_order_user_ids: set[int] = set()
+        if low_trust["successful_order_exempt"]:
+            successful_order_stmt = (
+                select(Order.internal_user_id)
+                .where(
+                    Order.internal_user_id.in_(normalized_user_ids),
+                    Order.status == "SUCCESS",
+                )
+                .distinct()
             )
-            .distinct()
-        )
-        successful_order_result = await session.execute(successful_order_stmt)
-        successful_order_user_ids = {
-            int(user_id)
-            for user_id in successful_order_result.scalars().all()
-            if user_id is not None
-        }
+            successful_order_result = await session.execute(successful_order_stmt)
+            successful_order_user_ids = {
+                int(user_id)
+                for user_id in successful_order_result.scalars().all()
+                if user_id is not None
+            }
 
         candidate_user_ids = [
             user_id
@@ -218,7 +224,7 @@ async def get_low_trust_free_tier_user_ids(
 
         low_trust_stmt = select(User.id).where(
             User.id.in_(candidate_user_ids),
-            User.checkin_count > LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD,
+            User.checkin_count > low_trust["checkin_threshold"],
         )
         low_trust_result = await session.execute(low_trust_stmt)
         low_trust_candidate_ids = {
@@ -256,6 +262,8 @@ async def get_low_trust_free_tier_user_ids(
             and has_high_quality_referral_exemption(
                 referral_count=row.referral_count,
                 successful_invitee_count=row.successful_invitee_count,
+                referral_count_threshold=low_trust["referral_count_threshold"],
+                success_rate_percent_threshold=low_trust["successful_invitee_rate_percent_threshold"],
             )
         }
 

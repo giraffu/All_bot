@@ -55,6 +55,23 @@ def test_main_bot_legacy_mode_builds_plan_without_qqcc_prompt_override():
     assert plan.aspect_ratio == "source"
 
 
+def test_main_bot_legacy_submission_rejects_rights_bypassed_by_stale_callback():
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_DOGGY_STYLE,
+            "resolution": "720p",
+            "duration": "8s",
+        },
+        qqcc_config=None,
+        allowed_resolutions=["512p"],
+        allowed_durations=["5s"],
+    )
+
+    assert plan == QuickVideoSubmissionReject(
+        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+    )
+
+
 @pytest.mark.asyncio
 async def test_main_bot_legacy_runner_does_not_invoke_qqcc_frame_adapter():
     plan = build_quick_video_submission_plan(

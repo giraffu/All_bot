@@ -442,6 +442,20 @@ class FeatureEntryVisibilityConfigResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class UserTierPolicyConfigRequest(BaseModel):
+    schema_version: Literal[1] = 1
+    capacity_combination_rule: Literal["max"] = "max"
+    cultivation_ranks: Dict[str, Any]
+    membership_identities: Dict[str, Any]
+    low_trust: Dict[str, Any]
+
+
+class UserTierPolicyConfigResponse(BaseModel):
+    key: str
+    config: Dict[str, Any]
+    updated_at: Optional[datetime] = None
+
+
 class QqccBotConfigRequest(BaseModel):
     scene_preset_version: Optional[int] = None
     global_enabled: Optional[bool] = None

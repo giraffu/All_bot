@@ -22,6 +22,7 @@ interface UseHistoryRecordsOptions {
 export function useHistoryRecords(options: UseHistoryRecordsOptions) {
   const data = ref<HistoryItem[]>([])
   const loading = ref(false)
+  const flashbackLimit = ref(8)
 
   const pagination = ref({
     current: 1,
@@ -42,6 +43,8 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
     data.value = recentHistory.items
     pagination.value.total = recentHistory.total
     pagination.value.current = recentHistory.page
+    pagination.value.pageSize = recentHistory.size
+    flashbackLimit.value = recentHistory.size
   }
 
   const tryOpenTaskFromQuery = async (page: number) => {
@@ -135,6 +138,7 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
 
   return {
     data,
+    flashbackLimit,
     loading,
     pagination,
     openDetail,

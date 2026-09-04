@@ -273,17 +273,21 @@ def get_video_settings_keyboard(
     current_resolution: str = DEFAULT_RESOLUTION,
     current_duration: str = DEFAULT_DURATION,
     lang: str = "zh",
+    allowed_resolutions: list[str] | None = None,
+    allowed_durations: list[str] | None = None,
 ):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     from src.i18n.translator import get_text
 
-    group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
-    identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
-    allowed_resolutions = list(set(group_res_allowed + identity_res_allowed))
+    if allowed_resolutions is None:
+        group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+        identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+        allowed_resolutions = list(set(group_res_allowed + identity_res_allowed))
 
-    group_dur_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
-    identity_dur_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
-    allowed_durations = list(set(group_dur_allowed + identity_dur_allowed))
+    if allowed_durations is None:
+        group_dur_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
+        identity_dur_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
+        allowed_durations = list(set(group_dur_allowed + identity_dur_allowed))
 
     keyboard = []
 

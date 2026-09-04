@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 from src.constants import (
     MODE_RANDOM_FACESWAP,
-    RESOLUTION_PERMISSIONS,
 )
 from src.core import user_core
 from src.database.core import AsyncSessionLocal
@@ -153,13 +152,12 @@ async def resolve_allowed_quick_video_resolutions(
     )
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
-    group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
-    identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
-    return [
-        res
-        for res in VIDEO_RESOLUTION_KEYS
-        if res in set(group_res_allowed + identity_res_allowed)
-    ]
+    resolutions, _durations = await permission_service.get_video_permissions(
+        internal_user_id,
+        user_group=user_group,
+        user_identity=user_identity,
+    )
+    return [res for res in VIDEO_RESOLUTION_KEYS if res in resolutions]
 
 
 def _resolve_regeneration_image_index(meta: dict[str, Any]) -> int:

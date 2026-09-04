@@ -47,6 +47,7 @@ const handleHistoryVideoLoaded = (event: Event) => {
 
 const {
   data,
+  flashbackLimit,
   loading,
   openDetail,
   fetchHistory,
@@ -69,7 +70,7 @@ const {
     <div class="history-notice mb-6 rounded-xl p-4 flex items-start">
       <div class="history-notice-icon mr-3 mt-0.5"><Clock :size="18" /></div>
       <div class="history-notice-text text-sm leading-relaxed">
-        {{ $t('history.warning', { max: 8 }) }}
+        {{ $t('history.warning', { max: flashbackLimit }) }}
       </div>
     </div>
 
