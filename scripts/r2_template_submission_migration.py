@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -334,7 +335,7 @@ def _connect(path: Path) -> sqlite3.Connection:
     return db
 
 
-def _client():
+def _client(*, max_pool_connections: int = 8):
     required = ("R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY")
     missing = [name for name in required if not os.getenv(name)]
     if missing:
@@ -345,7 +346,10 @@ def _client():
         aws_access_key_id=os.environ["R2_ACCESS_KEY"],
         aws_secret_access_key=os.environ["R2_SECRET_KEY"],
         region_name="auto",
-        config=Config(signature_version="s3v4", max_pool_connections=8),
+        config=Config(
+            signature_version="s3v4",
+            max_pool_connections=max(8, int(max_pool_connections)),
+        ),
     )
 
 
@@ -456,6 +460,44 @@ def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size
     return source_sha, target_sha
 
 
+def _run_copy_batch(
+    client,
+    bucket: str,
+    rows: list[tuple[str, str, int]],
+    *,
+    workers: int,
+    on_success,
+    on_failure,
+) -> None:
+    """Verify rows concurrently while keeping all SQLite writes in the caller thread."""
+    executor = ThreadPoolExecutor(max_workers=workers)
+    futures = {
+        executor.submit(
+            _copy_and_verify,
+            client,
+            bucket,
+            source_key,
+            target_key,
+            int(size),
+        ): (source_key, target_key, int(size))
+        for source_key, target_key, size in rows
+    }
+    failed = False
+    try:
+        for future in as_completed(futures):
+            row = futures[future]
+            try:
+                on_success(row, future.result())
+            except Exception as exc:
+                failed = True
+                on_failure(row, exc)
+                for pending in futures:
+                    pending.cancel()
+                raise
+    finally:
+        executor.shutdown(wait=not failed, cancel_futures=failed)
+
+
 async def _switch_database_references(state_path: Path) -> int:
     from sqlalchemy import select
     from src.database.core import AsyncSessionLocal
@@ -498,7 +540,7 @@ async def _switch_database_references(state_path: Path) -> int:
 
 
 def run(args) -> dict:
-    client = _client()
+    client = _client(max_pool_connections=args.workers * 2)
     state_path = Path(args.state)
     db = _connect(state_path)
     try:
@@ -567,25 +609,32 @@ def run(args) -> dict:
                    where status<>'verified' order by source_key limit ?""",
                 (args.limit,),
             ).fetchall()
-            for source_key, target_key, size in rows:
-                try:
-                    source_digest, target_digest = _copy_and_verify(
-                        client, args.bucket, source_key, target_key, int(size)
-                    )
-                    db.execute(
-                        """update objects set status='verified',sha256=?,source_sha256=?,
-                           target_sha256=?,error=null,updated_at=? where source_key=?""",
-                        (source_digest, source_digest, target_digest,
-                         datetime.now(timezone.utc).isoformat(), source_key),
-                    )
-                except Exception as exc:
-                    db.execute(
-                        "update objects set status='failed',error=?,updated_at=? where source_key=?",
-                        (type(exc).__name__, datetime.now(timezone.utc).isoformat(), source_key),
-                    )
-                    db.commit()
-                    raise
+            def mark_verified(row, digests) -> None:
+                source_key = row[0]
+                source_digest, target_digest = digests
+                db.execute(
+                    """update objects set status='verified',sha256=?,source_sha256=?,
+                       target_sha256=?,error=null,updated_at=? where source_key=?""",
+                    (source_digest, source_digest, target_digest,
+                     datetime.now(timezone.utc).isoformat(), source_key),
+                )
                 db.commit()
+
+            def mark_failed(row, exc: Exception) -> None:
+                db.execute(
+                    "update objects set status='failed',error=?,updated_at=? where source_key=?",
+                    (type(exc).__name__, datetime.now(timezone.utc).isoformat(), row[0]),
+                )
+                db.commit()
+
+            _run_copy_batch(
+                client,
+                args.bucket,
+                rows,
+                workers=args.workers,
+                on_success=mark_verified,
+                on_failure=mark_failed,
+            )
         total, verified, failed, total_bytes = db.execute(
             """select count(*),count(*) filter(where status='verified'),
                count(*) filter(where status='failed'),coalesce(sum(byte_size),0) from objects"""
@@ -626,6 +675,7 @@ def main() -> None:
     parser.add_argument("--state", required=True)
     parser.add_argument("--bucket", default=BUCKET)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="")
     parser.add_argument("--switch-db-references", action="store_true")
@@ -640,6 +690,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")
+    if args.workers < 1 or args.workers > 32:
+        raise SystemExit("workers must be between 1 and 32")
     if args.plan_retirement and not args.retirement_plan_out:
         raise SystemExit("--plan-retirement requires --retirement-plan-out")
     if args.execute_retirement and not all(
