@@ -166,6 +166,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   边界的递归删除代替该机制。
 - 真实 create/start/stop/restart/delete/scale 同时要求运行开关、`--execute`
   和用户明确的生产确认。
+- `runpod_prod_ops.sh` 支持用 `--drain-timeout <sec>` 显式覆盖 `down` 的排空等待；
+  Dashboard 删除默认传 `7200s`，避免 H3 等长任务因 controller 通用 `300s`
+  默认值而过早失败。排空超时只允许保留 disabled Pod 并报告失败，不能强删仍有
+  `current_task_id` 的实例。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、
   ComfyUI health 和 heartbeat，再允许接单；失败恢复旧 exact digest。
 - autoscaler 使用 leader lease、profile 阈值和 operation store，不能绕过

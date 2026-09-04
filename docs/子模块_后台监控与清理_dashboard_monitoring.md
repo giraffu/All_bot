@@ -169,6 +169,10 @@ sequenceDiagram
   计入 profile 总量，但不会自动 enable、restart 或 idle down，直到对应运维入口完成
   并显式恢复控制状态。
 - `DELETE /api/runpod/workers/{agent_id}` 提交 `down` operation，先 disable 并等待 `current_task_id` 清空，再删除 Pod 释放 RunPod 计费资源。
+- Dashboard 发起的手动和 autoscaler `down` 都显式使用独立排空窗口：默认等待
+  `7200s`，可由 `DASHBOARD_RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS` 调整且下限为
+  `300s`。长任务超过通用 controller 默认 `300s` 时不能被误判为立即可删；窗口
+  耗尽后仍保留 Pod 和 disabled 控制态，禁止强删正在执行的用户任务。
 - RunPod operation 状态通过 `RunPodOperationStore` seam 持久化；生产默认使用 Redis，测试可注入 in-memory fake。Redis key 使用 `dashboard:runpod:operations` sorted set、`dashboard:runpod:operation:{id}` JSON、`dashboard:runpod:active_add:{profile}` autoscaler/legacy 独占 add 锁，以及 `dashboard:runpod:manual_add_slots:{profile}` 手动 slot 预留。手动预留整批原子写入并逐 operation 释放；存在手动预留时 autoscaler add 不启动，存在 autoscaler 独占 add 时手动批次不接收。
 - `GET /api/runpod/operations` 从 store 读取最近 operation，并叠加当前进程仍持有的 process handle 状态；响应保留旧字段，并增加 `owner_id`、`attached`、`can_terminate_reason`。
 - `终止` 只允许当前 Dashboard 进程仍能安全控制的 add operation。并发手动新增的每个 operation 只记录和清理自己的明确 slot，因此可单独淘汰拉取慢的 Pod；若 operation 来自旧进程或重启后已 detached，API 返回 409，不按 Redis 里的旧 pid 盲杀进程，避免 PID 复用误杀。
@@ -193,7 +197,7 @@ sequenceDiagram
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。
 - 覆盖历史输出缩略图解析在 SQL 只读事务结束后执行、R2 缩略图异常降级，以及图片缩略图打开原图、视频列表不加载原件且点击后使用当前页弹窗播放。
 - 覆盖历史生成用户名大小写不敏感精确匹配、路由参数透传、筛选总数隔离，以及前端搜索/清空后回到第一页。
-- 覆盖 Dashboard RunPod 管理入口的 profile 校验、精确 slot add、手动批次并发/连续追加、Redis slot 原子预留与 autoscaler 互斥、逐 Pod 终止清理、旧 `desired_count` 兼容、worker pause/delete slot 解析，以及弹窗保持打开、slot 展示、最近操作分页、前端 typecheck / 系统监控页渲染。
+- 覆盖 Dashboard RunPod 管理入口的 profile 校验、精确 slot add、手动批次并发/连续追加、Redis slot 原子预留与 autoscaler 互斥、逐 Pod 终止清理、旧 `desired_count` 兼容、worker pause/delete slot 解析、删除独立长排空窗口，以及弹窗保持打开、slot 展示、最近操作分页、前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
   - `backend_task_id` best-effort cancel

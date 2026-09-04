@@ -329,6 +329,24 @@ def test_runpod_rollback_delete_slot_dry_run_uses_down():
     assert "runpod prod-worker down" in output
 
 
+def test_runpod_down_dry_run_forwards_explicit_drain_timeout():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "down",
+        "--profile",
+        "minimax_h3",
+        "--slot",
+        "03",
+        "--drain-timeout",
+        "7200",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--drain-timeout 7200" in result.stdout
+
+
 def test_runpod_scale_retry_unavailable_dry_run_is_bounded():
     result = run_script(
         "bash",

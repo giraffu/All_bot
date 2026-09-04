@@ -40,6 +40,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import prod_agent_id_from_sl
 logger = logging.getLogger("dashboard.runpod")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT = 40 * 60
+RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS_DEFAULT = 2 * 60 * 60
 
 _operation_store: RunPodOperationStore = build_default_runpod_operation_store()
 _command_builder = RunPodAdminCommandBuilder(project_root=PROJECT_ROOT)
@@ -174,6 +175,23 @@ def _autoscaler_bootstrap_timeout_seconds() -> int:
             RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT,
         )
         return RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT
+
+
+def _delete_drain_timeout_seconds() -> int:
+    raw = os.getenv("DASHBOARD_RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS", "")
+    try:
+        return (
+            max(300, int(raw))
+            if raw.strip()
+            else RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS_DEFAULT
+        )
+    except ValueError:
+        logger.warning(
+            "Invalid DASHBOARD_RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS=%r; using %s",
+            raw,
+            RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS_DEFAULT,
+        )
+        return RUNPOD_DELETE_DRAIN_TIMEOUT_SECONDS_DEFAULT
 
 
 def _operation_env(*, prod_max_manual_slots: int | None = None) -> dict[str, str]:
@@ -584,6 +602,7 @@ async def delete_runpod_worker_payload(
     )
     await _raise_if_runpod_worker_locked(agent_id)
     command = _base_command("down", profile=profile, slot=slot)
+    command.extend(["--drain-timeout", str(_delete_drain_timeout_seconds())])
     command.append("--execute")
     operation = await _register_operation(
         action="delete",
@@ -661,6 +680,7 @@ async def start_runpod_autoscaler_delete_operation(
     )
     await _raise_if_runpod_worker_locked(agent_id)
     command = _base_command("down", profile=normalized_profile, slot=slot)
+    command.extend(["--drain-timeout", str(_delete_drain_timeout_seconds())])
     command.append("--execute")
     return await _register_operation(
         action="delete",

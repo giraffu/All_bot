@@ -18,6 +18,7 @@ MAX_ATTEMPTS="20"
 RETRY_INTERVAL_SECONDS="90"
 READINESS_TIMEOUT_SECONDS=""
 WORKER_TIMEOUT_SECONDS=""
+DRAIN_TIMEOUT_SECONDS=""
 RELEASE_ARTIFACT=""
 RELEASE_ROLLBACK_REF=""
 
@@ -65,6 +66,7 @@ Options:
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --readiness-timeout <sec>   Override prod-worker pod readiness timeout.
   --worker-timeout <sec>      Override prod-worker heartbeat timeout.
+  --drain-timeout <sec>       Override wait for an active task to finish before down.
   --artifact <repo@sha256:...>
                               Required exact image for rollout-artifact.
   --rollback-ref <repo@sha256:...>
@@ -101,6 +103,9 @@ print_shell_command() {
   if [ -n "$WORKER_TIMEOUT_SECONDS" ]; then
     printf ' %q' --worker-timeout "$WORKER_TIMEOUT_SECONDS"
   fi
+  if [ -n "$DRAIN_TIMEOUT_SECONDS" ]; then
+    printf ' %q' --drain-timeout "$DRAIN_TIMEOUT_SECONDS"
+  fi
   while [ "$#" -gt 0 ]; do
     printf ' %q' "$1"
     shift
@@ -124,6 +129,9 @@ run_controller() {
   fi
   if [ -n "$WORKER_TIMEOUT_SECONDS" ]; then
     cmd+=(--worker-timeout "$WORKER_TIMEOUT_SECONDS")
+  fi
+  if [ -n "$DRAIN_TIMEOUT_SECONDS" ]; then
+    cmd+=(--drain-timeout "$DRAIN_TIMEOUT_SECONDS")
   fi
   cmd+=("$@")
   "${cmd[@]}"
@@ -555,6 +563,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --worker-timeout)
       WORKER_TIMEOUT_SECONDS="${2:?missing value for --worker-timeout}"
+      shift 2
+      ;;
+    --drain-timeout)
+      DRAIN_TIMEOUT_SECONDS="${2:?missing value for --drain-timeout}"
       shift 2
       ;;
     --artifact)
