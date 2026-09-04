@@ -18,6 +18,8 @@ from dashboard.backend.services.stats_service import (
     load_finance_dashboard_summary,
     load_hourly_generation_stats_by_date_str,
     load_type_distribution_stats_by_date_str,
+    load_task_credit_distribution_stats_by_date_str,
+    load_task_gpu_efficiency_stats_by_date_str,
 )
 from src.database.core import get_db
 
@@ -150,6 +152,36 @@ async def get_type_distribution(
         ("type_distribution", date_str or ""),
         lambda: load_type_distribution_stats_by_date_str(db=db, date_str=date_str),
         error_message="Error getting type distribution stats",
+    )
+
+
+@router.get("/task_credit_distribution")
+async def get_task_credit_distribution_stats(
+    date_str: str = None, db: AsyncSession = Depends(get_db)
+):
+    """Get gross generation-credit consumption by task type for one day."""
+    return await _cached_stats_route(
+        ("task_credit_distribution", date_str or ""),
+        lambda: load_task_credit_distribution_stats_by_date_str(
+            db=db,
+            date_str=date_str,
+        ),
+        error_message="Error getting task credit distribution stats",
+    )
+
+
+@router.get("/task_gpu_efficiency")
+async def get_task_gpu_efficiency_stats(
+    date_str: str = None, db: AsyncSession = Depends(get_db)
+):
+    """Get estimated credits per RTX 5090-equivalent GPU hour by task type."""
+    return await _cached_stats_route(
+        ("task_gpu_efficiency", date_str or ""),
+        lambda: load_task_gpu_efficiency_stats_by_date_str(
+            db=db,
+            date_str=date_str,
+        ),
+        error_message="Error getting task GPU efficiency stats",
     )
 
 

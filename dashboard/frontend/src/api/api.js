@@ -78,6 +78,22 @@ export const fetchTypeDistribution = async (dateStr = null) => {
   }))
 }
 
+/**
+ * @param {string | null} [dateStr]
+ */
+export const fetchTaskCreditDistribution = async (dateStr = null) =>
+  get(withQuery('/api/stats/task_credit_distribution', params => {
+    appendQueryParam(params, 'date_str', dateStr)
+  }))
+
+/**
+ * @param {string | null} [dateStr]
+ */
+export const fetchTaskGpuEfficiency = async (dateStr = null) =>
+  get(withQuery('/api/stats/task_gpu_efficiency', params => {
+    appendQueryParam(params, 'date_str', dateStr)
+  }))
+
 export const fetchCumulativeTypeDistribution = async (days = 7) =>
   get(withQuery('/api/stats/type_distribution/cumulative', params => {
     appendQueryParam(params, 'days', days)

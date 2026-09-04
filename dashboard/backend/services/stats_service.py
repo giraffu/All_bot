@@ -21,6 +21,10 @@ from dashboard.backend.services.stats_service_finance import (
     load_finance_dashboard_summary_impl,
 )
 from dashboard.backend.services.stats_service_summary import load_dashboard_stats_impl
+from dashboard.backend.services.stats_service_task_efficiency import (
+    load_task_credit_distribution_stats as load_task_credit_distribution_stats_impl,
+    load_task_gpu_efficiency_stats as load_task_gpu_efficiency_stats_impl,
+)
 from dashboard.backend.services.stats_service_utils import (
     build_hourly_distribution,
     parse_stats_target_date,
@@ -100,6 +104,24 @@ async def load_type_distribution_stats_by_date_str(
 
 async def load_cumulative_type_distribution_stats(*, db: AsyncSession, days: int) -> dict[str, int]:
     return await load_cumulative_type_distribution_stats_impl(db=db, days=days)
+
+
+async def load_task_credit_distribution_stats_by_date_str(
+    *, db: AsyncSession, date_str: str | None
+) -> dict:
+    return await load_task_credit_distribution_stats_impl(
+        db=db,
+        target_date=parse_stats_target_date(date_str),
+    )
+
+
+async def load_task_gpu_efficiency_stats_by_date_str(
+    *, db: AsyncSession, date_str: str | None
+) -> dict:
+    return await load_task_gpu_efficiency_stats_impl(
+        db=db,
+        target_date=parse_stats_target_date(date_str),
+    )
 
 
 async def load_dashboard_stats(*, db: AsyncSession, logger: Logger) -> dict:
