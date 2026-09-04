@@ -2800,6 +2800,7 @@ def test_scoped_seed_freezes_complete_history_manifests_without_reseeding_old_hi
     assert scoped.history_source == "production-read-only"
     assert "history_min_id" in MIGRATION_DDL
     assert "history_reference_prefix" in MIGRATION_DDL
+    assert "history_reference_kind" in MIGRATION_DDL
     assert "history_source" in MIGRATION_DDL
     assert "history_source_route_sha256" in MIGRATION_DDL
     assert "scope_context" in MIGRATION_DDL
@@ -2825,13 +2826,65 @@ def test_scoped_seed_freezes_complete_history_manifests_without_reseeding_old_hi
     )
 
 
+def test_numeric_user_original_seed_scope_excludes_thumbnails_and_keeps_context():
+    scoped = _parser().parse_args(
+        [
+            "seed",
+            "--history-reference-kind",
+            "numeric-user-directory-original",
+        ]
+    )
+
+    assert scoped.history_reference_kind == "numeric-user-directory-original"
+    assets = [
+        AssetIdentity(1, "input", 0, "123/input_images/source.png"),
+        AssetIdentity(1, "output", 0, "123/output_images/result.webp"),
+        AssetIdentity(1, "extra", 0, "123/output_images/result_thumb.webp"),
+        AssetIdentity(1, "extra", 1, "task-results/t/extra-1.webp"),
+    ]
+
+    selected = select_history_assets_for_seed(
+        assets,
+        history_reference_prefix=None,
+        history_reference_kind="numeric-user-directory-original",
+    )
+
+    assert [(asset.source_ref, in_scope) for asset, in_scope in selected] == [
+        ("123/input_images/source.png", True),
+        ("123/output_images/result.webp", True),
+        ("123/output_images/result_thumb.webp", False),
+        ("task-results/t/extra-1.webp", False),
+    ]
+    assert (
+        select_history_assets_for_seed(
+            [AssetIdentity(2, "output", 0, "history/2/result.webp")],
+            history_reference_prefix=None,
+            history_reference_kind="numeric-user-directory-original",
+        )
+        == []
+    )
+
+    with pytest.raises(SystemExit):
+        _parser().parse_args(
+            [
+                "seed",
+                "--history-reference-prefix",
+                "web_uploads/",
+                "--history-reference-kind",
+                "numeric-user-directory-original",
+            ]
+        )
+
+
 def test_scoped_seed_resume_rejects_any_scope_drift():
     assert validate_seed_scope_identity(
         stored_history_min_id=3284301,
         requested_history_min_id=3284301,
         stored_history_reference_prefix="staging/user-uploads/",
         requested_history_reference_prefix="staging/user-uploads/",
-    ) == (3284301, "staging/user-uploads/")
+        stored_history_reference_kind=None,
+        requested_history_reference_kind=None,
+    ) == (3284301, "staging/user-uploads/", None)
 
     with pytest.raises(ValueError, match="seed scope"):
         validate_seed_scope_identity(
@@ -2839,6 +2892,8 @@ def test_scoped_seed_resume_rejects_any_scope_drift():
             requested_history_min_id=3284302,
             stored_history_reference_prefix="staging/user-uploads/",
             requested_history_reference_prefix="staging/user-uploads/",
+            stored_history_reference_kind=None,
+            requested_history_reference_kind=None,
         )
     with pytest.raises(ValueError, match="seed scope"):
         validate_seed_scope_identity(
@@ -2846,7 +2901,38 @@ def test_scoped_seed_resume_rejects_any_scope_drift():
             requested_history_min_id=3284301,
             stored_history_reference_prefix="staging/user-uploads/",
             requested_history_reference_prefix="staging/worker-results/",
+            stored_history_reference_kind=None,
+            requested_history_reference_kind=None,
         )
+    with pytest.raises(ValueError, match="seed scope"):
+        validate_seed_scope_identity(
+            stored_history_min_id=1,
+            requested_history_min_id=1,
+            stored_history_reference_prefix=None,
+            requested_history_reference_prefix=None,
+            stored_history_reference_kind="numeric-user-directory-original",
+            requested_history_reference_kind="unsupported-kind",
+        )
+
+
+def test_numeric_seed_scope_identity_is_frozen_without_changing_legacy_manifests():
+    numeric_scope = build_seed_scope_identity(
+        history_min_id=1,
+        history_watermark=4016163,
+        history_reference_prefix=None,
+        history_reference_kind="numeric-user-directory-original",
+    )
+    legacy_scope = build_seed_scope_identity(
+        history_min_id=1,
+        history_watermark=4016163,
+        history_reference_prefix=None,
+    )
+
+    assert (
+        numeric_scope["history_reference_kind"]
+        == "numeric-user-directory-original"
+    )
+    assert "history_reference_kind" not in legacy_scope
 
 
 def test_scoped_seed_identity_is_bound_into_probe_plan_and_revalidated():

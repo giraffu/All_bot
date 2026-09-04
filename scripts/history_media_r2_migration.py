@@ -63,6 +63,11 @@ PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
 CLOUD_COPY_PROTOCOL = "history-r2-cloud-copy/v1"
+NUMERIC_USER_ORIGINAL_SCOPE = "numeric-user-directory-original"
+NUMERIC_USER_ORIGINAL_PATTERN = re.compile(
+    r"^[0-9]+/(?:input_images|output_images)/[^/]+$"
+)
+STANDARD_THUMBNAIL_PATTERN = re.compile(r"_thumb\.[^/]+$", re.IGNORECASE)
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ProxyConnectionError|ProxyError|"
     r"Failed to connect to proxy URL|ReadTimeoutError|Read\s+timeout|"
@@ -377,6 +382,10 @@ create table if not exists analytics_history_media_migration_runs (
     history_min_id integer not null default 1 check (history_min_id >= 1),
     history_watermark integer not null check (history_watermark >= 0),
     history_reference_prefix text,
+    history_reference_kind text constraint analytics_history_media_migration_runs_reference_kind_check check (
+      history_reference_kind is null or
+      history_reference_kind in ('numeric-user-directory-original')
+    ),
     history_source text not null default 'local-shadow',
     history_source_route_sha256 char(64),
     status text not null check (status in ('running','paused','completed','failed')),
@@ -504,6 +513,16 @@ alter table analytics_history_media_migration_runs
   add column if not exists history_min_id integer not null default 1;
 alter table analytics_history_media_migration_runs
   add column if not exists history_reference_prefix text;
+alter table analytics_history_media_migration_runs
+  add column if not exists history_reference_kind text;
+alter table analytics_history_media_migration_runs
+  drop constraint if exists analytics_history_media_migration_runs_reference_kind_check;
+alter table analytics_history_media_migration_runs
+  add constraint analytics_history_media_migration_runs_reference_kind_check
+  check (
+    history_reference_kind is null or
+    history_reference_kind in ('numeric-user-directory-original')
+  );
 alter table analytics_history_media_migration_runs
   add column if not exists history_source text not null default 'local-shadow';
 alter table analytics_history_media_migration_runs
@@ -858,7 +877,9 @@ def validate_seed_scope_identity(
     requested_history_min_id: int | None,
     stored_history_reference_prefix: str | None,
     requested_history_reference_prefix: str | None,
-) -> tuple[int, str | None]:
+    stored_history_reference_kind: str | None,
+    requested_history_reference_kind: str | None,
+) -> tuple[int, str | None, str | None]:
     """Return a frozen seed scope or reject a resume that changes it."""
     history_min_id = int(stored_history_min_id)
     if requested_history_min_id is not None and int(requested_history_min_id) != history_min_id:
@@ -869,7 +890,15 @@ def validate_seed_scope_identity(
         and requested_history_reference_prefix != prefix
     ):
         raise ValueError("resume identity does not match frozen History seed scope")
-    return history_min_id, prefix
+    reference_kind = (
+        str(stored_history_reference_kind) if stored_history_reference_kind else None
+    )
+    if (
+        requested_history_reference_kind is not None
+        and requested_history_reference_kind != reference_kind
+    ):
+        raise ValueError("resume identity does not match frozen History seed scope")
+    return history_min_id, prefix, reference_kind
 
 
 def validate_seed_source_identity(
@@ -892,10 +921,11 @@ def build_seed_scope_identity(
     history_min_id: int,
     history_watermark: int,
     history_reference_prefix: str | None,
+    history_reference_kind: str | None = None,
     history_source: str = "local-shadow",
     history_source_route_sha256: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    identity = {
         "history_min_id": int(history_min_id),
         "history_watermark": int(history_watermark),
         "history_reference_prefix": history_reference_prefix,
@@ -903,6 +933,9 @@ def build_seed_scope_identity(
         "history_source_route_sha256": history_source_route_sha256,
         "complete_history_manifests": True,
     }
+    if history_reference_kind is not None:
+        identity["history_reference_kind"] = history_reference_kind
+    return identity
 
 
 def validate_plan_seed_scope(
@@ -925,6 +958,7 @@ def _seed_scope_from_run(run: Any) -> dict[str, Any]:
         history_min_id=int(run["history_min_id"]),
         history_watermark=int(run["history_watermark"]),
         history_reference_prefix=run["history_reference_prefix"],
+        history_reference_kind=run["history_reference_kind"],
         history_source=str(run["history_source"]),
         history_source_route_sha256=run["history_source_route_sha256"],
     )
@@ -932,7 +966,11 @@ def _seed_scope_from_run(run: Any) -> dict[str, Any]:
 
 def _nondefault_seed_scope(run: Any) -> dict[str, Any] | None:
     scope = _seed_scope_from_run(run)
-    if scope["history_min_id"] == 1 and scope["history_reference_prefix"] is None:
+    if (
+        scope["history_min_id"] == 1
+        and scope["history_reference_prefix"] is None
+        and scope.get("history_reference_kind") is None
+    ):
         return None
     return scope
 
@@ -941,11 +979,24 @@ def select_history_assets_for_seed(
     assets: Iterable[AssetIdentity],
     *,
     history_reference_prefix: str | None,
+    history_reference_kind: str | None = None,
 ) -> list[tuple[AssetIdentity, bool]]:
-    """Select whole History manifests while marking prefix-matched migration assets."""
+    """Select whole History manifests while marking scoped migration assets."""
     frozen = list(assets)
-    if history_reference_prefix is None:
+    if history_reference_prefix is None and history_reference_kind is None:
         return [(asset, True) for asset in frozen]
+    if history_reference_kind == NUMERIC_USER_ORIGINAL_SCOPE:
+        selected = [
+            (
+                asset,
+                bool(NUMERIC_USER_ORIGINAL_PATTERN.fullmatch(asset.source_ref))
+                and not STANDARD_THUMBNAIL_PATTERN.search(asset.source_ref),
+            )
+            for asset in frozen
+        ]
+        return selected if any(in_scope for _asset, in_scope in selected) else []
+    if history_reference_kind is not None:
+        raise ValueError(f"unsupported History reference kind: {history_reference_kind}")
     selected = [
         (asset, asset.source_ref.startswith(history_reference_prefix))
         for asset in frozen
@@ -2786,7 +2837,8 @@ async def _seed(args: argparse.Namespace) -> None:
             run_id = uuid.UUID(args.resume_run_id)
             row = await conn.fetchrow(
                 """select history_min_id,history_watermark,
-                          history_reference_prefix,history_source,
+                          history_reference_prefix,history_reference_kind,
+                          history_source,
                           history_source_route_sha256,phase
                      from analytics_history_media_migration_runs where id=$1""",
                 run_id,
@@ -2797,11 +2849,17 @@ async def _seed(args: argparse.Namespace) -> None:
                 stored_watermark=int(row["history_watermark"]),
                 requested_watermark=args.history_watermark,
             )
-            history_min_id, history_reference_prefix = validate_seed_scope_identity(
+            (
+                history_min_id,
+                history_reference_prefix,
+                history_reference_kind,
+            ) = validate_seed_scope_identity(
                 stored_history_min_id=int(row["history_min_id"]),
                 requested_history_min_id=args.history_min_id,
                 stored_history_reference_prefix=row["history_reference_prefix"],
                 requested_history_reference_prefix=args.history_reference_prefix,
+                stored_history_reference_kind=row["history_reference_kind"],
+                requested_history_reference_kind=args.history_reference_kind,
             )
             history_source = str(row["history_source"])
             source_env = (
@@ -2849,6 +2907,7 @@ async def _seed(args: argparse.Namespace) -> None:
             history_reference_prefix = args.history_reference_prefix
             if history_reference_prefix == "":
                 raise ValueError("History reference prefix must not be empty")
+            history_reference_kind = args.history_reference_kind
             watermark = (
                 int(args.history_watermark)
                 if args.history_watermark is not None
@@ -2880,13 +2939,15 @@ async def _seed(args: argparse.Namespace) -> None:
             await conn.execute(
                 """insert into analytics_history_media_migration_runs(
                        id,history_min_id,history_watermark,history_reference_prefix,
-                       history_source,history_source_route_sha256,
+                       history_reference_kind,history_source,
+                       history_source_route_sha256,
                        status,phase,cursor_history_id)
-                     values($1,$2,$3,$4,$5,$6,'running','seed',$2 - 1)""",
+                     values($1,$2,$3,$4,$5,$6,$7,'running','seed',$2 - 1)""",
                 run_id,
                 history_min_id,
                 watermark,
                 history_reference_prefix,
+                history_reference_kind,
                 history_source,
                 source_route_sha256,
             )
@@ -2939,6 +3000,7 @@ async def _seed(args: argparse.Namespace) -> None:
                 scoped_assets = select_history_assets_for_seed(
                     assets,
                     history_reference_prefix=history_reference_prefix,
+                    history_reference_kind=history_reference_kind,
                 )
                 if not scoped_assets:
                     continue
@@ -3085,6 +3147,7 @@ async def _seed(args: argparse.Namespace) -> None:
                     "history_min_id": history_min_id,
                     "history_watermark": watermark,
                     "history_reference_prefix": history_reference_prefix,
+                    "history_reference_kind": history_reference_kind,
                     "history_source": history_source,
                     "history_source_route_sha256": source_route_sha256,
                 }
@@ -4251,7 +4314,8 @@ async def _create_probe_plan(args: argparse.Namespace) -> None:
         await _ensure_schema(conn)
         run = await conn.fetchrow(
             """select history_min_id,history_watermark,history_reference_prefix,
-                      history_source,history_source_route_sha256
+                      history_reference_kind,history_source,
+                      history_source_route_sha256
                  from analytics_history_media_migration_runs where id=$1""",
             run_id,
         )
@@ -4410,7 +4474,8 @@ async def _create_successor_probe_plan(args: argparse.Namespace) -> None:
 
             run = await conn.fetchrow(
                 """select history_min_id,history_watermark,
-                          history_reference_prefix,history_source,
+                          history_reference_prefix,history_reference_kind,
+                          history_source,
                           history_source_route_sha256
                      from analytics_history_media_migration_runs
                     where id=$1 for update""",
@@ -5519,7 +5584,8 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
         await _ensure_schema(conn)
         run = await conn.fetchrow(
             """select history_min_id,history_watermark,history_reference_prefix,
-                      history_source,history_source_route_sha256,sha_bytes_read,status
+                      history_reference_kind,history_source,
+                      history_source_route_sha256,sha_bytes_read,status
                  from analytics_history_media_migration_runs where id=$1""",
             run_id,
         )
@@ -5980,7 +6046,8 @@ async def _load_plan(
 ) -> tuple[uuid.UUID, dict[str, Any]]:
     row = await conn.fetchrow(
         """select p.run_id,p.manifest,r.history_min_id,r.history_watermark,
-                  r.history_reference_prefix,r.history_source,
+                  r.history_reference_prefix,r.history_reference_kind,
+                  r.history_source,
                   r.history_source_route_sha256
              from analytics_history_media_migration_plans p
              join analytics_history_media_migration_runs r on r.id=p.run_id
@@ -7163,7 +7230,12 @@ def _parser() -> argparse.ArgumentParser:
     seed = commands.add_parser("seed")
     seed.add_argument("--history-min-id", type=int)
     seed.add_argument("--history-watermark", type=int)
-    seed.add_argument("--history-reference-prefix")
+    seed_scope = seed.add_mutually_exclusive_group()
+    seed_scope.add_argument("--history-reference-prefix")
+    seed_scope.add_argument(
+        "--history-reference-kind",
+        choices=(NUMERIC_USER_ORIGINAL_SCOPE,),
+    )
     seed.add_argument(
         "--history-source",
         choices=("local-shadow", "production-read-only"),
