@@ -878,7 +878,7 @@
       "ltx_t2v_title": "Text to Video",
       "ltx_t2v_desc": "Describe visuals, camera motion, dialogue, and ambience; optionally select a character sheet for consistency.",
       "ltx25_video_upscale_title": "LTX-2.5 Video Upscale",
-      "ltx25_video_upscale_desc": "Upload up to 20 seconds, choose a 720p, 1080p, or 2K output above the source, and preserve motion and composition with generative IC V2V.",
+      "ltx25_video_upscale_desc": "Upload up to 15 seconds, choose a 720p, 1080p, or 2K output above the source, and preserve motion and composition with generative IC V2V.",
       "minimax_h3_title": "Advanced Image-to-Video Pro",
       "minimax_h3_desc": "Text, first-frame, first/last-frame, and character-reference video modes.",
       "character_reference_title": "Character Identity",
@@ -970,7 +970,7 @@
         "target_video": "Upload the body video to swap into",
         "reference_image": "Upload the character image to animate or swap in",
         "motion_video": "Upload the video that provides motion, camera, and composition",
-        "upscale_video": "MP4/MOV/WebM, up to 20 seconds and 40MB; choose 720p, 1080p, or 2K"
+        "upscale_video": "MP4/MOV/WebM, up to 15 seconds and 40MB; choose 720p, 1080p, or 2K"
       },
       "upload_slot_buttons": {
         "face_image": "Add Face Image",
@@ -1087,7 +1087,7 @@
         "minimax_h3_reference_video_too_long": "Reference videos can be up to 40 seconds.",
         "minimax_h3_reference_video_too_short": "Reference videos must be at least 3 seconds long.",
         "minimax_h3_reference_video_unreadable": "The reference video duration could not be read. Try another video.",
-        "ltx25_video_too_long": "Video Upscale supports source videos up to 20 seconds.",
+        "ltx25_video_too_long": "Video Upscale supports source videos up to 15 seconds.",
         "ltx25_video_already_2k": "The source video is already 2K or larger, so no upscale target is available."
       },
       "mode_kinds": {
@@ -1386,10 +1386,10 @@
     },
     "ltx25_upscale": {
       "disabled": "⚠️ The video-upscale node has not completed model validation and is not open yet.",
-      "start": "✨ **LTX-2.5 Video Upscale**\n\nSend an MP4/MOV/WebM video up to 20 seconds and {max_mb}MB. The service chooses a higher output tier from the source, up to 2K, and charges per second.\n\nSend /cancel anytime to exit.",
+      "start": "✨ **LTX-2.5 Video Upscale**\n\nSend an MP4/MOV/WebM video up to 15 seconds and {max_mb}MB. The service chooses a higher output tier from the source, up to 2K, and charges per second.\n\nSend /cancel anytime to exit.",
       "too_large": "⚠️ The video must be 40MB or smaller. Please compress it and retry.",
-      "too_long": "⚠️ Videos are limited to 20 seconds. Please trim and retry.",
-      "submitting": "🚀 Video received. Submitting the 2x upscale task..."
+      "too_long": "⚠️ Videos are limited to 15 seconds. Please trim and retry.",
+      "submitting": "🚀 Video received. Submitting the upscale task..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **Entered Face Swap Pro mode** (cost: {cost} credits).\n\n**Step 1:** Send 1 reference image.\n\nYou can send /cancel anytime to exit.",

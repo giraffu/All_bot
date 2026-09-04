@@ -10,7 +10,12 @@ LEGACY_FACE_VIDEO_FRAME_DURATION_TASK_TYPES = frozenset(
     {"face_video", "face_video_step1", "face_video_step2"}
 )
 LTX_HIGH_RESOURCE_COMBO_EXEMPT_TASK_TYPES = frozenset(
-    {"ltx_video", "ltx_video_v2", "ltx_video_v2_flf2v"}
+    {
+        "ltx_video",
+        "ltx_video_v2",
+        "ltx_video_v2_flf2v",
+        "ltx25_video_upscale",
+    }
 )
 
 

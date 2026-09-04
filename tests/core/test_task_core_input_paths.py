@@ -137,6 +137,23 @@ def test_build_video_task_request_allows_ltx_v2_1280x704_at_supported_durations(
     assert request.requested_duration == duration
 
 
+@pytest.mark.parametrize(
+    ("resolution", "duration"),
+    [(1080, 10), ("2560x1440", 15)],
+)
+def test_build_video_task_request_allows_ltx25_upscale_high_resolution_video(
+    resolution,
+    duration,
+):
+    request = build_video_task_request(
+        "ltx25_video_upscale",
+        {"resolution": resolution, "duration": duration},
+    )
+
+    assert request.output_duration == duration
+    assert request.requested_duration == duration
+
+
 @pytest.mark.asyncio
 async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_saved_inputs():
     strategy = MagicMock()
