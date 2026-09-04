@@ -14,7 +14,7 @@
     </template>
     <div class="chart-stack">
       <v-chart class="chart" :option="option" autoresize :loading="loading" />
-      <p class="chart-note">GPU 小时按每笔任务 running → gpu_done 实测，并以实际执行 Worker 的显卡折算为 RTX 5090；{{ coverageText }}</p>
+      <p class="chart-note">GPU 小时按每笔任务从开始执行到 GPU 完成实测，并以实际执行 Worker 的显卡折算为 RTX 5090；{{ coverageText }}</p>
     </div>
   </DashboardChartFrame>
 </template>
