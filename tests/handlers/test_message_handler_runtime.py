@@ -257,6 +257,28 @@ def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases
     }
 
 
+def test_normalize_queue_type_counts_for_display_groups_minimax_h3_modes():
+    normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
+        {
+            "minimax_h3_t2v": 1,
+            "minimax_h3_i2v": 2,
+            "minimax_h3_flf2v": 3,
+            "minimax_h3_ref2v": 4,
+        }
+    )
+
+    assert normalized == {"minimax_h3": 10}
+    assert TASK_TYPE_DISPLAY_NAMES["minimax_h3"] == "task.minimax_h3"
+
+    text = message_handler_runtime.build_queue_status_message(
+        0,
+        {},
+        SimpleNamespace(t=lambda key, **_: key),
+        TASK_TYPE_DISPLAY_NAMES,
+    )
+    assert "免费🟢 付费🟢 task.minimax_h3：`0` profile.tasks_unit" in text
+
+
 def test_normalize_queue_type_counts_labels_bf16_as_shared_free_edit_pool():
     normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
         {
