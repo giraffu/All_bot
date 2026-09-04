@@ -15,7 +15,7 @@ from src.services.user_tier_policy_service import (
 from src.services.permission_identity_priority_service import PermissionIdentityPriorityService
 
 
-def test_default_policy_preserves_existing_rights_and_small_flashback_steps():
+def test_default_policy_uses_additive_flashback_base_rank_and_identity_bonuses():
     config = normalize_user_tier_policy_config(None)
 
     assert config["cultivation_ranks"]["筑基期"]["upgrade"] == {
@@ -25,18 +25,26 @@ def test_default_policy_preserves_existing_rights_and_small_flashback_steps():
         "channel_member": False,
     }
     assert config["membership_identities"]["核心弟子"]["benefits"]["concurrent_tasks"] == 8
+    assert config["flashback_base"] == 5
     assert [
-        config["cultivation_ranks"][rank]["benefits"]["flashback_bottles"]
+        config["cultivation_ranks"][rank]["benefits"]["flashback_bonus"]
         for rank in ("凡人", "练气期", "筑基期", "金丹期", "元婴期")
-    ] == [8, 9, 10, 12, 14]
+    ] == [0, 2, 3, 4, 5]
+    assert [
+        config["membership_identities"][identity]["benefits"]["flashback_bonus"]
+        for identity in ("外门弟子", "内门弟子", "核心弟子", "真传弟子")
+    ] == [2, 4, 7, 10]
+    assert resolve_flashback_limit(config, "筑基期", "核心弟子") == 15
+    assert resolve_flashback_limit(config, "元婴期", "真传弟子") == 20
 
 
 def test_policy_normalization_fixes_unknown_missing_and_out_of_range_values():
     config = normalize_user_tier_policy_config(
         {
+            "schema_version": 2,
             "cultivation_ranks": {
                 "筑基期": {
-                    "benefits": {"flashback_bottles": 999},
+                    "benefits": {"flashback_bonus": 999},
                     "video": {"resolutions": ["bad", "720p", "512p"]},
                 },
                 "不存在": {"benefits": {"web_access": True}},
@@ -49,17 +57,41 @@ def test_policy_normalization_fixes_unknown_missing_and_out_of_range_values():
     )
 
     assert set(config["cultivation_ranks"]) == set(DEFAULT_USER_TIER_POLICY_CONFIG["cultivation_ranks"])
-    assert config["cultivation_ranks"]["筑基期"]["benefits"]["flashback_bottles"] == 10
+    assert config["cultivation_ranks"]["筑基期"]["benefits"]["flashback_bonus"] == 3
     assert config["cultivation_ranks"]["筑基期"]["video"]["resolutions"] == ["512p", "720p"]
     assert config["membership_identities"]["内门弟子"]["benefits"]["concurrent_tasks"] == 7
     assert config["low_trust"]["successful_invitee_rate_percent_threshold"] == 3
 
 
-def test_combined_rights_use_maximum_not_addition():
+def test_legacy_capacity_values_migrate_to_default_additive_bonuses():
+    config = normalize_user_tier_policy_config(
+        {
+            "schema_version": 1,
+            "capacity_combination_rule": "max",
+            "cultivation_ranks": {
+                "筑基期": {"benefits": {"flashback_bottles": 99}},
+            },
+            "membership_identities": {
+                "内门弟子": {
+                    "benefits": {"concurrent_tasks": 7, "flashback_bottles": 88},
+                },
+            },
+        }
+    )
+
+    assert config["schema_version"] == 2
+    assert config["capacity_combination_rule"] == "additive"
+    assert config["flashback_base"] == 5
+    assert config["cultivation_ranks"]["筑基期"]["benefits"]["flashback_bonus"] == 3
+    assert config["membership_identities"]["内门弟子"]["benefits"]["flashback_bonus"] == 4
+    assert config["membership_identities"]["内门弟子"]["benefits"]["concurrent_tasks"] == 7
+
+
+def test_combined_rights_add_base_rank_and_identity_bonuses():
     config = deepcopy(DEFAULT_USER_TIER_POLICY_CONFIG)
 
-    assert resolve_flashback_limit(config, "筑基期", "核心弟子") == 12
-    assert resolve_flashback_limit(config, "元婴期", "真传弟子") == 14
+    assert resolve_flashback_limit(config, "筑基期", "核心弟子") == 15
+    assert resolve_flashback_limit(config, "元婴期", "真传弟子") == 20
     assert resolve_video_permissions(config, "筑基期", "核心弟子") == (
         ["512p", "720p", "1024p"],
         ["5s", "8s", "10s"],

@@ -47,7 +47,7 @@ async def test_user_tier_policy_routes_require_auth_and_persist_normalized_polic
     dashboard_main.app.dependency_overrides[policy_router.get_db] = override_get_db
     token = create_access_token({"sub": ADMIN_USERNAME})
     payload = deepcopy(DEFAULT_USER_TIER_POLICY_CONFIG)
-    payload["cultivation_ranks"]["筑基期"]["benefits"]["flashback_bottles"] = 11
+    payload["cultivation_ranks"]["元婴期"]["benefits"]["flashback_bonus"] = 6
     payload["membership_identities"]["内门弟子"]["benefits"]["concurrent_tasks"] = 6
     try:
         async with AsyncClient(
@@ -66,5 +66,7 @@ async def test_user_tier_policy_routes_require_auth_and_persist_normalized_polic
     assert unauthenticated.status_code == 401
     assert response.status_code == 200
     assert response.json()["key"] == USER_TIER_POLICY_CONFIG_KEY
-    assert response.json()["config"]["cultivation_ranks"]["筑基期"]["benefits"]["flashback_bottles"] == 11
+    assert response.json()["config"]["schema_version"] == 2
+    assert response.json()["config"]["flashback_base"] == 5
+    assert response.json()["config"]["cultivation_ranks"]["元婴期"]["benefits"]["flashback_bonus"] == 6
     assert fake_db.committed is True

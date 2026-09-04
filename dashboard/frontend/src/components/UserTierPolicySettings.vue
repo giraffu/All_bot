@@ -28,7 +28,7 @@ interface RankPolicy {
     checkin_enabled: boolean
     checkin_credits: number
     web_access: boolean
-    flashback_bottles: number
+    flashback_bonus: number
     queue_pressure_exempt: boolean
   }
   video: VideoPolicy
@@ -42,7 +42,7 @@ interface IdentityPolicy {
     web_access: boolean
     concurrent_tasks: number
     favorite_limit: number
-    flashback_bottles: number
+    flashback_bonus: number
     queue_pressure_exempt: boolean
   }
   video: VideoPolicy
@@ -50,8 +50,9 @@ interface IdentityPolicy {
 }
 
 interface TierPolicyConfig {
-  schema_version: 1
-  capacity_combination_rule: 'max'
+  schema_version: 2
+  capacity_combination_rule: 'additive'
+  flashback_base: number
   cultivation_ranks: Record<string, RankPolicy>
   membership_identities: Record<string, IdentityPolicy>
   low_trust: {
@@ -96,12 +97,12 @@ const priorityEditor = ref<{ kind: 'rank' | 'identity'; key: string } | null>(nu
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const dirty = computed(() => config.value !== null && JSON.stringify(config.value) !== savedSnapshot.value)
 const flashbackRange = computed(() => {
-  if (!config.value) return '8–14'
-  const values = [
-    ...Object.values(config.value.cultivation_ranks).map(item => item.benefits.flashback_bottles),
-    ...Object.values(config.value.membership_identities).map(item => item.benefits.flashback_bottles),
-  ]
-  return `${Math.min(...values)}–${Math.max(...values)}`
+  if (!config.value) return '7–20'
+  const rankBonuses = Object.values(config.value.cultivation_ranks).map(item => item.benefits.flashback_bonus)
+  const identityBonuses = Object.values(config.value.membership_identities).map(item => item.benefits.flashback_bonus)
+  const minimum = config.value.flashback_base + Math.min(...rankBonuses) + Math.min(...identityBonuses)
+  const maximum = config.value.flashback_base + Math.max(...rankBonuses) + Math.max(...identityBonuses)
+  return `${minimum}–${maximum}`
 })
 const currentPriorityRules = computed(() => {
   if (!config.value || !priorityEditor.value) return []
@@ -182,7 +183,7 @@ onMounted(() => void loadPolicy())
             <h1>等级权益配置</h1>
             <span v-if="dirty" class="dirty-dot">有未保存修改</span>
           </div>
-          <p>统一管理修为晋升、会员身份、低信任判定及用户权益。容量类取较高档，视频取可用并集，签到与优先级按各自规则组合。</p>
+          <p>统一管理修为晋升、会员身份、低信任判定及用户权益。闪回瓶按基础容量、修为加成、身份加成相加，视频取可用并集。</p>
           <span class="updated-at">{{ formatUpdatedAt }}</span>
         </div>
       </div>
@@ -193,17 +194,17 @@ onMounted(() => void loadPolicy())
     </section>
 
     <section class="summary-grid">
-      <div class="summary-card"><HistoryOutlined /><div><strong>{{ flashbackRange }}</strong><span>闪回瓶当前梯度</span></div></div>
-      <div class="summary-card"><ThunderboltOutlined /><div><strong>取较高档</strong><span>修为 × 身份容量权益</span></div></div>
-      <div class="summary-card"><CheckCircleOutlined /><div><strong>固定层级</strong><span>防止误删或越权配置</span></div></div>
+      <div class="summary-card"><HistoryOutlined /><div><a-input-number v-if="config" v-model:value="config.flashback_base" :min="1" :max="100" size="small" /><strong v-else>5</strong><span>闪回瓶基础容量</span></div></div>
+      <div class="summary-card"><ThunderboltOutlined /><div><strong>{{ flashbackRange }}</strong><span>叠加后的实际容量范围</span></div></div>
+      <div class="summary-card"><CheckCircleOutlined /><div><strong>叠加计算</strong><span>基础 + 修为加成 + 身份加成</span></div></div>
     </section>
 
     <a-tabs v-if="config" v-model:active-key="activeTab" class="policy-tabs">
       <a-tab-pane key="cultivation" tab="修为升级与权益">
-        <div class="section-note">晋升条件均为“同时满足”。练气期默认只要求加入频道；未知历史高阶修为按元婴期权益处理。</div>
+        <div class="section-note">晋升条件均为“同时满足”。修为栏配置闪回瓶加成，凡人加成为 0；未知历史高阶修为按元婴期权益处理。</div>
         <div class="table-shell">
           <table class="policy-table rank-table">
-            <thead><tr><th>修为</th><th>升级条件</th><th>签到</th><th>闪回瓶</th><th>访问与队列</th><th>视频权益</th><th>优先级</th></tr></thead>
+            <thead><tr><th>修为</th><th>升级条件</th><th>签到</th><th>闪回瓶加成</th><th>访问与队列</th><th>视频权益</th><th>优先级</th></tr></thead>
             <tbody>
               <tr v-for="rank in RANKS" :key="rank">
                 <td><span class="tier-name">{{ rank }}</span></td>
@@ -217,7 +218,7 @@ onMounted(() => void loadPolicy())
                   <span v-else class="muted">初始修为</span>
                 </td>
                 <td><div class="stack-fields"><a-switch v-model:checked="config.cultivation_ranks[rank].benefits.checkin_enabled" checked-children="可签" un-checked-children="禁用" /><label>基础灵石<a-input-number v-model:value="config.cultivation_ranks[rank].benefits.checkin_credits" :min="0" :max="10000" size="small" /></label></div></td>
-                <td><a-input-number v-model:value="config.cultivation_ranks[rank].benefits.flashback_bottles" :min="1" :max="100" /></td>
+                <td><a-input-number v-model:value="config.cultivation_ranks[rank].benefits.flashback_bonus" :min="0" :max="100" /></td>
                 <td><div class="switch-stack"><label>Web <a-switch v-model:checked="config.cultivation_ranks[rank].benefits.web_access" size="small" /></label><label>高压豁免 <a-switch v-model:checked="config.cultivation_ranks[rank].benefits.queue_pressure_exempt" size="small" /></label></div></td>
                 <td><a-checkbox-group v-model:value="config.cultivation_ranks[rank].video.resolutions" :options="RESOLUTIONS" /><a-checkbox-group v-model:value="config.cultivation_ranks[rank].video.durations" :options="DURATIONS" /></td>
                 <td><a-button size="small" @click="openPriority('rank', rank)">编辑 {{ config.cultivation_ranks[rank].priority_rules.length }} 档</a-button></td>
@@ -228,17 +229,17 @@ onMounted(() => void loadPolicy())
       </a-tab-pane>
 
       <a-tab-pane key="identity" tab="身份权益">
-        <div class="section-note">身份到期会自动回落为外门弟子；并发和收藏按当前有效身份计算。</div>
+        <div class="section-note">身份栏配置闪回瓶加成，并与基础容量、当前修为加成叠加；身份到期会自动回落为外门弟子。</div>
         <div class="table-shell">
           <table class="policy-table identity-table">
-            <thead><tr><th>身份</th><th>签到加成</th><th>并发</th><th>收藏</th><th>闪回瓶</th><th>访问与队列</th><th>视频权益</th><th>优先级</th></tr></thead>
+            <thead><tr><th>身份</th><th>签到加成</th><th>并发</th><th>收藏</th><th>闪回瓶加成</th><th>访问与队列</th><th>视频权益</th><th>优先级</th></tr></thead>
             <tbody>
               <tr v-for="identity in IDENTITIES" :key="identity">
                 <td><span class="tier-name identity">{{ identity }}</span></td>
                 <td><div class="stack-fields"><label>加成<a-input-number v-model:value="config.membership_identities[identity].benefits.checkin_bonus" :min="0" :max="10000" size="small" /></label><label>凡人可签 <a-switch v-model:checked="config.membership_identities[identity].benefits.mortal_checkin_access" size="small" /></label></div></td>
                 <td><a-input-number v-model:value="config.membership_identities[identity].benefits.concurrent_tasks" :min="1" :max="100" /></td>
                 <td><a-input-number v-model:value="config.membership_identities[identity].benefits.favorite_limit" :min="1" :max="100000" /></td>
-                <td><a-input-number v-model:value="config.membership_identities[identity].benefits.flashback_bottles" :min="1" :max="100" /></td>
+                <td><a-input-number v-model:value="config.membership_identities[identity].benefits.flashback_bonus" :min="0" :max="100" /></td>
                 <td><div class="switch-stack"><label>Web <a-switch v-model:checked="config.membership_identities[identity].benefits.web_access" size="small" /></label><label>高压豁免 <a-switch v-model:checked="config.membership_identities[identity].benefits.queue_pressure_exempt" size="small" /></label></div></td>
                 <td><a-checkbox-group v-model:value="config.membership_identities[identity].video.resolutions" :options="RESOLUTIONS" /><a-checkbox-group v-model:value="config.membership_identities[identity].video.durations" :options="DURATIONS" /></td>
                 <td><a-button size="small" @click="openPriority('identity', identity)">编辑 {{ config.membership_identities[identity].priority_rules.length }} 档</a-button></td>

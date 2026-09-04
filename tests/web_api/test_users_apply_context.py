@@ -156,7 +156,7 @@ async def test_default_history_uses_combined_rank_and_effective_identity_limit(m
 
     async def _fake_fetch(*, db, current_user_id, limit):
         assert current_user_id == 123
-        assert limit == 12
+        assert limit == 15
         return [], []
 
     async def _fake_gallery(*, db, task_ids):
@@ -175,7 +175,7 @@ async def test_default_history_uses_combined_rank_and_effective_identity_limit(m
         db=object(),
     )
 
-    assert response.size == 12
+    assert response.size == 15
 
 
 @pytest.mark.asyncio
