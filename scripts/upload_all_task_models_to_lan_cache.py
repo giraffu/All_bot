@@ -120,6 +120,16 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
             ("minimax_h3_runtime", "2026-09-02-10eros-beta4-bf16-int8-addon4"),
         ),
     ),
+    TargetSpec(
+        name="ltx25_video_upscale",
+        prefix="ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2",
+        manifest_key=(
+            "ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json"
+        ),
+        bundle_versions=(
+            ("ltx25_video_upscale_runtime", "2026-09-04-adaptive-hybrid-v2"),
+        ),
+    ),
 )
 TARGETS_BY_NAME = {
     target.name: target for target in (*DEFAULT_BASE_TARGETS, *OPTIONAL_TARGETS)

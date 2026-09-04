@@ -71,6 +71,19 @@ def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
     )
 
 
+def test_ltx25_video_upscale_target_reuses_shared_objects_for_adaptive_bundle():
+    target = TARGETS_BY_NAME["ltx25_video_upscale"]
+
+    assert target in OPTIONAL_TARGETS
+    assert target.prefix == "ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2"
+    assert target.manifest_key == (
+        "ltx25_video_upscale/2026-09-04-adaptive-hybrid-v2/manifest.json"
+    )
+    assert target.bundle_versions == (
+        ("ltx25_video_upscale_runtime", "2026-09-04-adaptive-hybrid-v2"),
+    )
+
+
 def test_target_manifest_preserves_exact_obsolete_file_cleanup(tmp_path: Path):
     registry = ModelRegistry(tmp_path / "registry")
     registry.ensure_layout()

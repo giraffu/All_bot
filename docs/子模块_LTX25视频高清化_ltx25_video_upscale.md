@@ -72,6 +72,10 @@ runtime、workflow、DaSiWa RTX VSR 节点及其 NVIDIA VFX 依赖。runtime-ref
 40GB，全部按 size 和 SHA256 校验。基础 LTX-2.5、IC-LoRA 和 LTX-2.3 潜空间模型
 均需先在 Hugging Face 接受许可，再使用只读 `HF_TOKEN` 下载；token 不写入 Git、
 日志或镜像。
+LAN 模型缓存使用
+`scripts/upload_all_task_models_to_lan_cache.py --target ltx25_video_upscale`
+发布该 manifest；上传器按 SHA256 复用已有对象，只补真实差集，不能把同一组约
+40GB 权重复制到新的版本前缀。
 
 云测试冷启动应显式设置 `RUNPOD_MODEL_DOWNLOAD_PARTS_PER_FILE=4`，在保留文件级
 并行和 `.partial` 断点续传的同时，对 20GB transformer 与 14GB 文本编码器使用
