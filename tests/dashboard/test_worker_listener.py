@@ -136,7 +136,7 @@ async def test_process_message_records_exact_gpu_phase_for_actual_all_worker_tas
     await worker_listener.process_message(
         {
             "channel": "comfy:task_events:task-all-1",
-            "data": json.dumps({"status": "running", "execution_phase": "gpu_done"}),
+            "data": json.dumps({"status": "running", "execution_phase": "delivering"}),
         },
         fake_worker_redis,
         _FakeRedis(),

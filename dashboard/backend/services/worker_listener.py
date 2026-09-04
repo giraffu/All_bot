@@ -239,7 +239,11 @@ async def process_message(message, r_worker, r_bot):
         status = event_data.get("status")
         execution_phase = event_data.get("execution_phase")
 
-        if status == "running" and execution_phase in {"running", "gpu_done"}:
+        if status == "running" and execution_phase in {
+            "running",
+            "gpu_done",
+            "delivering",
+        }:
             phase_key = gpu_phase_key(task_id)
             field = "started_at" if execution_phase == "running" else "finished_at"
             await r_worker.hsetnx(phase_key, field, str(_now_timestamp()))

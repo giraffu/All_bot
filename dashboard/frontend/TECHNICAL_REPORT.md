@@ -65,15 +65,17 @@ graph TD
 | **GET** | `/api/stats` | 全局统计数据 | 返回 `today_users`, `total_credits`, `generation_distribution`, `avg_daily_distribution`, `credit_distribution`, `avg_daily_credit_distribution`, `credit_holding_distribution` 等 |
 | **GET** | `/api/stats/history` | 历史趋势数据 | `days=7` (默认), 返回每日新增用户、生成量、消耗积分、**用户增长率**等 |
 | **GET** | `/api/stats/task_credit_distribution` | 按任务统计每日灵石消耗 | `date_str=YYYY-MM-DD`；返回生成任务负向扣费的 gross 灵石分布 |
-| **GET** | `/api/stats/task_gpu_efficiency` | 按任务统计灵石/GPU小时 | `date_str=YYYY-MM-DD`；按 `History.task_id ↔ WorkerLog.task_id` 逐任务关联，用 History 的用户侧生成类型、该单实际 `worker_id` 的 `running → gpu_done` 阶段时长及 Worker 显卡折算为 5090 等效值；旧排队时长、内部无 History 步骤、未识别显卡和无阶段遥测记录不进入效率分母 |
+| **GET** | `/api/stats/task_gpu_efficiency` | 按任务统计灵石/GPU小时 | `date_str=YYYY-MM-DD`；按 `History.task_id ↔ WorkerLog.task_id` 逐任务关联，用 History 的用户侧生成类型、该单实际 `worker_id` 从 `running` 到 GPU 完成的阶段时长及 Worker 显卡折算为 5090 等效值；旧排队时长、内部无 History 步骤、未识别显卡和无阶段遥测记录不进入效率分母 |
 | **GET** | `/api/users` | 用户列表 | `skip`, `limit`, 返回包含 `inviter_info`, `referral_count`, `invited_total_usdt` 的用户对象 |
 | **DELETE** | `/api/users/{id}` | 删除用户 | **高危**: 级联删除历史、签到、推荐关系等所有关联数据 |
 | **GET** | `/api/bot/queue` | 队列状态 | 调用 `image_service` 获取 ComfyUI 实时排队数 |
 | **POST** | `/api/templates/.../approve` | 批准模板 | 移动文件至正式目录，并自动发放积分奖励 |
 
 任务效率的精确遥测由 `dashboard/backend/services/worker_listener.py` 消费 Central
-已有的任务阶段事件。它把同一任务第一次 `running` 与 `gpu_done` 时间暂存在 Worker
-Redis，终态时写回该任务的 `WorkerLog.start_time/end_time/duration`；成功记录仅在
+已有的任务阶段事件。它把同一任务第一次 `running` 与 GPU 完成时间暂存在 Worker
+Redis；新 Worker 的 `gpu_done` 是首选结束点，旧/当前运行包只发出 `delivering` 时以该
+上传前阶段作为等价结束点。终态时写回该任务的
+`WorkerLog.start_time/end_time/duration`；成功记录仅在
 `worker_id` 能解析到明确显卡折算系数时写入 `dashboard_gpu_phase_v1` 内部标记。
 统计端只读取带该标记的时长，并以 `History.task_id` 还原用户侧生成类型，因此共享
 `all` Worker 或支持多个类型的 Worker 不按 profile 拆分，也不会重复分摊 GPU 时间。
