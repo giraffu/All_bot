@@ -331,6 +331,11 @@ key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 
 `scope_context`，只参与生产 CAS、不进入 Probe/Copy。该 seed scope 必须进入所有
 Probe/Copy/Switch manifest，并在恢复或 successor 执行时与 run 逐字段复核；不得把
 增量坐标追加进旧 run，也不得用前缀过滤后的残缺坐标集合更新 History。
+数字用户旧目录使用与前缀互斥的
+`--history-reference-kind numeric-user-directory-original`。该枚举只选择
+`<数字用户>/input_images/<文件>` 与 `<数字用户>/output_images/<文件>`，并明确排除
+`*_thumb.*`；缩略图由标准路径覆盖后另行重建，不得混入原文件 Copy/Switch 计划。
+引用类别与前缀一样写入 run 和所有后继计划的冻结 seed scope，恢复时不得变更。
 本地 shadow 落后冻结水位时，scoped seed 可把生产库作为只读 History 来源；生产连接
 必须先启用 session 级只读，来源类型与不含账号/密码的数据库路由 SHA-256 一并进入
 seed scope，本地分析库仍是迁移账本唯一写者。不得为生成计划解除 shadow pause guard，
