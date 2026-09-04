@@ -299,7 +299,7 @@ async def prepare_web_submission_request(
         if extension.aspect_ratio:
             inputs["aspect_ratio"] = extension.aspect_ratio
         h3_extension_metadata = dict(extension.metadata)
-        h3_allow_contribute = bool(extension.allow_contribute)
+        h3_allow_contribute = False
 
     h3_character_binding = ""
     if req.negative_prompt:

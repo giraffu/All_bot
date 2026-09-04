@@ -229,7 +229,7 @@ async def prepare_minimax_h3_web_extension(
             "minimax_h3_prev_task_id": prev_task_id,
             "minimax_h3_chain_task_ids": full_chain,
         },
-        allow_contribute=getattr(history, "allow_contribute", True) is not False,
+        allow_contribute=False,
     )
 
 
@@ -328,8 +328,7 @@ async def prepare_minimax_h3_extension_fsm_data(
             "is_extension": True,
             "extension_prev_task_id": prev_task_id,
             "minimax_h3_chain_task_ids": build_minimax_h3_full_chain_task_ids(history),
-            "extension_allow_contribute": getattr(history, "allow_contribute", True)
-            is not False,
+            "extension_allow_contribute": False,
         },
     )
 
@@ -463,6 +462,11 @@ async def stitch_minimax_h3_histories_and_create_history(
     task_ids = [str(history.task_id or "") for history in histories]
     _validate_ordered_chain(histories, task_ids)
     task_id = _stitched_task_id(user_id=user_id, chain_task_ids=task_ids)
+    first = histories[0]
+    combined_prompt = _build_chain_prompt(histories)
+    stitched_allow_contribute = (
+        getattr(first, "allow_contribute", True) is not False
+    )
 
     async def _find_existing(active_session):
         result = await active_session.execute(
@@ -485,6 +489,14 @@ async def stitch_minimax_h3_histories_and_create_history(
         )
         existing = await _find_existing(active_session)
         if existing is not None:
+            if (
+                existing.prompt != combined_prompt
+                or existing.allow_contribute is not stitched_allow_contribute
+            ):
+                existing.prompt = combined_prompt
+                existing.allow_contribute = stitched_allow_contribute
+                await active_session.commit()
+                await active_session.refresh(existing)
             bucket_name, object_name = resolve_storage_object(existing.output_file)
             existing_bytes = await asyncio.to_thread(
                 storage.get_file_bytes,
@@ -505,12 +517,11 @@ async def stitch_minimax_h3_histories_and_create_history(
         )
         if not output_file:
             raise MiniMaxH3PersistenceError("拼接视频上传失败，请稍后再试。")
-        first = histories[0]
         history = History(
             user_id=user_id,
             task_id=task_id,
             type=MINIMAX_H3_I2V,
-            prompt=_build_chain_prompt(histories),
+            prompt=combined_prompt,
             output_file=output_file,
             extra_outputs=build_minimax_h3_stitched_extra_outputs(
                 chain_task_ids=task_ids,
@@ -525,10 +536,7 @@ async def stitch_minimax_h3_histories_and_create_history(
                 int(getattr(item, "requested_duration", 0) or 0) for item in histories
             )
             or None,
-            allow_contribute=all(
-                getattr(item, "allow_contribute", True) is not False
-                for item in histories
-            ),
+            allow_contribute=stitched_allow_contribute,
             source=source,
         )
         active_session.add(history)
