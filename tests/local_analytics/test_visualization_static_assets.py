@@ -5,6 +5,32 @@ ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = ROOT / "local_analytics_platform" / "static"
 
 
+def test_generation_history_table_fits_desktop_and_can_copy_prompts():
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+    bootstrap_js = (STATIC_DIR / "js" / "bootstrap.js").read_text(encoding="utf-8")
+    history_js = (STATIC_DIR / "js" / "generationHistory.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'class="generation-history-col-model-source"' in html
+    assert 'class="generation-history-col-prompt"' in html
+    assert ".generation-history-col-prompt { width: 28%; }" in styles
+    assert ".generation-history-table-shell" in styles
+    assert "overflow-x: hidden" in styles
+    assert "min-width: 1900px" not in styles
+    assert "用户昵称 / 用户 ID" in html
+    assert "H3 主模型 / 来源" in html
+    assert "生成规格" in html
+    assert "收藏 / 反馈" in html
+    assert 'colspan="9"' in history_js
+    assert 'class="generation-history-user-summary"' in history_js
+    assert 'class="generation-history-prompt-copy"' in history_js
+    assert 'data-history-prompt-copy="${escapeHtml(row.id)}"' in history_js
+    assert "await copyTextToClipboard(prompt)" in history_js
+    assert "copyTextToClipboard," in bootstrap_js
+
+
 def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
@@ -14,9 +40,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260903-table-media-preview-v1" in html
+    assert "/static/styles.css?v=20260905-history-table-fit-v1" in html
     assert (
-        'type="module" src="/static/js/bootstrap.js?v=20260903-table-media-preview-v1"'
+        'type="module" src="/static/js/bootstrap.js?v=20260905-history-table-fit-v1"'
         in html
     )
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
