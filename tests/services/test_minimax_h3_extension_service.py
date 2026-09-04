@@ -46,7 +46,7 @@ def _history(
 async def test_web_extension_anchors_owned_tail_frame_and_builds_canonical_chain(
     monkeypatch,
 ):
-    parent = _history(allow_contribute=False)
+    parent = _history(allow_contribute=True)
     monkeypatch.setattr(
         service,
         "load_owned_minimax_h3_history_for_internal_user",
@@ -137,6 +137,7 @@ async def test_bot_extension_downloads_only_tail_frame_for_i2v_anchor(
     assert seed.fsm_data["images"][0] == seed.fsm_data["extension_start_frame"]
     assert seed.fsm_data["reference_video"] is None
     assert seed.fsm_data["minimax_h3_execution_task_type"] == "minimax_h3_i2v"
+    assert seed.fsm_data["extension_allow_contribute"] is False
     assert download.call_count == 1
 
 
@@ -207,6 +208,7 @@ async def test_h3_stitch_is_idempotent_when_deterministic_history_exists(monkeyp
     second = _history(
         task_id="segment-2",
         task_type="minimax_h3_i2v",
+        allow_contribute=False,
         context={
             "version": 2,
             "mode": "i2v",
@@ -218,32 +220,125 @@ async def test_h3_stitch_is_idempotent_when_deterministic_history_exists(monkeyp
             "chain_task_ids": ["segment-1"],
         },
     )
-    existing = SimpleNamespace(output_file="task-results/existing/primary.mp4")
+    existing = SimpleNamespace(
+        output_file="task-results/existing/primary.mp4",
+        prompt="stale prompt",
+        allow_contribute=False,
+    )
 
     class _Result:
         def scalar_one_or_none(self):
             return existing
 
     class _Session:
+        def __init__(self):
+            self.commit_count = 0
+
         async def execute(self, _statement):
             return _Result()
+
+        async def commit(self):
+            self.commit_count += 1
+
+        async def refresh(self, _history):
+            return None
 
     get_bytes = MagicMock(return_value=b"already-stitched")
     stitch = AsyncMock(return_value=b"must-not-run")
     monkeypatch.setattr(service.storage, "get_file_bytes", get_bytes)
+
+    session = _Session()
+    result = await service.stitch_minimax_h3_histories_and_create_history(
+        histories=[first, second],
+        user_id=7,
+        source_task_id="segment-2",
+        source="web",
+        session=session,
+        stitch_func=stitch,
+    )
+
+    assert result.video_bytes == b"already-stitched"
+    assert result.history is existing
+    assert result.history.prompt == (
+        "【第 1 段】\nprompt segment-1\n\n【第 2 段】\nprompt segment-2"
+    )
+    assert result.history.allow_contribute is True
+    assert session.commit_count == 1
+    stitch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("root_allow_contribute", "expected_allow_contribute"),
+    [(True, True), (False, False)],
+)
+async def test_h3_stitched_history_combines_prompts_and_inherits_root_contribution(
+    monkeypatch,
+    root_allow_contribute,
+    expected_allow_contribute,
+):
+    first = _history(
+        task_id="segment-1",
+        task_type="minimax_h3_i2v",
+        allow_contribute=root_allow_contribute,
+    )
+    second = _history(
+        task_id="segment-2",
+        task_type="minimax_h3_i2v",
+        allow_contribute=False,
+        context={
+            "version": 2,
+            "mode": "i2v",
+            "requested_duration": 5,
+            "resolution_preset": "preview",
+            "aspect_ratio": "source",
+            "lora_items": [],
+            "prev_task_id": "segment-1",
+            "chain_task_ids": ["segment-1"],
+        },
+    )
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return None
+
+    class _Session:
+        def __init__(self):
+            self.added = None
+
+        async def execute(self, _statement):
+            return _Result()
+
+        def add(self, history):
+            self.added = history
+
+        async def commit(self):
+            return None
+
+        async def refresh(self, _history):
+            return None
+
+    session = _Session()
+    monkeypatch.setattr(
+        service.storage,
+        "upload_bytes",
+        MagicMock(return_value="task-results/stitched/primary.mp4"),
+    )
 
     result = await service.stitch_minimax_h3_histories_and_create_history(
         histories=[first, second],
         user_id=7,
         source_task_id="segment-2",
         source="web",
-        session=_Session(),
-        stitch_func=stitch,
+        session=session,
+        stitch_func=AsyncMock(return_value=b"stitched"),
     )
 
-    assert result.video_bytes == b"already-stitched"
-    assert result.history is existing
-    stitch.assert_not_awaited()
+    assert result.history is session.added
+    assert result.history.prompt == (
+        "【第 1 段】\nprompt segment-1\n\n【第 2 段】\nprompt segment-2"
+    )
+    assert result.history.allow_contribute is expected_allow_contribute
 
 
 @pytest.mark.asyncio

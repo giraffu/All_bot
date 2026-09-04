@@ -813,7 +813,7 @@ async def _submit_generation(
             username=user.username,
             cleanup=True,
             allow_contribute=(
-                bool(data.get("extension_allow_contribute"))
+                False
                 if data.get("is_extension")
                 else is_gallery_supported_task_type(plan.task_type)
             ),

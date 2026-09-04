@@ -207,10 +207,11 @@ sequenceDiagram
   `allow_contribute=false`。缺少完整上下文的
   旧投稿继续支持社区互动，但禁用一键应用并返回
   `minimax_h3_context_missing`；T2V 返回 `minimax_h3_mode_not_supported`。
-- H3 普通扩展段按自身 I2V/FLF2V 上下文支持一键应用，只复用该段提示词和设置，
-  使用者仍需重新上传 1 张首帧或 2 张首尾帧。父段的 `allow_contribute` 向后传播，
-  因而模板派生和 QQCC 链不会在续段重新获得投稿权限。H3 免费拼接记录仅当全部源段
-  可投稿时允许投稿，但列表/详情必须返回
+- H3 普通扩展段固定 `allow_contribute=false`，不允许单独投稿；仍按自身 I2V/FLF2V
+  上下文支持一键应用，只复用该段提示词和设置，使用者仍需重新上传 1 张首帧或 2 张
+  首尾帧。H3 免费拼接记录把各段提示词按顺序合并，并继承首段的投稿权限：原创首段
+  的完整拼接视频可投稿，模板派生首段不能借拼接恢复投稿权限。拼接记录的列表/详情
+  必须返回
   `template_apply_supported=false`、`template_apply_disabled_reason="minimax_h3_stitched"`，
   apply-context 入口返回 400；拼接结果不能作为新的扩展父段。
 - Web 的 H3 Pro 能力还必须受 `enable_minimax_h3` 约束；Dashboard“入口控制”的

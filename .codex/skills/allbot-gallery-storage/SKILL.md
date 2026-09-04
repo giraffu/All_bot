@@ -70,8 +70,8 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
   不能只隐藏前端按钮。
 - 各模板的输入顺序、复用素材、History context 与禁用理由属于公开响应契约，
   修改时同步前端 presenter 和回归测试。
-- H3 I2V/FLF2V/REF2V 可投稿并锁定 `_minimax_h3_context`；I2V/FLF2V
-  重传 1/2 张，REF2V 重传首图、复用可替换后续图；缺上下文及拼接应用拒绝。
+- H3 扩展单段禁止投稿；免费拼接合并提示词并继承首段投稿权限，但拒绝
+  apply-context。重传和上下文要求以专项文档为准。
 - QQCC 原生应用只承接安全单图模板，并传 `source_post_id`、
   `allow_contribute=False`、`client_type=bot:qqcc`；复杂模板只返回 Web
   handoff。

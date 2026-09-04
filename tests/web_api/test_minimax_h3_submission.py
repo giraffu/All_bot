@@ -87,7 +87,7 @@ async def test_minimax_h3_direct_web_submission_uses_admin_model_profile():
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_extension_uses_server_tail_frame_i2v_and_inherits_contribution():
+async def test_minimax_h3_extension_uses_server_tail_frame_i2v_and_disables_contribution():
     prepare_extension = AsyncMock(
         return_value=SimpleNamespace(
             images=("task-results/parent/last_frame.png",),
@@ -98,7 +98,7 @@ async def test_minimax_h3_extension_uses_server_tail_frame_i2v_and_inherits_cont
                 "minimax_h3_prev_task_id": "parent",
                 "minimax_h3_chain_task_ids": ["root", "parent"],
             },
-            allow_contribute=False,
+            allow_contribute=True,
         )
     )
     req = TaskGenerateRequest(

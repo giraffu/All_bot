@@ -315,7 +315,7 @@ async def test_h3_extension_direct_prompt_submits_trusted_chain_metadata(monkeyp
         "is_extension": True,
         "extension_prev_task_id": "h3-parent",
         "minimax_h3_chain_task_ids": ["h3-root", "h3-parent"],
-        "extension_allow_contribute": False,
+        "extension_allow_contribute": True,
     }
 
     state = await fsm._submit_generation(update, context, data)
