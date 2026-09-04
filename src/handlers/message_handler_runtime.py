@@ -10,6 +10,7 @@ from src.constants import (
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_TXT2IMG,
 )
+from src.domain_config.minimax_h3 import MINIMAX_H3_PUBLIC_TASK_TYPES
 from src.domain_config.wan22_aio_video import is_legacy_wan22_image_to_video_task_type
 from src.handlers.message_handler_menu import (
     build_switch_lang_message,
@@ -40,6 +41,8 @@ normalize_supported_language_code = _normalize_supported_language_code
 
 def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
     raw_task_type = str(task_type or "").strip()
+    if raw_task_type in MINIMAX_H3_PUBLIC_TASK_TYPES:
+        return "minimax_h3"
     if is_legacy_wan22_image_to_video_task_type(raw_task_type):
         return "img2video_group"
     if raw_task_type in {

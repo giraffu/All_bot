@@ -18,6 +18,7 @@ TASK_TYPE_DISPLAY_NAMES = {
     "scail2_face_swap_v2": "task.mode_scail2_face_swap_v2",
     "face_video": "task.face_video",
     "ltx_video": "task.ltx_video",
+    "minimax_h3": "task.minimax_h3",
     "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",
 }
 
