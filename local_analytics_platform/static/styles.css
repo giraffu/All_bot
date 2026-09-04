@@ -44,7 +44,7 @@ textarea {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -56,7 +56,8 @@ textarea {
   flex-direction: column;
   height: 100vh;
   min-width: 0;
-  padding: 20px 16px;
+  overflow: hidden;
+  padding: 16px 12px;
   border-right: 1px solid #213040;
   background: #172033;
   color: #f8fafc;
@@ -64,7 +65,7 @@ textarea {
 
 .sidebar-brand {
   min-width: 0;
-  padding: 0 6px 18px;
+  padding: 0 6px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
@@ -84,16 +85,34 @@ textarea {
 
 .side-tabs {
   display: grid;
-  gap: 8px;
-  margin-top: 18px;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-height: 0;
+  margin-top: 12px;
+  margin-right: -4px;
+  padding: 0 4px 8px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(125, 211, 199, 0.48) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.side-tabs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.side-tabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(125, 211, 199, 0.48);
 }
 
 .tab-button {
   display: grid;
   gap: 4px;
   width: 100%;
-  min-height: 58px;
-  padding: 10px 12px;
+  min-height: 50px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -119,14 +138,15 @@ textarea {
 }
 
 .tab-meta {
-  font-size: 12px;
+  font-size: 11px;
   color: currentColor;
   opacity: 0.72;
 }
 
 .sidebar-status {
-  margin-top: auto;
-  padding: 12px;
+  flex-shrink: 0;
+  margin-top: 10px;
+  padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
@@ -2614,6 +2634,7 @@ tr:last-child td {
   .sidebar {
     position: sticky;
     height: auto;
+    overflow: hidden;
     padding: 14px;
     border-right: none;
     border-bottom: 1px solid #213040;
@@ -2629,10 +2650,15 @@ tr:last-child td {
 
   .side-tabs {
     display: flex;
+    flex: 0 0 auto;
     gap: 8px;
+    min-height: auto;
     margin-top: 12px;
+    margin-right: 0;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-bottom: 2px;
+    scrollbar-gutter: auto;
   }
 
   .tab-button {

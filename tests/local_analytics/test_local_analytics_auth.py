@@ -6,6 +6,20 @@ from local_analytics_platform.app.auth import hash_password
 
 
 @pytest.mark.asyncio
+async def test_index_html_is_not_cached_across_frontend_releases(monkeypatch):
+    monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_ENABLED", "false")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
 async def test_local_analytics_auth_blocks_pages_and_apis(monkeypatch):
     monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_ENABLED", "true")
     monkeypatch.setenv("LOCAL_ANALYTICS_AUTH_USERNAME", "admin")

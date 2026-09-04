@@ -5,6 +5,16 @@ ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = ROOT / "local_analytics_platform" / "static"
 
 
+def test_sidebar_navigation_scrolls_inside_the_viewport():
+    styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "height: 100vh;\n  min-width: 0;\n  overflow: hidden;" in styles
+    assert "min-height: 0;\n  overflow-y: auto;" in styles
+    assert "scrollbar-gutter: stable;" in styles
+    assert ".side-tabs::-webkit-scrollbar" in styles
+    assert "flex-shrink: 0;" in styles
+
+
 def test_generation_history_table_fits_desktop_and_can_copy_prompts():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
@@ -40,9 +50,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260905-history-table-fit-v1" in html
+    assert "/static/styles.css?v=20260905-compact-sidebar-v1" in html
     assert (
-        'type="module" src="/static/js/bootstrap.js?v=20260905-history-table-fit-v1"'
+        'type="module" src="/static/js/bootstrap.js?v=20260905-compact-sidebar-v1"'
         in html
     )
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
