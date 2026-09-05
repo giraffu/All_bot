@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from pathlib import Path
+import subprocess
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -14,7 +17,13 @@ from telegram.ext import (
     filters,
 )
 
-from src.domain_config.minimax_h3 import get_minimax_h3_cost
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_REFERENCE_VIDEO_ALLOWED_DURATIONS,
+    MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS,
+    MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES,
+    MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS,
+    get_minimax_h3_cost,
+)
 from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -41,6 +50,7 @@ from src.services.fsm_temp_file_service import (
     download_telegram_file_to_fsm_temp,
 )
 from src.services.permission_service import permission_service
+from src.services.task_pricing_config_service import resolve_runtime_task_cost
 from src.services.minimax_h3_extension_service import (
     MiniMaxH3ExtensionError,
     prepare_minimax_h3_extension_fsm_data,
@@ -58,6 +68,7 @@ MODES = ("t2v", "i2v", "flf2v", "ref2v")
 DURATIONS = (5, 10, 15)
 PRESETS = ("preview", "small", "standard", "hd")
 ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4")
+REFERENCE_VIDEO_SUFFIXES = {".mp4", ".mov", ".webm"}
 PRESET_LABELS = {
     "preview": ("极速（约 512p）", "Fast (approx. 512p)"),
     "small": ("清晰（约 600p）", "Small (approx. 600p)"),
@@ -167,7 +178,28 @@ def _settings_cost(
         MODE_TASK_TYPES[data["mode"]],
         duration=data["duration"] if duration is None else duration,
         resolution_preset=data["preset"] if preset is None else preset,
+        reference_audio=bool(data.get("reference_audio")),
+        reference_video=bool(data.get("reference_video")),
+        reference_video_duration=data.get("reference_video_duration"),
     )
+
+
+async def _resolve_reference_cost(data: dict) -> int:
+    default_cost = _settings_cost(data)
+    cost = await resolve_runtime_task_cost(
+        task_type=MODE_TASK_TYPES[data["mode"]],
+        inputs={
+            "duration": data["duration"],
+            "resolution_preset": data["preset"],
+            "reference_audio": data.get("reference_audio"),
+            "reference_video": data.get("reference_video"),
+            "reference_video_duration": data.get("reference_video_duration"),
+        },
+        client_type="bot",
+        default_cost=default_cost,
+    )
+    data["runtime_cost"] = cost
+    return cost
 
 
 def _settings_text(context, data: dict) -> str:
@@ -195,11 +227,17 @@ def _settings_text(context, data: dict) -> str:
         )
     elif mode == "ref2v":
         direct_action_zh = (
-            "发送 1–4 张参考图；完成参考图后可上传 1 个主角参考语音，再填写提示词生成。"
+            "参考模式会自动识别素材：可发送 1–4 张图片、1 段音频、1 段视频；"
+            "至少需要图片或视频。默认定价：图片按基础价，音频 ×1.10；视频按开头 "
+            "3/5/10/15 秒分别 ×1.40/1.60/2.20/2.80，组合使用时连乘并向上取整；"
+            "后台配置价优先。"
         )
         direct_action_en = (
-            "Send 1–4 reference images. After finishing the images, you may upload "
-            "one main-character voice reference before entering the prompt."
+            "Reference mode auto-detects media: send 1–4 images, one audio file, "
+            "and one video; at least an image or video is required. Images use the "
+            "default base price, audio is ×1.10, and a 3/5/10/15s video clip is "
+            "×1.40/1.60/2.20/2.80. Combined multipliers are rounded up; configured "
+            "admin prices take precedence."
         )
     else:
         direct_action_zh = "无需确认设置；发送图片并填写提示词后立即生成。"
@@ -257,25 +295,157 @@ def _extract_audio(update: Update) -> tuple[str | None, str]:
     return None, ".m4a"
 
 
-def _reference_audio_request(context) -> tuple[str, InlineKeyboardMarkup]:
-    return (
-        _with_cancel_hint(
-            context,
+def _extract_video(update: Update) -> tuple[str | None, str, int | None, float | None]:
+    message = update.message
+    video = getattr(message, "video", None)
+    if video:
+        return video.file_id, ".mp4", video.file_size, video.duration
+    document = getattr(message, "document", None)
+    if document and str(document.mime_type or "").startswith("video/"):
+        suffix = Path(document.file_name or "").suffix.lower()
+        return (
+            document.file_id,
+            suffix if suffix in REFERENCE_VIDEO_SUFFIXES else ".mp4",
+            document.file_size,
+            None,
+        )
+    return None, ".mp4", None, None
+
+
+def _probe_reference_video_duration(path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            path,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("ffprobe failed")
+    return float(json.loads(result.stdout.decode("utf-8"))["format"]["duration"])
+
+
+def _reference_keyboard(context, data: dict) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    allowed_durations = tuple(data.get("reference_video_allowed_durations") or ())
+    if data.get("reference_video") and allowed_durations:
+        selected = data.get("reference_video_duration")
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    ("✅ " if selected == duration else "")
+                    + _text(
+                        context,
+                        f"视频开头 {duration} 秒",
+                        f"First {duration}s of video",
+                    ),
+                    callback_data=f"avp_refvideo_duration_{duration}",
+                )
+                for duration in allowed_durations
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                _text(
+                    context,
+                    "完成参考内容，填写提示词",
+                    "Finish references and enter prompt",
+                ),
+                callback_data="avp_refs_done",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _reference_prompt_guidance(context, data: dict) -> str:
+    tags: list[str] = []
+    image_count = len(data.get("images") or [])
+    if image_count:
+        picture_tags = (
+            "<Picture 1>"
+            if image_count == 1
+            else f"<Picture 1>…<Picture {image_count}>"
+        )
+        tags.append(
             _text(
                 context,
-                "可选：上传一段主角参考语音（仅 1 个文件），或点击跳过。",
-                "Optional: upload one main-character voice reference, or skip.",
-            ),
+                f"{picture_tags} 描述对应人物、场景或风格",
+                f"use {picture_tags} for the matching character, scene, or style",
+            )
+        )
+    if data.get("reference_video"):
+        tags.append(
+            _text(
+                context,
+                "<Video 1> 描述动作或镜头参考",
+                "use <Video 1> for motion or camera reference",
+            )
+        )
+    if data.get("reference_audio"):
+        tags.append(
+            _text(
+                context,
+                "<Audio 1> 描述声音用途",
+                "use <Audio 1> to describe the audio's role",
+            )
+        )
+    if not tags:
+        return ""
+    return _text(context, "提示词中可用：", "In the prompt, ") + "；".join(tags) + "。"
+
+
+async def _reference_progress_text(context, data: dict) -> str:
+    cost = await _resolve_reference_cost(data)
+    image_count = len(data.get("images") or [])
+    audio_count = int(bool(data.get("reference_audio")))
+    video_count = int(bool(data.get("reference_video")))
+    video_selection = (
+        _text(
+            context,
+            f" · 视频取开头 {data['reference_video_duration']} 秒",
+            f" · first {data['reference_video_duration']}s of video",
+        )
+        if video_count
+        else ""
+    )
+    guidance = _reference_prompt_guidance(context, data)
+    return _with_cancel_hint(
+        context,
+        _text(
+            context,
+            f"已收到：图片 {image_count}/4 · 音频 {audio_count}/1 · 视频 {video_count}/1{video_selection}\n"
+            f"当前预计：{cost} 灵石\n"
+            f"还可发送：{4 - image_count} 张图片、{1 - audio_count} 段音频、{1 - video_count} 段视频\n"
+            f"{guidance}\n继续发送参考内容，或点击下方按钮填写提示词。",
+            f"Received: images {image_count}/4 · audio {audio_count}/1 · video {video_count}/1{video_selection}\n"
+            f"Current estimate: {cost} credits\n"
+            f"Remaining: {4 - image_count} image(s), {1 - audio_count} audio file, {1 - video_count} video\n"
+            f"{guidance}\nSend more reference media, or use the button below to enter the prompt.",
         ),
-        InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        _text(context, "跳过参考语音", "Skip voice reference"),
-                        callback_data="avp_audio_skip",
-                    )
-                ]
-            ]
+    )
+
+
+def _reference_mode_request_text(context) -> str:
+    return _with_cancel_hint(
+        context,
+        _text(
+            context,
+            "已进入参考模式，请直接发送图片、音频或视频，系统会自动识别。"
+            "图片最多 4 张，音频和视频各 1 段；至少需要图片或视频。",
+            "Reference mode is ready. Send images, audio, or video and the bot will "
+            "detect the type automatically. Up to four images and one audio/video "
+            "file each are accepted; at least an image or video is required.",
         ),
     )
 
@@ -323,6 +493,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "images": [],
         "reference_descriptions": [],
         "reference_audio": None,
+        "reference_video": None,
+        "reference_video_duration": None,
+        "reference_video_allowed_durations": (),
         "runtime_profiles": runtime_profiles,
     }
     await robust_reply_text(
@@ -485,6 +658,9 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if mode == "t2v" or (data.get("is_extension") and mode == "ref2v"):
             await robust_edit_text(query.message, _prompt_request_text(context, data))
             return AdvancedVideoProState.WAIT_PROMPT
+        if mode == "ref2v":
+            await robust_edit_text(query.message, _reference_mode_request_text(context))
+            return AdvancedVideoProState.WAIT_MEDIA
         await robust_edit_text(
             query.message,
             _with_cancel_hint(
@@ -536,6 +712,20 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
+    if data.get("mode") == "ref2v" and len(data.get("images") or []) >= 4:
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "参考图片已满 4 张，可继续发送音频或视频，或填写提示词。",
+                    "All four reference-image slots are filled. Send audio/video or enter the prompt.",
+                ),
+            ),
+            reply_markup=_reference_keyboard(context, data),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
     file_id, suffix = _extract_image(update)
     if not file_id:
         await robust_reply_text(
@@ -576,95 +766,16 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             )
             return AdvancedVideoProState.WAIT_MEDIA
     if mode == "ref2v":
-        count = len(data["images"])
-        if count >= 4:
-            text, keyboard = _reference_audio_request(context)
-            await robust_reply_text(update.message, text, reply_markup=keyboard)
-            return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
-        keyboard = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        _text(context, "继续添加参考图", "Add another reference"),
-                        callback_data="avp_refs_more",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        _text(
-                            context,
-                            "完成参考图，下一步添加语音",
-                            "Finish images, add voice next",
-                        ),
-                        callback_data="avp_refs_done",
-                    )
-                ],
-            ]
-        )
         await robust_reply_text(
             update.message,
-            _with_cancel_hint(
-                context,
-                _text(
-                    context,
-                    f"已收到 {count} 张参考图。可继续添加，最多 4 张。完成选图后进入可选参考语音步骤。",
-                    f"Received {count} reference image(s). You may add up to 4. Finish the images to continue to the optional voice-reference step.",
-                ),
-            ),
-            reply_markup=keyboard,
+            await _reference_progress_text(context, data),
+            reply_markup=_reference_keyboard(context, data),
         )
-        return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
+        return AdvancedVideoProState.WAIT_MEDIA
     await robust_reply_text(
         update.message, _prompt_request_text(context, data, media_received=True)
     )
     return AdvancedVideoProState.WAIT_PROMPT
-
-
-async def receive_reference_description(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    data = context.user_data.get(DATA_KEY)
-    description = str(update.message.text or "").strip()
-    if not data or not description:
-        return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
-    data["reference_descriptions"].append(description)
-    count = len(data["images"])
-    rows = [
-        [
-            InlineKeyboardButton(
-                _text(
-                    context,
-                    "完成参考图，下一步添加语音",
-                    "Finish images, add voice next",
-                ),
-                callback_data="avp_refs_done",
-            )
-        ]
-    ]
-    if count < 4:
-        rows.insert(
-            0,
-            [
-                InlineKeyboardButton(
-                    _text(context, "继续添加角色", "Add another character"),
-                    callback_data="avp_refs_more",
-                )
-            ],
-        )
-    keyboard = InlineKeyboardMarkup(rows)
-    await robust_reply_text(
-        update.message,
-        _with_cancel_hint(
-            context,
-            _text(
-                context,
-                f"已添加 {count} 个角色。完成后进入可选参考语音步骤。",
-                f"{count} character(s) added. Finish to continue to the optional voice-reference step.",
-            ),
-        ),
-        reply_markup=keyboard,
-    )
-    return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
 
 
 async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -673,22 +784,40 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = context.user_data.get(DATA_KEY)
     if not data:
         return ConversationHandler.END
-    if query.data == "avp_refs_more" and len(data["images"]) < 4:
+    if query.data == "avp_refs_more":
+        await robust_edit_text(
+            query.message,
+            _reference_mode_request_text(context),
+            reply_markup=_reference_keyboard(context, data),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    if not data.get("images") and not data.get("reference_video"):
         await robust_edit_text(
             query.message,
             _with_cancel_hint(
                 context,
                 _text(
                     context,
-                    "请上传下一张参考图。",
-                    "Upload the next reference image.",
+                    "参考音频不能单独生成，请至少再发送 1 张图片或 1 段视频。",
+                    "Audio cannot be the only reference. Send at least one image or one video.",
                 ),
             ),
+            reply_markup=_reference_keyboard(context, data),
         )
         return AdvancedVideoProState.WAIT_MEDIA
-    text, keyboard = _reference_audio_request(context)
-    await robust_edit_text(query.message, text, reply_markup=keyboard)
-    return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
+    guidance = _reference_prompt_guidance(context, data)
+    await robust_edit_text(
+        query.message,
+        _with_cancel_hint(
+            context,
+            _text(
+                context,
+                f"参考内容已就绪。{guidance}\n\n请输入视频提示词。",
+                f"References are ready. {guidance}\n\nSend the video prompt.",
+            ),
+        ),
+    )
+    return AdvancedVideoProState.WAIT_PROMPT
 
 
 async def reference_audio_callback(
@@ -699,7 +828,17 @@ async def reference_audio_callback(
     data = context.user_data.get(DATA_KEY)
     if not data:
         return ConversationHandler.END
-    await robust_edit_text(query.message, _prompt_request_text(context, data))
+    if not data.get("images") and not data.get("reference_video"):
+        await robust_edit_text(query.message, _reference_mode_request_text(context))
+        return AdvancedVideoProState.WAIT_MEDIA
+    await robust_edit_text(
+        query.message,
+        _with_cancel_hint(
+            context,
+            f"{_reference_prompt_guidance(context, data)}\n\n"
+            + _text(context, "请输入视频提示词。", "Send the video prompt."),
+        ),
+    )
     return AdvancedVideoProState.WAIT_PROMPT
 
 
@@ -707,8 +846,35 @@ async def receive_reference_audio(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     data = context.user_data.get(DATA_KEY)
-    if not data or data.get("mode") != "ref2v":
+    if not data:
         return ConversationHandler.END
+    if data.get("mode") != "ref2v":
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "请先选择参考图生视频模式。",
+                    "Choose Reference-to-Video mode first.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_SETTINGS
+    if data.get("reference_audio"):
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "已收到 1 段参考音频，不能继续添加。",
+                    "One reference audio file is already attached.",
+                ),
+            ),
+            reply_markup=_reference_keyboard(context, data),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
     file_id, suffix = _extract_audio(update)
     if not file_id:
         await robust_reply_text(
@@ -717,12 +883,12 @@ async def receive_reference_audio(
                 context,
                 _text(
                     context,
-                    "请上传有效音频，或点击跳过。",
-                    "Upload valid audio, or skip.",
+                    "请发送有效音频。",
+                    "Send a valid audio file.",
                 ),
             ),
         )
-        return AdvancedVideoProState.WAIT_REFERENCE_AUDIO
+        return AdvancedVideoProState.WAIT_MEDIA
     telegram_file = await context.bot.get_file(file_id)
     data["reference_audio"] = await download_telegram_file_to_fsm_temp(
         telegram_file=telegram_file,
@@ -731,16 +897,215 @@ async def receive_reference_audio(
     )
     await robust_reply_text(
         update.message,
-        _with_cancel_hint(
-            context,
-            _text(
-                context,
-                "主角参考语音已添加。建议在提示词中包含 <Audio 1> 来说明该语音的用途（可选，不影响提交）。\n\n请输入视频提示词。",
-                "Main-character voice reference added. Consider including <Audio 1> in the prompt to describe its role (optional; submission is not blocked).\n\nSend the video prompt.",
-            ),
-        ),
+        await _reference_progress_text(context, data),
+        reply_markup=_reference_keyboard(context, data),
     )
-    return AdvancedVideoProState.WAIT_PROMPT
+    return AdvancedVideoProState.WAIT_MEDIA
+
+
+async def receive_reference_video(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    data = context.user_data.get(DATA_KEY)
+    if not data:
+        return ConversationHandler.END
+    if data.get("mode") != "ref2v":
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "请先选择参考图生视频模式。",
+                    "Choose Reference-to-Video mode first.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_SETTINGS
+    if data.get("reference_video"):
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "已收到 1 段参考视频，不能继续添加。",
+                    "One reference video is already attached.",
+                ),
+            ),
+            reply_markup=_reference_keyboard(context, data),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    file_id, suffix, file_size, telegram_duration = _extract_video(update)
+    if not file_id:
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(context, "请发送有效视频。", "Send a valid video."),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    if file_size and file_size > MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES:
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "参考视频不能超过 40 MB。",
+                    "Reference video must be at most 40 MB.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    if (
+        telegram_duration
+        and telegram_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS
+    ):
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "参考视频不能超过 40 秒。",
+                    "Reference video must be at most 40 seconds.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    if telegram_duration and telegram_duration < min(
+        MINIMAX_H3_REFERENCE_VIDEO_ALLOWED_DURATIONS
+    ):
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "参考视频至少需要 3 秒。",
+                    "Reference video must be at least 3 seconds.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    path: str | None = None
+    try:
+        telegram_file = await context.bot.get_file(file_id)
+        path = await download_telegram_file_to_fsm_temp(
+            telegram_file=telegram_file,
+            suffix=suffix,
+            name_hint="advanced_video_pro_reference_video",
+        )
+        if Path(path).stat().st_size > MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES:
+            raise ValueError("too_large")
+        source_duration = float(telegram_duration or 0)
+        if not source_duration:
+            source_duration = await asyncio.to_thread(
+                _probe_reference_video_duration, path
+            )
+        if source_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS:
+            raise ValueError("too_long")
+        allowed_durations = tuple(
+            duration
+            for duration in MINIMAX_H3_REFERENCE_VIDEO_ALLOWED_DURATIONS
+            if duration <= source_duration
+        )
+        if not allowed_durations:
+            raise ValueError("too_short")
+    except (
+        OSError,
+        RuntimeError,
+        subprocess.SubprocessError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+    ) as exc:
+        if path:
+            Path(path).unlink(missing_ok=True)
+        logger.warning("Failed to prepare H3 reference video: %s", exc)
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(
+                context,
+                _text(
+                    context,
+                    "无法读取该视频，请换一个文件。",
+                    "Could not read that video. Try another file.",
+                ),
+            ),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    except ValueError as exc:
+        if path:
+            Path(path).unlink(missing_ok=True)
+        messages = {
+            "too_large": (
+                "参考视频不能超过 40 MB。",
+                "Reference video must be at most 40 MB.",
+            ),
+            "too_long": (
+                "参考视频不能超过 40 秒。",
+                "Reference video must be at most 40 seconds.",
+            ),
+            "too_short": (
+                "参考视频至少需要 3 秒。",
+                "Reference video must be at least 3 seconds.",
+            ),
+        }
+        zh, en = messages.get(
+            str(exc), ("无法读取该视频。", "Could not read that video.")
+        )
+        await robust_reply_text(
+            update.message,
+            _with_cancel_hint(context, _text(context, zh, en)),
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    data["reference_video"] = path
+    data["reference_video_allowed_durations"] = allowed_durations
+    data["reference_video_duration"] = (
+        MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS
+        if MINIMAX_H3_REFERENCE_VIDEO_DEFAULT_DURATION_SECONDS in allowed_durations
+        else allowed_durations[0]
+    )
+    await robust_reply_text(
+        update.message,
+        await _reference_progress_text(context, data),
+        reply_markup=_reference_keyboard(context, data),
+    )
+    return AdvancedVideoProState.WAIT_MEDIA
+
+
+async def reference_video_duration_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    data = context.user_data.get(DATA_KEY)
+    if not data or not data.get("reference_video"):
+        await query.answer()
+        return ConversationHandler.END
+    try:
+        duration = int(str(query.data or "").removeprefix("avp_refvideo_duration_"))
+    except ValueError:
+        await query.answer()
+        return AdvancedVideoProState.WAIT_MEDIA
+    if duration not in tuple(data.get("reference_video_allowed_durations") or ()):
+        await query.answer(
+            _text(
+                context, "该片段超过原视频时长。", "That clip exceeds the source video."
+            ),
+            show_alert=True,
+        )
+        return AdvancedVideoProState.WAIT_MEDIA
+    await query.answer()
+    data["reference_video_duration"] = duration
+    await robust_edit_text(
+        query.message,
+        await _reference_progress_text(context, data),
+        reply_markup=_reference_keyboard(context, data),
+    )
+    return AdvancedVideoProState.WAIT_MEDIA
 
 
 async def _submit_generation(
@@ -755,6 +1120,7 @@ async def _submit_generation(
             images=data["images"],
             reference_descriptions=data["reference_descriptions"],
             reference_video=data.get("reference_video"),
+            reference_video_duration=data.get("reference_video_duration"),
             reference_audio=data.get("reference_audio"),
             duration=data["duration"],
             resolution_preset=data["preset"],
@@ -768,14 +1134,16 @@ async def _submit_generation(
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(message, _with_cancel_hint(context, str(exc)))
         return AdvancedVideoProState.WAIT_PROMPT
+    displayed_cost = int(data.get("runtime_cost", plan.cost))
+    has_displayed_runtime_cost = "runtime_cost" in data
     user = update.effective_user
     try:
         await permission_service.check_quota(
             user.id,
             user.username,
             user.full_name,
-            cost=plan.cost,
-            task_type=plan.task_type,
+            cost=displayed_cost,
+            task_type=None if has_displayed_runtime_cost else plan.task_type,
             client_type=(getattr(context, "bot_data", None) or {}).get(
                 "bot_client_type", "bot"
             ),
@@ -788,8 +1156,8 @@ async def _submit_generation(
                 message,
                 _text(
                     context,
-                    f"余额不足，需要 {plan.cost} 点。",
-                    f"Insufficient balance. {plan.cost} credits required.",
+                    f"余额不足，需要 {displayed_cost} 点。",
+                    f"Insufficient balance. {displayed_cost} credits required.",
                 ),
             )
             _clear(context)
@@ -799,8 +1167,8 @@ async def _submit_generation(
         message,
         _text(
             context,
-            f"任务已提交，预计消耗 {plan.cost} 点。",
-            f"Task submitted. Estimated cost: {plan.cost} credits.",
+            f"任务已提交，预计消耗 {displayed_cost} 点。",
+            f"Task submitted. Estimated cost: {displayed_cost} credits.",
         ),
     )
     create_background_task(
@@ -827,6 +1195,7 @@ async def _submit_generation(
                 if data.get("is_extension")
                 else None
             ),
+            cost_override=(displayed_cost if has_displayed_runtime_cost else None),
         ),
     )
     _clear(context, preserve_paths=True)
@@ -852,11 +1221,20 @@ async def receive_settings_prompt(
         data.get("mode") != "t2v"
         and not (data.get("is_extension") and data.get("mode") == "ref2v")
     ):
+        is_reference_mode = bool(data and data.get("mode") == "ref2v")
         await robust_reply_text(
             update.effective_message,
             _with_cancel_hint(
                 context,
-                _text(context, "请直接发送图片。", "Send the image directly."),
+                _text(
+                    context,
+                    "请直接发送图片、音频或视频。"
+                    if is_reference_mode
+                    else "请直接发送图片。",
+                    "Send an image, audio file, or video directly."
+                    if is_reference_mode
+                    else "Send the image directly.",
+                ),
             ),
         )
         return AdvancedVideoProState.WAIT_SETTINGS
@@ -938,15 +1316,45 @@ def get_advanced_video_pro_fsm_handler(
                     receive_image,
                 ),
                 MessageHandler(
+                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
+                    receive_reference_audio,
+                ),
+                MessageHandler(
+                    filters.VIDEO | filters.Document.VIDEO,
+                    receive_reference_video,
+                ),
+                MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     receive_settings_prompt,
                 ),
             ],
             AdvancedVideoProState.WAIT_MEDIA: [
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image)
+                CallbackQueryHandler(
+                    reference_video_duration_callback,
+                    pattern=r"^avp_refvideo_duration_",
+                ),
+                CallbackQueryHandler(reference_callback, pattern=r"^avp_refs_"),
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
+                MessageHandler(
+                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
+                    receive_reference_audio,
+                ),
+                MessageHandler(
+                    filters.VIDEO | filters.Document.VIDEO,
+                    receive_reference_video,
+                ),
             ],
             AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION: [
                 CallbackQueryHandler(reference_callback, pattern=r"^avp_refs_"),
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
+                MessageHandler(
+                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
+                    receive_reference_audio,
+                ),
+                MessageHandler(
+                    filters.VIDEO | filters.Document.VIDEO,
+                    receive_reference_video,
+                ),
             ],
             AdvancedVideoProState.WAIT_REFERENCE_AUDIO: [
                 CallbackQueryHandler(
@@ -955,6 +1363,11 @@ def get_advanced_video_pro_fsm_handler(
                 MessageHandler(
                     filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
                     receive_reference_audio,
+                ),
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
+                MessageHandler(
+                    filters.VIDEO | filters.Document.VIDEO,
+                    receive_reference_video,
                 ),
             ],
             AdvancedVideoProState.WAIT_PROMPT: [
