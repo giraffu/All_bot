@@ -101,13 +101,13 @@ async def finalize_monitored_web_task_success(
         persistence_options = {}
         if result_asset is not None:
             persistence_options["result_asset"] = result_asset
-        if submission_context.metadata.get("record_history") is False:
-            persistence_options["postprocess_plan"] = TaskPersistencePostprocessPlan(
-                source="web",
-                record_history=False,
-                refresh_user_group_after_log=False,
-                warmup_web_history=False,
-            )
+        record_history = submission_context.metadata.get("record_history") is not False
+        persistence_options["postprocess_plan"] = TaskPersistencePostprocessPlan(
+            source="web",
+            record_history=record_history,
+            refresh_user_group_after_log=record_history,
+            warmup_web_history=record_history,
+        )
         await persist_successful_web_history_func(
             backend_task_id=backend_task_id,
             registry_task_id=registry_task_id,
