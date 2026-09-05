@@ -157,6 +157,9 @@ async def test_web_success_persists_clean_prompt_and_structured_generation_conte
         "lora_strength": 0.35,
         "public_model_id": "image_realistic",
     }
+    assert kwargs["postprocess_plan"].record_history is True
+    assert kwargs["postprocess_plan"].refresh_user_group_after_log is True
+    assert kwargs["postprocess_plan"].warmup_web_history is True
 
 
 @pytest.mark.asyncio
@@ -189,4 +192,6 @@ async def test_web_success_can_materialize_private_asset_without_history_record(
 
     kwargs = persist_mock.await_args.kwargs
     assert kwargs["postprocess_plan"].record_history is False
+    assert kwargs["postprocess_plan"].refresh_user_group_after_log is False
+    assert kwargs["postprocess_plan"].warmup_web_history is False
     cleanup_mock.assert_awaited_once()

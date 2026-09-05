@@ -648,14 +648,12 @@ Web 任务提交成功后，真正负责“收尾”的是：
   崩溃靠 lease 过期恢复
 - Pub/Sub 终态经 backend index 设 due-now；ZSET兜底，旧 Hash 以 bounded
   `HSCAN` + `ZADD NX` 补索引
-- Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
-- 新协议 Web 结果若同时满足
-  `task-results/{backend_task_id}/...`、object key 一致、SHA/size/content type
-  完整且实际维度齐全，History 直接引用 durable key，不再调用结果下载或媒体探测。
-  该路径不复制原件到 `history/`，只生成相邻缩略图，并写
-  `canonical_r2_media_materialization_completed`。旧结果保留下载/探测与 History
-  warmup，写 `history_r2_compatibility_warmup_completed` 和
-  `compat.r2.history_media_prefix`；fallback 在 Probe→Copy→Switch 和零命中后退出。
+- Web 成功写 History 以 `user_id + task_id + source` 幂等；仅首次创建记录后刷新用户修为并执行 R2 warmup，使生成次数晋升和权益立即生效。幂等重放跳过两者，`record_history=false` 的内部阶段也跳过。
+- 新协议 Web 结果具备 `task-results/{backend_task_id}/...` 一致 object key、完整
+  SHA/size/content type 和实际维度时，History 直接引用 durable key，只生成相邻缩略图并写
+  `canonical_r2_media_materialization_completed`。旧结果保留下载/探测与 History warmup，
+  写 `history_r2_compatibility_warmup_completed` 和 `compat.r2.history_media_prefix`；fallback
+  在 Probe→Copy→Switch 和零命中后退出。
 - Central 完成契约同时支持 `result_kind=media + result_path` 与 `result_kind=text + result_text + result_meta`。共享 terminal router 判定成功时，媒体结果仍要求非空 `result_path`，文本结果则要求 `result_kind=text` 和非空 `result_text`；不得用媒体路径条件把成功文本误路由为失败退款。`prompt_optimize` 文本终态由 Web finalizer 按 owner 写入 24 小时 Redis result store，跳过 History/R2/Gallery；媒体任务继续保持原结果路径和 History 语义。Worker 上报文本结果时必须携带 Profile/Template refs 和字段白名单元数据，Web 在存储前再次 fail closed 校验。
 - `prompt_optimize` 终态前可由 `text_delta` 和 Web SSE 展示预览。快照按 backend ID
   保存、registry ID 做 owner fence；sequence 幂等。仅完整 JSON 校验和 `/complete`
