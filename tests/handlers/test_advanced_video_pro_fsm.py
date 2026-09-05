@@ -604,7 +604,7 @@ def test_pro_settings_show_current_credit_cost_and_option_prices(
     )
 
 
-def test_ref2v_settings_make_optional_voice_step_discoverable():
+def test_ref2v_settings_explain_unified_reference_mode_and_pricing_rules():
     text = fsm._settings_text(
         SimpleNamespace(lang="zh"),
         {
@@ -615,8 +615,11 @@ def test_ref2v_settings_make_optional_voice_step_discoverable():
         },
     )
 
-    assert "完成参考图后可上传 1 个主角参考语音" in text
-    assert "填写提示词后立即生成" not in text
+    assert "参考模式" in text
+    assert "1–4 张图片、1 段音频、1 段视频" in text
+    assert "至少需要图片或视频" in text
+    assert "音频 ×1.10" in text
+    assert "3/5/10/15 秒" in text
 
 
 @pytest.mark.parametrize(
@@ -663,7 +666,7 @@ def test_pro_handler_has_no_prompt_confirmation_state():
 
 
 @pytest.mark.asyncio
-async def test_ref2v_finish_references_offers_optional_main_character_voice(
+async def test_ref2v_finish_references_goes_directly_to_prompt(
     monkeypatch,
 ):
     edit = AsyncMock()
@@ -682,18 +685,13 @@ async def test_ref2v_finish_references_offers_optional_main_character_voice(
 
     state = await fsm.reference_callback(SimpleNamespace(callback_query=query), context)
 
-    assert state == AdvancedVideoProState.WAIT_REFERENCE_AUDIO
-    assert "主角参考语音" in edit.await_args.args[1]
-    callbacks = [
-        button.callback_data
-        for row in edit.await_args.kwargs["reply_markup"].inline_keyboard
-        for button in row
-    ]
-    assert callbacks == ["avp_audio_skip"]
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert "请输入视频提示词" in edit.await_args.args[1]
+    assert "<Picture 1>" in edit.await_args.args[1]
 
 
 @pytest.mark.asyncio
-async def test_ref2v_reference_picker_labels_voice_as_the_next_step(monkeypatch):
+async def test_ref2v_image_upload_reports_price_capacity_and_prompt_tag(monkeypatch):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
     monkeypatch.setattr(
@@ -701,12 +699,18 @@ async def test_ref2v_reference_picker_labels_voice_as_the_next_step(monkeypatch)
         "download_telegram_file_to_fsm_temp",
         AsyncMock(return_value="/tmp/subject.png"),
     )
+    runtime_cost = AsyncMock(return_value=11)
+    monkeypatch.setattr(fsm, "resolve_runtime_task_cost", runtime_cost)
     context = SimpleNamespace(
         user_data={
             fsm.DATA_KEY: {
                 "mode": "ref2v",
                 "images": [],
                 "reference_audio": None,
+                "reference_video": None,
+                "reference_video_duration": None,
+                "duration": 5,
+                "preset": "preview",
             }
         },
         bot=SimpleNamespace(get_file=AsyncMock(return_value=object())),
@@ -721,18 +725,23 @@ async def test_ref2v_reference_picker_labels_voice_as_the_next_step(monkeypatch)
 
     state = await fsm.receive_image(update, context)
 
-    assert state == AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
+    assert state == AdvancedVideoProState.WAIT_MEDIA
     buttons = [
         button.text
         for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert "完成参考图，下一步添加语音" in buttons
-    assert "完成选图后进入可选参考语音步骤" in reply.await_args.args[1]
+    assert buttons == ["完成参考内容，填写提示词"]
+    assert "当前预计：11 灵石" in reply.await_args.args[1]
+    assert "还可发送：3 张图片、1 段音频、1 段视频" in reply.await_args.args[1]
+    assert "<Picture 1>" in reply.await_args.args[1]
+    assert "添加语音" not in reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
-async def test_ref2v_audio_upload_shows_nonblocking_audio_1_reminder(monkeypatch):
+async def test_ref2v_audio_upload_stays_in_reference_mode_and_refreshes_price(
+    monkeypatch,
+):
     reply = AsyncMock()
     monkeypatch.setattr(fsm, "robust_reply_text", reply)
     monkeypatch.setattr(
@@ -740,6 +749,7 @@ async def test_ref2v_audio_upload_shows_nonblocking_audio_1_reminder(monkeypatch
         "download_telegram_file_to_fsm_temp",
         AsyncMock(return_value="/tmp/voice.ogg"),
     )
+    monkeypatch.setattr(fsm, "resolve_runtime_task_cost", AsyncMock(return_value=13))
     telegram_file = object()
     context = SimpleNamespace(
         user_data={
@@ -747,6 +757,10 @@ async def test_ref2v_audio_upload_shows_nonblocking_audio_1_reminder(monkeypatch
                 "mode": "ref2v",
                 "images": ["subject.png"],
                 "reference_audio": None,
+                "reference_video": None,
+                "reference_video_duration": None,
+                "duration": 5,
+                "preset": "preview",
             }
         },
         bot=SimpleNamespace(get_file=AsyncMock(return_value=telegram_file)),
@@ -762,25 +776,244 @@ async def test_ref2v_audio_upload_shows_nonblocking_audio_1_reminder(monkeypatch
 
     state = await fsm.receive_reference_audio(update, context)
 
-    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert state == AdvancedVideoProState.WAIT_MEDIA
     assert context.user_data[fsm.DATA_KEY]["reference_audio"] == "/tmp/voice.ogg"
     assert "<Audio 1>" in reply.await_args.args[1]
-    assert "建议" in reply.await_args.args[1]
+    assert "当前预计：13 灵石" in reply.await_args.args[1]
+    assert "还可发送：3 张图片、0 段音频、1 段视频" in reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
-async def test_ref2v_audio_skip_does_not_require_audio_tag(monkeypatch):
-    edit = AsyncMock()
-    monkeypatch.setattr(fsm, "robust_edit_text", edit)
-    query = SimpleNamespace(data="avp_audio_skip", answer=AsyncMock(), message=object())
+async def test_ref2v_video_upload_auto_detects_video_and_offers_valid_clip_lengths(
+    monkeypatch,
+    tmp_path,
+):
+    reply = AsyncMock()
+    video_path = tmp_path / "motion.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value=str(video_path)),
+    )
+    monkeypatch.setattr(fsm, "resolve_runtime_task_cost", AsyncMock(return_value=18))
     context = SimpleNamespace(
-        user_data={fsm.DATA_KEY: {"mode": "ref2v", "reference_audio": None}},
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": ["subject.png"],
+                "reference_audio": None,
+                "reference_video": None,
+                "reference_video_duration": None,
+                "duration": 5,
+                "preset": "preview",
+            }
+        },
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=object())),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            video=SimpleNamespace(file_id="video-id", file_size=1024, duration=12),
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_reference_video(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_MEDIA
+    data = context.user_data[fsm.DATA_KEY]
+    assert data["reference_video"] == str(video_path)
+    assert data["reference_video_duration"] == 5
+    assert data["reference_video_allowed_durations"] == (3, 5, 10)
+    assert "当前预计：18 灵石" in reply.await_args.args[1]
+    assert "<Video 1>" in reply.await_args.args[1]
+    callbacks = [
+        button.callback_data
+        for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == [
+        "avp_refvideo_duration_3",
+        "avp_refvideo_duration_5",
+        "avp_refvideo_duration_10",
+        "avp_refs_done",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_video_clip_selection_refreshes_configured_price(monkeypatch):
+    edit = AsyncMock()
+    runtime_cost = AsyncMock(return_value=25)
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    monkeypatch.setattr(fsm, "resolve_runtime_task_cost", runtime_cost)
+    data = {
+        "mode": "ref2v",
+        "images": ["subject.png"],
+        "reference_audio": None,
+        "reference_video": "motion.mp4",
+        "reference_video_duration": 5,
+        "reference_video_allowed_durations": (3, 5, 10),
+        "duration": 5,
+        "preset": "preview",
+    }
+    query = SimpleNamespace(
+        data="avp_refvideo_duration_10",
+        answer=AsyncMock(),
+        message=object(),
+    )
+
+    state = await fsm.reference_video_duration_callback(
+        SimpleNamespace(callback_query=query),
+        SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh"),
+    )
+
+    assert state == AdvancedVideoProState.WAIT_MEDIA
+    assert data["reference_video_duration"] == 10
+    assert data["runtime_cost"] == 25
+    assert "当前预计：25 灵石" in edit.await_args.args[1]
+    assert runtime_cost.await_args.kwargs["inputs"]["reference_video_duration"] == 10
+
+
+@pytest.mark.asyncio
+async def test_ref2v_duplicate_audio_is_rejected_without_downloading(monkeypatch):
+    reply = AsyncMock()
+    download = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(fsm, "download_telegram_file_to_fsm_temp", download)
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": ["subject.png"],
+                "reference_audio": "voice.ogg",
+                "reference_video": None,
+            }
+        },
         lang="zh",
     )
 
-    state = await fsm.reference_audio_callback(
-        SimpleNamespace(callback_query=query), context
+    state = await fsm.receive_reference_audio(
+        SimpleNamespace(message=object()), context
     )
 
-    assert state == AdvancedVideoProState.WAIT_PROMPT
-    assert "<Audio 1>" not in edit.await_args.args[1]
+    assert state == AdvancedVideoProState.WAIT_MEDIA
+    download.assert_not_awaited()
+    assert "不能继续添加" in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("file_size", "duration", "message"),
+    [
+        (41 * 1024 * 1024, 5, "不能超过 40 MB"),
+        (1024, 41, "不能超过 40 秒"),
+        (1024, 2, "至少需要 3 秒"),
+    ],
+)
+async def test_ref2v_video_rejects_invalid_metadata_before_download(
+    monkeypatch, file_size, duration, message
+):
+    reply = AsyncMock()
+    download = AsyncMock()
+    get_file = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(fsm, "download_telegram_file_to_fsm_temp", download)
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": [],
+                "reference_audio": None,
+                "reference_video": None,
+            }
+        },
+        bot=SimpleNamespace(get_file=get_file),
+        lang="zh",
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            video=SimpleNamespace(
+                file_id="video-id", file_size=file_size, duration=duration
+            ),
+            document=None,
+        )
+    )
+
+    state = await fsm.receive_reference_video(update, context)
+
+    assert state == AdvancedVideoProState.WAIT_MEDIA
+    get_file.assert_not_awaited()
+    download.assert_not_awaited()
+    assert message in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_submission_keeps_video_clip_and_charges_displayed_price(
+    monkeypatch,
+):
+    submit = Mock(return_value=object())
+    reply = AsyncMock()
+    quota = AsyncMock()
+    monkeypatch.setattr(fsm, "submit_advanced_video_pro_plan", submit)
+    monkeypatch.setattr(fsm, "create_background_task", Mock())
+    monkeypatch.setattr(fsm, "robust_reply_text", reply)
+    monkeypatch.setattr(fsm.permission_service, "check_quota", quota)
+    data = {
+        "mode": "ref2v",
+        "prompt": "<Picture 1> follows <Video 1> with <Audio 1>",
+        "images": ["subject.png"],
+        "reference_descriptions": [],
+        "reference_audio": "voice.ogg",
+        "reference_video": "motion.mp4",
+        "reference_video_duration": 10,
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "addon_items": [],
+        "runtime_cost": 42,
+    }
+    update = SimpleNamespace(
+        effective_message=object(),
+        effective_user=SimpleNamespace(id=7, username="alice", full_name="Alice"),
+        effective_chat=SimpleNamespace(id=99),
+    )
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: data},
+        bot_data={"bot_client_type": "bot"},
+        lang="zh",
+    )
+
+    state = await fsm._submit_generation(update, context, data)
+
+    assert state == ConversationHandler.END
+    plan = submit.call_args.args[0]
+    assert plan.reference_video_duration == 10
+    assert submit.call_args.kwargs["cost_override"] == 42
+    assert quota.await_args.kwargs["cost"] == 42
+    assert quota.await_args.kwargs["task_type"] is None
+    assert "预计消耗 42 点" in reply.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ref2v_finish_without_image_or_video_is_rejected(monkeypatch):
+    edit = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    query = SimpleNamespace(data="avp_refs_done", answer=AsyncMock(), message=object())
+    context = SimpleNamespace(
+        user_data={
+            fsm.DATA_KEY: {
+                "mode": "ref2v",
+                "images": [],
+                "reference_audio": "/tmp/voice.ogg",
+                "reference_video": None,
+            }
+        },
+        lang="zh",
+    )
+
+    state = await fsm.reference_callback(SimpleNamespace(callback_query=query), context)
+
+    assert state == AdvancedVideoProState.WAIT_MEDIA
+    assert "至少再发送 1 张图片或 1 段视频" in edit.await_args.args[1]
