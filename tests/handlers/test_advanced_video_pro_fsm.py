@@ -620,6 +620,7 @@ def test_ref2v_settings_explain_unified_reference_mode_and_pricing_rules():
     assert "至少需要图片或视频" in text
     assert "音频 ×1.10" in text
     assert "3/5/10/15 秒" in text
+    assert "后台配置价" not in text
 
 
 @pytest.mark.parametrize(

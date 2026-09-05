@@ -229,15 +229,13 @@ def _settings_text(context, data: dict) -> str:
         direct_action_zh = (
             "参考模式会自动识别素材：可发送 1–4 张图片、1 段音频、1 段视频；"
             "至少需要图片或视频。默认定价：图片按基础价，音频 ×1.10；视频按开头 "
-            "3/5/10/15 秒分别 ×1.40/1.60/2.20/2.80，组合使用时连乘并向上取整；"
-            "后台配置价优先。"
+            "3/5/10/15 秒分别 ×1.40/1.60/2.20/2.80，组合使用时连乘并向上取整。"
         )
         direct_action_en = (
             "Reference mode auto-detects media: send 1–4 images, one audio file, "
             "and one video; at least an image or video is required. Images use the "
             "default base price, audio is ×1.10, and a 3/5/10/15s video clip is "
-            "×1.40/1.60/2.20/2.80. Combined multipliers are rounded up; configured "
-            "admin prices take precedence."
+            "×1.40/1.60/2.20/2.80. Combined multipliers are rounded up."
         )
     else:
         direct_action_zh = "无需确认设置；发送图片并填写提示词后立即生成。"
