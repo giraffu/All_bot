@@ -86,6 +86,8 @@ from scripts.history_media_r2_migration import (
     validate_seed_scope_identity,
     validate_plan_seed_scope,
     validate_switch_gate,
+    validate_switch_reverification_state,
+    validate_switch_sample_coverage,
     select_history_assets_for_seed,
 )
 
@@ -3000,15 +3002,90 @@ def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_
     assert "switch_completed_at is null" in source
     assert "COPY_PLAN_HAS_UNSUPPORTED_MULTIPART_OBJECTS" in source
     switch_source = inspect.getsource(module._execute_switch)
-    assert "switch plan rowset changed" in switch_source
-    assert "predecessor switch plan identity changed" in switch_source
+    assert "_validate_switch_plan_ledger_identity" in switch_source
+    identity_source = inspect.getsource(module._validate_switch_plan_ledger_identity)
+    assert "switch plan rowset changed" in identity_source
+    assert "predecessor switch plan identity changed" in identity_source
     assert "switch batch production CAS state changed" in switch_source
     assert "set local lock_timeout = '10s'" in switch_source
     assert "_verify_switch_plan" in switch_source
     verification_source = inspect.getsource(module._verify_switch_plan)
-    assert "len(gallery_samples) < 32" in verification_source
-    assert "len(owner_samples) < 64" in verification_source
+    assert "validate_switch_sample_coverage" in verification_source
+    assert "gallery_eligible_counts" in verification_source
+    assert "gp.history_id" in verification_source
+    assert "h.user_id=gp.user_id" in verification_source
     assert "switch verification found an old History reference" in verification_source
+
+
+def test_switch_verification_accepts_scoped_plan_without_gallery_candidates():
+    coverage = validate_switch_sample_coverage(
+        verified_histories=49,
+        owner_sample_count=49,
+        gallery_eligible_counts={"image": 0, "video": 0},
+        gallery_sample_counts={"image": 0, "video": 0},
+    )
+
+    assert coverage == {
+        "owner_sample_target": 49,
+        "gallery_sample_targets": {"image": 0, "video": 0},
+        "gallery_sample_target": 0,
+    }
+
+
+def test_switch_verification_rejects_missing_available_samples():
+    with pytest.raises(RuntimeError, match="owner verification"):
+        validate_switch_sample_coverage(
+            verified_histories=49,
+            owner_sample_count=48,
+            gallery_eligible_counts={"image": 0, "video": 0},
+            gallery_sample_counts={"image": 0, "video": 0},
+        )
+
+    with pytest.raises(RuntimeError, match="Gallery verification"):
+        validate_switch_sample_coverage(
+            verified_histories=49,
+            owner_sample_count=49,
+            gallery_eligible_counts={"image": 3, "video": 20},
+            gallery_sample_counts={"image": 2, "video": 16},
+        )
+
+
+def test_switch_reverification_requires_a_fully_completed_frozen_plan():
+    validate_switch_reverification_state(
+        schema="allbot-history-media-r2-switch-plan/v2",
+        batch_count=1,
+        incomplete_batch_count=0,
+        asset_count=49,
+        switched_asset_count=49,
+    )
+
+    with pytest.raises(RuntimeError, match="batches are incomplete"):
+        validate_switch_reverification_state(
+            schema="allbot-history-media-r2-switch-plan/v2",
+            batch_count=1,
+            incomplete_batch_count=1,
+            asset_count=49,
+            switched_asset_count=49,
+        )
+    with pytest.raises(RuntimeError, match="switch ledger coverage"):
+        validate_switch_reverification_state(
+            schema="allbot-history-media-r2-switch-plan/v2",
+            batch_count=1,
+            incomplete_batch_count=0,
+            asset_count=49,
+            switched_asset_count=48,
+        )
+
+
+def test_switch_reverification_is_read_only_and_records_both_runtimes():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._verify_completed_switch)
+    assert "production.execute" not in source
+    assert '"execution_runtime_identity"' in source
+    assert '"verification_runtime_identity"' in source
+    assert 'commands.add_parser("verify-switch")' in inspect.getsource(module._parser)
 
 
 def test_successor_freeze_supersedes_only_unfinished_batches_and_copy_uses_chain():

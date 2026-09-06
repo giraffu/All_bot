@@ -718,15 +718,15 @@ lane 重复扫描数百万行。每个对象最多做 5 次瞬时错误重试，
 60 秒的窗口控制全局并发：429/SlowDown 立即降档，timeout/reset/5xx 等错误率在至少
 200 个请求或 30 秒观察后超过 0.5% 才降档，低于 0.2% 可升一档。档位改变立即清空观察窗口；
 健康事件在每次请求完成时汇入 supervisor 的跨 lane 全局窗口，不能等单个 lane 收口后
-再用该 lane 的尾部样本代替全局流量。每个事件保存取得并发 slot 时的实际档位；档位改变后，
-仍在收口的旧 epoch 事件只用于对象回执和观测，不得进入新窗口或连续触发多次降档。
+再用该 lane 的尾部样本代替全局流量。事件记录取得 slot 时的档位；旧 epoch 只用于对象
+回执和观测，不得进入新窗口。
 延迟长尾只记录不降档。连续系统性高错误窗口由 circuit breaker 暂停；单个瞬态错误不触发
 全局降速。任一 lane 捕获 429/SlowDown 时无需等待这 100 个资产收口：共享 limiter
 立即降到 16，并以最后一次限流事件为起点延长 60 秒桶冷却；已经在途的请求允许收口，
 所有尚未取得 slot 的 bulk/retry worker 一起等待。事件和日志不得保存对象 key、endpoint
 或原始 provider request ID，只记录 `source_head_before`、`target_head_before`、
 `copy_object`、`source_head_after`、`target_head_after` 等低基数阶段、错误类别、HTTP
-状态和 request ID SHA-256 样本，供 R2 支持工单关联。
+状态和 request ID SHA-256 样本。
 
 旧 manifest、marker 与确认值永远不可热改或跨 artifact 复用。`plan-copy` 显式提供
 `--supersedes-plan-sha256` 时分两类：未执行计划可整体替换；已有进度的计划必须先让
@@ -745,8 +745,9 @@ Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute
 只读核对、监控、重试和后续计划生成连续进行，只在 PROBE/COPY/SWITCH 三个精确令牌
 暂停。三个计划都绑定创建它们的精确 artifact digest；旧 artifact 不得消费新计划。
 
-最终验收必须完整核对计划引用、目标 HEAD/size/Copy marker 和旧来源 HEAD，并确定性
-抽查至少 32 个活跃 Gallery 与 64 个 History/owner，覆盖角色和媒体类型；
+最终验收完整核对计划引用、目标 HEAD/size/marker 和旧来源 HEAD；History/owner
+抽查 `min(64, 范围行数)`，Gallery 每种媒体抽查 `min(16, 候选数)`，零候选记零目标；
+`verify-switch` 以新 artifact 只读补验，收据保留执行、复验身份，禁止重放生产写入。
 apply-context 的既有不支持场景继续按契约返回 400。只有这些验收和收据全部通过，才能
 解除 shadow pause guard、清理旧 failed unit 状态并手动跑一次 shadow sync。核心
 Probe→Copy→Switch 验收本身不自动删除旧 R2 对象；只有另行冻结并取得精确 DELETE
