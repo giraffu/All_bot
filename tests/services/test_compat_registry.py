@@ -34,3 +34,6 @@ def test_compat_hit_telemetry_counts_without_user_payload(caplog):
     record = next(record for record in caplog.records if record.telemetry_key == key)
     assert record.event == "compat_hit"
     assert record.entrypoint == "test entry"
+    assert record.getMessage() == (
+        "event=compat_hit telemetry_key=compat.test.example entrypoint=test entry"
+    )
