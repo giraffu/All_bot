@@ -174,6 +174,147 @@ async def _resolve_h3_reference_inputs(
     inputs["reference_descriptions"] = list(resolved.descriptions)
 
 
+def _validate_h3_request_shape(task_type: str, inputs: dict[str, Any]) -> None:
+    is_extension = bool(str(inputs.get("minimax_h3_prev_task_id") or "").strip())
+    if is_extension and (
+        inputs.get("reference_refs") not in (None, [], ())
+        or inputs.get("reference_audio_ref") not in (None, "")
+        or inputs.get("reference_video_ref") not in (None, "")
+    ):
+        raise CoreDomainError(
+            "尾帧锚定扩展不支持额外参考图、参考音频或参考视频。"
+        )
+    if inputs.get(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT) not in (None, ""):
+        raise CoreDomainError("不得直接指定 H3 内部执行类型。")
+    if inputs.get("reference_video") is not None:
+        raise CoreDomainError("不得直接指定 H3 参考视频存储路径。")
+    if inputs.get("reference_audio") is not None:
+        raise CoreDomainError("不得直接指定主角参考语音存储路径。")
+    if inputs.get("reference_refs") is not None and task_type != "minimax_h3_ref2v":
+        raise CoreDomainError("人物库参考图仅支持参考图生视频。")
+    if (
+        inputs.get("reference_audio_ref") is not None
+        and task_type != "minimax_h3_ref2v"
+    ):
+        raise CoreDomainError("主角参考语音仅支持参考图生视频。")
+    if (
+        inputs.get("reference_video_ref") is not None
+        and task_type != "minimax_h3_ref2v"
+    ):
+        raise CoreDomainError("参考视频仅支持参考图生视频。")
+    if inputs.get("reference_video_ref") is None and inputs.get(
+        "reference_video_duration"
+    ) not in (None, ""):
+        raise CoreDomainError("上传参考视频后才能选择参考片段时长。")
+
+
+async def _apply_h3_runtime_profile(
+    task_type: str,
+    inputs: dict[str, Any],
+    profile_loader,
+) -> None:
+    if profile_loader is None:
+        from src.services.feature_entry_visibility_service import (
+            load_advanced_video_pro_profile,
+        )
+
+        profile_loader = load_advanced_video_pro_profile
+    profile = await profile_loader(task_type.removeprefix("minimax_h3_"))
+    for key in ("addon_models", "lora_name", "lora_strength", "lora_items"):
+        inputs.pop(key, None)
+    inputs["main_model"] = profile["main_model"]
+    inputs["lora_items"] = list(profile["addon_items"])
+
+
+async def _resolve_h3_audio_input(
+    req,
+    inputs: dict[str, Any],
+    *,
+    internal_user_id: int,
+) -> None:
+    reference_audio_ref = inputs.get("reference_audio_ref")
+    if reference_audio_ref is None:
+        return
+    from src.web_api.services.reference_asset_service import (
+        resolve_h3_reference_audio_ref,
+    )
+
+    inputs["reference_audio"] = await resolve_h3_reference_audio_ref(
+        user_id=internal_user_id,
+        reference_audio_ref=reference_audio_ref,
+        source_post_id=req.source_post_id,
+        is_template=req.is_template,
+    )
+    inputs.pop("reference_audio_ref", None)
+
+
+async def _resolve_h3_video_input(
+    inputs: dict[str, Any],
+    *,
+    internal_user_id: int,
+    probe_video_duration_func: Callable[[str], Awaitable[float | None]] | None,
+) -> None:
+    reference_video_ref = inputs.get("reference_video_ref")
+    if reference_video_ref is None:
+        return
+    from src.web_api.services.reference_asset_service import (
+        resolve_h3_reference_video_ref,
+    )
+
+    reference_video = await resolve_h3_reference_video_ref(
+        user_id=internal_user_id,
+        reference_video_ref=reference_video_ref,
+    )
+    if probe_video_duration_func is None:
+        from src.media_processor import extract_video_duration_seconds_from_storage
+
+        probe_video_duration_func = extract_video_duration_seconds_from_storage
+    try:
+        reference_video_duration = await probe_video_duration_func(reference_video)
+    except Exception as exc:
+        raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。") from exc
+    if reference_video_duration is None or reference_video_duration <= 0:
+        raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。")
+    if reference_video_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS:
+        raise CoreDomainError("参考视频最长支持 40 秒。")
+    try:
+        clip_duration = normalize_minimax_h3_reference_video_duration_seconds(
+            inputs.get("reference_video_duration")
+        )
+    except MiniMaxH3ValidationError as exc:
+        raise CoreDomainError(str(exc)) from exc
+    if reference_video_duration + 1e-6 < clip_duration:
+        raise CoreDomainError(
+            f"参考视频至少需要 {clip_duration} 秒，请缩短所选参考片段。"
+        )
+    inputs["reference_video"] = reference_video
+    inputs["reference_video_duration"] = clip_duration
+    inputs.pop("reference_video_ref", None)
+
+
+async def _prepare_h3_inputs(
+    req,
+    inputs: dict[str, Any],
+    *,
+    internal_user_id: int,
+    advanced_video_profile_loader,
+    probe_video_duration_func: Callable[[str], Awaitable[float | None]] | None,
+) -> None:
+    _validate_h3_request_shape(req.task_type, inputs)
+    inputs.pop(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT, None)
+    await _apply_h3_runtime_profile(
+        req.task_type,
+        inputs,
+        advanced_video_profile_loader,
+    )
+    await _resolve_h3_audio_input(req, inputs, internal_user_id=internal_user_id)
+    await _resolve_h3_video_input(
+        inputs,
+        internal_user_id=internal_user_id,
+        probe_video_duration_func=probe_video_duration_func,
+    )
+
+
 async def prepare_web_submission_request(
     req,
     *,
@@ -195,96 +336,13 @@ async def prepare_web_submission_request(
     )
     inputs = dict(req.inputs)
     if req.task_type.startswith("minimax_h3_"):
-        is_h3_extension = bool(
-            str(inputs.get("minimax_h3_prev_task_id") or "").strip()
+        await _prepare_h3_inputs(
+            req,
+            inputs,
+            internal_user_id=internal_user_id,
+            advanced_video_profile_loader=advanced_video_profile_loader,
+            probe_video_duration_func=probe_video_duration_func,
         )
-        if is_h3_extension and (
-            inputs.get("reference_refs") not in (None, [], ())
-            or inputs.get("reference_audio_ref") not in (None, "")
-            or inputs.get("reference_video_ref") not in (None, "")
-        ):
-            raise CoreDomainError("尾帧锚定扩展不支持额外参考图、参考音频或参考视频。")
-        if inputs.get(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT) not in (None, ""):
-            raise CoreDomainError("不得直接指定 H3 内部执行类型。")
-        inputs.pop(MINIMAX_H3_EXECUTION_TASK_TYPE_INPUT, None)
-        if inputs.get("reference_video") is not None:
-            raise CoreDomainError("不得直接指定 H3 参考视频存储路径。")
-        if advanced_video_profile_loader is None:
-            from src.services.feature_entry_visibility_service import (
-                load_advanced_video_pro_profile,
-            )
-
-            advanced_video_profile_loader = load_advanced_video_pro_profile
-        profile = await advanced_video_profile_loader(
-            req.task_type.removeprefix("minimax_h3_")
-        )
-        for key in (
-            "addon_models",
-            "lora_name",
-            "lora_strength",
-            "lora_items",
-        ):
-            inputs.pop(key, None)
-        inputs["main_model"] = profile["main_model"]
-        inputs["lora_items"] = list(profile["addon_items"])
-        if inputs.get("reference_audio") is not None:
-            raise CoreDomainError("不得直接指定主角参考语音存储路径。")
-        reference_audio_ref = inputs.get("reference_audio_ref")
-        if reference_audio_ref is not None:
-            if req.task_type != "minimax_h3_ref2v":
-                raise CoreDomainError("主角参考语音仅支持参考图生视频。")
-            from src.web_api.services.reference_asset_service import (
-                resolve_h3_reference_audio_ref,
-            )
-
-            inputs["reference_audio"] = await resolve_h3_reference_audio_ref(
-                user_id=internal_user_id,
-                reference_audio_ref=reference_audio_ref,
-                source_post_id=req.source_post_id,
-                is_template=req.is_template,
-            )
-            inputs.pop("reference_audio_ref", None)
-        reference_video_ref = inputs.get("reference_video_ref")
-        if reference_video_ref is not None:
-            if req.task_type != "minimax_h3_ref2v":
-                raise CoreDomainError("参考视频仅支持参考图生视频。")
-            from src.web_api.services.reference_asset_service import (
-                resolve_h3_reference_video_ref,
-            )
-
-            reference_video = await resolve_h3_reference_video_ref(
-                user_id=internal_user_id,
-                reference_video_ref=reference_video_ref,
-            )
-            if probe_video_duration_func is None:
-                from src.media_processor import (
-                    extract_video_duration_seconds_from_storage,
-                )
-
-                probe_video_duration_func = extract_video_duration_seconds_from_storage
-            try:
-                reference_video_duration = await probe_video_duration_func(reference_video)
-            except Exception as exc:
-                raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。") from exc
-            if reference_video_duration is None or reference_video_duration <= 0:
-                raise CoreDomainError("无法读取参考视频时长，请更换视频后重试。")
-            if reference_video_duration > MINIMAX_H3_REFERENCE_VIDEO_MAX_DURATION_SECONDS:
-                raise CoreDomainError("参考视频最长支持 40 秒。")
-            try:
-                clip_duration = normalize_minimax_h3_reference_video_duration_seconds(
-                    inputs.get("reference_video_duration")
-                )
-            except MiniMaxH3ValidationError as exc:
-                raise CoreDomainError(str(exc)) from exc
-            if reference_video_duration + 1e-6 < clip_duration:
-                raise CoreDomainError(
-                    f"参考视频至少需要 {clip_duration} 秒，请缩短所选参考片段。"
-                )
-            inputs["reference_video"] = reference_video
-            inputs["reference_video_duration"] = clip_duration
-            inputs.pop("reference_video_ref", None)
-        elif inputs.get("reference_video_duration") not in (None, ""):
-            raise CoreDomainError("上传参考视频后才能选择参考片段时长。")
     h3_extension_metadata: dict[str, Any] | None = None
     h3_allow_contribute: bool | None = None
     h3_prev_task_id = str(inputs.pop("minimax_h3_prev_task_id", "") or "").strip()
@@ -322,8 +380,6 @@ async def prepare_web_submission_request(
     if req.task_type == "character_reference_build":
         raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
     if inputs.get("reference_refs") is not None:
-        if req.task_type != "minimax_h3_ref2v":
-            raise CoreDomainError("人物库参考图仅支持参考图生视频。")
         from src.web_api.services.reference_asset_service import (
             build_h3_character_reference_binding,
         )

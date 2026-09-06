@@ -21,14 +21,6 @@ export default defineConfig(({ mode }) => {
               return
             }
 
-            if (id.includes('@tonconnect') || id.includes('@ton/core')) {
-              return 'vendor-ton'
-            }
-
-            if (id.includes('ant-design-vue')) {
-              return 'vendor-ant'
-            }
-
             if (
               id.includes('/vue/') ||
               id.includes('vue-router') ||

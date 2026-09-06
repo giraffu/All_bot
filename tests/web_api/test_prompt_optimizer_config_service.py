@@ -103,10 +103,8 @@ def test_h3_fixed_naughtytimes_saved_config_falls_forward_to_optional_addons():
         display_name="fixed NaughtyTimes",
         description="old fixed stack",
         system_template=default["system_template"].replace(
-            "the MiniMax H3 10Eros-Max TURBO hybrid Beta4 base with its 7-step "
-            "euler/simple schedule and optional server-selected add-ons",
-            "the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and "
-            "NaughtyTimes v2 stack",
+            "optional server-selected add-ons",
+            "the fixed NaughtyTimes v2 add-on stack",
         ),
         user_template=default["user_template"],
         revision=9,

@@ -1,8 +1,7 @@
 import {
   applyTaskResultErrorToTask,
   applyTaskResultResponseToTask,
-  restorePersistedTask,
-  type TaskResultResponsePayload
+  restorePersistedTask
 } from './taskResultState.ts'
 import type { TaskExtraOutputs } from '@/types/gallery'
 
@@ -59,16 +58,6 @@ export interface PollTaskStatusDeps<T extends RuntimeTaskLike> {
   finalizeCancelledTask: (task: T, cancelMessage?: string) => void
   notifyTaskFailure: (task: T) => void
   handleUnauthorized?: () => void
-  onRequestError?: (error: unknown) => void
-}
-
-export interface ProbeDetachedTaskResultDeps<T extends RuntimeTaskLike> {
-  apiGet: (url: string) => Promise<{ data: unknown }>
-  schedule: (callback: () => void, delayMs: number) => void
-  onResolved?: (task: T) => void
-  onPending?: (task: T) => void
-  onForbidden?: (task: T) => void
-  onExhausted?: (task: T) => void
   onRequestError?: (error: unknown) => void
 }
 
@@ -346,100 +335,6 @@ export async function pollTaskStatus<T extends RuntimeTaskLike>(
   deps.schedule(() => {
     void pollTaskStatus(task, activeTasks, deps)
   }, POLL_TASK_STATUS_INTERVAL_MS)
-}
-
-export async function probeDetachedTaskResult<T extends RuntimeTaskLike>(
-  task: T,
-  activeTasks: T[],
-  deps: ProbeDetachedTaskResultDeps<T>,
-  retryCount = 0,
-  maxRetries = 120,
-  delayMs = 5_000
-): Promise<void> {
-  const currentTask = activeTasks.find(t => t.id === task.id)
-  if (!currentTask) return
-
-  if (currentTask.status === 'cancelled' || currentTask.status === 'failed') {
-    return
-  }
-
-  if (currentTask.status === 'success' && currentTask.resultUrl) {
-    return
-  }
-
-  const scheduleRetry = (nextRetryCount = retryCount + 1) => {
-    deps.schedule(() => {
-      void probeDetachedTaskResult(
-        task,
-        activeTasks,
-        deps,
-        nextRetryCount,
-        maxRetries,
-        delayMs
-      )
-    }, delayMs)
-  }
-
-  try {
-    const res = await deps.apiGet(`/tasks/${task.id}/result`)
-    const payload = res.data as TaskResultResponsePayload
-
-    if (payload.status === 'success' && payload.result_url) {
-      Object.assign(currentTask, touchTaskActivity({
-        ...currentTask,
-        progress: 100,
-        status: 'success',
-        resultUrl: payload.result_url,
-        extraOutputs: payload.extra_outputs ?? {},
-        resultMeta: payload.result_meta ?? {},
-        awaitingResult: false,
-        error: undefined
-      }))
-      deps.onResolved?.(currentTask)
-      return
-    }
-
-    touchTaskActivity(currentTask)
-
-    if (payload.status === 'pending_result' && retryCount < maxRetries) {
-      deps.onPending?.(currentTask)
-      scheduleRetry()
-      return
-    }
-
-    if (payload.status === 'pending_result') {
-      deps.onExhausted?.(currentTask)
-      return
-    }
-
-    if (retryCount < maxRetries) {
-      scheduleRetry()
-      return
-    }
-
-    deps.onExhausted?.(currentTask)
-  } catch (error: any) {
-    deps.onRequestError?.(error)
-
-    if (error?.response?.status === 403) {
-      Object.assign(currentTask, touchTaskActivity({
-        ...currentTask,
-        status: 'failed',
-        awaitingResult: false,
-        error: '任务不存在或无权限'
-      }))
-      deps.onForbidden?.(currentTask)
-      return
-    }
-
-    touchTaskActivity(currentTask)
-    if (retryCount < maxRetries) {
-      scheduleRetry()
-      return
-    }
-
-    deps.onExhausted?.(currentTask)
-  }
 }
 
 export function restoreTasksFromStorage<T extends RuntimeTaskLike>(

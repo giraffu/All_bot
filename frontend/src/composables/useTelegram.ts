@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import type { TelegramWebAppUser } from '@/types/telegram'
 
 interface TelegramWebAppLike {

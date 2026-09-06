@@ -142,7 +142,6 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3Mode,
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
-    minimaxH3AddonItems,
     minimaxH3ReferenceAudio,
     minimaxH3ReferenceVideo,
     minimaxH3ReferenceVideoClipDuration,
