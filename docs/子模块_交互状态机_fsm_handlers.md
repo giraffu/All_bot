@@ -176,7 +176,7 @@ Application factory 共用该注册，提交仍分别写精确 client type。
 
 私有 QQCC Application 由 webhook worker 装配，不注册申请入口、不启动 polling，并继续复用 quick image/video 与 Wan22 结果续段 FSM。worker 为每个 private Bot 使用独立顺序队列，防止同一 Bot 的 ConversationHandler update 交错；不同 Bot 才通过全局并发门限并行。详细凭据/worker/Host 契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
 
-Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。主 Bot 档位校验通过 `src/services/telegram_video_permission_service.py` 将 Telegram 用户映射为不可变的内部权限快照；设置 callback 与提交重新读取当前策略，开始提交时只查询一次。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
+Quick Video 入口的场景版本投影、旧 route 到场景映射、能力拒绝和 FSM seed 已收口到 `src/services/quick_video_entry_service.py`；`src/handlers/fsm/quick_video_entry_view.py` 负责示范媒体、REF2V 模板、费用/文案和跳转绘图按钮的 Telegram 展示，I/O 依赖由 `quick_video_fsm.py` 显式传入。提交与设置归一仍以 `src/services/quick_video_submission_service.py` 为事实源：FSM 负责状态、素材、额度检查和上下文清理，submission service 负责 QQCC scene engine、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 的分辨率/时长归一。主 Bot 档位校验通过 `src/services/telegram_video_permission_service.py` 将 Telegram 用户映射为不可变的内部权限快照；设置 callback 与提交重新读取当前策略，开始提交时只查询一次。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改入口规则先覆盖 entry service，改展示先覆盖 entry view/FSM 黑盒，改提交或设置语义先覆盖 submission service。
 
 Quick Image 的提交阶段已收口到 `src/services/quick_image_submission_service.py`：`quick_image_fsm.py` 和 `random_faceswap_again` callback 只负责 Telegram 状态/按钮、图片路径读取、额度检查、用户回复和上下文清理；service 负责构造提交计划、随机换脸模板过滤、QQCC AI绘图/AI滤镜场景、`draw -> draw...` / `draw -> filter` / 单步 `filter` 链成本与执行 payload，并在重生成 metadata 中写入 `scene_kind=draw|filter`。旧 `WAIT_UNDRESS_METHOD` 选择态和旧脱衣方式 callback 已移除，`i2i_draw` 提交 payload 仅保留 service 兼容。
 
@@ -256,9 +256,10 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 
 ### 4.4 当前边界债务
 
-- `quick_video_fsm.py`、`advanced_video_pro_fsm.py`、`wan22_video_v2_fsm.py`、
-  `ltx_video_fsm.py` 仍是复杂度热点；后续按入口解析、media acquisition、设置 view、
-  submission ownership 逐个纵切，禁止一次性改写全部 FSM。
+- Quick Video 的入口规划和展示已纵切；`quick_video_fsm.py` 剩余热点是生成启动、
+  REF2V 替换和素材接收。`advanced_video_pro_fsm.py`、`wan22_video_v2_fsm.py`、
+  `ltx_video_fsm.py` 仍需按 media acquisition、设置 view、submission ownership
+  逐个纵切，禁止一次性改写全部 FSM。
 - H3 与 LTX25 的 `ffprobe` 已通过 `asyncio.to_thread` 避免阻塞 update loop，但命令和
   JSON 解析仍在 FSM 内重复；后续可迁入共享 media probe service。
 - Gallery browse callback 仍直接打开数据库 session。该债务属于 Gallery application

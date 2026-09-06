@@ -12,11 +12,8 @@ from telegram.ext import (
 )
 
 from src.constants import (
-    DEFAULT_DURATION,
-    DEFAULT_RESOLUTION,
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
-    MODE_CUSTOM_VIDEO,
     MODE_LTX_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_PERFECT_VIDEO_INSERT,
@@ -34,7 +31,6 @@ from src.handlers.fsm.quick_video_callback_data import (
     QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
     QUICK_VIDEO_MODE_KEYS,
     QUICK_REF2V_TEMPLATE_CALLBACK_PATTERN,
-    build_quick_ref2v_template_callback_data,
     parse_quick_video_mode_callback_data,
     parse_quick_video_scene_callback_data,
     parse_quick_video_v1_scene_callback_data,
@@ -42,21 +38,23 @@ from src.handlers.fsm.quick_video_callback_data import (
     parse_quick_ref2v_template_callback_data,
 )
 from src.handlers.fsm.quick_draw_callback_data import QUICK_DRAW_SCENE_CALLBACK_PATTERN
+from src.handlers.fsm.quick_video_entry_view import (
+    build_ref2v_scene_prompt as _build_ref2v_scene_prompt,
+    build_ref2v_template_markup as _build_ref2v_template_markup,
+    present_quick_video_entry,
+    resolve_qqcc_scene_display_cost as _resolve_qqcc_scene_display_cost,
+)
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-    get_qqcc_copywriting_override,
-    get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
-    get_qqcc_draw_scene,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
     project_qqcc_config_for_scene_version,
-    render_qqcc_copywriting,
     get_enabled_qqcc_ai_video_scenes,
 )
 from src.services.qqcc_demo_media_service import (
@@ -64,12 +62,18 @@ from src.services.qqcc_demo_media_service import (
     send_qqcc_scene_demo_media,
 )
 from src.services.qqcc_runtime_context import (
-    get_private_qqcc_bot_id,
     is_qqcc_bot_context,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
     run_qqcc_interaction_io,
 )
 from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
+from src.services.quick_video_entry_service import (
+    QuickVideoEntryPlan,
+    QuickVideoEntryReject,
+    QuickVideoEntryRejectReason,
+    build_quick_video_entry_plan,
+    sync_qqcc_scene_to_quick_video_data,
+)
 from src.services.quick_video_submission_service import (
     QuickVideoSubmissionReject,
     QuickVideoSubmissionRejectReason,
@@ -79,7 +83,6 @@ from src.services.quick_video_submission_service import (
     calculate_quick_video_cost,
     resolve_qqcc_video_scene_from_fsm_data,
     resolve_qqcc_ai_video_scene_from_fsm_data,
-    resolve_qqcc_video_scene_task_type,
     run_quick_video_submission_plan,
 )
 from src.services.qqcc_video_frame_adapter import QqccVideoFrameAdaptationError
@@ -133,8 +136,6 @@ QUICK_VIDEO_ROUTE_CONFIG_KEYS = {
     "menu.video_edit_undress_tongue": "undress_tongue",
     "menu.video_edit_closeup_blowjob": "closeup_blowjob",
 }
-
-QUICK_VIDEO_LEGACY_ROUTE_SCENE_IDS = QUICK_VIDEO_ROUTE_CONFIG_KEYS
 
 _t = translate_fsm_text
 H3_EXTENSION_SCENE_CALLBACK_PREFIX = "h3xs:"
@@ -313,157 +314,6 @@ def _resolve_quick_video_entry(
     return mode, _strip_menu_prefix(text), message, route_key, None, "video"
 
 
-def _resolve_qqcc_scene_from_entry(
-    config: dict,
-    *,
-    scene_id: str | None,
-    route_key: str | None,
-    scene_kind: str,
-) -> dict[str, object] | None:
-    if scene_kind == "ai_video":
-        return get_qqcc_ai_video_scene(config, scene_id)
-    if scene_id:
-        return get_qqcc_video_scene(config, scene_id)
-    legacy_scene_id = QUICK_VIDEO_LEGACY_ROUTE_SCENE_IDS.get(route_key or "")
-    return get_qqcc_video_scene(config, legacy_scene_id)
-
-
-def _sync_qqcc_scene_to_quick_video_data(
-    fsm_data: dict,
-    scene: dict[str, object],
-    *,
-    include_scene_id: bool = False,
-    include_prompt_details: bool = False,
-    scene_kind: str = "video",
-) -> str:
-    mode = (
-        MODE_LTX_VIDEO
-        if scene_kind == "ai_video"
-        else resolve_qqcc_video_scene_task_type(scene)
-    )
-    fsm_data.update(
-        {
-            "mode": mode,
-            "duration": scene["duration"],
-            "resolution": str(
-                scene.get("resolution")
-                or ("1280x704" if scene_kind == "ai_video" else "720p")
-            ),
-            "engine": scene.get("engine"),
-            "lora_name": str(scene.get("lora_name") or ""),
-            "lora_items": list(scene.get("lora_items") or []),
-            "end_frame_draw_scene_id": str(scene.get("end_frame_draw_scene_id") or ""),
-            "scene_kind": scene_kind,
-        }
-    )
-    if scene_kind == "ai_video":
-        fsm_data.update(
-            {
-                "ai_video_mode": str(scene.get("mode") or "i2v"),
-                "reference_images": list(scene.get("reference_images") or []),
-                "reference_image_names": list(scene.get("reference_image_names") or []),
-                "reference_image_telegram_file_ids": list(
-                    scene.get("reference_image_telegram_file_ids") or []
-                ),
-                "aspect_ratio": str(scene.get("aspect_ratio") or "16:9"),
-            }
-        )
-    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
-    if fixed_credit_cost is None:
-        fsm_data.pop("credit_cost", None)
-    else:
-        fsm_data["credit_cost"] = fixed_credit_cost
-    if scene_kind != "ai_video":
-        fsm_data.pop("ai_video_mode", None)
-        fsm_data.pop("reference_images", None)
-        fsm_data.pop("reference_image_names", None)
-        fsm_data.pop("reference_image_telegram_file_ids", None)
-        fsm_data.pop("aspect_ratio", None)
-        fsm_data.pop("lora_items", None)
-        fsm_data.pop("scene_kind", None)
-    if include_scene_id:
-        fsm_data["scene_id"] = scene["id"]
-    if include_prompt_details:
-        scene_prompt = str(scene.get("prompt", "")).strip()
-        fsm_data.update(
-            {
-                "mode_name": str(scene["name"]),
-                "prompt_override": scene_prompt,
-                "default_prompt_key": MODE_CUSTOM_VIDEO,
-                "default_prompt_text": scene_prompt,
-            }
-        )
-    return mode
-
-
-def _build_ref2v_template_markup(scene: dict[str, object]) -> InlineKeyboardMarkup:
-    reference_names = list(scene.get("reference_image_names") or [])
-    reference_images = list(scene.get("reference_images") or [])
-    buttons = [
-        InlineKeyboardButton(
-            f"替换：{reference_names[index] or f'模板 {index + 1}'}",
-            callback_data=build_quick_ref2v_template_callback_data(
-                str(scene["id"]), index
-            ),
-        )
-        for index in range(len(reference_images))
-    ]
-    return InlineKeyboardMarkup(
-        [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
-    )
-
-
-def _build_ref2v_scene_prompt(
-    *,
-    scene: dict[str, object],
-    selected_name: str,
-    cost_text: str | None = None,
-    replacement_confirmed: bool = False,
-) -> str:
-    scene_name = str(scene.get("name") or "AI视频")
-    if replacement_confirmed:
-        status = f"✅ 已使用你发送的图片替换【{selected_name}】模板。"
-        action = "现在请发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。"
-        replacement_tip = (
-            "其他模板仍然保留；如需继续替换，可点击下方对应的“替换：模板名称”按钮。"
-        )
-    else:
-        status = f"✅ 当前默认模板【{selected_name}】。"
-        action = (
-            "你可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。"
-        )
-        replacement_tip = (
-            "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片。"
-        )
-    prompt = (
-        f"🎞️ {'已更新' if replacement_confirmed else '已切换到'}【{scene_name}】场景。\n\n"
-        f"{status}\n\n"
-        f"{action}\n\n"
-        f"{replacement_tip}"
-        "模板替换完成后，我会再次提示你发送女性人物图片。\n\n"
-        "随时可以发送 /cancel 退出流程。"
-    )
-    return f"{prompt}\n\n{cost_text}" if cost_text else prompt
-
-
-def _resolve_qqcc_scene_display_cost(
-    *, fsm_data: dict, qqcc_config: dict
-) -> int | None:
-    plan = build_quick_video_submission_plan(
-        fsm_data=fsm_data,
-        qqcc_config=qqcc_config,
-        allowed_resolutions=None,
-    )
-    if isinstance(plan, QuickVideoSubmissionReject):
-        logger.warning(
-            "Unable to resolve QQCC scene display cost scene=%s reason=%s",
-            fsm_data.get("scene_id"),
-            plan.reason,
-        )
-        return None
-    return plan.total_cost
-
-
 async def _build_quick_video_settings_markup(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -553,175 +403,41 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
-    scene_version = "v1" if scene_kind == "video_v1" else "v2"
-    if scene_kind == "video_v1" and qqcc_config is not None:
-        qqcc_config = project_qqcc_config_for_scene_version(
-            qqcc_config, family="video", version=scene_version
-        )
-        scene_kind = "video"
-    if qqcc_config is None and (mode or route_key or scene_id):
-        await reply_with_lazy_bot_payload(
-            update,
-            context,
-            reply_text_func=robust_reply_text,
-            edit_text_func=robust_edit_text,
-        )
-        return ConversationHandler.END
-
-    scene = None
-    quick_video_data = {
-        "mode": mode,
-        "resolution": DEFAULT_RESOLUTION,
-        "duration": DEFAULT_DURATION,
-        "image_path": None,
-    }
-    if qqcc_config is not None:
-        scene = _resolve_qqcc_scene_from_entry(
-            qqcc_config,
-            scene_id=scene_id,
-            route_key=route_key,
-            scene_kind=scene_kind,
-        )
-        feature_enabled = (
-            is_qqcc_main_button_enabled(qqcc_config, "ai_video")
-            if scene_kind == "ai_video"
-            else is_qqcc_main_button_enabled(
-                qqcc_config,
-                "video_edit_v1" if scene_version == "v1" else "video_edit_v2",
+    entry_plan = build_quick_video_entry_plan(
+        mode=mode,
+        mode_name=mode_name,
+        route_key=route_key,
+        scene_id=scene_id,
+        scene_kind=scene_kind,
+        qqcc_config=qqcc_config,
+    )
+    if isinstance(entry_plan, QuickVideoEntryReject):
+        if entry_plan.reason == QuickVideoEntryRejectReason.REDIRECT_TO_LAZY_BOT:
+            await reply_with_lazy_bot_payload(
+                update,
+                context,
+                reply_text_func=robust_reply_text,
+                edit_text_func=robust_edit_text,
             )
-        )
-        if not feature_enabled or scene is None:
+        elif entry_plan.reason == QuickVideoEntryRejectReason.FEATURE_DISABLED:
             await _reply_qqcc_feature_disabled(update, context)
-            return ConversationHandler.END
-        mode = _sync_qqcc_scene_to_quick_video_data(
-            quick_video_data,
-            scene,
-            include_scene_id=True,
-            include_prompt_details=True,
-            scene_kind=scene_kind,
-        )
-        if scene_kind == "video":
-            quick_video_data["scene_version"] = scene_version
-        mode_name = str(quick_video_data["mode_name"])
-
-    if not mode or not reply_message:
         return ConversationHandler.END
 
-    context.user_data["in_conversation"] = f"QUICK_VIDEO_{mode}"
-    context.user_data["quick_video_data"] = quick_video_data
+    if not isinstance(entry_plan, QuickVideoEntryPlan) or not reply_message:
+        return ConversationHandler.END
 
-    msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
-    if scene is not None:
-        private_bot_id = get_private_qqcc_bot_id(context)
-        demo_kwargs = {"private_bot_id": private_bot_id} if private_bot_id else {}
-        await send_qqcc_scene_demo_media(
-            message=reply_message,
-            bot=context.bot,
-            scene_kind=(
-                "video_v1"
-                if quick_video_data.get("scene_version") == "v1"
-                else scene_kind
-            ),
-            scene=scene,
-            **demo_kwargs,
-        )
-    is_ref2v_scene = bool(
-        scene_kind == "ai_video" and str((scene or {}).get("mode") or "") == "ref2v"
-    )
-    if is_ref2v_scene and scene is not None:
-        reference_images = list(scene.get("reference_images") or [])
-        reference_names = list(scene.get("reference_image_names") or [])
-        if reference_images:
-            quick_video_data["selected_reference_image"] = reference_images[0]
-            quick_video_data["selected_reference_name"] = str(
-                (reference_names[0] if reference_names else "") or "模板 1"
-            )
-        gallery_awaitable = send_qqcc_ref2v_reference_templates(
-            message=reply_message,
-            bot=context.bot,
-            scene=scene,
-        )
-        if is_qqcc_bot_context(context):
-            await run_qqcc_interaction_io(
-                gallery_awaitable,
-                operation="quick_video_ref2v_template_gallery",
-                logger=logger,
-            )
-        else:
-            await gallery_awaitable
-    scene_cost_text = None
-    if scene is not None and qqcc_config is not None:
-        scene_cost = _resolve_qqcc_scene_display_cost(
-            fsm_data=quick_video_data,
-            qqcc_config=qqcc_config,
-        )
-        if scene_cost is not None:
-            scene_cost_text = _t(context, "fsm.common.estimated_cost", cost=scene_cost)
-            msg = f"{msg.rstrip()}\n\n{scene_cost_text}"
-        copywriting_override = get_qqcc_copywriting_override(
-            qqcc_config,
-            "ai_video_scene_start" if scene_kind == "ai_video" else "video_scene_start",
-        )
-        msg = (
-            render_qqcc_copywriting(
-                copywriting_override,
-                str(scene.get("name") or mode_name),
-                cost=scene_cost,
-                cost_text=scene_cost_text,
-            )
-            or msg
-        )
-    reply_markup = None
-    if is_ref2v_scene and scene is not None:
-        selected_name = str(quick_video_data.get("selected_reference_name") or "模板 1")
-        reply_markup = _build_ref2v_template_markup(scene)
-        msg = _build_ref2v_scene_prompt(
-            scene=scene,
-            selected_name=selected_name,
-            cost_text=scene_cost_text,
-        )
-    if scene is not None and qqcc_config is not None:
-        draw_config = project_qqcc_config_for_scene_version(
-            qqcc_config,
-            family="draw",
-            version=str(quick_video_data.get("scene_version") or "v2"),
-        )
-        jump_scene = get_qqcc_draw_scene(
-            draw_config, str(scene.get("jump_draw_scene_id") or "")
-        )
-        is_v1 = quick_video_data.get("scene_version") == "v1"
-        draw_button_key = "ai_draw_v1" if is_v1 else "ai_draw_v2"
-        if jump_scene is not None and is_qqcc_main_button_enabled(
-            draw_config, draw_button_key
-        ):
-            from src.handlers.fsm.quick_draw_callback_data import (
-                build_quick_draw_scene_callback_data,
-                build_quick_draw_v1_scene_callback_data,
-            )
+    context.user_data["in_conversation"] = f"QUICK_VIDEO_{entry_plan.mode}"
+    context.user_data["quick_video_data"] = entry_plan.fsm_data
 
-            jump_row = [
-                InlineKeyboardButton(
-                    f"先去 AI绘图{'V1' if is_v1 else 'V2'}生成「{jump_scene['name']}」",
-                    callback_data=(
-                        build_quick_draw_v1_scene_callback_data(jump_scene["id"])
-                        if is_v1
-                        else build_quick_draw_scene_callback_data(jump_scene["id"])
-                    ),
-                )
-            ]
-            existing_rows = list(reply_markup.inline_keyboard) if reply_markup else []
-            reply_markup = InlineKeyboardMarkup([*existing_rows, jump_row])
-    reply_awaitable = robust_reply_text(
-        reply_message, msg, reply_markup=reply_markup, parse_mode="Markdown"
+    await present_quick_video_entry(
+        context=context,
+        reply_message=reply_message,
+        plan=entry_plan,
+        reply_text_func=robust_reply_text,
+        interaction_io_func=run_qqcc_interaction_io,
+        demo_sender_func=send_qqcc_scene_demo_media,
+        ref2v_gallery_sender_func=send_qqcc_ref2v_reference_templates,
     )
-    if is_qqcc_bot_context(context):
-        await run_qqcc_interaction_io(
-            reply_awaitable,
-            operation="quick_video_scene_prompt",
-            logger=logger,
-        )
-    else:
-        await reply_awaitable
     return QuickVideoState.WAIT_IMAGE
 
 
@@ -829,7 +545,7 @@ async def select_h3_extension_scene(
         await safe_answer_query(query, text="该场景已删除或停用", show_alert=True)
         _cleanup_context(context, update.effective_user.id)
         return ConversationHandler.END
-    _sync_qqcc_scene_to_quick_video_data(
+    sync_qqcc_scene_to_quick_video_data(
         fsm_data,
         scene,
         include_scene_id=True,
@@ -873,7 +589,7 @@ async def select_ref2v_template(
     if template_index >= len(references):
         await safe_answer_query(query, text="模板已更新，请重新选择", show_alert=True)
         return QuickVideoState.WAIT_IMAGE
-    _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
+    sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
     selected_name = str(
         names[template_index]
         if template_index < len(names)
@@ -950,7 +666,7 @@ async def receive_ref2v_template_replacement(
         )
         return QuickVideoState.WAIT_REFERENCE_TEMPLATE_UPLOAD
 
-    _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
+    sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
     selected_name = str(
         (names[template_index] if template_index < len(names) else "")
         or f"模板 {template_index + 1}"
@@ -1103,9 +819,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        _sync_qqcc_scene_to_quick_video_data(
-            fsm_data, qqcc_scene, scene_kind=scene_kind
-        )
+        sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene, scene_kind=scene_kind)
 
     file_id = _resolve_quick_video_file_id(message)
     if not file_id:
@@ -1191,7 +905,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
+        sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
     if data == "qvid_start_generation":
         await query.answer(

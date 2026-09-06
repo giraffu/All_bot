@@ -16,7 +16,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
 | --- | --- |
 | 官方菜单、场景、Config Web、示范媒体 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`、`src/services/qqcc_config_service.py` |
 | 用户私有 Bot、凭据、webhook、续跑 | `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md` |
-| quick image/video FSM 与 callback | `allbot-tg-fsm`、`src/services/quick_image_submission_service.py`、`quick_video_submission_service.py` |
+| quick image/video FSM/callback | `allbot-tg-fsm`、`quick_image_submission_service.py`、`quick_video_entry_service.py`、`quick_video_submission_service.py` |
 | 扣费、continuation、恢复和清理 | `allbot-task-engine`、`docs/子模块_生成任务全链路_task_full_chain.md` |
 | Config/Bot 独立发布 | `allbot-ops-deployment`、`docs/子模块_Git不可变发布_git_immutable_release.md` |
 
@@ -50,9 +50,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   场景或模型事实表。
 - `排队状态` 菜单复用主 Bot 的共享队列展示 seam，只做 Central 与
   active task 的只读呈现；QQCC 不复制队列统计、任务类型映射或调度逻辑。
-- quick image/video FSM 只处理 Telegram 状态、文件、额度提示和清理。
-  场景归一、后处理链、尾帧链、固定价格和执行 payload 必须留在 submission
-  service，不能重新堆回 handler。
+- quick image/video FSM 只处理 Telegram 状态、文件、额度提示和清理；场景归一、
+  后处理/尾帧链、价格和 payload 留在 submission service。Quick Video 的场景投影、
+  拒绝与 seed 在 entry service，示范媒体、REF2V 和文案在 entry view；FSM 显式传 I/O。
 - 只有链路第一个真实任务按普通规则排队并允许取消；后续 stage 是
   continuation，必须高优先级、隐藏排队/取消，并由 core runtime 权威拒绝
   旧取消入口。
