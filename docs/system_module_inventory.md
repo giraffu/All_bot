@@ -157,7 +157,7 @@ seam；主要风险已经从“入口完全混杂”转为“大型应用服务/
 
 | 优先级 | 现状 | 治理策略 |
 | --- | --- | --- |
-| High | task/service 仍形成大型 import SCC；Worker patcher、视频执行器、本地分析路由复杂度高 | 每次只沿一个公开行为切片提取 policy/phase seam，并用 focused tests 缩小 SCC；禁止机械拆文件 |
+| High | Web 人物资产提交仍有 4 模块 import SCC；Worker patcher、视频执行器、本地分析路由复杂度高 | 每次只沿一个公开行为切片提取 policy/phase seam，并用 focused tests 缩小 SCC；禁止机械拆文件 |
 | High | 兼容 registry 中仍有 active/runtime-verification 项 | 只能按 telemetry、历史数据和观测窗口退出，不能凭静态“无调用”删除 |
 | Medium | 根测试曾收集多个独立平台的同名测试模块并隐式连接本地 PostgreSQL | 根 `pytest.ini` 固定 `tests/` 与 importlib；外部服务测试显式标记 integration 并由环境 opt-in |
 | Medium | Dashboard 与本地分析仍有超大 Vue/route 文件 | 按页面 capability、query command 和 presenter seam 纵切，不创建一行转发壳 |
@@ -168,8 +168,10 @@ Optimization 与 Reference Asset 的直接循环依赖；将 Web 提交输入晋
 phase helper；Web finalizer 改用入口显式装配的窄 dependencies，任务 service 不再
 反向导入 Web application service，Web 资产提交环已与任务大环分离；快速视频计划
 构建按三条业务策略分派，公开 router 保持小于 45 行；删除与当前 LTX 人物一致性
-契约冲突且无外部引用的旧 A/B canary。剩余大环继续优先从 completion、generation
-和 runtime defaults 的反向边界逐片治理。
+契约冲突且无外部引用的旧 A/B canary。任务执行链原 15 模块 SCC 已通过 executor
+依赖反转消除：continuation/pipeline 只保留策略，Quick、specialized 与 recovery
+composition root 显式装配实现，并用 `<10` 架构预算测试防止回归。下一步治理 Web
+人物资产、参考图准备与提交之间的 4 模块环。
 
 ## 10. 后续扩展检查清单
 

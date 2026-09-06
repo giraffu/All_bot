@@ -30,6 +30,38 @@ from src.services.private_qqcc_continuation_service import (
 
 
 @pytest.mark.asyncio
+async def test_private_continuation_stage_fails_closed_without_executor():
+    checkpoint = SimpleNamespace(
+        original_input_ref="durable/original.png",
+        current_output_ref=None,
+        chat_id=456,
+        telegram_user_id=123,
+        username="tester",
+        status_message_id=77,
+    )
+    stage = {
+        "executor": "generation",
+        "input_mode": "current",
+        "task_kwargs": {"task_type": "edit"},
+    }
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-missing-executor",
+        stage_index=0,
+        submission_sequence=0,
+        registry_task_id="task-missing-executor",
+        executor_token="token",
+    )
+
+    with pytest.raises(RuntimeError, match="generation executor is not configured"):
+        await execute_private_qqcc_continuation_stage_default(
+            checkpoint,
+            stage,
+            ref,
+            SimpleNamespace(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_private_continuation_ltx_executor_resumes_with_original_and_current_frame():
     checkpoint = SimpleNamespace(
         original_input_ref="durable/original.png",

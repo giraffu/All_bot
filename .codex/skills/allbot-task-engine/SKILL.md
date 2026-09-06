@@ -133,6 +133,9 @@ service 或在未装配时静默降级。finalizer intent、Bot recovery identit
 - continuation 每阶段先 CAS 保存结果，再清理 registry。最终进入
   `delivery_pending` 后由 lease owner 发送，成功再标 delivered；恢复扫描
   不依赖 TaskRegistry 非空。
+- continuation policy 和 SCAIL-2 pipeline 不得 import 具体 task executor；
+  Quick 入口与 recovery composition root 显式注入 generation/video/LTX executor
+  和 downloader。缺失依赖必须在下载、提交或状态推进前 fail closed。
 - 私有 webhook stream 保持全局 inflight、单 Bot prefetch、deferred ID 有界；
   启动先追平 PEL，再读取新消息，同 Bot 保序。容量耗尽通过 Redis 背压，
   不丢弃已接纳 update。

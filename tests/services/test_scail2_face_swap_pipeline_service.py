@@ -49,6 +49,33 @@ def test_build_scail2_first_frame_object_key_is_deterministic():
 
 
 @pytest.mark.asyncio
+async def test_bot_pipeline_fails_closed_without_generation_executor():
+    prepare_first_frame = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="generation executor is not configured"):
+        await process_bot_scail2_face_swap_pipeline(
+            context=SimpleNamespace(),
+            chat_id=456,
+            user_id=789,
+            internal_user_id=123,
+            username="tester",
+            reference_image_path="/tmp/reference.png",
+            motion_video_path="/tmp/motion.mp4",
+            prompt="keep scene",
+            duration=5,
+            message_id=99,
+            cleanup=True,
+            source_post_id=None,
+            normal_priority=7,
+            cost=40,
+            prepare_first_frame_func=prepare_first_frame,
+            process_scail2_stage_func=AsyncMock(),
+        )
+
+    prepare_first_frame.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_prepare_first_frame_uses_local_bot_video_and_uploads_hidden_object(
     tmp_path,
 ):
