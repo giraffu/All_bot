@@ -59,6 +59,7 @@ manifest 和专项文档读取，不在此维护快照。
 - 多阶段任务只有一个根业务身份和一次扣费。预处理/换脸/续接阶段使用内部执行
   ID 与 continuation checkpoint，不对用户暴露，也不二次扣费。
 - 多个 task type 共享 workflow 时，在 patcher 按类型注入差异，不复制 JSON。
+  H3 节点策略只在 `workflow_minimax_h3_patcher.py`，registry 复用公开 patcher。
 - 主 Bot、QQCC 和管理后台可有不同选项 catalog；私有选项不得泄漏到公开
   catalog，兼容字段只读解析，不作为新入口。
 - `workers/comfy_agent/` 是 agent、patcher 与 workflow 唯一源码；GPU profile

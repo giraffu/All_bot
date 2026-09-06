@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 import logging
-import math
 import re
 from typing import Any
 
@@ -12,14 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import IMAGE_LORA_MODELS
 from src.domain_config.minimax_h3 import (
-    MiniMaxH3ValidationError,
     MINIMAX_H3_ADDON_MODELS,
-    MINIMAX_H3_MAX_ADDON_ITEMS,
     MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_DEFAULT_MAIN_MODEL,
     MINIMAX_H3_NORMAL_PRICE_BY_DURATION,
     MINIMAX_H3_REF2V_PRICE_BY_DURATION,
-    normalize_minimax_h3_main_model,
+)
+from src.services.qqcc_ai_video_scene_policy import (
+    AI_VIDEO_RESOLUTION_KEYS,
+    AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+    DEFAULT_AI_VIDEO_SCENE_RESOLUTION,
+    normalize_qqcc_ai_video_scene,
 )
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
@@ -93,14 +95,9 @@ VIDEO_SCENE_ENGINE_KEYS = (
 VIDEO_SCENE_ENGINES_WITH_LORA = frozenset(VIDEO_SCENE_ENGINE_KEYS)
 VIDEO_SCENE_MAX_COUNT = 20
 VIDEO_SCENE_MAX_LORA_ITEMS = 5
-AI_VIDEO_SCENE_ENGINE_MINIMAX_H3 = "minimax_h3"
 AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"  # read-only legacy alias
 AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,)
-AI_VIDEO_DURATION_KEYS = (5, 10, 15)
-AI_VIDEO_RESOLUTION_KEYS = ("preview", "small", "standard", "hd")
-DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
-AI_VIDEO_MAX_LORA_ITEMS = MINIMAX_H3_MAX_ADDON_ITEMS
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
@@ -888,165 +885,17 @@ def _normalize_ai_video_scene(
     used_ids: set[str],
     allowed_end_frame_draw_scene_ids: frozenset[str],
 ) -> dict[str, Any] | None:
-    if not isinstance(raw_scene, dict):
-        return None
-
-    name = raw_scene.get("name")
-    name = name.strip() if isinstance(name, str) else ""
-    prompt = raw_scene.get("prompt")
-    prompt = prompt.strip() if isinstance(prompt, str) else ""
-    if not name or not prompt:
-        return None
-
-    raw_duration = raw_scene.get("duration")
-    try:
-        duration = int(str(raw_duration).strip().removesuffix("s"))
-    except (TypeError, ValueError):
-        duration = AI_VIDEO_DURATION_KEYS[0]
-    if duration not in AI_VIDEO_DURATION_KEYS:
-        duration = AI_VIDEO_DURATION_KEYS[0]
-
-    mode = "ref2v" if str(raw_scene.get("mode") or "i2v").strip() == "ref2v" else "i2v"
-    try:
-        main_model = normalize_minimax_h3_main_model(
-            raw_scene.get("main_model"),
-            migrate_retired=True,
-        )
-    except MiniMaxH3ValidationError:
-        main_model = MINIMAX_H3_DEFAULT_MAIN_MODEL
-    lora_items: list[dict[str, Any]] = []
-    seen_loras: set[str] = set()
-    raw_lora_items = raw_scene.get("lora_items")
-    if isinstance(raw_lora_items, list):
-        for raw_item in raw_lora_items:
-            if not isinstance(raw_item, dict):
-                continue
-            raw_name = raw_item.get("name")
-            lora_name = raw_name.strip() if isinstance(raw_name, str) else ""
-            model = MINIMAX_H3_ADDON_MODELS.get(lora_name)
-            if (
-                model is None
-                or mode not in model.supported_modes
-                or lora_name in seen_loras
-            ):
-                continue
-            seen_loras.add(lora_name)
-            try:
-                raw_strength = raw_item.get("strength")
-                strength = (
-                    model.default_strength
-                    if raw_strength in (None, "")
-                    else float(raw_strength)
-                )
-            except (TypeError, ValueError):
-                strength = model.default_strength
-            if not math.isfinite(strength):
-                strength = model.default_strength
-            strength = float(round(round(min(2.0, max(0.1, strength)) * 20) / 20, 2))
-            lora_items.append({"name": lora_name, "strength": strength})
-            if len(lora_items) >= AI_VIDEO_MAX_LORA_ITEMS:
-                break
-
-    reference_images = []
-    if mode == "ref2v" and isinstance(raw_scene.get("reference_images"), list):
-        reference_images = [
-            str(value).strip()
-            for value in raw_scene["reference_images"]
-            if isinstance(value, str)
-            and str(value).strip().startswith("qqcc/config/ref2v/ai_video/")
-        ]
-    if mode == "ref2v" and not 1 <= len(reference_images) <= 4:
-        return None
-    raw_reference_names = raw_scene.get("reference_image_names")
-    reference_image_names = [
-        (
-            str(raw_reference_names[index]).strip()[:64]
-            if isinstance(raw_reference_names, list)
-            and index < len(raw_reference_names)
-            and isinstance(raw_reference_names[index], str)
-            and str(raw_reference_names[index]).strip()
-            else f"模板 {index + 1}"
-        )
-        for index in range(len(reference_images))
-    ]
-    raw_reference_file_ids = raw_scene.get("reference_image_telegram_file_ids")
-    reference_image_telegram_file_ids: list[dict[str, str]] = []
-    for reference_index in range(len(reference_images)):
-        raw_file_ids = (
-            raw_reference_file_ids[reference_index]
-            if isinstance(raw_reference_file_ids, list)
-            and reference_index < len(raw_reference_file_ids)
-            else {}
-        )
-        normalized_file_ids: dict[str, str] = {}
-        if isinstance(raw_file_ids, dict):
-            for raw_bot_id, raw_file_id in raw_file_ids.items():
-                bot_id = str(raw_bot_id).strip()
-                file_id = (
-                    str(raw_file_id).strip() if isinstance(raw_file_id, str) else ""
-                )
-                if bot_id.isdigit() and file_id:
-                    normalized_file_ids[bot_id] = file_id[:512]
-                if len(normalized_file_ids) >= 4:
-                    break
-        reference_image_telegram_file_ids.append(normalized_file_ids)
-    aspect_ratio = str(raw_scene.get("aspect_ratio") or "16:9").strip()
-    if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
-        aspect_ratio = "16:9"
-    resolution = (
-        raw_scene.get("resolution").strip()
-        if isinstance(raw_scene.get("resolution"), str)
-        and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
-        else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
-    )
-    scene = {
-        "id": _build_unique_scene_id(
-            raw_scene.get("id"),
-            index=index,
-            used_ids=used_ids,
-        ),
-        "name": name,
-        "prompt": prompt,
-        "negative_prompt": _normalize_scene_negative_prompt(
-            raw_scene.get("negative_prompt")
-        ),
-        "duration": duration,
-        "resolution": resolution,
-        "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-        "main_model": main_model,
-        "mode": mode,
-        "reference_images": reference_images,
-        "aspect_ratio": aspect_ratio,
-        "lora_items": lora_items,
-        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
-        "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
-            None if mode == "ref2v" else raw_scene.get("end_frame_draw_scene_id"),
-            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
-        ),
-        "jump_draw_scene_id": _normalize_end_frame_draw_scene_id(
-            raw_scene.get("jump_draw_scene_id"),
-            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
-        ),
-        "next_scene_id": (
-            str(raw_scene.get("next_scene_id")).strip()
-            if mode != "ref2v"
-            and isinstance(raw_scene.get("next_scene_id"), str)
-            and str(raw_scene.get("next_scene_id")).strip()
-            else None
-        ),
-    }
-    _attach_scene_demo_media(
-        scene,
+    return normalize_qqcc_ai_video_scene(
         raw_scene,
-        scene_kind="ai_video",
-        output_media_type="video",
+        index=index,
+        used_ids=used_ids,
+        allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        build_unique_scene_id=_build_unique_scene_id,
+        normalize_negative_prompt=_normalize_scene_negative_prompt,
+        normalize_credit_cost=_normalize_scene_credit_cost,
+        normalize_draw_scene_id=_normalize_end_frame_draw_scene_id,
+        attach_demo_media=_attach_scene_demo_media,
     )
-    if mode == "ref2v":
-        scene["reference_image_names"] = reference_image_names
-        scene["reference_image_telegram_file_ids"] = reference_image_telegram_file_ids
-    if not scene["jump_draw_scene_id"]:
-        scene.pop("jump_draw_scene_id")
-    return scene
 
 
 def _normalize_ai_video_scenes(
@@ -1420,67 +1269,36 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG["draw_scenes"] = deepcopy(
 )
 
 
-def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
-    """Return the effective QQCC config with unknown keys removed."""
-
-    defaults = deepcopy(DEFAULT_QQCC_LAZY_BOT_CONFIG)
-    if not isinstance(raw, dict):
-        return defaults
-
-    config = deepcopy(defaults)
-    raw_scene_preset_version = _normalize_scene_preset_version(
-        raw.get("scene_preset_version")
-    )
-    seed_scene_presets = raw_scene_preset_version < SCENE_PRESET_VERSION
-    config["scene_preset_version"] = SCENE_PRESET_VERSION
-
-    raw_prompts = raw.get("prompts")
-    if not isinstance(raw_prompts, dict):
-        raw_prompts = {}
-    raw_copywriting = raw.get("copywriting")
-    if not isinstance(raw_copywriting, dict):
-        raw_copywriting = {}
-
+def _normalize_qqcc_feature_sections(
+    *, config: dict[str, Any], raw: dict[str, Any], defaults: dict[str, Any]
+) -> None:
     global_enabled = raw.get("global_enabled", defaults["global_enabled"])
     config["global_enabled"] = (
-        global_enabled
-        if isinstance(global_enabled, bool)
-        else defaults["global_enabled"]
+        global_enabled if isinstance(global_enabled, bool) else defaults["global_enabled"]
     )
     config["main_buttons"] = _normalize_bool_section(
-        raw.get("main_buttons"),
-        default=defaults["main_buttons"],
-        keys=MAIN_BUTTON_KEYS,
+        raw.get("main_buttons"), default=defaults["main_buttons"], keys=MAIN_BUTTON_KEYS
     )
-    # Historic admin payloads only had one button per family.  They map only
-    # to V2; V1 remains hidden until its versioned toggle is explicitly set.
     raw_main_buttons = raw.get("main_buttons")
     if isinstance(raw_main_buttons, dict):
-        if isinstance(raw_main_buttons.get("ai_draw"), bool):
-            if "ai_draw_v2" not in raw_main_buttons:
-                config["main_buttons"]["ai_draw_v2"] = raw_main_buttons["ai_draw"]
-        if isinstance(raw_main_buttons.get("video_edit"), bool):
-            if "video_edit_v2" not in raw_main_buttons:
-                config["main_buttons"]["video_edit_v2"] = raw_main_buttons["video_edit"]
+        for legacy_key, versioned_key in (
+            ("ai_draw", "ai_draw_v2"),
+            ("video_edit", "video_edit_v2"),
+        ):
+            legacy_value = raw_main_buttons.get(legacy_key)
+            if isinstance(legacy_value, bool) and versioned_key not in raw_main_buttons:
+                config["main_buttons"][versioned_key] = legacy_value
     config["main_menu_layout"] = _normalize_main_menu_layout(
         raw.get("main_menu_layout")
     )
-    config["photo_buttons"] = _normalize_bool_section(
-        raw.get("photo_buttons"),
-        default=defaults["photo_buttons"],
-        keys=PHOTO_BUTTON_KEYS,
-    )
-    config["undress_methods"] = _normalize_bool_section(
-        raw.get("undress_methods"),
-        default=defaults["undress_methods"],
-        keys=UNDRESS_METHOD_KEYS,
-    )
-    config["video_buttons"] = _normalize_bool_section(
-        raw.get("video_buttons"),
-        default=defaults["video_buttons"],
-        keys=VIDEO_BUTTON_KEYS,
-    )
-
+    for section, keys in (
+        ("photo_buttons", PHOTO_BUTTON_KEYS),
+        ("undress_methods", UNDRESS_METHOD_KEYS),
+        ("video_buttons", VIDEO_BUTTON_KEYS),
+    ):
+        config[section] = _normalize_bool_section(
+            raw.get(section), default=defaults[section], keys=keys
+        )
     raw_video_settings = raw.get("video_settings")
     if not isinstance(raw_video_settings, dict):
         raw_video_settings = {}
@@ -1496,32 +1314,36 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             keys=VIDEO_DURATION_KEYS,
         ),
     }
+
+
+def _normalize_qqcc_scene_collections(
+    *,
+    config: dict[str, Any],
+    raw: dict[str, Any],
+    raw_prompts: dict[str, Any],
+    seed_scene_presets: bool,
+) -> tuple[frozenset[str], list[dict[str, Any]], list[dict[str, Any]]]:
     config["filter_scenes"] = _normalize_filter_scenes(raw.get("filter_scenes"))
-    allowed_filter_scene_ids = frozenset(
-        str(scene.get("id") or "") for scene in config["filter_scenes"]
-    )
+    filter_ids = frozenset(str(scene.get("id") or "") for scene in config["filter_scenes"])
     if "draw_scenes" in raw:
         config["draw_scenes"] = _normalize_draw_scenes(
             raw.get("draw_scenes"),
             raw_prompts=raw_prompts,
             seed_presets=seed_scene_presets,
-            allowed_filter_scene_ids=allowed_filter_scene_ids,
+            allowed_filter_scene_ids=filter_ids,
         )
     elif seed_scene_presets:
         config["draw_scenes"] = _default_draw_scenes(raw_prompts)
-    elif not seed_scene_presets:
+    else:
         config["draw_scenes"] = []
     _normalize_draw_scene_postprocess_refs(
-        config["draw_scenes"],
-        allowed_filter_scene_ids=allowed_filter_scene_ids,
+        config["draw_scenes"], allowed_filter_scene_ids=filter_ids
     )
-    allowed_end_frame_draw_scene_ids = frozenset(
-        str(scene.get("id") or "") for scene in config["draw_scenes"]
-    )
+    draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes"])
     if "video_scenes" in raw:
         config["video_scenes"] = _normalize_video_scenes(
             raw.get("video_scenes"),
-            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+            allowed_end_frame_draw_scene_ids=draw_ids,
             raw_prompts=raw_prompts,
             seed_presets=seed_scene_presets,
         )
@@ -1530,21 +1352,27 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     else:
         config["video_scenes"] = []
     config["ai_video_scenes"] = _normalize_ai_video_scenes(
-        raw.get("ai_video_scenes"),
-        allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        raw.get("ai_video_scenes"), allowed_end_frame_draw_scene_ids=draw_ids
     )
+    return filter_ids, config["draw_scenes"], config["video_scenes"]
 
-    # v2 is the compatibility projection of the historic collections.  A v1
-    # collection is seeded once from that exact effective content, then both
-    # collections are independently editable.
-    legacy_draw_scenes = config["draw_scenes"]
-    legacy_video_scenes = config["video_scenes"]
+
+def _normalize_qqcc_versioned_scenes(
+    *,
+    config: dict[str, Any],
+    raw: dict[str, Any],
+    raw_prompts: dict[str, Any],
+    seed_scene_presets: bool,
+    filter_ids: frozenset[str],
+    legacy_draw_scenes: list[dict[str, Any]],
+    legacy_video_scenes: list[dict[str, Any]],
+) -> None:
     migration_draw_source = (
         _normalize_draw_scenes(
             raw.get("draw_scenes"),
             raw_prompts=raw_prompts,
             seed_presets=seed_scene_presets,
-            allowed_filter_scene_ids=allowed_filter_scene_ids,
+            allowed_filter_scene_ids=filter_ids,
         )
         if "draw_scenes" in raw
         else legacy_draw_scenes
@@ -1555,7 +1383,7 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
             raw_prompts=raw_prompts,
             seed_presets=False,
-            allowed_filter_scene_ids=allowed_filter_scene_ids,
+            allowed_filter_scene_ids=filter_ids,
             scene_kind="draw",
         )
         if "draw_scenes_v2" in raw
@@ -1568,19 +1396,19 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         engine=DRAW_SCENE_ENGINE_FREE_EDIT,
         raw_prompts=raw_prompts,
         seed_presets=False,
-        allowed_filter_scene_ids=allowed_filter_scene_ids,
+        allowed_filter_scene_ids=filter_ids,
         scene_kind="draw_v1",
     )
-    v2_draw_ids = frozenset(
-        str(scene.get("id") or "") for scene in config["draw_scenes_v2"]
-    )
-    v1_draw_ids = frozenset(
-        str(scene.get("id") or "") for scene in config["draw_scenes_v1"]
-    )
+    draw_ids = {
+        version: frozenset(str(scene.get("id") or "") for scene in config[key])
+        for version, key in (("v1", "draw_scenes_v1"), ("v2", "draw_scenes_v2"))
+    }
     migration_video_source = (
         _normalize_video_scenes(
             raw.get("video_scenes"),
-            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+            allowed_end_frame_draw_scene_ids=frozenset(
+                str(scene.get("id") or "") for scene in legacy_draw_scenes
+            ),
             raw_prompts=raw_prompts,
             seed_presets=seed_scene_presets,
         )
@@ -1591,7 +1419,7 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         _normalize_versioned_video_scenes(
             raw["video_scenes_v2"],
             engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-            allowed_end_frame_draw_scene_ids=v2_draw_ids,
+            allowed_end_frame_draw_scene_ids=draw_ids["v2"],
             raw_prompts=raw_prompts,
             seed_presets=False,
             scene_kind="video",
@@ -1604,25 +1432,60 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     config["video_scenes_v1"] = _normalize_versioned_video_scenes(
         raw.get("video_scenes_v1", migration_video_source),
         engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-        allowed_end_frame_draw_scene_ids=v1_draw_ids,
+        allowed_end_frame_draw_scene_ids=draw_ids["v1"],
         raw_prompts=raw_prompts,
         seed_presets=False,
         scene_kind="video_v1",
     )
-    config["video_scenes_v1"] = _force_scene_engine(
-        config["video_scenes_v1"], engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
-    )
-    config["video_scenes_v2"] = _force_scene_engine(
-        config["video_scenes_v2"], engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
-    )
-    normalize_qqcc_video_scene_links(config["video_scenes_v1"])
-    normalize_qqcc_video_scene_links(config["video_scenes_v2"])
-    # Existing call sites and persisted callbacks continue to resolve V2.
+    for version, engine in (
+        ("v1", VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO),
+        ("v2", VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2),
+    ):
+        key = f"video_scenes_{version}"
+        config[key] = _force_scene_engine(config[key], engine=engine)
+        normalize_qqcc_video_scene_links(config[key])
     config["draw_scenes"] = config["draw_scenes_v2"]
     config["video_scenes"] = config["video_scenes_v2"]
     normalize_qqcc_video_scene_links(config["video_scenes"])
     normalize_qqcc_video_scene_links(config["ai_video_scenes"])
 
+
+def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
+    """Return the effective QQCC config with unknown keys removed."""
+
+    defaults = deepcopy(DEFAULT_QQCC_LAZY_BOT_CONFIG)
+    if not isinstance(raw, dict):
+        return defaults
+
+    config = deepcopy(defaults)
+    seed_scene_presets = (
+        _normalize_scene_preset_version(raw.get("scene_preset_version"))
+        < SCENE_PRESET_VERSION
+    )
+    config["scene_preset_version"] = SCENE_PRESET_VERSION
+    raw_prompts = raw.get("prompts")
+    raw_prompts = raw_prompts if isinstance(raw_prompts, dict) else {}
+    raw_copywriting = raw.get("copywriting")
+    raw_copywriting = raw_copywriting if isinstance(raw_copywriting, dict) else {}
+
+    _normalize_qqcc_feature_sections(config=config, raw=raw, defaults=defaults)
+    filter_ids, legacy_draw_scenes, legacy_video_scenes = (
+        _normalize_qqcc_scene_collections(
+            config=config,
+            raw=raw,
+            raw_prompts=raw_prompts,
+            seed_scene_presets=seed_scene_presets,
+        )
+    )
+    _normalize_qqcc_versioned_scenes(
+        config=config,
+        raw=raw,
+        raw_prompts=raw_prompts,
+        seed_scene_presets=seed_scene_presets,
+        filter_ids=filter_ids,
+        legacy_draw_scenes=legacy_draw_scenes,
+        legacy_video_scenes=legacy_video_scenes,
+    )
     config["prompts"] = {
         key: raw_prompts[key].strip() if isinstance(raw_prompts.get(key), str) else ""
         for key in PROMPT_KEYS
@@ -1634,7 +1497,6 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         for key in COPYWRITING_KEYS
     }
     return config
-
 
 def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_qqcc_config(config).get("video_scenes", [])

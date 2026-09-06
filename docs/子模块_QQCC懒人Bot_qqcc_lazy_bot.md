@@ -252,10 +252,10 @@ YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，focused image smo
 - `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图/AI滤镜链共享 helper，负责解析 `draw -> draw...`、`draw -> filter` 和直接 `filter` 链、计算链路费用、串行执行绘图/滤镜/原图换脸并复用中间产物；直接 AI绘图、直接 AI滤镜和 AI动图尾帧共用这里的 `original_face_swap_enabled` 语义，并在真实子任务维度标记首任务可取消、后续 continuation 不可取消且 `base_priority=100`。
 - `src/services/quick_image_submission_service.py`：Quick Image / QQCC AI绘图/AI滤镜提交计划事实源，负责随机换脸模板过滤、QQCC draw/filter scene engine 分支、后处理链成本合计、`scene_kind` metadata 和最终 image payload；旧 `WAIT_UNDRESS_METHOD` 选择态已清理，`i2i_draw` payload 仅保留兼容。
 - `src/services/qqcc_demo_media_service.py`：示范媒体上传校验、R2 确定性 key、配置预览短签、Telegram 图片/视频 media group 发送、file_id 优先与失效回退的事实源；当 Telegram 拒绝 R2 短签 URL 时，在同一媒体大小和文件签名校验内从 R2 读取并直接上传，再缓存新的 file_id。file_id checkpoint 更新由 `qqcc_config_service.py` 完成。
-- `src/services/quick_video_submission_service.py`：Quick Video / QQCC AI动图提交计划事实源，负责 QQCC video scene engine 分支、尾帧绘图链成本合计和最终 video payload；配置 `end_frame_draw_scene_id` 时先复用 AI绘图完整后处理链生成隐藏尾帧，再提交首尾帧视频。
+- `src/services/quick_video_submission_service.py`：Quick Video / QQCC AI动图提交计划事实源；场景计划、私有 continuation、REF2V 下载执行和直接视频执行使用独立 phase。配置 `end_frame_draw_scene_id` 时先复用 AI绘图完整后处理链生成隐藏尾帧，再提交首尾帧视频。
 - `src/services/qqcc_regenerate_metadata.py`：QQCC 结果重生成 metadata 与 callback prefix 事实源，统一 `_qqcc_regenerate` 结构，供 History 持久化和结果按钮展示层共用。
 - `src/services/qqcc_regeneration_service.py`：QQCC 结果重生成准备 service，负责校验本人 History、下载原始用户输入、按当前 QQCC 配置重建 quick image/video 提交计划和复用原结果展示名。
-- `src/services/qqcc_config_service.py`：QQCC 配置默认值、normalize、runtime checkpoint 读写与 QQCC prompt override 解析。
+- `src/services/qqcc_config_service.py`：QQCC 配置 facade、默认值、runtime checkpoint 读写与 prompt override；normalize 按 feature section、legacy scene collection、versioned projection 分 phase。AI 视频场景归一位于 `src/services/qqcc_ai_video_scene_policy.py`，通过显式 policy 回调处理 ID、价格、draw ref 与 demo media。
 - `src/services/qqcc_runtime_context.py`：集中维护 `bot:qqcc` 常量、QQCC Bot 上下文判断和按上下文加载运行时配置的兜底逻辑，供 quick image/video FSM 与 callback helper 复用。
 - `dashboard/backend/qqcc_config_main.py`：独立 QQCC Config API 入口，只做 DB 初始化、独立认证、健康检查与 QQCC 配置 router，不启动 Dashboard 后台循环。
 - `dashboard/backend/qqcc_config_auth.py`：独立 QQCC Config 账号与 JWT。

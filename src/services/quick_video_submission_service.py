@@ -630,20 +630,90 @@ def _resolve_ref2v_reference_paths(
     ]
 
 
+def _normalized_scene_lora_items(scene: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"name": item.get("name"), "strength": item.get("strength")}
+        for item in (scene.get("lora_items") or [])
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+
+def _resolved_plan_cost(
+    *, fixed_credit_cost: int | None, segments: tuple[QqccVideoChainSegment, ...]
+) -> int:
+    return (
+        fixed_credit_cost
+        if fixed_credit_cost is not None
+        else sum(segment.cost for segment in segments)
+    )
+
+
+def _qqcc_ai_video_scene_is_enabled(
+    qqcc_config: dict[str, Any], scene: dict[str, Any] | None
+) -> bool:
+    return bool(
+        is_qqcc_main_button_enabled(qqcc_config, "ai_video")
+        and has_enabled_qqcc_ai_video_scenes(qqcc_config)
+        and scene is not None
+    )
+
+
+def _resolve_ai_video_references(
+    *, fsm_data: dict[str, Any], scene: dict[str, Any], scene_mode: str
+) -> tuple[str, str, list[str], list[str | None]] | QuickVideoSubmissionReject:
+    selected_image = str(fsm_data.get("selected_reference_image") or "").strip()
+    selected_name = str(fsm_data.get("selected_reference_name") or "").strip()
+    scene_images = list(scene.get("reference_images") or [])
+    if scene_mode != "ref2v":
+        return selected_image, selected_name, scene_images, []
+    if selected_image not in scene_images:
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+        )
+    paths = _resolve_ref2v_reference_paths(
+        fsm_data=fsm_data,
+        selected_reference_image=selected_image,
+        scene_reference_images=scene_images,
+    )
+    if isinstance(paths, QuickVideoSubmissionReject):
+        return paths
+    return selected_image, selected_name, scene_images, paths
+
+
+def _resolve_ai_video_plan_mode(
+    *, scene_mode: str, has_tail_draw_chain: bool
+) -> tuple[QuickVideoSubmissionKind, str]:
+    if scene_mode == "ref2v":
+        return QuickVideoSubmissionKind.H3_REF2V, MINIMAX_H3_REF2V
+    if has_tail_draw_chain:
+        return QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO, MINIMAX_H3_FLF2V
+    return QuickVideoSubmissionKind.LTX_VIDEO, MINIMAX_H3_I2V
+
+
+def _resolve_ai_video_tail_draw_chain(
+    *, qqcc_config: dict[str, Any], scene: dict[str, Any], scene_mode: str
+) -> list[dict[str, Any]]:
+    if scene_mode == "ref2v":
+        return []
+    tail_scene = _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+    return (
+        resolve_qqcc_draw_scene_chain(qqcc_config, tail_scene)
+        if tail_scene is not None
+        else []
+    )
+
+
 def _build_qqcc_ai_video_submission_plan(
     *,
     fsm_data: dict[str, Any],
     qqcc_config: dict[str, Any],
 ) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
     scene = resolve_qqcc_ai_video_scene_from_fsm_data(qqcc_config, fsm_data)
-    if (
-        not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
-        or not has_enabled_qqcc_ai_video_scenes(qqcc_config)
-        or scene is None
-    ):
+    if not _qqcc_ai_video_scene_is_enabled(qqcc_config, scene):
         return QuickVideoSubmissionReject(
             QuickVideoSubmissionRejectReason.FEATURE_DISABLED
         )
+    assert scene is not None
 
     chain_config = dict(qqcc_config)
     chain_config["ai_video_scenes"] = get_enabled_qqcc_ai_video_scenes(qqcc_config)
@@ -658,69 +728,29 @@ def _build_qqcc_ai_video_submission_plan(
     )
     duration = _normalize_ai_video_duration(scene)
     scene_mode = str(scene.get("mode") or "i2v")
-    selected_reference_image = str(
-        fsm_data.get("selected_reference_image") or ""
-    ).strip()
-    selected_reference_name = str(fsm_data.get("selected_reference_name") or "").strip()
-    scene_reference_images = list(scene.get("reference_images") or [])
-    if scene_mode == "ref2v" and selected_reference_image not in scene_reference_images:
-        return QuickVideoSubmissionReject(
-            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-        )
-
-    reference_image_paths: list[str | None] = []
-    if scene_mode == "ref2v":
-        resolved_paths = _resolve_ref2v_reference_paths(
-            fsm_data=fsm_data,
-            selected_reference_image=selected_reference_image,
-            scene_reference_images=scene_reference_images,
-        )
-        if isinstance(resolved_paths, QuickVideoSubmissionReject):
-            return resolved_paths
-        reference_image_paths = resolved_paths
-
-    tail_draw_scene = (
-        None
-        if scene_mode == "ref2v"
-        else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+    references = _resolve_ai_video_references(
+        fsm_data=fsm_data, scene=scene, scene_mode=scene_mode
     )
-    tail_draw_chain = (
-        resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
-        if tail_draw_scene is not None
-        else []
+    if isinstance(references, QuickVideoSubmissionReject):
+        return references
+    selected_reference_image, selected_reference_name, scene_reference_images, reference_image_paths = references
+    tail_draw_chain = _resolve_ai_video_tail_draw_chain(
+        qqcc_config=qqcc_config, scene=scene, scene_mode=scene_mode
     )
     prompt = str(scene.get("prompt") or "").strip()
     display_mode_name = str(scene.get("name") or "")
     scene_id = str(scene.get("id") or "").strip()
     fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
-    lora_items = [
-        {"name": item.get("name"), "strength": item.get("strength")}
-        for item in (scene.get("lora_items") or [])
-        if isinstance(item, dict) and item.get("name")
-    ]
-    plan_kind = (
-        QuickVideoSubmissionKind.H3_REF2V
-        if scene_mode == "ref2v"
-        else QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
-        if tail_draw_chain
-        else QuickVideoSubmissionKind.LTX_VIDEO
-    )
-    plan_mode = (
-        MINIMAX_H3_REF2V
-        if scene_mode == "ref2v"
-        else MINIMAX_H3_FLF2V
-        if tail_draw_chain
-        else MINIMAX_H3_I2V
+    plan_kind, plan_mode = _resolve_ai_video_plan_mode(
+        scene_mode=scene_mode, has_tail_draw_chain=bool(tail_draw_chain)
     )
     return QuickVideoSubmissionPlan(
         kind=plan_kind,
         mode=plan_mode,
         resolution=str(scene.get("resolution") or "preview"),
         duration=duration,
-        total_cost=(
-            fixed_credit_cost
-            if fixed_credit_cost is not None
-            else sum(segment.cost for segment in chain_segments)
+        total_cost=_resolved_plan_cost(
+            fixed_credit_cost=fixed_credit_cost, segments=chain_segments
         ),
         default_prompt_key=MINIMAX_H3_I2V,
         default_prompt_text=prompt,
@@ -746,7 +776,7 @@ def _build_qqcc_ai_video_submission_plan(
                 else None
             ),
         ),
-        lora_items=lora_items,
+        lora_items=_normalized_scene_lora_items(scene),
         tail_draw_chain=tail_draw_chain,
         scene_kind="ai_video",
         qqcc_chain_segments=chain_segments,
@@ -841,11 +871,6 @@ def _build_qqcc_video_submission_plan(
         if mode == MODE_WAN22_VIDEO_V2
         else QuickVideoSubmissionKind.LEGACY_VIDEO
     )
-    lora_items = [
-        {"name": item.get("name"), "strength": item.get("strength")}
-        for item in (scene.get("lora_items") or [])
-        if isinstance(item, dict) and item.get("name")
-    ]
     lora_name = str(scene.get("lora_name") or "")
     scene_id = str(scene.get("id") or "").strip()
     display_mode_name = str(scene.get("name") or "")
@@ -856,10 +881,8 @@ def _build_qqcc_video_submission_plan(
         mode=mode,
         resolution=resolution,
         duration=duration,
-        total_cost=(
-            fixed_credit_cost
-            if fixed_credit_cost is not None
-            else sum(segment.cost for segment in chain_segments)
+        total_cost=_resolved_plan_cost(
+            fixed_credit_cost=fixed_credit_cost, segments=chain_segments
         ),
         default_prompt_key=MODE_CUSTOM_VIDEO,
         default_prompt_text=prompt,
@@ -874,7 +897,7 @@ def _build_qqcc_video_submission_plan(
             display_mode_name=display_mode_name,
         ),
         lora_name=lora_name,
-        lora_items=lora_items,
+        lora_items=_normalized_scene_lora_items(scene),
         tail_draw_chain=tail_draw_chain,
         aspect_ratio=normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio")),
         qqcc_chain_segments=chain_segments,
@@ -1045,6 +1068,282 @@ def _build_private_qqcc_video_chain_stages(
     return stages
 
 
+async def _run_private_scene_chain_plan(
+    *,
+    plan: QuickVideoSubmissionPlan,
+    context: Any,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    image_path: str,
+    status_msg_id: int | None,
+    process_generation_task_func: ProcessGenerationTask,
+    process_video_task_template_func: ProcessVideoTask,
+    process_ltx_video_task_func: ProcessLtxVideoTask,
+    download_output_file_func: DownloadOutputFile,
+    adapt_video_frame_file_func: AdaptVideoFrameFile,
+    cleanup_temp_files_func: CleanupTempFiles,
+    continuation_store: PrivateQqccContinuationStore | None,
+    execute_stage_func: StageExecutor | None,
+    refund_credits_func: RefundCredits | None,
+) -> None:
+    stages = _build_private_qqcc_video_chain_stages(plan)
+    try:
+        durable_input_ref = await persist_private_qqcc_continuation_input(
+            input_ref=image_path,
+            telegram_user_id=user_id,
+            username=username,
+        )
+        checkpoint = await create_private_qqcc_continuation(
+            stages=stages,
+            original_input_ref=durable_input_ref,
+            original_input_durable=True,
+            context=context,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            username=username,
+            status_message_id=status_msg_id,
+            fixed_credit_cost=plan.fixed_credit_cost,
+            store=continuation_store,
+        )
+    finally:
+        cleanup_temp_files_func([image_path])
+
+    async def execute_chain_stage(checkpoint_value, stage, ref, runtime_context):
+        if execute_stage_func is not None:
+            return await execute_stage_func(
+                checkpoint_value, stage, ref, runtime_context
+            )
+        return await execute_private_qqcc_continuation_stage_default(
+            checkpoint_value,
+            stage,
+            ref,
+            runtime_context,
+            process_generation_task_func=process_generation_task_func,
+            process_video_task_template_func=process_video_task_template_func,
+            process_ltx_video_task_func=process_ltx_video_task_func,
+            download_video_frame_to_fsm_temp_func=download_output_file_func,
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+        )
+
+    await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=continuation_store,
+        execute_stage_func=execute_chain_stage,
+        refund_credits_func=refund_credits_func,
+    )
+
+
+def _build_private_tail_frame_stages(
+    plan: QuickVideoSubmissionPlan,
+) -> list[dict[str, Any]]:
+    stages = build_private_qqcc_draw_continuation_stages(
+        chain=resolve_qqcc_draw_chain_prompts({}, plan.tail_draw_chain),
+        final_send_result=False,
+        final_allow_contribute=False,
+        final_delete_status=False,
+    )
+    controls = {
+        "base_priority": QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+        "allow_cancel": False,
+        "user_cancel_allowed": False,
+        "show_queue_status": False,
+    }
+    common = {
+        "cleanup": True,
+        "send_result": True,
+        "delete_status": True,
+        "display_mode_name_override": plan.display_mode_name,
+        "result_meta": plan.result_meta,
+        **controls,
+    }
+    if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
+        task_kwargs = {
+            "prompt": plan.prompt_override or plan.default_prompt_text,
+            "is_video": True,
+            "task_type": MINIMAX_H3_FLF2V,
+            "resolution_preset": plan.resolution,
+            "duration": plan.duration,
+            "main_model": plan.main_model,
+            "allow_contribute": False,
+            "lora_items": plan.lora_items,
+            **common,
+        }
+        executor = "generation"
+    elif plan.mode == MODE_WAN22_VIDEO_V2:
+        task_kwargs = {
+            "prompt": plan.prompt_override or plan.default_prompt_text,
+            "negative_prompt": plan.negative_prompt,
+            "is_video": True,
+            "task_type": MODE_WAN22_VIDEO_V2,
+            "allow_contribute": plan.allow_contribute,
+            "resolution": plan.resolution,
+            "duration": plan.duration,
+            "lora_items": plan.lora_items,
+            "_qqcc_aspect_ratio": plan.aspect_ratio,
+            **common,
+        }
+        executor = "generation"
+    else:
+        task_kwargs = {
+            "mode": plan.mode,
+            "default_prompt_key": plan.default_prompt_key,
+            "default_prompt_text": plan.default_prompt_text,
+            "prompt_override": plan.prompt_override,
+            "negative_prompt": plan.negative_prompt,
+            "lora_name": plan.lora_name,
+            "lora_items": plan.lora_items,
+            "use_end_frame": True,
+            "allow_contribute": plan.allow_contribute,
+            "resolution": plan.resolution,
+            "duration": plan.duration,
+            "_qqcc_aspect_ratio": plan.aspect_ratio,
+            **common,
+        }
+        executor = "legacy_video"
+    stages.append(
+        {
+            "executor": executor,
+            "input_mode": "original_current",
+            "delivery_required": True,
+            "task_kwargs": task_kwargs,
+        }
+    )
+    return stages
+
+
+async def _run_private_tail_frame_plan(
+    *,
+    plan: QuickVideoSubmissionPlan,
+    context: Any,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    image_path: str,
+    status_msg_id: int | None,
+    process_generation_task_func: ProcessGenerationTask,
+    process_video_task_template_func: ProcessVideoTask,
+    process_ltx_video_task_func: ProcessLtxVideoTask,
+    download_output_file_func: DownloadOutputFile,
+    adapt_video_frame_file_func: AdaptVideoFrameFile,
+    cleanup_temp_files_func: CleanupTempFiles,
+    continuation_store: PrivateQqccContinuationStore | None,
+    execute_stage_func: StageExecutor | None,
+    refund_credits_func: RefundCredits | None,
+) -> None:
+    try:
+        durable_input_ref = await persist_private_qqcc_continuation_input(
+            input_ref=image_path,
+            telegram_user_id=user_id,
+            username=username,
+        )
+        checkpoint = await create_private_qqcc_continuation(
+            stages=_build_private_tail_frame_stages(plan),
+            original_input_ref=durable_input_ref,
+            original_input_durable=True,
+            context=context,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            username=username,
+            status_message_id=status_msg_id,
+            fixed_credit_cost=plan.fixed_credit_cost,
+            store=continuation_store,
+        )
+    finally:
+        cleanup_temp_files_func([image_path])
+
+    async def execute_stage(checkpoint_value, stage, ref, runtime_context):
+        if execute_stage_func is not None:
+            return await execute_stage_func(
+                checkpoint_value, stage, ref, runtime_context
+            )
+        return await execute_private_qqcc_continuation_stage_default(
+            checkpoint_value,
+            stage,
+            ref,
+            runtime_context,
+            process_generation_task_func=process_generation_task_func,
+            process_video_task_template_func=process_video_task_template_func,
+            process_ltx_video_task_func=process_ltx_video_task_func,
+            download_video_frame_to_fsm_temp_func=download_output_file_func,
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+        )
+
+    await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=continuation_store,
+        execute_stage_func=execute_stage,
+        refund_credits_func=refund_credits_func,
+    )
+
+
+async def _run_h3_ref2v_plan(
+    *,
+    plan: QuickVideoSubmissionPlan,
+    context: Any,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    image_path: str,
+    status_msg_id: int | None,
+    process_generation_task_func: ProcessGenerationTask,
+    download_reference_image_func: DownloadReferenceImage,
+    cleanup_temp_files_func: CleanupTempFiles,
+    billing_state: QqccSceneBillingState,
+) -> Any:
+    if not 1 <= len(plan.reference_images) <= 4:
+        raise ValueError("QQCC REF2V requires one to four administrator references")
+    downloaded_refs: list[str] = []
+    try:
+        replacements = plan.reference_image_paths or [None] * len(plan.reference_images)
+        if len(replacements) != len(plan.reference_images):
+            raise ValueError("QQCC REF2V replacement reference count mismatch")
+        for index, (object_key, replacement_path) in enumerate(
+            zip(plan.reference_images, replacements), start=1
+        ):
+            downloaded_refs.append(
+                replacement_path
+                or str(
+                    await _maybe_await(
+                        download_reference_image_func(object_key, index)
+                    )
+                )
+            )
+        result = await _maybe_await(
+            process_generation_task_func(
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                prompt=plan.prompt_override or plan.default_prompt_text,
+                images=[image_path, *downloaded_refs],
+                is_video=True,
+                task_type=MINIMAX_H3_REF2V,
+                resolution_preset=plan.resolution,
+                aspect_ratio=plan.aspect_ratio,
+                duration=plan.duration,
+                main_model=plan.main_model,
+                cleanup=True,
+                allow_contribute=False,
+                display_mode_name_override=plan.display_mode_name,
+                result_meta=plan.result_meta,
+                status_msg_id=status_msg_id,
+                lora_items=plan.lora_items or None,
+                **billing_state.allocate_task_billing(),
+            )
+        )
+        if _task_result_has_output(result):
+            billing_state.mark_task_succeeded()
+        return result
+    except BaseException:
+        cleanup_temp_files_func(downloaded_refs)
+        raise
+
+
 async def run_quick_video_submission_plan(
     *,
     plan: QuickVideoSubmissionPlan,
@@ -1112,199 +1411,46 @@ async def run_quick_video_submission_plan(
             cleanup_temp_files_func([source_image_path])
 
     if is_private_qqcc_bot_context(context) and len(plan.qqcc_chain_segments) > 1:
-        stages = _build_private_qqcc_video_chain_stages(plan)
-        try:
-            durable_input_ref = await persist_private_qqcc_continuation_input(
-                input_ref=image_path,
-                telegram_user_id=user_id,
-                username=username,
-            )
-            checkpoint = await create_private_qqcc_continuation(
-                stages=stages,
-                original_input_ref=durable_input_ref,
-                original_input_durable=True,
-                context=context,
-                chat_id=chat_id,
-                telegram_user_id=user_id,
-                username=username,
-                status_message_id=status_msg_id,
-                fixed_credit_cost=plan.fixed_credit_cost,
-                store=private_continuation_store,
-            )
-        finally:
-            cleanup_temp_files_func([image_path])
-
-        async def execute_chain_stage(checkpoint_value, stage, ref, runtime_context):
-            if private_continuation_execute_stage_func is not None:
-                return await private_continuation_execute_stage_func(
-                    checkpoint_value, stage, ref, runtime_context
-                )
-            return await execute_private_qqcc_continuation_stage_default(
-                checkpoint_value,
-                stage,
-                ref,
-                runtime_context,
-                process_generation_task_func=process_generation_task_func,
-                process_video_task_template_func=process_video_task_template_func,
-                process_ltx_video_task_func=process_ltx_video_task_func,
-                download_video_frame_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
-                adapt_video_frame_file_func=adapt_video_frame_file_func,
-                cleanup_temp_files_func=cleanup_temp_files_func,
-            )
-
-        await resume_private_qqcc_continuation(
-            chain_id=checkpoint.chain_id,
+        return await _run_private_scene_chain_plan(
+            plan=plan,
             context=context,
-            store=private_continuation_store,
-            execute_stage_func=execute_chain_stage,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            image_path=image_path,
+            status_msg_id=status_msg_id,
+            process_generation_task_func=process_generation_task_func,
+            process_video_task_template_func=process_video_task_template_func,
+            process_ltx_video_task_func=process_ltx_video_task_func,
+            download_output_file_func=download_output_file_to_fsm_temp_func,
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+            continuation_store=private_continuation_store,
+            execute_stage_func=private_continuation_execute_stage_func,
             refund_credits_func=refund_credits_func,
         )
-        return None
 
     if is_private_qqcc_bot_context(context) and quick_video_plan_requires_continuation(
         plan
     ):
-        stages = build_private_qqcc_draw_continuation_stages(
-            chain=resolve_qqcc_draw_chain_prompts({}, plan.tail_draw_chain),
-            final_send_result=False,
-            final_allow_contribute=False,
-            final_delete_status=False,
-        )
-        continuation_controls = {
-            "base_priority": QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
-            "allow_cancel": False,
-            "user_cancel_allowed": False,
-            "show_queue_status": False,
-        }
-        if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
-            stages.append(
-                {
-                    "executor": "generation",
-                    "input_mode": "original_current",
-                    "delivery_required": True,
-                    "task_kwargs": {
-                        "prompt": plan.prompt_override or plan.default_prompt_text,
-                        "is_video": True,
-                        "task_type": MINIMAX_H3_FLF2V,
-                        "resolution_preset": plan.resolution,
-                        "duration": plan.duration,
-                        "main_model": plan.main_model,
-                        "cleanup": True,
-                        "send_result": True,
-                        "delete_status": True,
-                        "allow_contribute": False,
-                        "display_mode_name_override": plan.display_mode_name,
-                        "result_meta": plan.result_meta,
-                        "lora_items": plan.lora_items,
-                        **continuation_controls,
-                    },
-                }
-            )
-        elif plan.mode == MODE_WAN22_VIDEO_V2:
-            stages.append(
-                {
-                    "executor": "generation",
-                    "input_mode": "original_current",
-                    "delivery_required": True,
-                    "task_kwargs": {
-                        "prompt": plan.prompt_override or plan.default_prompt_text,
-                        "negative_prompt": plan.negative_prompt,
-                        "is_video": True,
-                        "task_type": MODE_WAN22_VIDEO_V2,
-                        "cleanup": True,
-                        "send_result": True,
-                        "delete_status": True,
-                        "allow_contribute": plan.allow_contribute,
-                        "display_mode_name_override": plan.display_mode_name,
-                        "result_meta": plan.result_meta,
-                        "resolution": plan.resolution,
-                        "duration": plan.duration,
-                        "lora_items": plan.lora_items,
-                        "_qqcc_aspect_ratio": plan.aspect_ratio,
-                        **continuation_controls,
-                    },
-                }
-            )
-        else:
-            stages.append(
-                {
-                    "executor": "legacy_video",
-                    "input_mode": "original_current",
-                    "delivery_required": True,
-                    "task_kwargs": {
-                        "mode": plan.mode,
-                        "default_prompt_key": plan.default_prompt_key,
-                        "default_prompt_text": plan.default_prompt_text,
-                        "prompt_override": plan.prompt_override,
-                        "negative_prompt": plan.negative_prompt,
-                        "display_mode_name_override": plan.display_mode_name,
-                        "result_meta": plan.result_meta,
-                        "lora_name": plan.lora_name,
-                        "lora_items": plan.lora_items,
-                        "use_end_frame": True,
-                        "cleanup": True,
-                        "send_result": True,
-                        "delete_status": True,
-                        "allow_contribute": plan.allow_contribute,
-                        "resolution": plan.resolution,
-                        "duration": plan.duration,
-                        "_qqcc_aspect_ratio": plan.aspect_ratio,
-                        **continuation_controls,
-                    },
-                }
-            )
-        try:
-            durable_input_ref = await persist_private_qqcc_continuation_input(
-                input_ref=image_path,
-                telegram_user_id=user_id,
-                username=username,
-            )
-            checkpoint = await create_private_qqcc_continuation(
-                stages=stages,
-                original_input_ref=durable_input_ref,
-                original_input_durable=True,
-                context=context,
-                chat_id=chat_id,
-                telegram_user_id=user_id,
-                username=username,
-                status_message_id=status_msg_id,
-                fixed_credit_cost=plan.fixed_credit_cost,
-                store=private_continuation_store,
-            )
-        finally:
-            cleanup_temp_files_func([image_path])
-
-        async def execute_stage(checkpoint_value, stage, ref, runtime_context):
-            if private_continuation_execute_stage_func is not None:
-                return await private_continuation_execute_stage_func(
-                    checkpoint_value,
-                    stage,
-                    ref,
-                    runtime_context,
-                )
-            return await execute_private_qqcc_continuation_stage_default(
-                checkpoint_value,
-                stage,
-                ref,
-                runtime_context,
-                process_generation_task_func=process_generation_task_func,
-                process_video_task_template_func=process_video_task_template_func,
-                process_ltx_video_task_func=process_ltx_video_task_func,
-                download_video_frame_to_fsm_temp_func=(
-                    download_output_file_to_fsm_temp_func
-                ),
-                adapt_video_frame_file_func=adapt_video_frame_file_func,
-                cleanup_temp_files_func=cleanup_temp_files_func,
-            )
-
-        await resume_private_qqcc_continuation(
-            chain_id=checkpoint.chain_id,
+        return await _run_private_tail_frame_plan(
+            plan=plan,
             context=context,
-            store=private_continuation_store,
-            execute_stage_func=execute_stage,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            image_path=image_path,
+            status_msg_id=status_msg_id,
+            process_generation_task_func=process_generation_task_func,
+            process_video_task_template_func=process_video_task_template_func,
+            process_ltx_video_task_func=process_ltx_video_task_func,
+            download_output_file_func=download_output_file_to_fsm_temp_func,
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+            continuation_store=private_continuation_store,
+            execute_stage_func=private_continuation_execute_stage_func,
             refund_credits_func=refund_credits_func,
         )
-        return None
 
     if plan.kind in {
         QuickVideoSubmissionKind.TAIL_FRAME_VIDEO,
@@ -1330,66 +1476,19 @@ async def run_quick_video_submission_plan(
         )
 
     if plan.kind == QuickVideoSubmissionKind.H3_REF2V:
-        if not 1 <= len(plan.reference_images) <= 4:
-            raise ValueError("QQCC REF2V requires one to four administrator references")
-        downloaded_refs: list[str] = []
-        try:
-            if plan.reference_image_paths:
-                if len(plan.reference_image_paths) != len(plan.reference_images):
-                    raise ValueError("QQCC REF2V replacement reference count mismatch")
-                for index, (object_key, replacement_path) in enumerate(
-                    zip(plan.reference_images, plan.reference_image_paths),
-                    start=1,
-                ):
-                    if replacement_path:
-                        downloaded_refs.append(replacement_path)
-                    else:
-                        downloaded_refs.append(
-                            str(
-                                await _maybe_await(
-                                    download_reference_image_func(object_key, index)
-                                )
-                            )
-                        )
-            else:
-                for index, object_key in enumerate(plan.reference_images, start=1):
-                    downloaded_refs.append(
-                        str(
-                            await _maybe_await(
-                                download_reference_image_func(object_key, index)
-                            )
-                        )
-                    )
-            task_kwargs = billing_state.allocate_task_billing()
-            result = await _maybe_await(
-                process_generation_task_func(
-                    context=context,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    username=username,
-                    prompt=plan.prompt_override or plan.default_prompt_text,
-                    images=[image_path, *downloaded_refs],
-                    is_video=True,
-                    task_type=MINIMAX_H3_REF2V,
-                    resolution_preset=plan.resolution,
-                    aspect_ratio=plan.aspect_ratio,
-                    duration=plan.duration,
-                    main_model=plan.main_model,
-                    cleanup=True,
-                    allow_contribute=False,
-                    display_mode_name_override=plan.display_mode_name,
-                    result_meta=plan.result_meta,
-                    status_msg_id=status_msg_id,
-                    lora_items=plan.lora_items or None,
-                    **task_kwargs,
-                )
-            )
-            if _task_result_has_output(result):
-                billing_state.mark_task_succeeded()
-            return result
-        except BaseException:
-            cleanup_temp_files_func(downloaded_refs)
-            raise
+        return await _run_h3_ref2v_plan(
+            plan=plan,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            image_path=image_path,
+            status_msg_id=status_msg_id,
+            process_generation_task_func=process_generation_task_func,
+            download_reference_image_func=download_reference_image_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+            billing_state=billing_state,
+        )
 
     if plan.kind == QuickVideoSubmissionKind.LTX_VIDEO:
         task_kwargs = billing_state.allocate_task_billing()

@@ -50,9 +50,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   场景或模型事实表。
 - `排队状态` 菜单复用主 Bot 的共享队列展示 seam，只做 Central 与
   active task 的只读呈现；QQCC 不复制队列统计、任务类型映射或调度逻辑。
-- quick image/video FSM 只处理 Telegram 状态、文件、额度提示和清理；场景归一、
-  后处理/尾帧链、价格和 payload 留在 submission service。Quick Video 的场景投影、
-  拒绝与 seed 在 entry service，示范媒体、REF2V 和文案在 entry view；FSM 显式传 I/O。
+- quick image/video FSM 只管 Telegram 状态、文件和清理。AI 视频场景归一在
+  `qqcc_ai_video_scene_policy.py`；Quick Video 的计划、私有 continuation、REF2V
+  执行和 entry/view 保持独立 phase，FSM 显式传 I/O。
 - 只有链路第一个真实任务按普通规则排队并允许取消；后续 stage 是
   continuation，必须高优先级、隐藏排队/取消，并由 core runtime 权威拒绝
   旧取消入口。
