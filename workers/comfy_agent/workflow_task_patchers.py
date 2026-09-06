@@ -1,4 +1,3 @@
-import os
 import re
 from typing import Any, Callable
 
@@ -18,12 +17,6 @@ from src.domain_config.scail2_video import (
     normalize_scail2_negative_prompt,
     normalize_scail2_positive_prompt,
 )
-from src.domain_config.minimax_h3 import (
-    MINIMAX_H3_ADDON_MODELS,
-    MiniMaxH3ValidationError,
-    build_minimax_h3_spec,
-    normalize_minimax_h3_addon_items,
-)
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     WAN22_VIDEO_V2_MODEL_PROFILE,
@@ -35,6 +28,9 @@ from src.domain_config.wan22_aio_video import (
 )
 from src.lora_catalog import normalize_ltx_video_lora_items
 from src.wan22_explicit_lora_catalog import resolve_wan22_lora_pair
+from workers.comfy_agent.workflow_minimax_h3_patcher import (
+    patch_minimax_h3_workflow,
+)
 
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
@@ -81,59 +77,8 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 )
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
-LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
 LTX_T2V_MSR_LORA = "ltx2.3/LTX2.3-Licon-MSR-test_version.safetensors"
 LTX_T2V_EROS_V14_MODEL = "LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors"
-LTX_T2V_INGREDIENTS_FAST_CHECKPOINT = "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
-LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER = "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
-LTX_T2V_INGREDIENTS_NEGATIVE = (
-    "worst quality, inconsistent motion, blurry, jittery, distorted"
-)
-
-
-_LTX_REFERENCE_LAYOUT_MARKERS = (
-    "background",
-    "panel",
-    "turnaround view",
-    "reference sheet",
-    "背景",
-    "左侧",
-    "右侧",
-    "面板",
-    "画面",
-    "参考表",
-    "参考图",
-)
-
-
-def _identity_only_description(character_description: str) -> str:
-    sentences = [
-        part.strip()
-        for part in re.split(r"(?<=[.!?。！？；;])\s*", character_description)
-        if part.strip()
-    ]
-    identity_sentences = [
-        sentence
-        for sentence in sentences
-        if not any(
-            marker in sentence.casefold() for marker in _LTX_REFERENCE_LAYOUT_MARKERS
-        )
-    ]
-    return " ".join(identity_sentences) or character_description
-
-
-def _format_ltx_reference_sheet_description(character_description: str) -> str:
-    """Wrap user-authored identity text in the IC-LoRA training headings."""
-    identity_description = _identity_only_description(character_description)
-    return (
-        "**Left Panel (Character Face):** A clear front-facing close-up of "
-        "one adult character. "
-        f"{identity_description}\n"
-        "**Right Panel (Character Turnaround):** Full-body front, side, and "
-        "back views of the exact same character, preserving the same facial "
-        "identity, facial proportions, hairstyle, skin tone, body shape, and "
-        "body proportions."
-    )
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -636,161 +581,20 @@ def _patch_ltx_t2v_workflow(
             output_task_prefix="ltx_t2v_ic",
         )
         return
-    if ingredients:
-        checkpoint = workflow.get("127")
-        audio_vae = workflow.get("126")
-        text_encoder = workflow.get("103")
-        if not all(
-            isinstance(node, dict) for node in (checkpoint, audio_vae, text_encoder)
-        ):
-            raise ValueError("Ingredients official fast loaders missing")
-        checkpoint.setdefault("inputs", {})["ckpt_name"] = (
-            LTX_T2V_INGREDIENTS_FAST_CHECKPOINT
-        )
-        audio_vae.setdefault("inputs", {})["ckpt_name"] = (
-            LTX_T2V_INGREDIENTS_FAST_CHECKPOINT
-        )
-        text_encoder["inputs"] = {
-            "text_encoder": LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER,
-            "ckpt_name": LTX_T2V_INGREDIENTS_FAST_CHECKPOINT,
-            "device": "default",
-        }
-        if params.get("character_sheets"):
-            _patch_ltx_t2v_msr_workflow(
-                workflow,
-                params=params,
-                duration=duration,
-                width=width,
-                height=height,
-            )
-            audio_prompt = str(params.get("audio_prompt") or "").strip()
-            if audio_prompt:
-                workflow["28"]["inputs"]["text"] = (
-                    f"{workflow['28']['inputs'].get('text', '')}\n\n#Audio\n{audio_prompt}"
-                )
-            _set_ltx_output_prefixes(
-                workflow,
-                unique_id=unique_id,
-                output_task_prefix="ltx_t2v_ic",
-            )
-            return
-    else:
-        loader = workflow.get("256")
-        if not isinstance(loader, dict):
-            raise ValueError("fixed LTX LoRA loader node 256 missing")
-        loader_inputs = loader.setdefault("inputs", {})
-        loader_inputs["lora_1"] = {
-            "on": True,
-            "lora": LTX_T2V_DISTILLED_LORA,
-            "strength": 0.5,
-        }
-        loader_inputs["lora_2"] = {
-            "on": True,
-            "lora": LTX_T2V_SULPHUR_LORA,
-            "strength": 1.0,
-        }
-    if ingredients:
-        ic_loader = workflow.get("195")
-        if not isinstance(ic_loader, dict):
-            raise ValueError("Ingredients loader node 195 missing")
-        sulphur_loader = workflow.get("258")
-        ic_model_source = ["127", 0]
-        if sulphur_loader is not None:
-            expected_sulphur_inputs = {
-                "model": ["127", 0],
-                "lora_name": LTX_T2V_SULPHUR_LORA,
-                "strength_model": 1.0,
-            }
-            if (
-                not isinstance(sulphur_loader, dict)
-                or sulphur_loader.get("class_type") != "LoraLoaderModelOnly"
-                or sulphur_loader.get("inputs") != expected_sulphur_inputs
-            ):
-                raise ValueError("invalid isolated Ingredients Sulphur loader node 258")
-            ic_model_source = ["258", 0]
-        ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
-        ic_loader["inputs"]["model"] = ic_model_source
-        ic_loader["inputs"]["strength_model"] = 1.0
-        sheet = str(params.get("character_sheet") or "").strip()
-        if not sheet:
-            raise ValueError("Ingredients character sheet missing")
-        workflow["270"]["inputs"]["image"] = sheet
-        sheet_scale = workflow.get("274")
-        if not isinstance(sheet_scale, dict):
-            raise ValueError("Ingredients sheet scale node 274 missing")
-        sheet_scale["inputs"] = {
-            "input": ["270", 0],
-            "resize_type": "scale shorter dimension",
-            "resize_type.shorter_size": height,
-            "scale_method": "lanczos",
-        }
-        workflow.pop("277", None)
-        workflow.pop("278", None)
-        reference_video = workflow.get("273")
-        if not isinstance(reference_video, dict):
-            raise ValueError("Ingredients static reference video node 273 missing")
-        reference_video["inputs"] = {
-            "image": ["274", 0],
-            "amount": duration * LTX_VIDEO_FPS + 1,
-        }
-        frame_count = duration * LTX_VIDEO_FPS + 1
-        workflow["26:39"]["inputs"].update(
-            {
-                "width": ["5100", 0],
-                "height": ["5100", 1],
-                "length": frame_count,
-            }
-        )
-        workflow["26:40"]["inputs"].update(
-            {"frames_number": frame_count, "frame_rate": LTX_VIDEO_FPS}
-        )
-        image_condition = workflow.get("198")
-        if not isinstance(image_condition, dict):
-            raise ValueError("Ingredients image condition node 198 missing")
-        image_condition["inputs"] = {
-            "vae": ["127", 2],
-            "image": ["712", 0],
-            "latent": ["26:39", 0],
-            "strength": 1.0,
-            "bypass": True,
-        }
-        guide = workflow.get("115")
-        if not isinstance(guide, dict):
-            raise ValueError("Ingredients guide node 115 missing")
-        guide_inputs = guide.setdefault("inputs", {})
-        guide_inputs["latent"] = ["198", 0]
-        guide_inputs["image"] = ["273", 0]
-        guide_inputs["frame_idx"] = 0
-        guide_inputs["strength"] = 1.0
-        guide_inputs["iclora_parameters"] = ["196", 0]
-        decoder = workflow.get("105")
-        if not isinstance(decoder, dict):
-            raise ValueError("Ingredients video decoder node 105 missing")
-        decoder.setdefault("inputs", {})["samples"] = ["106", 2]
-        output = workflow.get("61")
-        if not isinstance(output, dict):
-            raise ValueError("Ingredients output node 61 missing")
-        output.setdefault("inputs", {})["audio"] = ["107", 0]
-        prompt_node = workflow.get("28")
-        if not isinstance(prompt_node, dict):
-            raise ValueError("LTX prompt node 28 missing")
-        target_description = str(
-            prompt_node.setdefault("inputs", {}).get("text", "")
-        ).strip()
-        character_description = str(params.get("character_description") or "").strip()
-        if not character_description:
-            raise ValueError("Ingredients character description missing")
-        reference_sheet_description = _format_ltx_reference_sheet_description(
-            character_description
-        )
-        prompt_node["inputs"]["text"] = (
-            f"### Reference Sheet Description\n{reference_sheet_description}\n\n"
-            f"### Target Description\n{target_description}"
-        )
-        negative_node = workflow.get("29")
-        if not isinstance(negative_node, dict):
-            raise ValueError("LTX negative prompt node 29 missing")
-        negative_node.setdefault("inputs", {})["text"] = LTX_T2V_INGREDIENTS_NEGATIVE
+    loader = workflow.get("256")
+    if not isinstance(loader, dict):
+        raise ValueError("fixed LTX LoRA loader node 256 missing")
+    loader_inputs = loader.setdefault("inputs", {})
+    loader_inputs["lora_1"] = {
+        "on": True,
+        "lora": LTX_T2V_DISTILLED_LORA,
+        "strength": 0.5,
+    }
+    loader_inputs["lora_2"] = {
+        "on": True,
+        "lora": LTX_T2V_SULPHUR_LORA,
+        "strength": 1.0,
+    }
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
         prompt_node = workflow.get("28")
@@ -1503,269 +1307,6 @@ def patch_scail2_face_swap_v2_workflow(
         output_task_prefix="scail2_face_swap_v2",
         **kwargs,
     )
-
-
-_MINIMAX_H3_COUNTS = {
-    "minimax_h3_t2v": (0, 0),
-    "minimax_h3_i2v": (1, 1),
-    "minimax_h3_flf2v": (2, 2),
-    "minimax_h3_ref2v": (0, 5),
-}
-_MINIMAX_H3_PRECISION_PRESETS = {
-    "preview": "0.26 MP - Preview",
-    "small": "0.36 MP - Small",
-    "standard": "0.52 MP - SD",
-    "hd": "0.65 MP - Balanced",
-}
-_MINIMAX_H3_FRAME_COUNT_BY_DURATION = {5: 124, 10: 243, 15: 362}
-_MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE = {
-    "model_input": ["1", 0],
-    "sampler_name": "euler",
-    "scheduler": "simple",
-    "steps": 8,
-    "shift_video": 12.0,
-    "shift_audio": 7.0,
-}
-
-
-def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
-    raw_frames = params.get("frame_count")
-    if raw_frames not in (None, ""):
-        try:
-            frames = int(raw_frames)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid MiniMax H3 frame count") from exc
-        if frames in _MINIMAX_H3_FRAME_COUNT_BY_DURATION.values():
-            return frames
-    raw_duration = params.get("duration")
-    try:
-        duration = int(
-            str(raw_duration if raw_duration not in (None, "") else 5).removesuffix("s")
-        )
-        return _MINIMAX_H3_FRAME_COUNT_BY_DURATION[duration]
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("invalid MiniMax H3 duration") from exc
-
-
-def _apply_minimax_h3_execution_profile(
-    workflow: dict[str, Any],
-    *,
-    task_type: str,
-) -> list[Any]:
-    workflow.pop("8", None)
-    workflow.pop("9", None)
-    profile = _MINIMAX_H3_TEN_EROS_EXECUTION_PROFILE
-    workflow["3"]["inputs"]["shift_video"] = profile["shift_video"]
-    workflow["3"]["inputs"]["shift_audio"] = profile["shift_audio"]
-
-    workflow["33"] = {
-        "inputs": {"sampler_name": profile["sampler_name"]},
-        "class_type": "KSamplerSelect",
-    }
-    workflow["34"] = {
-        "inputs": {
-            "model": ["7", 0],
-            "scheduler": profile["scheduler"],
-            "steps": profile["steps"],
-            "denoise": 1.0,
-        },
-        "class_type": "BasicScheduler",
-    }
-    if task_type == "minimax_h3_ref2v":
-        workflow["30"]["inputs"]["ref_image_size"] = "match"
-    return list(profile["model_input"])
-
-
-def patch_minimax_h3_workflow(
-    workflow: dict[str, Any],
-    *,
-    task_type: str,
-    params: dict[str, Any],
-    execution_id: str | None = None,
-    **_: Any,
-) -> None:
-    task_type = str(task_type or "")
-    if task_type not in _MINIMAX_H3_COUNTS:
-        raise ValueError("invalid MiniMax H3 task type")
-    if any(
-        params.get(key) not in (None, "", [], ())
-        for key in (
-            "model_name",
-            "checkpoint",
-            "timeline_data",
-            "sampler_name",
-            "scheduler",
-            "steps",
-            "sigmas",
-            "ref_image_size",
-            "ref_videos",
-            "ref_video_audios",
-            "ref_audios",
-        )
-    ):
-        raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
-    for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
-        workflow.pop(node_id, None)
-    try:
-        spec = build_minimax_h3_spec(
-            task_type,
-            {
-                **params,
-                "images": [
-                    str(params.get(key) or "").strip()
-                    for key in ("image", "image2", "image3", "image4", "image5")
-                    if str(params.get(key) or "").strip()
-                ],
-            },
-        )
-        addon_items = normalize_minimax_h3_addon_items(
-            params,
-            mode=task_type.removeprefix("minimax_h3_"),
-        )
-    except MiniMaxH3ValidationError as exc:
-        message = str(exc)
-        if "主模型" in message:
-            raise ValueError(f"invalid MiniMax H3 main model: {message}") from exc
-        raise ValueError(f"invalid MiniMax H3 addon configuration: {message}") from exc
-    workflow["1"]["inputs"]["unet_name"] = spec.model_name
-    if os.getenv("MINIMAX_H3_FORCE_PYTORCH_ATTENTION", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        attention_node = workflow.get("2")
-        if (
-            not isinstance(attention_node, dict)
-            or attention_node.get("class_type") != "ModelAttentionBackend"
-        ):
-            raise ValueError("MiniMax H3 attention backend node is missing")
-        attention_node.setdefault("inputs", {})["attention"] = "pytorch attention"
-    model_input = _apply_minimax_h3_execution_profile(
-        workflow,
-        task_type=task_type,
-    )
-    prompt_parts: list[str] = []
-    for offset, selection in enumerate(addon_items):
-        addon = MINIMAX_H3_ADDON_MODELS[selection.name]
-        for part in (part.strip() for part in addon.prompt_prefix.split(",")):
-            if part and part not in prompt_parts:
-                prompt_parts.append(part)
-        node_id = str(100 + offset)
-        workflow[node_id] = {
-            "inputs": {
-                "model": model_input,
-                "lora_name": addon.model_path,
-                "strength_model": round(selection.strength, 6),
-            },
-            "class_type": "LoraLoaderModelOnly",
-        }
-        model_input = [node_id, 0]
-    workflow["2"]["inputs"]["model"] = model_input
-    names = [
-        str(params.get(key) or "").strip()
-        for key in ("image", "image2", "image3", "image4", "image5")
-    ]
-    count = sum(bool(name) for name in names)
-    minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
-    if not minimum <= count <= maximum or any(
-        not names[index] for index in range(count)
-    ):
-        raise ValueError(f"invalid ordered image count for {task_type}")
-    descriptions = params.get("reference_descriptions") or []
-    if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
-        aspect_ratio = str(params.get("aspect_ratio") or "source").strip()
-        if aspect_ratio != "source":
-            raise ValueError("MiniMax H3 image modes require source aspect ratio")
-        preset = str(params.get("resolution_preset") or "preview").strip().lower()
-        precision = _MINIMAX_H3_PRECISION_PRESETS.get(preset)
-        if precision is None:
-            raise ValueError("invalid MiniMax H3 resolution preset")
-        calculator = workflow.get("41")
-        if not isinstance(calculator, dict):
-            raise ValueError("MiniMax H3 source resolution calculator is missing")
-        calculator["inputs"]["resolution_preset"] = precision
-        calculator["inputs"]["scale_from_image"] = True
-        workflow["30"]["inputs"]["width"] = ["41", 0]
-        workflow["30"]["inputs"]["height"] = ["41", 1]
-    guide_inputs = workflow["30"]["inputs"]
-    base_prompt = str(params.get("prompt") or "").strip()
-    prompt_prefix = ", ".join(prompt_parts)
-    guide_inputs["prompt"] = (
-        f"{prompt_prefix}, {base_prompt}" if prompt_prefix else base_prompt
-    )
-    guide_inputs["length"] = _minimax_h3_frame_count(params)
-    if task_type == "minimax_h3_ref2v":
-        reference_video = str(params.get("reference_video") or "").strip()
-        if reference_video:
-            workflow["26"] = {
-                "inputs": {
-                    "video": reference_video,
-                    "force_rate": 24,
-                    "custom_width": 0,
-                    "custom_height": 0,
-                    "frame_load_cap": 120,
-                    "skip_first_frames": 0,
-                    "select_every_nth": 1,
-                    "format": "None",
-                },
-                "class_type": "VHS_LoadVideo",
-            }
-            guide_inputs["ref_videos.ref_video_0"] = ["26", 0]
-            guide_inputs["ref_video_audios.ref_video_audio_0"] = ["26", 2]
-            guide_inputs["prompt"] = (
-                "<Video 1> is the final five seconds of the previous segment. "
-                "Continue naturally after it while preserving the characters, scene, "
-                "motion direction, camera trajectory, and audio continuity.\n\n"
-                f"{guide_inputs['prompt']}"
-            )
-        else:
-            workflow.pop("26", None)
-            guide_inputs.pop("ref_videos.ref_video_0", None)
-            guide_inputs.pop("ref_video_audios.ref_video_audio_0", None)
-        reference_audio = str(params.get("reference_audio") or "").strip()
-        if reference_audio:
-            workflow["25"] = {
-                "inputs": {"audio": reference_audio},
-                "class_type": "LoadAudio",
-            }
-            guide_inputs["ref_audios.ref_audio_0"] = ["25", 0]
-        else:
-            workflow.pop("25", None)
-            guide_inputs.pop("ref_audios.ref_audio_0", None)
-        if not isinstance(descriptions, list):
-            raise ValueError("reference_descriptions must be an ordered list")
-        if descriptions and (
-            len(descriptions) != count
-            or any(not str(item).strip() for item in descriptions)
-        ):
-            raise ValueError("reference descriptions must match reference images")
-        if descriptions:
-            prefix = "\n".join(
-                f"<Picture {index}>: {str(description).strip()}"
-                for index, description in enumerate(descriptions, start=1)
-            )
-            workflow["30"]["inputs"]["prompt"] = (
-                f"{prefix}\n\n{workflow['30']['inputs']['prompt']}"
-            )
-    elif descriptions:
-        raise ValueError("reference descriptions are only supported by ref2v")
-
-    for index in range(1, 6):
-        node_id = str(19 + index)
-        if index <= count:
-            workflow[node_id]["inputs"]["image"] = names[index - 1]
-        else:
-            workflow.pop(node_id, None)
-            guide_inputs.pop(f"ref_images.ref_image_{index - 1}", None)
-    safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip(
-        "_"
-    )
-    output_prefix = (
-        f"{task_type}_{safe_execution_id}" if safe_execution_id else task_type
-    )
-    workflow["38"]["inputs"]["filename_prefix"] = output_prefix
-    workflow["40"]["inputs"]["filename_prefix"] = f"{output_prefix}_last_frame"
 
 
 TASK_SPECIFIC_PATCHERS = {

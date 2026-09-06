@@ -43,12 +43,16 @@
 - H3 workflow 不保留旧节点 `8/9` 或 LightX2V 分支。BF16/INT8 的节点 `2` 均从
   10Eros checkpoint（或按选择顺序建立的四项内容 LoRA 链）取模型；
   `official + REF2V` 高保真 profile 同样不加载加速 LoRA。
-  `workflow_task_patchers.py` 每次先按主模型恢复基础链并清理动态节点 `100..119`，再按请求顺序以
+  `workflow_minimax_h3_patcher.py` 每次先按主模型恢复基础链并清理动态节点 `100..119`，再按请求顺序以
   `LoraLoaderModelOnly` 链式追加选中文件，并把节点 `2` 重连到链尾。官方 FL2VA
   未选增强时保持 `2 ← 8`；REF2V 极速未选增强时保持 `2 ← 9`；其它 profile
   保持 `2 ← 1`。不可预留 NaughtyTimes 或其它隐式 LoRA。
 - 有 trigger/prefix 的目录项只由 Worker 在选中时去重后前置到正向提示；Prompt
   Optimizer 不输出模型名、LoRA 名、强度或触发词。本地与 RunPod patcher 必须同轮修改。
+- H3 patcher 按 spec/override 校验、execution profile、附加模型链、source resolution、
+  REF2V 媒体与描述、图片槽和输出前缀分 phase；`workflow_task_patchers.py` 只负责
+  registry 复用。LTX T2V/IC 的旧 Ingredients 单图分支在当前 MSR 入口前已不可达，
+  已删除；`ltx_t2v_ic` 只走当前双人物 Licon MSR patcher。
 
 ---
 
