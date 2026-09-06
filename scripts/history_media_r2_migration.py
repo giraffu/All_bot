@@ -6798,6 +6798,83 @@ def replace_asset_reference(
         raise RuntimeError("unknown History media role")
 
 
+def validate_switch_sample_coverage(
+    *,
+    verified_histories: int,
+    owner_sample_count: int,
+    gallery_eligible_counts: dict[str, int],
+    gallery_sample_counts: dict[str, int],
+) -> dict[str, Any]:
+    """Require deterministic samples up to the population available in scope."""
+    owner_target = min(64, verified_histories)
+    if owner_sample_count < owner_target:
+        raise RuntimeError("owner verification sample is incomplete")
+    gallery_targets = {
+        media_type: min(16, max(0, int(gallery_eligible_counts.get(media_type, 0))))
+        for media_type in ("image", "video")
+    }
+    if any(
+        int(gallery_sample_counts.get(media_type, 0)) < target
+        for media_type, target in gallery_targets.items()
+    ):
+        raise RuntimeError("Gallery verification sample is incomplete")
+    return {
+        "owner_sample_target": owner_target,
+        "gallery_sample_targets": gallery_targets,
+        "gallery_sample_target": sum(gallery_targets.values()),
+    }
+
+
+def validate_switch_reverification_state(
+    *,
+    schema: str,
+    batch_count: int,
+    incomplete_batch_count: int,
+    asset_count: int,
+    switched_asset_count: int,
+) -> None:
+    """Fail closed unless re-verification covers a completed v2 Switch plan."""
+    if schema != "allbot-history-media-r2-switch-plan/v2":
+        raise RuntimeError("legacy switch plans require their original executor artifact")
+    if batch_count <= 0:
+        raise RuntimeError("switch plan has no frozen batches")
+    if incomplete_batch_count:
+        raise RuntimeError("switch plan batches are incomplete")
+    if asset_count <= 0 or switched_asset_count != asset_count:
+        raise RuntimeError("switch ledger coverage is incomplete")
+
+
+async def _validate_switch_plan_ledger_identity(
+    ledger: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    manifest: dict[str, Any],
+    plan_sha256: str,
+) -> None:
+    rowset_sha, _count, _counts, _bytes, _diagnostics = await _stream_plan_rowset(
+        ledger,
+        """select id,history_id,role,ordinal,original_ref,target_key,
+                      source_name,source_key,source_last_modified,source_etag,source_sha256,
+                      target_sha256,byte_size,status,history_manifest_sha256
+                 from analytics_history_media_r2_migrations
+             where run_id=$1 and switch_plan_sha256=$2
+               and status='copied_verified'
+             order by history_id,role,ordinal""",
+        run_id,
+        plan_sha256,
+    )
+    if rowset_sha != manifest["rowset_sha256"]:
+        raise RuntimeError("switch plan rowset changed")
+    predecessor_count, predecessor_sha = await _predecessor_switch_identity(
+        ledger, run_id, excluding=plan_sha256
+    )
+    if (
+        predecessor_count != int(manifest["predecessor_switch_plan_count"])
+        or predecessor_sha != manifest["predecessor_switch_plans_sha256"]
+    ):
+        raise RuntimeError("predecessor switch plan identity changed")
+
+
 async def _verify_switch_plan(
     ledger: asyncpg.Connection,
     production: asyncpg.Connection,
@@ -6815,6 +6892,7 @@ async def _verify_switch_plan(
     verified_histories = 0
     owner_samples: list[dict[str, Any]] = []
     gallery_samples: list[dict[str, Any]] = []
+    gallery_eligible_counts: Counter[str] = Counter()
     for batch in batches:
         assets = [
             dict(row)
@@ -6861,6 +6939,21 @@ async def _verify_switch_plan(
                 )
         if history_ids:
             for media_type in ("image", "video"):
+                eligible_count = int(
+                    await production.fetchval(
+                        """select count(*)
+                             from gallery_posts gp join history h on (
+                               (gp.history_id is not null and h.id=gp.history_id)
+                               or (gp.history_id is null and h.task_id=gp.task_id
+                                   and h.user_id=gp.user_id)
+                             )
+                            where gp.is_active is true and gp.media_type=$2
+                              and h.id=any($1::integer[])""",
+                        history_ids,
+                        media_type,
+                    )
+                )
+                gallery_eligible_counts[media_type] += eligible_count
                 existing = sum(
                     1
                     for sample in gallery_samples
@@ -6871,7 +6964,11 @@ async def _verify_switch_plan(
                 gallery_rows = await production.fetch(
                     """select gp.id post_id,gp.media_type,h.id history_id,
                               h.user_id,h.task_id
-                         from gallery_posts gp join history h on h.task_id=gp.task_id
+                         from gallery_posts gp join history h on (
+                           (gp.history_id is not null and h.id=gp.history_id)
+                           or (gp.history_id is null and h.task_id=gp.task_id
+                               and h.user_id=gp.user_id)
+                         )
                         where gp.is_active is true and gp.media_type=$2
                           and h.id=any($1::integer[])
                         order by gp.id,h.id limit $3""",
@@ -6882,17 +6979,22 @@ async def _verify_switch_plan(
                 gallery_samples.extend(dict(row) for row in gallery_rows)
         verified_assets += len(assets)
         verified_histories += len(history_ids)
-    if verified_assets and len(owner_samples) < min(64, verified_histories):
-        raise RuntimeError("owner verification sample is incomplete")
-    if verified_assets and len(gallery_samples) < 32:
-        raise RuntimeError("Gallery verification sample is incomplete")
+    gallery_sample_counts = Counter(
+        str(sample.get("media_type")) for sample in gallery_samples
+    )
+    coverage = validate_switch_sample_coverage(
+        verified_histories=verified_histories,
+        owner_sample_count=len(owner_samples),
+        gallery_eligible_counts=dict(gallery_eligible_counts),
+        gallery_sample_counts=dict(gallery_sample_counts),
+    )
     return {
         "verified_assets": verified_assets,
         "verified_histories": verified_histories,
         "owner_samples": owner_samples,
         "gallery_samples": gallery_samples,
-        "gallery_sample_target": 32,
-        "owner_sample_target": 64,
+        "gallery_eligible_counts": dict(gallery_eligible_counts),
+        **coverage,
         "apply_context_contract": "existing supported payloads; expected unsupported cases remain HTTP 400",
     }
 
@@ -6919,28 +7021,12 @@ async def _execute_switch(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 "legacy switch plans require their original executor artifact"
             )
-        rowset_sha, _count, _counts, _bytes, _diagnostics = await _stream_plan_rowset(
+        await _validate_switch_plan_ledger_identity(
             ledger,
-            """select id,history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_etag,source_sha256,
-                          target_sha256,byte_size,status,history_manifest_sha256
-                     from analytics_history_media_r2_migrations
-                 where run_id=$1 and switch_plan_sha256=$2
-                   and status='copied_verified'
-                 order by history_id,role,ordinal""",
-            run_id,
-            args.plan_sha256,
+            run_id=run_id,
+            manifest=manifest,
+            plan_sha256=args.plan_sha256,
         )
-        if rowset_sha != manifest["rowset_sha256"]:
-            raise RuntimeError("switch plan rowset changed")
-        predecessor_count, predecessor_sha = await _predecessor_switch_identity(
-            ledger, run_id, excluding=args.plan_sha256
-        )
-        if (
-            predecessor_count != int(manifest["predecessor_switch_plan_count"])
-            or predecessor_sha != manifest["predecessor_switch_plans_sha256"]
-        ):
-            raise RuntimeError("predecessor switch plan identity changed")
         switched = 0
         processed_batches = 0
         while args.max_batches <= 0 or processed_batches < args.max_batches:
@@ -7087,6 +7173,80 @@ async def _execute_switch(args: argparse.Namespace) -> None:
                     "processed_batches": processed_batches,
                     "remaining_batches": remaining_batches,
                     "verification_receipt": verification_receipt_path,
+                }
+            )
+        )
+    finally:
+        await production.close()
+        await ledger.close()
+
+
+async def _verify_completed_switch(args: argparse.Namespace) -> None:
+    """Re-verify a completed Switch without replaying its production mutation."""
+    ledger = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    production = await _connect_env("PRODUCTION_DATABASE_URL")
+    try:
+        run_id, manifest = await _load_plan(ledger, args.plan_sha256, "switch")
+        await _validate_switch_plan_ledger_identity(
+            ledger,
+            run_id=run_id,
+            manifest=manifest,
+            plan_sha256=args.plan_sha256,
+        )
+        batch_state = await ledger.fetchrow(
+            """select count(*) batch_count,
+                      count(*) filter(where status<>'completed') incomplete_batch_count
+                 from analytics_history_media_migration_plan_batches
+                where plan_sha256=$1""",
+            args.plan_sha256,
+        )
+        asset_state = await ledger.fetchrow(
+            """select count(*) asset_count,
+                      count(*) filter(where switch_completed_at is not null)
+                        switched_asset_count
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and switch_plan_sha256=$2
+                  and status='copied_verified'""",
+            run_id,
+            args.plan_sha256,
+        )
+        validate_switch_reverification_state(
+            schema=str(manifest.get("schema") or ""),
+            batch_count=int(batch_state["batch_count"]),
+            incomplete_batch_count=int(batch_state["incomplete_batch_count"]),
+            asset_count=int(asset_state["asset_count"]),
+            switched_asset_count=int(asset_state["switched_asset_count"]),
+        )
+        verification = await _verify_switch_plan(
+            ledger,
+            production,
+            run_id=run_id,
+            plan_sha256=args.plan_sha256,
+        )
+        receipt = {
+            "schema": "allbot-history-media-r2-switch-reverification/v1",
+            "run_id": str(run_id),
+            "switch_plan_sha256": args.plan_sha256,
+            "execution_runtime_identity": dict(manifest.get("runtime_identity") or {}),
+            "verification_runtime_identity": _runtime_identity(
+                artifact_digest=args.artifact_digest,
+                config=None,
+            ),
+            **verification,
+            "old_objects_deleted": 0,
+            "shadow_restore_ready": True,
+        }
+        receipt_path = Path(args.verification_output)
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_payload = _canonical_json(receipt) + b"\n"
+        receipt_path.write_bytes(receipt_payload)
+        os.chmod(receipt_path, 0o600)
+        print(
+            json.dumps(
+                {
+                    "verification_receipt": str(receipt_path),
+                    "receipt_sha256": hashlib.sha256(receipt_payload).hexdigest(),
+                    **verification,
                 }
             )
         )
@@ -7342,6 +7502,10 @@ def _parser() -> argparse.ArgumentParser:
     switch.add_argument("--artifact-digest")
     switch.add_argument("--max-batches", type=int, default=0)
     switch.add_argument("--verification-output")
+    verify_switch = commands.add_parser("verify-switch")
+    verify_switch.add_argument("--plan-sha256", required=True)
+    verify_switch.add_argument("--artifact-digest", required=True)
+    verify_switch.add_argument("--verification-output", required=True)
     report = commands.add_parser("report")
     report.add_argument("--run-id", required=True)
     report.add_argument("--output", required=True)
@@ -7373,6 +7537,8 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _create_plan(args, plan_type="switch")
     elif args.command == "execute-switch":
         await _execute_switch(args)
+    elif args.command == "verify-switch":
+        await _verify_completed_switch(args)
     elif args.command == "report":
         await _report(args)
 
