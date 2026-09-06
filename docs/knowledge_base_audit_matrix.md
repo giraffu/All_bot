@@ -43,7 +43,7 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_任务调度_task_scheduler.md` | TaskApplication、提交 intent、due finalizer、队列与清理 | `src/core/task_application.py`、`task_core*`、`task_web_finalizer.py`、QueueManager | current | 任务生命周期 |
+| `docs/子模块_任务调度_task_scheduler.md` | TaskApplication、提交 intent、due finalizer、队列与清理 | `src/core/task_application.py`、`task_core*`、`task_web_finalizer*.py`、QueueManager | current | 任务生命周期 |
 | `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路与生成 task type contract | Web/Bot、Central、Worker、History | current | 跨层任务或任务类型改动 |
 | `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性、状态协议与任务类型门禁 | `backend/app`、API client、Worker | current | 队列、worker 协议或 task enum |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |

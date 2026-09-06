@@ -18,7 +18,8 @@
 - `src/services/task_web_side_effects.py`：Web 提交后的 side effect plan 归一化、pending finalizer 入队与 apply 互动记录
 - `src/services/task_web_lifecycle_monitor.py`：Web runtime monitor stage，负责 backend 轮询、终态 snapshot 构造与 terminal router 对接
 - `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
-- `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
+- `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态；通过 `TaskWebFinalizerDependencies` 调用 Web 结果存储与资产收口，不反向 import Web service
+- `src/services/task_web_finalizer_dependencies.py`、`src/task_web_finalizer_provider_setup.py`：finalizer 的窄依赖契约与 runtime adapter 装配；Web API 和启用后的 Task Control Worker 是 composition root
 - `src/services/task_control_worker.py`、`src/task_control_worker.py`：默认禁用的独立控制进程，把 submission reconciliation、Web finalizer 与通用 zombie sweep 放在三个独立 leader lease 下运行
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
@@ -50,6 +51,7 @@
 
 - 生产运行时应先完成 `configure_task_core_service_providers(...)`
 - 随后由入口调用 `configure_task_application()`；未配置时获取 application 会 fail closed
+- 承载 Web finalizer 的入口还必须调用 `configure_task_web_finalizer_providers()`；未装配时 finalizer dependencies 同样 fail closed，禁止在 service 内自动回退到 Web 实现
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
 - `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；AST 门禁同时拒绝 `config`、`httpx`、PIL、SQLAlchemy、`src.database` 和 `src.services`。需要日志、持久化、异常分类或 Redis key 操作时，通过 protocol/dependency 从 runtime 默认装配注入。
 
@@ -156,7 +158,7 @@ sequenceDiagram
 - `task_web_side_effects.py` 负责 side effect plan -> pending finalizer / apply interaction
 - `task_web_lifecycle_monitor.py` 负责轮询 backend 终态并构造 terminal snapshot
 - `task_web_terminal_finalization.py` 负责成功持久化、取消/失败退款与 runtime cleanup
-- `task_web_finalizer.py` 负责恢复上次进程未完成的 pending finalizer
+- `task_web_finalizer.py` 负责恢复上次进程未完成的 pending finalizer；提示词结果、人物参考图和官方资产的具体 Web 写入通过 `TaskWebFinalizerDependencies` 注入
 
 补充约束：
 
@@ -179,6 +181,9 @@ sequenceDiagram
   generic zombie sweep 继续由现有 cleaner 排除私有 QQCC 任务。
 - disabled 模式只启动 `/healthz`，入口不得导入或初始化数据库、Redis、Bot
   provider；因此无需向未启用的服务投影业务凭据。
+- `src/task_control_worker.py` 只在 enabled 分支装配 finalizer Web adapters；Web API
+  lifespan 则在启动 finalizer loop 前完成装配。新增独立宿主必须遵循同一顺序，不能
+  依赖其它进程曾经修改过模块级状态。
 - 滚动切换顺序是：先构建/部署精确 digest，保持 disabled；启用后确认
   `/healthz` 中三个 lease runner 稳定；每项任务必须返回不含 owner token 的
   `lease.status`（`acquired/renewing/lost/not_acquired`）与 `lease.updated_at`，

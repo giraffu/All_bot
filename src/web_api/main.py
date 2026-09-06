@@ -17,6 +17,9 @@ from src.core.exceptions import (
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 from src.task_application_runtime import configure_task_application
+from src.task_web_finalizer_provider_setup import (
+    configure_task_web_finalizer_providers,
+)
 from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 from src.web_api.services.r2_public_probe_service import r2_public_probe_service
 from src.payment_callback_router import router as alipay_callback_router
@@ -101,6 +104,7 @@ async def lifespan(fastapi_app: FastAPI):
     )
     ensure_task_core_service_providers_registered()
     configure_task_application()
+    configure_task_web_finalizer_providers()
     ensure_billing_core_providers_registered()
     await r2_public_probe_service.start()
     finalizer_task = None

@@ -78,3 +78,26 @@ def test_reference_assets_depend_on_prompt_media_policy_not_orchestrator():
 
     assert "src.web_api.services.prompt_media_policy" in modules
     assert "src.web_api.services.prompt_optimization_service" not in modules
+
+
+def test_task_web_finalizer_does_not_import_web_layer_services():
+    modules = _imported_modules("src/services/task_web_finalizer.py")
+
+    assert not {module for module in modules if module.startswith("src.web_api")}
+
+
+def test_quick_video_submission_router_stays_below_hotspot_budget():
+    tree = ast.parse(
+        (ROOT / "src/services/quick_video_submission_service.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    builder = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "build_quick_video_submission_plan"
+    )
+
+    assert builder.end_lineno - builder.lineno + 1 <= 45
+    assert sum(isinstance(node, ast.If) for node in ast.walk(builder)) <= 2

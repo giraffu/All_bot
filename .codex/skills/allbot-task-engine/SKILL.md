@@ -51,7 +51,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 
 Web、主 Bot、QQCC（含私有 Worker）和 Dashboard 启动入口显式调用
 `configure_task_application()`；未装配时 `get_task_application()` fail closed。Web
-finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独立 journal。
+finalizer 宿主还必须在入口调用 `configure_task_web_finalizer_providers()`；
+`task_web_finalizer.py` 只消费 `TaskWebFinalizerDependencies`，不得反向 import Web
+service 或在未装配时静默降级。finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独立 journal。
 新增代码只能使用 command/policy/journal，不扩大旧签名或增加模块级 fallback。
 
 ## 3. 双 ID 与终态不变量
@@ -158,6 +160,8 @@ finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独�
   cleanup 和用户锁释放；另覆盖“dispatch 成功 + finalizer attach 失败”且不得
   错误退款/删 registry。
 - Web：API、monitor、取消/不可取消、超时、结果轮询和退款幂等。
+- finalizer adapter：未装配 fail closed、Web/Task Control 宿主显式配置、service
+  不反向 import `src.web_api`。
 - Central/Worker：queue pop、status/complete、unsupported type、mapping
   validation、重复上报和上传前不得 complete。
 - 多阶段：intent/checkpoint 先落盘、stage ID、无重复扣费、中间结果隐藏、
