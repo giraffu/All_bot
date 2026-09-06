@@ -88,7 +88,7 @@ class _NormalizedSimpleTaskRequest:
     def __init__(self, payload):
         self._payload = payload
 
-    def dict(self):
+    def model_dump(self):
         return dict(self._payload)
 
 
@@ -302,7 +302,7 @@ SIMPLE_TASK_ROUTE_SPECS = (
 
 
 def split_task_request(request_model):
-    params = request_model.dict()
+    params = _request_model_to_dict(request_model)
     task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
     return task_id, priority, params

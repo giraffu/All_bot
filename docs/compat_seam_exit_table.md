@@ -26,6 +26,7 @@ owner、telemetry key、替代入口、无命中观测窗口和历史数据退�
 | QQCC Wan22 单模型字段与旧模型名 | active-compat | QQCC | `qqcc_config_service`、quick-video continuation | 读取升级前场景和 payload | 官方/私有配置迁移且观察窗口无旧字段 | 2026-07-27 |
 | QQCC `next_scene_id` 容错归一 | active-compat | QQCC | `qqcc_config_service`、`qqcc_video_scene_chain_service` | 安全加载旧或损坏配置 | 支持中的 checkpoint 重存且回滚点退出 | 2026-07-27 |
 | `video_insert` / `video_edit` | active-compat | Task engine | Central simple routes、task registry、Worker mapping | 接受旧 endpoint、队列和 worker alias | 队列与访问日志确认旧类型清零 | 2026-07-27 |
+| Central legacy media completion | active-compat | Task engine | 未携带 `result_asset` 的旧 Worker | 在显式配置门禁内完成旧媒体任务 | 所有媒体 Worker 使用资产契约、门禁关闭且遥测连续 30 天为零 | 2026-09-06 |
 | Order 历史内部用户列语义 | runtime-verification-required | Billing/Auth | Order ORM、支付创建与校验 service | 兼容生产 schema 的历史身份列 | 目标 migration/head 与 ORM 契约一致 | 2026-07-27 |
 | `ORDER:` / `ORDER_V2:` 双载荷 | active-compat | Billing | `order_v2_service`、`payment_validator` | 解析旧支付 callback | 旧通道和展示调用方完全退出 | 2026-07-27 |
 | legacy user adopt 分支 | runtime-verification-required | Identity | `user_persistence_service` | 收口早期内部 ID/TG ID 混用记录 | 数据审计确认无可收养历史用户 | 2026-07-27 |

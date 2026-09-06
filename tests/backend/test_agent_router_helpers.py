@@ -105,6 +105,8 @@ async def test_complete_route_reports_asset_contract_coverage(monkeypatch):
         "complete_task_payload",
         AsyncMock(return_value={"status": "completed"}),
     )
+    compat_hit = MagicMock()
+    monkeypatch.setattr(agent_router, "record_compat_hit", compat_hit)
 
     await agent_router.complete_task(
         agent_router.CompleteRequest(
@@ -154,6 +156,10 @@ async def test_complete_route_reports_asset_contract_coverage(monkeypatch):
         "agent-2": {"legacy_media": 1},
         "agent-3": {"text": 1},
     }
+    compat_hit.assert_called_once_with(
+        "compat.central.legacy_media_completion",
+        entrypoint="Central agent complete legacy media payload",
+    )
 
 
 @pytest.mark.asyncio

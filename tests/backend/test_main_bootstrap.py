@@ -10,7 +10,6 @@ from app.dependencies import get_redis
 from app.main_bootstrap import (
     build_request_state_getter,
     check_zombie_tasks_loop,
-    get_minio_client,
     lifespan,
     redis_transient_exception_handler,
     verify_token,
@@ -38,28 +37,20 @@ def test_build_request_state_getter_marks_request_as_fastapi_request():
 
 @pytest.mark.asyncio
 async def test_check_zombie_tasks_loop_runs_single_iteration_then_stops():
-    redis = SimpleNamespace(close=AsyncMock())
     queue_manager = SimpleNamespace(check_zombie_tasks=AsyncMock())
     logger = MagicMock()
-
-    def queue_manager_cls(passed_redis):
-        assert passed_redis is redis
-        return queue_manager
 
     async def stop_sleep(_seconds):
         raise RuntimeError("stop-loop")
 
     with pytest.raises(RuntimeError, match="stop-loop"):
         await check_zombie_tasks_loop(
-            settings=SimpleNamespace(redis_url="redis://example"),
-            queue_manager_cls=queue_manager_cls,
+            queue_manager=queue_manager,
             logger=logger,
             sleep_func=stop_sleep,
-            redis_from_url=lambda url: redis,
         )
 
     queue_manager.check_zombie_tasks.assert_awaited_once()
-    redis.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -68,8 +59,11 @@ async def test_lifespan_sets_minio_client_on_app_state():
     logger = MagicMock()
     zombie_task = None
     redis = SimpleNamespace(close=AsyncMock())
+    loop_redis = None
 
-    async def noop_loop():
+    async def noop_loop(passed_redis):
+        nonlocal loop_redis
+        loop_redis = passed_redis
         await asyncio.Event().wait()
 
     async with lifespan(
@@ -90,7 +84,8 @@ async def test_lifespan_sets_minio_client_on_app_state():
         zombie_task = app.state.zombie_tasks_loop_task
         assert zombie_task is not None
         assert zombie_task.done() is False
-        assert get_minio_client(SimpleNamespace(app=app)) is app.state.minio_client
+        await asyncio.sleep(0)
+        assert loop_redis is redis
         assert app.state.minio_client._region_map["comfyui-temp"] == "us-east-1"
         assert app.state.minio_client._region_map["bot-data"] == "us-east-1"
     assert zombie_task.cancelled() is True
