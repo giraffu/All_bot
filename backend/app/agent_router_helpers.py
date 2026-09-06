@@ -162,19 +162,19 @@ async def update_status_payload(
         elif progress > 0:
             await queue_manager.update_progress(task_id, progress)
     elif status == "cancelled":
-        await clear_agent_current_task(
-            queue_manager=queue_manager,
-            agent_id=agent_id,
-            task_id=task_id,
-        )
         await queue_manager.cancel_running_task(task_id)
-    elif status == "failed":
         await clear_agent_current_task(
             queue_manager=queue_manager,
             agent_id=agent_id,
             task_id=task_id,
         )
+    elif status == "failed":
         await queue_manager.fail_task(task_id, error)
+        await clear_agent_current_task(
+            queue_manager=queue_manager,
+            agent_id=agent_id,
+            task_id=task_id,
+        )
 
     return {"status": "ok"}
 
@@ -213,11 +213,6 @@ async def complete_task_payload(
     result = promoted.result_path
     extra_outputs = promoted.extra_outputs
     await queue_manager.record_task_worker(task_id, agent_id)
-    await clear_agent_current_task(
-        queue_manager=queue_manager,
-        agent_id=agent_id,
-        task_id=task_id,
-    )
     completion_kwargs = {"extra_outputs": extra_outputs}
     if promoted.result_asset is not None:
         completion_kwargs["result_asset"] = promoted.result_asset
@@ -230,6 +225,11 @@ async def complete_task_payload(
     if result_meta is not None:
         completion_kwargs["result_meta"] = result_meta
     await queue_manager.complete_task(task_id, result, **completion_kwargs)
+    await clear_agent_current_task(
+        queue_manager=queue_manager,
+        agent_id=agent_id,
+        task_id=task_id,
+    )
     return {"status": "ok"}
 
 
@@ -254,13 +254,7 @@ async def append_text_delta_payload(
 
 
 async def task_heartbeat_payload(*, task_id: str, agent_id: str | None, queue_manager) -> dict:
-    await queue_manager.update_task_heartbeat(task_id)
-    if agent_id:
-        await bind_agent_task(
-            queue_manager=queue_manager,
-            task_id=task_id,
-            agent_id=agent_id,
-        )
+    await queue_manager.heartbeat_agent_task(task_id, agent_id=agent_id)
     return {"status": "ok"}
 
 

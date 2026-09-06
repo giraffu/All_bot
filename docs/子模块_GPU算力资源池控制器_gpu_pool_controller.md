@@ -168,12 +168,17 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   和用户明确的生产确认。
 - `runpod_prod_ops.sh` 支持用 `--drain-timeout <sec>` 显式覆盖 `down` 的排空等待；
   Dashboard 删除默认传 `7200s`，避免 H3 等长任务因 controller 通用 `300s`
-  默认值而过早失败。排空超时只允许保留 disabled Pod 并报告失败，不能强删仍有
-  `current_task_id` 的实例。
+  默认值而过早失败。`current_task_id` 残留时只有 Worker heartbeat 已为 `idle` 且
+  Central 单任务状态确认 `done/error/cancelled` 才可视为已排空；运行中、非终态或
+  查询失败继续等待。排空超时只允许保留 disabled Pod 并报告失败，不能强删仍在
+  执行的实例。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、
   ComfyUI health 和 heartbeat，再允许接单；失败恢复旧 exact digest。
 - autoscaler 使用 leader lease、profile 阈值和 operation store，不能绕过
   provider 门禁或直接操作 LAN worker。
+- autoscaler 的 scale-down 等待按持久化上一轮决策跟踪同一 profile/agent 的连续
+  空闲时间；达到 `scale_down_wait_seconds` 才 down，积压重新出现或候选改变立即
+  重置，避免队列短暂归零造成频繁增删。
 - `minimax_h3` autoscaler 的四类 task 共用同一 RunPod profile。创建 Pod 仍必须同时
   通过 exact image pin、asset-contract canary allowlist、固定模型 manifest/prefix
   和 RTX 5090 门禁；代码进入 autoscaler catalog 不等于已有 artifact、canary 或正式

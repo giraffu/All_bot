@@ -62,6 +62,25 @@ class _FakeRedis:
         _numkeys,
         *args,
     ):
+        if "terminal_task_heartbeat" in script:
+            task_key, heartbeat_key, agent_key, task_id, agent_id, _ttl = args
+            task = self.hashes.get(task_key)
+            status = (task or {}).get("status")
+            if status in {"done", "error", "cancelled"} or task is None:
+                if (
+                    agent_id
+                    and self.hashes.get(agent_key, {}).get("current_task_id") == task_id
+                ):
+                    self.hashes[agent_key].pop("current_task_id", None)
+                self.values.pop(heartbeat_key, None)
+                return 0 if task is not None else -1
+            self.values[heartbeat_key] = "1"
+            if agent_id:
+                task["worker_id"] = agent_id
+                self.hashes.setdefault(agent_key, {})["current_task_id"] = task_id
+                task.pop("claim_delivery_pending", None)
+            return 1
+
         if "preferred_count" in script:
             pending_key, task_prefix, allowed_count, preferred_count, *task_types = args
             allowed_count = int(allowed_count)
@@ -1375,6 +1394,93 @@ async def test_clear_agent_current_task_compare_and_clear_preserves_newer_task()
 
     await manager.clear_agent_current_task("agent-1", task_id="task-new")
 
+    assert "current_task_id" not in redis.hashes[worker_key]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["done", "error", "cancelled"])
+async def test_heartbeat_agent_task_rejects_terminal_and_clears_matching_binding(
+    terminal_status,
+):
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-terminal")
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-1"
+    heartbeat_key = manager._task_heartbeat_key("task-terminal")
+    await redis.hset(task_key, mapping={"status": terminal_status})
+    await redis.hset(worker_key, mapping={"current_task_id": "task-terminal"})
+    await redis.setex(heartbeat_key, 300, "1")
+
+    disposition = await manager.heartbeat_agent_task(
+        "task-terminal", agent_id="agent-1"
+    )
+
+    assert disposition == "terminal"
+    assert "current_task_id" not in redis.hashes[worker_key]
+    assert heartbeat_key not in redis.values
+    assert redis.hashes[task_key] == {"status": terminal_status}
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_agent_task_rejects_missing_without_creating_ghost_task():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-missing")
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-1"
+    await redis.hset(worker_key, mapping={"current_task_id": "task-missing"})
+
+    disposition = await manager.heartbeat_agent_task("task-missing", agent_id="agent-1")
+
+    assert disposition == "missing"
+    assert task_key not in redis.hashes
+    assert "current_task_id" not in redis.hashes[worker_key]
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_agent_task_refreshes_and_binds_running_task_atomically():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-running")
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-1"
+    await redis.hset(
+        task_key,
+        mapping={"status": "running", "claim_delivery_pending": "1"},
+    )
+
+    disposition = await manager.heartbeat_agent_task("task-running", agent_id="agent-1")
+
+    assert disposition == "active"
+    assert redis.values[manager._task_heartbeat_key("task-running")] == "1"
+    assert redis.hashes[task_key]["worker_id"] == "agent-1"
+    assert "claim_delivery_pending" not in redis.hashes[task_key]
+    assert redis.hashes[worker_key]["current_task_id"] == "task-running"
+
+
+@pytest.mark.asyncio
+async def test_late_task_heartbeat_after_completion_cannot_restore_agent_binding():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-completed")
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-1"
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": TaskStatus.RUNNING,
+            "type": TaskType.IMG2IMG,
+            "worker_id": "agent-1",
+        },
+    )
+    await redis.hset(worker_key, mapping={"current_task_id": "task-completed"})
+    await redis.sadd(manager.running_key, "task-completed")
+
+    await manager.complete_task("task-completed", "task-results/result.png")
+    await manager.clear_agent_current_task("agent-1", task_id="task-completed")
+    disposition = await manager.heartbeat_agent_task(
+        "task-completed", agent_id="agent-1"
+    )
+
+    assert disposition == "terminal"
+    assert redis.hashes[task_key]["status"] == TaskStatus.DONE
     assert "current_task_id" not in redis.hashes[worker_key]
 
 

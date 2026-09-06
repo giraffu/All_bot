@@ -1618,6 +1618,49 @@ def test_prod_worker_scale_down_refuses_busy_highest_slot():
     assert provider.delete_calls == 0
 
 
+def test_prod_worker_down_treats_idle_terminal_task_binding_as_drained():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+        ),
+        pods=[_prod_pod("01")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="down",
+        execute=True,
+        agent_token="agent_token",
+        drain_timeout_seconds=0.001,
+        poll_interval_seconds=0.001,
+        quiet=True,
+    )
+    worker = _worker("01", current_task_id="task-terminal")
+    worker["status"] = "idle"
+    worker["current_task_type"] = None
+
+    class TerminalTaskRunner(FakeHttpProdWorkerRunner):
+        def _http_json(self, method, url, **kwargs):
+            if url.endswith("/status/task-terminal"):
+                self.http_calls.append({"method": method, "url": url, "kwargs": kwargs})
+                return {"status": "done", "task_id": "task-terminal"}
+            return super()._http_json(method, url, **kwargs)
+
+    runner = TerminalTaskRunner(
+        provider,
+        options,
+        workers=[worker],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.delete_calls == 1
+    drain = [item for item in payload["phases"] if item["name"] == "worker_drain"][-1]
+    assert drain["status"] == "ok"
+    assert drain["details"]["stale_current_task"]["status"] == "done"
+
+
 def test_prod_worker_scale_desired_zero_drains_and_deletes_all_slots():
     provider = FakeRunPodProvider(
         _settings(

@@ -14,9 +14,14 @@ from dashboard.backend.services.runpod_autoscaler_service import (
 pytestmark = pytest.mark.asyncio
 
 
-def _config(*, min_runpod_lifetime_seconds: int = 0) -> RunPodAutoscalerConfig:
+def _config(
+    *,
+    min_runpod_lifetime_seconds: int = 0,
+    scale_down_wait_seconds: int = 0,
+) -> RunPodAutoscalerConfig:
     return RunPodAutoscalerConfig(
         configured_enabled=True,
+        scale_down_wait_seconds=scale_down_wait_seconds,
         cooldown_seconds=600,
         max_runpods_per_profile=5,
         heartbeat_max_age_seconds=300,
@@ -1467,6 +1472,87 @@ async def test_autoscaler_scales_down_idle_runpod_when_local_capacity_remains():
             "spawn_task_func": None,
         }
     ]
+
+
+async def test_autoscaler_waits_for_continuous_idle_window_before_scale_down():
+    calls = []
+    store = InMemoryRunPodAutoscalerStateStore()
+    config = _config(scale_down_wait_seconds=60)
+    workers = _workers(
+        _runpod_worker("i2i_pro", "01"),
+        _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"),
+    )
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-delete-after-idle-wait",
+            action="delete",
+            profile=kwargs["profile"],
+            command=["runpod", "down"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    first = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=config,
+        store=store,
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=workers,
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+    first_decision = {item["profile"]: item for item in first["decisions"]}["i2i_pro"]
+    assert first_decision["action"] == "hold"
+    assert first_decision["reason"] == "hold: scale-down idle wait 60s remaining"
+    assert first_decision["scale_down_idle_since"] == 1000.0
+    assert calls == []
+
+    await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=config,
+        store=store,
+        status_payload=_status(profile="i2i_pro", pending=1, wait=10),
+        workers_payload=workers,
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1030.0,
+    )
+
+    reset = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=config,
+        store=store,
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=workers,
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1061.0,
+    )
+    reset_decision = {item["profile"]: item for item in reset["decisions"]}["i2i_pro"]
+    assert reset_decision["action"] == "hold"
+    assert reset_decision["scale_down_idle_since"] == 1061.0
+    assert calls == []
+
+    elapsed = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=config,
+        store=store,
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=workers,
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1121.0,
+    )
+    elapsed_decision = {item["profile"]: item for item in elapsed["decisions"]}[
+        "i2i_pro"
+    ]
+    assert elapsed_decision["action"] == "scale_down"
+    assert elapsed_decision["scale_down_idle_seconds"] == 60
+    assert calls[0]["slot"] == "01"
 
 
 async def test_autoscaler_scales_down_idle_pornmaster_flux2_edit_bf16_runpod():

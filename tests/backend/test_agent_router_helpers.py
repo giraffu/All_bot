@@ -453,8 +453,7 @@ async def test_update_status_payload_clears_current_task_and_cancels_task():
 @pytest.mark.asyncio
 async def test_task_heartbeat_payload_binds_agent_when_present():
     queue_manager = SimpleNamespace(
-        bind_agent_task=AsyncMock(),
-        update_task_heartbeat=AsyncMock(),
+        heartbeat_agent_task=AsyncMock(return_value="active"),
     )
     payload = await task_heartbeat_payload(
         task_id="task-1",
@@ -463,8 +462,35 @@ async def test_task_heartbeat_payload_binds_agent_when_present():
     )
 
     assert payload == {"status": "ok"}
-    queue_manager.update_task_heartbeat.assert_awaited_once_with("task-1")
-    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.heartbeat_agent_task.assert_awaited_once_with(
+        "task-1", agent_id="agent-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_task_payload_commits_terminal_state_before_clearing_binding():
+    calls = []
+
+    async def complete_task(*_args, **_kwargs):
+        calls.append("complete")
+
+    async def clear_current_task(*_args, **_kwargs):
+        calls.append("clear")
+
+    queue_manager = SimpleNamespace(
+        record_task_worker=AsyncMock(),
+        clear_agent_current_task=clear_current_task,
+        complete_task=complete_task,
+    )
+
+    await complete_task_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        result="/tmp/result.png",
+        queue_manager=queue_manager,
+    )
+
+    assert calls == ["complete", "clear"]
 
 
 @pytest.mark.asyncio

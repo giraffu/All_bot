@@ -1668,6 +1668,7 @@ def _decide_runpod_profile_action(
     operations: list[dict[str, Any]],
     config: RunPodAutoscalerConfig,
     now: float,
+    previous_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     profile = context.profile
     metrics = context.metrics
@@ -1726,6 +1727,7 @@ def _decide_runpod_profile_action(
             operations=operations,
             config=config,
             now=now,
+            previous_decision=previous_decision,
         )
 
     if context.restart_candidates:
@@ -1838,6 +1840,7 @@ def _decide_runpod_profile_action(
         operations=operations,
         config=config,
         now=now,
+        previous_decision=previous_decision,
     )
 
 
@@ -1923,6 +1926,7 @@ def _decide_runpod_no_backlog_action(
     operations: list[dict[str, Any]],
     config: RunPodAutoscalerConfig,
     now: float,
+    previous_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     profile = context.profile
     metrics = context.metrics
@@ -1978,11 +1982,42 @@ def _decide_runpod_no_backlog_action(
             },
             slot=slot,
         )
+    candidate_agent_id = str(candidate.get("agent_id") or "")
+    idle_since = now
+    if (
+        previous_decision
+        and previous_decision.get("scale_down_candidate_agent_id") == candidate_agent_id
+        and int(previous_decision.get("pending_count") or 0) == 0
+    ):
+        previous_idle_since = _safe_float(
+            previous_decision.get("scale_down_idle_since")
+        )
+        if previous_idle_since is not None and previous_idle_since <= now:
+            idle_since = previous_idle_since
+    idle_seconds = max(0, int(now - idle_since))
+    wait_seconds = max(0, int(config.scale_down_wait_seconds))
+    wait_remaining_seconds = max(0, wait_seconds - idle_seconds)
+    scale_down_metrics = {
+        **metrics,
+        "scale_down_candidate_agent_id": candidate_agent_id,
+        "scale_down_idle_since": idle_since,
+        "scale_down_idle_seconds": idle_seconds,
+        "scale_down_wait_seconds": wait_seconds,
+        "scale_down_wait_remaining_seconds": wait_remaining_seconds,
+    }
+    if wait_remaining_seconds > 0:
+        return _decision(
+            profile=profile,
+            action="hold",
+            reason=(f"hold: scale-down idle wait {wait_remaining_seconds}s remaining"),
+            metrics=scale_down_metrics,
+            slot=slot,
+        )
     return _decision(
         profile=profile,
         action="scale_down",
         reason="scale_down: no backlog and idle runpod available",
-        metrics=metrics,
+        metrics=scale_down_metrics,
         slot=slot,
     )
 
@@ -1994,6 +2029,7 @@ def build_runpod_autoscaler_decisions(
     operations_payload: dict[str, Any],
     config: RunPodAutoscalerConfig,
     now: float,
+    previous_decisions_payload: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     queue_details = {
         str(item.get("profile")): item
@@ -2003,6 +2039,11 @@ def build_runpod_autoscaler_decisions(
     operations = list(operations_payload.get("operations") or [])
     profile_task_types = _profile_task_types()
     decisions: list[dict[str, Any]] = []
+    previous_decisions = {
+        str(item.get("profile")): item
+        for item in (previous_decisions_payload or {}).get("decisions") or []
+        if isinstance(item, dict)
+    }
 
     for option in RUNPOD_AUTOSCALER_PROFILE_OPTIONS:
         profile = str(option["profile"])
@@ -2021,6 +2062,7 @@ def build_runpod_autoscaler_decisions(
                 operations=operations,
                 config=config,
                 now=now,
+                previous_decision=previous_decisions.get(profile),
             )
         )
 
@@ -2035,6 +2077,18 @@ async def _safe_store_save_decisions(
         await store.save_last_decisions(payload)
     except Exception:
         logger.warning("Failed to persist RunPod autoscaler decisions", exc_info=True)
+
+
+async def _safe_store_get_last_decisions(
+    store: RunPodAutoscalerStateStore,
+) -> dict[str, Any] | None:
+    try:
+        return await store.get_last_decisions()
+    except Exception:
+        logger.warning(
+            "Failed to read previous RunPod autoscaler decisions", exc_info=True
+        )
+        return None
 
 
 async def _execute_runpod_autoscaler_decisions(
@@ -2323,6 +2377,7 @@ async def evaluate_runpod_autoscaler_once(
         operations_payload=operations,
         config=active_config,
         now=now,
+        previous_decisions_payload=await _safe_store_get_last_decisions(active_store),
     )
     recent_operations = _recent_autoscaler_operations(operations)
 
