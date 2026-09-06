@@ -84,6 +84,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | 本地分析提示词词元治理 | `allbot-local-analytics-prompt-semantics` |
 | History 全量媒体、NAS 媒体归档、丢失确认与 R2 冷清理 | `allbot-local-media-archive` |
 | 知识库、Skill、文档同步 | `allbot-kb-auto-updater` |
+| 大更新全量用户验收、小更新局部验收 | `allbot-system-acceptance` |
 | Bug 复现、诊断反馈环 | `allbot-diagnosing-bugs` |
 | 行为测试、red-green-refactor | `allbot-tdd` |
 | module/interface/seam 架构设计 | `allbot-codebase-design` |
@@ -115,6 +116,8 @@ Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维�
 
 - 新功能/修 bug：领域 Skill + `allbot-tdd`；线上异常再加
   `allbot-diagnosing-bugs`。
+- 发布后模拟真实用户验收：`allbot-system-acceptance` + 受影响领域 Skill；
+  环境 mutation 再加 `allbot-ops-deployment`。
 - 修改职责、facade 或依赖注入：领域 Skill + `allbot-codebase-design`。
 - 修改接口、入口、状态流或稳定术语：领域 Skill +
   `allbot-kb-auto-updater`。

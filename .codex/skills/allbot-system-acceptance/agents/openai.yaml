@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot 系统用户验收"
+  short_description: "按真实用户旅程规划并执行全量或局部低资源系统功能验收"
+  default_prompt: "使用 $allbot-system-acceptance 为这次更新选择并执行合适的用户旅程验收切片。"
