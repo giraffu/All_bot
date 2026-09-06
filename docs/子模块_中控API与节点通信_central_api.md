@@ -28,7 +28,9 @@ Central 不负责用户身份、额度、扣费退款、History/Gallery 持久�
 | `backend/app/routers/agent.py` | Worker 协议适配与完成回流指标 |
 | `backend/app/agent_router_helpers.py` | Worker route 的协议服务层 |
 | `backend/app/queue_manager.py` | Central 稳定 facade、Redis key 与队列/状态能力 |
-| `backend/app/queue_manager_flow_helpers.py` | task/worker 状态流的纯逻辑与可替换 seam |
+| `backend/app/queue_selector.py` | score/allowed/preferred 选择、peek、位置与队列指标 |
+| `backend/app/worker_registry.py` | Worker heartbeat、control、task binding 与 outcome 视图 |
+| `backend/app/queue_manager_flow_helpers.py` | task/worker 状态转换的纯逻辑与可替换 seam |
 | `backend/app/result_storage.py` | staging 校验、durable copy 与完成资产契约 |
 
 任务类型唯一人工维护源是 `src/domain_config/task_type_registry.py`。新增或调整任务
@@ -40,9 +42,10 @@ python scripts/generate_task_type_contract.py --check
 pytest -q tests/config/test_task_type_contract.py
 ```
 
-`QueueManager` 是现有调用方的稳定 facade。新增职责不要继续堆入路由；当一个变更
-需要拆分时，优先形成 task store、worker registry 或 queue selection 的内聚内部
-组件，并保持 facade 契约不变。
+`QueueManager` 是现有调用方的稳定 facade。队列选择和 Worker registry 已分别下沉
+到 `RedisQueueSelector` 与 `RedisWorkerRegistry`，调用方仍只依赖 `QueueManager`。
+新增职责不要继续堆入路由；后续只有在 task 状态职责发生变化时，才继续形成内聚的
+task store，避免为了文件数量制造浅封装。
 
 ## 3. 生命周期与基础设施
 
@@ -99,6 +102,8 @@ pytest -q tests/config/test_task_type_contract.py
 
 - Worker heartbeat 状态为 `idle`、`running`、`error`、`quarantined`，并可携带
   health reason、最近错误、provider/GPU/runtime/profile 等只读元数据。
+- heartbeat key 扫描后由一次 Redis pipeline 批量读取 Worker 明细；running Worker
+  的当前任务补充信息再由第二次 pipeline 批量读取，避免按 Worker 产生 N+1 查询。
 - `/system/status` 中 `active_workers` 是有 heartbeat 的数量，`healthy_workers`
   是健康运行态数量，`accepting_workers` 还要求 control 为 `enabled`。
 - agent control 状态为 `enabled/draining/disabled`。Central 只维护控制键，不直接
@@ -132,7 +137,8 @@ pytest -q tests/config/test_task_type_contract.py
 - `/system/status`：queue size、按类型 pending、最长等待、worker 健康/接单统计和
   profile pressure。它是 Central 执行面视图，不等同于 Dashboard 用户任务聚合。
 - `/system/worker-outcomes`：当前 heartbeat worker 的短期终态结果聚合；写入是
-  best-effort，遥测失败不得回滚权威 task 终态。
+  best-effort，遥测失败不得回滚权威 task 终态。各 Worker 的窗口查询通过一次
+  pipeline 批量读取，不按 Worker 串行往返 Redis。
 - `/api/agent/task/result-storage-metrics`：资产提升失败、完成契约覆盖率和 I/O 计数。
   进程内计数重启会清零，不是持久账本；compat 退出看统一 telemetry。
 

@@ -16,7 +16,7 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 | --- | --- |
 | facade、provider/dependencies、扣费补偿 | `docs/子模块_任务调度_task_scheduler.md`、`src/core/task_core*.py` |
 | Web 提交、monitor、取消、结果 | `docs/子模块_生成任务全链路_task_full_chain.md`、`src/web_api/services/*task*` |
-| Central 队列与 Worker 协议 | `docs/子模块_中控API与节点通信_central_api.md`、`backend/app/queue_manager.py` |
+| Central 队列 | `docs/子模块_中控API与节点通信_central_api.md`、`backend/app/{queue*,worker_registry}.py` |
 | 新任务类型与 workflow | `src/domain_config/task_type_registry.py`、`scripts/generate_task_type_contract.py`、`src/workflow_mapping_validation.py`、`allbot-comfy-models` |
 | 黄金路径 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` |
 

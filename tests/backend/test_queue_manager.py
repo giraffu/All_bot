@@ -22,6 +22,16 @@ class _FakePipeline:
         self._ops.append(("hgetall", (key,), {}))
         return self
 
+    def zrangebyscore(self, key, minimum, maximum, *, withscores=False):
+        self._ops.append(
+            (
+                "zrangebyscore",
+                (key, minimum, maximum),
+                {"withscores": withscores},
+            )
+        )
+        return self
+
     def hset(self, key, field=None, value=None, mapping=None):
         self._ops.append(
             ("hset", (key,), {"field": field, "value": value, "mapping": mapping})
@@ -1017,6 +1027,56 @@ async def test_worker_info_includes_gpu_pool_metadata():
 
 
 @pytest.mark.asyncio
+async def test_get_all_workers_batches_heartbeat_reads():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    for index in range(2):
+        await redis.hset(
+            f"{manager.agent_heartbeat_prefix}agent-{index}",
+            mapping={
+                "types": "img2img",
+                "status": "idle",
+                "last_seen": str(100 + index),
+            },
+        )
+
+    workers = await manager.get_all_workers()
+
+    assert {worker["agent_id"] for worker in workers} == {"agent-0", "agent-1"}
+    assert redis.pipeline_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_all_workers_batches_running_task_enrichment():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    for index in range(2):
+        task_id = f"task-{index}"
+        await redis.hset(
+            f"{manager.agent_heartbeat_prefix}agent-{index}",
+            mapping={
+                "types": "img2img",
+                "status": "running",
+                "last_seen": str(100 + index),
+                "current_task_id": task_id,
+            },
+        )
+        await redis.hset(
+            manager._task_key(task_id),
+            mapping={
+                "type": TaskType.IMG2IMG,
+                "progress": str(index / 2),
+                "created_at": str(90 + index),
+            },
+        )
+
+    workers = await manager.get_all_workers()
+
+    assert {worker["current_task_id"] for worker in workers} == {"task-0", "task-1"}
+    assert redis.pipeline_count == 2
+
+
+@pytest.mark.asyncio
 async def test_activate_dequeued_task_returns_none_when_no_task():
     redis = _FakeRedis()
     manager = QueueManager(redis)
@@ -1778,6 +1838,29 @@ async def test_terminal_tasks_feed_active_worker_outcome_window(monkeypatch):
             "last_failure_at": 2_000.0,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_active_worker_outcomes_batch_worker_windows():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    for index in range(2):
+        await redis.hset(
+            manager._agent_heartbeat_key(f"worker-{index}"),
+            mapping={
+                "types": "img2img",
+                "status": "idle",
+                "last_seen": 100 + index,
+            },
+        )
+
+    stats = await manager.get_active_worker_outcome_stats(
+        window_seconds=3600,
+        now=200.0,
+    )
+
+    assert {row["worker_id"] for row in stats} == {"worker-0", "worker-1"}
+    assert redis.pipeline_count == 2
 
 
 @pytest.mark.asyncio
