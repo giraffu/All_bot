@@ -213,12 +213,14 @@ basename 等副本。尚未 Switch 的遗留引用继续规划兼容 key。每�
 领取后必须先确认本地目录完整覆盖该 job 的全部角色/序号，再开始任何 NAS 上传；
 目录未 seed 或清单不一致时先提交可重试失败，不得留下无目录映射的孤儿 blob。
 
-R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输出派生缩略图；共享引用
-按全部角色检查最新 8 条原始 History（再过滤可见）、收藏、公开和活跃投稿。
-执行批次硬限制为 1–1000 个逻辑资产，同时要求
-`R2_ARCHIVE_DELETE_ENABLED=true`、`R2_ARCHIVE_RESTORE_GATE_VERIFIED=true` 和
-一次性确认值。第一次生产删除必须先生成对象/字节 dry-run 报告并再次取得用户
-明确确认；实现和归档阶段不执行生产删除。
+R2 冷删除强制使用 `scripts/media_archive_r2_cleanup.py plan → probe → execute`。
+Plan 从数据库冻结 1–1000 个候选及 `plan_sha256`，覆盖输入、主输出、附加输出和
+派生缩略图，并排除最新 8 条可见 History、收藏、公开、活跃投稿及共享引用。
+Probe 只消费精确计划，逐项 HEAD NAS SHA/大小与 R2 对象，生成 0600
+`probe_sha256` 回执。Execute 必须同时绑定原计划和新鲜 probe SHA，在任何删除前
+重查热引用、重做 NAS/R2 probe 并拒绝身份漂移；随后才接受两个独立环境门禁和
+`DELETE_VERIFIED_COLD_R2`。旧的同进程 `--execute` 接口已删除。第一次生产执行仍
+必须由用户针对该计划明确确认；代码实现与本地测试不等于执行了生产删除。
 
 临时对象治理与冷归档删除是两条独立门禁。`scripts/r2_temp_cleanup.py`
 默认 dry-run，只允许清理超过 24 小时、不被 History 全角色引用、且已有
