@@ -453,6 +453,12 @@ def test_revision_labels_follow_expensive_runtime_install_steps():
 def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     build = (ROOT / ".github/workflows/module-build.yml").read_text()
     deploy = (ROOT / ".github/workflows/module-deploy.yml").read_text()
+    frontend_package = json.loads(
+        (ROOT / "frontend/package.json").read_text(encoding="utf-8")
+    )
+    frontend_lock = json.loads(
+        (ROOT / "frontend/package-lock.json").read_text(encoding="utf-8")
+    )
 
     assert "workflow_dispatch:" in build
     assert "pull_request:" not in build + deploy
@@ -463,7 +469,16 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "git rev-parse origin/main" in build
     assert "actions/setup-node@v4" in build
     assert "node-version: 24" in build
+    assert frontend_package["packageManager"] == "npm@11.6.2"
+    assert frontend_lock["lockfileVersion"] == 3
+    assert "Install pinned npm" in build
+    assert "packageManager.replace(/^npm@/, '')" in build
+    assert 'npm install --global "npm@${npm_version}"' in build
+    assert 'test "$(npm --version)" = "$npm_version"' in build
     assert build.index("actions/setup-node@v4") < build.index(
+        "python3 scripts/release.py build"
+    )
+    assert build.index("Install pinned npm") < build.index(
         "python3 scripts/release.py build"
     )
     assert "GPU module must be built locally" not in build
@@ -553,6 +568,12 @@ def test_public_web_oras_push_uses_checkout_relative_archive(tmp_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
     calls = []
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        json.dumps({"packageManager": "npm@11.6.2"}),
+        encoding="utf-8",
+    )
 
     def fake_run(command, **_kwargs):
         calls.append(command)
@@ -562,6 +583,8 @@ def test_public_web_oras_push_uses_checkout_relative_archive(tmp_path):
             return module.CommandResult(
                 0, json.dumps({"digest": "sha256:" + "1" * 64}), ""
             )
+        if command == ["npm", "--version"]:
+            return module.CommandResult(0, "11.6.2\n", "")
         return module.CommandResult(0, "", "")
 
     dependencies = module.ReleaseDependencies(
@@ -581,6 +604,45 @@ def test_public_web_oras_push_uses_checkout_relative_archive(tmp_path):
     archive_argument = push[-1].split(":", 1)[0]
     assert archive_argument == ".module-output/public-web/public-web-dist.tgz"
     assert not Path(archive_argument).is_absolute()
+
+
+def test_public_web_build_rejects_npm_version_drift_before_install(tmp_path):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        json.dumps({"packageManager": "npm@11.6.2"}),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:3] == ["oras", "manifest", "fetch"]:
+            return module.CommandResult(1, "", "not found")
+        if command == ["npm", "--version"]:
+            return module.CommandResult(0, "11.17.0\n", "")
+        return module.CommandResult(0, "", "")
+
+    dependencies = module.ReleaseDependencies(
+        run=fake_run,
+        temporary_checkout=lambda _sha: module.null_checkout(tmp_path),
+    )
+
+    with pytest.raises(
+        module.ReleaseError,
+        match=r"Public Web requires npm 11\.6\.2; found 11\.17\.0",
+    ):
+        module.build_modules(
+            catalog,
+            ["public-web"],
+            sha="a" * 40,
+            image_prefix="ghcr.io/example",
+            dependencies=dependencies,
+        )
+
+    assert ["npm", "ci"] not in calls
 
 
 def test_prod_deploy_requires_confirmation_only():
@@ -853,29 +915,23 @@ def test_status_reads_module_local_state(tmp_path):
     assert module.read_status(tmp_path, "prod", "payment-api")["current"] == "digest"
 
 
-def test_pages_prod_rollback_baseline_uses_canonical_deployment_when_list_has_newer_idle(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    ("environment", "project"),
+    [("test", "allbot-web-cf-test"), ("prod", "allbot-web-prod")],
+)
+def test_pages_rollback_baseline_uses_canonical_production_deployment(
+    tmp_path, monkeypatch, environment, project
 ):
     module = _load_module()
     token_file = tmp_path / "pages.token"
     token_file.write_text("test-token")
     canonical_id = "a4c93ba4-c47d-403d-8385-c330102ad441"
-    idle_id = "newer-idle-deployment"
     requested_urls = []
 
     def fake_cloudflare_request(url, _token, **_kwargs):
         requested_urls.append(url)
         if "/deployments" in url:
-            return {
-                "success": True,
-                "result": [
-                    {
-                        "id": idle_id,
-                        "environment": "production",
-                        "latest_stage": {"name": "queued", "status": "idle"},
-                    }
-                ],
-            }
+            raise AssertionError("rollback baseline must not query deployment lists")
         return {
             "success": True,
             "result": {
@@ -890,7 +946,7 @@ def test_pages_prod_rollback_baseline_uses_canonical_deployment_when_list_has_ne
     monkeypatch.setattr(module, "_cloudflare_request", fake_cloudflare_request)
 
     baseline = module.SystemAdapters({}).inspect(
-        "prod",
+        environment,
         "public-web",
         {"adapter": "pages"},
         {
@@ -899,10 +955,10 @@ def test_pages_prod_rollback_baseline_uses_canonical_deployment_when_list_has_ne
         },
     )
 
-    assert baseline == f"pages://allbot-web-prod/{canonical_id}"
+    assert baseline == f"pages://{project}/{canonical_id}"
     assert requested_urls == [
         "https://api.cloudflare.com/client/v4/accounts/account-id/pages/projects/"
-        "allbot-web-prod"
+        f"{project}"
     ]
 
 
@@ -1021,7 +1077,11 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
                 bundle.extractall(command[command.index("-C") + 1], filter="data")
             return module.CommandResult(0, "", "")
         if command[:2] == ["npm", "ci"]:
+            deployed.setdefault("npm_commands", []).append(command)
             return module.CommandResult(0, "", "")
+        if command == ["npm", "--version"]:
+            deployed.setdefault("npm_commands", []).append(command)
+            return module.CommandResult(0, "11.6.2\n", "")
         if command[:2] == ["curl", "-fsS"]:
             return module.CommandResult(0, deployed["runtime_script"], "")
         raise AssertionError(command)
@@ -1054,6 +1114,7 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
     assert f'/allbot-runtime-config.js?release_sha={release_sha}' in deployed["index"]
     assert "/allbot-runtime-config.js" in deployed["headers"]
     assert "Cache-Control: no-store, no-cache, must-revalidate" in deployed["headers"]
+    assert deployed["npm_commands"] == [["npm", "--version"], ["npm", "ci"]]
     assert deployed["command"][-2:] == ["--commit-hash", release_sha]
     branch_index = deployed["command"].index("--branch")
     assert deployed["command"][branch_index + 1] == expected_branch

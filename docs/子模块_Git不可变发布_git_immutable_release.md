@@ -37,9 +37,9 @@ python3 scripts/release.py build \
 或 base digest 变化才重建；最终业务镜像仍用完整 Git SHA tag，并返回
 `repository@sha256:digest`。
 
-SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模块构建。
-工作流显式使用 Node 24 构建 Pages 与前端产物，不依赖 Runner 宿主机的系统
-Node 版本；`vue-tsc` 与 Vite 构建失败时不得发布旧或本地临时产物。
+SGP1 self-hosted Runner 只承接受保护 `main` 的手动模块构建。Pages 使用 Node 24；
+npm 以 `frontend/package.json#packageManager` 为唯一版本源，工作流安装且发布器在
+`npm ci` 前复核。npm 漂移或 `vue-tsc`/Vite 失败时不得发布旧产物。
 Runner 内的 builder 名称为 `allbot-sgp1`：
 
 ```bash
@@ -258,6 +258,8 @@ python3 scripts/release.py rollback \
 状态按环境和模块保存 current、previous、最近动作和结果。首次部署从 live
 adapter 建立基线。部署失败自动尝试恢复 previous；migration 失败只报告并保留
 现场，不自动 downgrade 或恢复备份。
+Pages previous 均取成功的 production `canonical_deployment.id`；测试项目的
+production branch 为 `test`，但不能用最新 preview/queued 记录作回滚基线。
 本地 CLI 默认继续使用 XDG state；GitHub deploy workflow 显式使用 remote
 state backend，把状态原子写入目标主机
 `/var/lib/allbot/module-release-state/<env>/<module>/current.json`，因此 Runner
