@@ -172,6 +172,8 @@ Web 统一入口在：
 准入、角色引用、输入归一和 free-edit/scail2 pipeline policy 收口到
 `web_submission_preparation.py`；编排 service 仅保留 ID、素材 promotion、
 application 调用与失败清理。
+`_promote_submission_inputs(...)` 是 staging→持久对象的内部 phase，集中保持图片、
+参考视频和参考音频的顺序及字段回写；它不是新的公开任务 facade。
 
 职责：
 

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from decimal import Decimal
 from types import SimpleNamespace
@@ -22,9 +23,11 @@ from src.web_api.main import app
 
 pytestmark = [
     pytest.mark.asyncio,
+    pytest.mark.integration,
     pytest.mark.skipif(
-        not DATABASE_URL.startswith("postgresql"),
-        reason="requires PostgreSQL row locks and unique constraints",
+        os.getenv("ALLBOT_RUN_DATABASE_INTEGRATION_TESTS") != "1"
+        or not DATABASE_URL.startswith("postgresql"),
+        reason="requires ALLBOT_RUN_DATABASE_INTEGRATION_TESTS=1 and PostgreSQL",
     ),
 ]
 

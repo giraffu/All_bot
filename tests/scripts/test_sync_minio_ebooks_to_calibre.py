@@ -5,7 +5,6 @@ from pathlib import Path
 import sqlite3
 import zipfile
 
-import pytest
 
 from scripts.sync_minio_ebooks_to_calibre import _publisher, build_epub, discover_ready_books, sync_once
 

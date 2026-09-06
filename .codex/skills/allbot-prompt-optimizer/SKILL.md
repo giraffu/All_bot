@@ -23,6 +23,7 @@ description: 开发和运维 AllBot 多模态 Prompt Optimizer。修改优化任
 - Registry：`src/prompt_optimizer/registry.py`
 - Web API：`src/web_api/routers/prompt_optimizations.py`
 - 提交服务：`src/web_api/services/prompt_optimization_service.py`
+- Web 媒体 policy：`src/web_api/services/prompt_media_policy.py`
 - 管理端场景配置：`src/web_api/services/prompt_optimizer_config_service.py`、
   `dashboard/backend/routers/prompt_optimizer.py`
 - owner-fenced 结果：`src/web_api/services/prompt_result_store.py`

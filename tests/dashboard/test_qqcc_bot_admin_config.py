@@ -356,10 +356,10 @@ def test_build_qqcc_config_options_exposes_scene_credit_cost_defaults():
 
 def test_build_qqcc_config_options_exposes_h3_dynamic_price_matrix():
     assert build_qqcc_config_options()["ai_video_credit_costs"] == {
-        "i2v": {
-            5: {"preview": 10, "small": 11, "standard": 15, "hd": 17},
-            10: {"preview": 14, "small": 17, "standard": 27, "hd": 33},
-            15: {"preview": 19, "small": 27, "standard": 42, "hd": 59},
+            "i2v": {
+                5: {"preview": 10, "small": 11, "standard": 15, "hd": 17},
+                10: {"preview": 14, "small": 21, "standard": 36, "hd": 47},
+                15: {"preview": 23, "small": 36, "standard": 63, "hd": 89},
         },
         "ref2v": {
             5: {"preview": 11, "small": 13, "standard": 17, "hd": 22},

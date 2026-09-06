@@ -32,6 +32,7 @@ def test_worker_pool_registry_groups_execution_types_by_shared_capacity():
             "minimax_h3_t2v",
             "minimax_h3_i2v",
             "minimax_h3_flf2v",
+            "minimax_h3_ref2v",
         },
         "pornmaster_flux2_edit_bf16": {
             "character_reference_build",

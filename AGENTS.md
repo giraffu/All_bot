@@ -118,6 +118,9 @@ Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维�
 - 修改职责、facade 或依赖注入：领域 Skill + `allbot-codebase-design`。
 - 修改接口、入口、状态流或稳定术语：领域 Skill +
   `allbot-kb-auto-updater`。
+- 全系统架构/死代码治理：先用 `allbot-code-analyzer` 完成只读扫描，再用
+  `allbot-codebase-design` 选择纵向 seam；若用户要求落地整改，再叠加领域 Skill、
+  `allbot-tdd`、`allbot-kb-auto-updater` 和并发工作区流程。
 - Vue UI 视觉验收：`vue-best-practices` + `frontend-browser-preview`。
 - 云 SSH 失败：`allbot-cloud-ssh`；线上事故再加 `allbot-diagnosing-bugs`，
   需要日志采集再加 `ops-log-monitor`。

@@ -26,7 +26,7 @@ from .prompt_vectors import (
     DEFAULT_VECTOR_MODEL_KEY,
     PROMPT_VECTOR_READY_SQL,
 )
-from .task_type_catalog import GENERATION_OPERATION_TYPES
+from .task_type_catalog import GENERATION_OPERATION_TYPES  # noqa: F401
 
 _PROMPT_VECTOR_DEFAULT_EXPORTS = (
     DEFAULT_LM_STUDIO_BASE_URL,

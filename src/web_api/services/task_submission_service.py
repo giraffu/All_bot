@@ -43,6 +43,42 @@ def _submission_feature_enabled(name: str, *, operator_canary: bool) -> bool:
     return _env_enabled(name)
 
 
+async def _promote_submission_inputs(
+    *,
+    inputs: dict,
+    images: list,
+    task_id: str,
+    internal_user_id: int,
+    promote_staged_inputs_func,
+) -> list:
+    reference_audio = inputs.get("reference_audio")
+    reference_video = inputs.get("reference_video")
+    staged_input_refs = [
+        *images,
+        *([reference_video] if reference_video else []),
+        *([reference_audio] if reference_audio else []),
+    ]
+    if not staged_input_refs:
+        return images
+
+    promoted_input_refs = await promote_staged_inputs_func(
+        input_refs=staged_input_refs,
+        task_id=task_id,
+        user_id=internal_user_id,
+        bucket=MINIO_BUCKET,
+        client=storage.client,
+    )
+    images = promoted_input_refs[: len(images)]
+    inputs["images"] = images
+    next_index = len(images)
+    if reference_video:
+        inputs["reference_video"] = promoted_input_refs[next_index]
+        next_index += 1
+    if reference_audio:
+        inputs["reference_audio"] = promoted_input_refs[next_index]
+    return images
+
+
 async def submit_generation_task(
     *,
     req: TaskGenerateRequest,
@@ -94,29 +130,13 @@ async def submit_generation_task(
         promote_staged_inputs_func = (
             promote_staged_inputs_func or promote_staged_user_inputs
         )
-        reference_audio = inputs.get("reference_audio")
-        reference_video = inputs.get("reference_video")
-        staged_input_refs = [
-            *images,
-            *([reference_video] if reference_video else []),
-            *([reference_audio] if reference_audio else []),
-        ]
-        if staged_input_refs:
-            promoted_input_refs = await promote_staged_inputs_func(
-                input_refs=staged_input_refs,
-                task_id=task_id,
-                user_id=current_user.id,
-                bucket=MINIO_BUCKET,
-                client=storage.client,
-            )
-            images = promoted_input_refs[: len(images)]
-            inputs["images"] = images
-            next_index = len(images)
-            if reference_video:
-                inputs["reference_video"] = promoted_input_refs[next_index]
-                next_index += 1
-            if reference_audio:
-                inputs["reference_audio"] = promoted_input_refs[next_index]
+        images = await _promote_submission_inputs(
+            inputs=inputs,
+            images=images,
+            task_id=task_id,
+            internal_user_id=current_user.id,
+            promote_staged_inputs_func=promote_staged_inputs_func,
+        )
 
         pipeline = await prepare_web_pipeline(
             task_type=req.task_type,

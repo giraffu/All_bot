@@ -128,6 +128,10 @@
 
 ## 架构词汇
 
+- **用户面**：Telegram/Web/独立 Bot 对用户身份、输入和展示负责的 adapter 层。
+- **业务面**：任务、资产、社区和媒体不变量及补偿流程所在的 core/application 层。
+- **执行面**：Central、QueueManager、Worker、ComfyUI 与 GPU 组成的任务运行控制链；
+  执行状态本身不授权修改用户资产。
 - **Module**：有 interface 和 implementation 的能力单元。
 - **Interface**：调用方必须知道的完整使用契约，不只是类型签名。
 - **Seam**：可以替换行为而不改调用点的位置。

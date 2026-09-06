@@ -512,7 +512,7 @@ def test_takeover_retargets_from_local_ledger_not_git_enabled_flags(tmp_path: Pa
         [
             "takeover",
             "--slot",
-            "gpu-252-gpu0-i2i_pro",
+            "gpu-252-gpu0-img2img_lora",
             "--include-disabled",
             "--execute",
             "--state-dir",
@@ -523,7 +523,7 @@ def test_takeover_retargets_from_local_ledger_not_git_enabled_flags(tmp_path: Pa
     selected = _select_action_slots(args, ops)
 
     assert len(selected) == 1
-    assert selected[0].id == "gpu-252-gpu0-i2i_pro"
+    assert selected[0].id == "gpu-252-gpu0-img2img_lora"
     assert selected[0].legacy_worker_id == (
         "lan_aio_prod_gpu252_gpu0_image_to_video_01"
     )

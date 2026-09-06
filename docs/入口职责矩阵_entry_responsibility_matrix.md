@@ -4,6 +4,8 @@
 
 本文档明确 `backend/app` 与 `src/web_api` 的长期职责，并合并仍需关注的双入口
 重叠能力。已完成的旧 inventory 保存在 `docs/archive/`。
+全系统其它入口、独立平台和基础设施依赖见
+[系统模块地图](./system_module_inventory.md)。
 
 ## 2. 判定原则
 
@@ -32,9 +34,11 @@
 | `src/web_api/routers/payment.py` | Web 支付展示面与支付结果交互口 | 是 | `src/web_api` | 是 |
 | `src/web_api/routers/storage.py` | 用户侧上传/存储桥接接口 | 是 | `src/web_api` | 是 |
 | `src/web_api/services/task_*` | Web 任务应用服务、stream/result/history fallback、异常映射 | 是 | `src/web_api` | 是 |
+| `src/web_api/services/task_submission_service.py` | Web 提交编排；输入晋升是内部 phase，最终调用 TaskApplication | 是 | `src/web_api` | 是 |
 | `src/web_api/services/history_*` | 历史查询、投递到 Bot、HTTP 响应构造 | 是 | `src/web_api` | 是 |
 | `src/web_api/services/auth_api_service.py` | Web 认证接口编排、密码登录与安全通知 | 是 | `src/web_api` | 是 |
 | `src/web_api/services/gallery_*` | 广场查询、变更、评论、媒体解析、响应拼装 | 是 | `src/web_api` | 是 |
+| `src/web_api/services/prompt_media_policy.py` | 提示词优化与人物引用共享的媒体 ownership、类型和大小规则 | 是 | `src/web_api` service policy | 是 |
 
 ## 4. 入口边界说明
 
@@ -85,3 +89,4 @@
 - provider 由应用入口注册；core 不自动装配。
 - 测试若必须跨入口 patch 私有函数，应先检查是否缺少公开 service/provider seam。
 - 兼容层退出统一记录在 `docs/compat_seam_exit_table.md`。
+- 共享校验只下沉到无反向依赖的 policy；不要让两个应用 service 互相 import。

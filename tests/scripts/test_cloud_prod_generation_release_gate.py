@@ -4,6 +4,7 @@ import json
 import pytest
 
 from scripts import cloud_prod_generation_release_gate as gate
+from src.ops import generation_release_refund as release_refund
 
 
 def test_load_env_file_strips_quotes_and_export(tmp_path):
@@ -145,13 +146,13 @@ class FakeRedis:
         self.published = []
 
     async def zrange(self, key, start, end):
-        assert key == gate.PENDING_KEY
+        assert key == release_refund.PENDING_KEY
         assert start == 0
         assert end == -1
         return list(self.pending)
 
     async def smembers(self, key):
-        assert key == gate.RUNNING_KEY
+        assert key == release_refund.RUNNING_KEY
         return set(self.running)
 
     async def hgetall(self, key):
@@ -159,7 +160,7 @@ class FakeRedis:
         return dict(self.active_tasks)
 
     async def zrem(self, key, item):
-        assert key == gate.PENDING_KEY
+        assert key == release_refund.PENDING_KEY
         if item not in self.pending:
             return 0
         self.pending.remove(item)
@@ -169,7 +170,7 @@ class FakeRedis:
         self.hash_writes.append((key, mapping))
 
     async def srem(self, key, item):
-        assert key == gate.RUNNING_KEY
+        assert key == release_refund.RUNNING_KEY
         self.running.discard(item)
 
     async def publish(self, channel, payload):
@@ -204,7 +205,9 @@ def test_build_queue_snapshot_maps_pending_backend_ids():
 def test_cancel_backend_pending_marks_cancelled_and_publishes_event():
     worker_redis = FakeRedis(pending=["backend-1"], running=["backend-1"])
 
-    cancelled = asyncio.run(gate.cancel_backend_pending(worker_redis, "backend-1"))
+    cancelled = asyncio.run(
+        release_refund.cancel_backend_pending(worker_redis, "backend-1")
+    )
 
     assert cancelled is True
     assert worker_redis.pending == []

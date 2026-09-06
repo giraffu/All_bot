@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.history_media_r2_migration import (
+from scripts.history_media_r2_migration import (  # noqa: E402
     R2Transport,
     _canonical_json,
     _load_secure_config,
@@ -46,7 +46,7 @@ from scripts.history_media_r2_migration import (
     _validate_r2_transport_runtime,
     normalize_asyncpg_dsn,
 )
-from scripts.media_archive_worker import (
+from scripts.media_archive_worker import (  # noqa: E402
     clear_proxy_environment,
     validate_endpoint_route,
 )

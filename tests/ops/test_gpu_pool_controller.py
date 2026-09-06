@@ -20,18 +20,25 @@ from ops.gpu_pool_controller.types import ComfyInstance, TaskProfile
 def test_default_gpu_pool_config_loads_and_plans_all_local_workers():
     config = load_controller_config()
 
-    assert sorted(config.nodes) == ["gpu-002", "gpu-177", "gpu-226", "gpu-252"]
-    assert len(config.assignments) == 8
+    assert sorted(config.nodes) == [
+        "gpu-002",
+        "gpu-115",
+        "gpu-177",
+        "gpu-226",
+        "gpu-252",
+    ]
+    assert len(config.assignments) == 9
 
     plan = GpuPoolPlanner(config).to_jsonable()
 
-    assert len(plan) == 5
+    assert len(plan) == 6
     assert {item["worker_id"] for item in plan} == {
         "cloud_prod_worker_04",
         "cloud_prod_worker_05",
         "cloud_prod_worker_06",
         "cloud_prod_worker_07",
         "lan_aio_prod_gpu226_gpu0_image_to_video_01",
+        "lan_aio_prod_gpu115_gpu0_img2img_lora_rocm_01",
     }
     wan22 = next(item for item in plan if item["worker_id"] == "cloud_prod_worker_05")
     assert wan22["node_id"] == "gpu-252"

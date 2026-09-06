@@ -11,6 +11,9 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
 `AGENTS.md → 命中 Skill → 代码/测试事实源 → 一篇命中专题文档`。普通任务不预读
 审计矩阵、全部 docs 或 archive。
 
+跨系统架构校准使用 `docs/system_module_inventory.md` 作为七板块导航；它不替代
+领域契约，也不记录节点数量、部署版本等运行态。
+
 ## 1. 模块核心能力
 - **现状扫描优先**：优先基于代码现状、关键入口、公开 facade、provider/dependencies 边界判断知识是否失真；必要时再结合 `git diff` 或用户提供的片段。
 - **技能失真识别**：当 `SKILL.md` 主张与代码入口冲突时，先更新技能，再继续开发，避免旧技能误导后续改动。
