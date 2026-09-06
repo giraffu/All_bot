@@ -18,6 +18,10 @@ class _FakePipeline:
         self._ops.append(("hget", (key, field), {}))
         return self
 
+    def hgetall(self, key):
+        self._ops.append(("hgetall", (key,), {}))
+        return self
+
     def hset(self, key, field=None, value=None, mapping=None):
         self._ops.append(
             ("hset", (key,), {"field": field, "value": value, "mapping": mapping})
@@ -55,6 +59,7 @@ class _FakeRedis:
         self.published = []
         self.expirations = {}
         self.task_create_count = 0
+        self.pipeline_count = 0
 
     async def eval(
         self,
@@ -324,6 +329,7 @@ class _FakeRedis:
 
     def pipeline(self, transaction=True):
         _ = transaction
+        self.pipeline_count += 1
         return _FakePipeline(self)
 
 
@@ -815,6 +821,28 @@ async def test_peek_pending_tasks_respects_allowed_types_without_mutating_queue_
     assert redis.sorted_sets[manager.pending_key] == {"task-a": 1.0, "task-b": 2.0}
     assert redis.sets.get(manager.running_key, set()) == set()
     assert manager._task_heartbeat_key("task-b") not in redis.values
+
+
+@pytest.mark.asyncio
+async def test_peek_pending_tasks_batches_task_detail_reads():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    for index in range(2):
+        task_id = f"task-{index}"
+        await redis.hset(
+            f"{manager.task_prefix}{task_id}",
+            mapping={
+                "task_id": task_id,
+                "type": TaskType.IMG2IMG,
+                "status": TaskStatus.PENDING,
+            },
+        )
+        await redis.zadd(manager.pending_key, {task_id: float(index)})
+
+    result = await manager.peek_pending_tasks(limit=2)
+
+    assert [task["task_id"] for task in result] == ["task-0", "task-1"]
+    assert redis.pipeline_count == 1
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,18 @@
       "historical_data": "queued_legacy_tasks_must_be_drained"
     },
     {
+      "id": "central-legacy-media-completion",
+      "status": "active-compat",
+      "entrypoint": "backend/app/routers/agent.py:complete_task",
+      "owner": "task-engine",
+      "telemetry_key": "compat.central.legacy_media_completion",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "Worker completion payload with result_asset and durable asset metadata",
+      "exit_condition": "All supported media Workers use the asset contract, LEGACY_RESULT_COMPLETION_ENABLED is false, and telemetry is zero for the full observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "inflight_tasks_from_legacy_workers_must_be_drained"
+    },
+    {
       "id": "billing-legacy-order-payload",
       "status": "active-compat",
       "entrypoint": "src/services/order_v2_service.py:parse_order_payload",

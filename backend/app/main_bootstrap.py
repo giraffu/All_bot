@@ -41,10 +41,6 @@ def init_minio_client(*, settings, logger):
         return None
 
 
-def get_minio_client(request: Request):
-    return getattr(request.app.state, "minio_client", None)
-
-
 def build_request_state_getter(*, attr_name: str, default=None):
     def _get_request_state_value(request: Request):
         return getattr(request.app.state, attr_name, default)
@@ -54,18 +50,13 @@ def build_request_state_getter(*, attr_name: str, default=None):
 
 async def check_zombie_tasks_loop(
     *,
-    settings,
-    queue_manager_cls,
+    queue_manager,
     logger,
     sleep_func=asyncio.sleep,
-    redis_from_url=build_redis_client,
 ):
     while True:
         try:
-            redis = redis_from_url(settings.redis_url)
-            queue_manager = queue_manager_cls(redis)
             await queue_manager.check_zombie_tasks()
-            await redis.close()
         except Exception as exc:
             logger.error(f"Error in check_zombie_tasks_loop: {exc}")
         await sleep_func(60)
@@ -73,14 +64,12 @@ async def check_zombie_tasks_loop(
 
 def build_zombie_tasks_loop_runner(
     *,
-    settings,
     queue_manager_cls,
     logger,
 ):
-    async def _runner():
+    async def _runner(redis):
         await check_zombie_tasks_loop(
-            settings=settings,
-            queue_manager_cls=queue_manager_cls,
+            queue_manager=queue_manager_cls(redis),
             logger=logger,
         )
 
@@ -112,26 +101,24 @@ async def lifespan(
     redis_from_url=build_redis_client,
 ):
     zombie_task = None
-    shared_redis = None
-    zombie_task = asyncio.create_task(
-        check_zombie_tasks_loop_func(),
-        name="backend-check-zombie-tasks",
-    )
-    fastapi_app.state.zombie_tasks_loop_task = zombie_task
     shared_redis = redis_from_url(settings.redis_url)
     fastapi_app.state.redis = shared_redis
     fastapi_app.state.minio_client = init_minio_client(settings=settings, logger=logger)
+    zombie_task = asyncio.create_task(
+        check_zombie_tasks_loop_func(shared_redis),
+        name="backend-check-zombie-tasks",
+    )
+    fastapi_app.state.zombie_tasks_loop_task = zombie_task
     try:
         yield
     finally:
-        if shared_redis is not None:
-            await shared_redis.close()
         if zombie_task is not None:
             zombie_task.cancel()
             try:
                 await zombie_task
             except asyncio.CancelledError:
                 pass
+        await shared_redis.close()
 
 
 async def redis_transient_exception_handler(request: Request, exc: Exception):

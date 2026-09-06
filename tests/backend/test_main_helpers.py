@@ -669,6 +669,20 @@ def test_prompt_optimizer_request_preserves_stream_and_snapshot_contracts():
     }
 
 
+def test_split_task_request_accepts_pydantic_v2_model_dump_only():
+    class ModelDumpOnlyRequest:
+        def model_dump(self):
+            return {"task_id": "task-v2", "priority": 3, "prompt": "hello"}
+
+    task_id, priority, params = main_simple_task_routes.split_task_request(
+        ModelDumpOnlyRequest()
+    )
+
+    assert task_id == "task-v2"
+    assert priority == 3
+    assert params == {"prompt": "hello"}
+
+
 def test_face_swap_v2_reuses_face_swap_request_contract():
     specs_by_path = {
         path: (request_model, task_key, endpoint_name)
@@ -751,7 +765,7 @@ def test_normalize_legacy_video_simple_request_uses_wan22_contract():
 
     normalized = main_simple_task_routes.normalize_simple_task_request_model(
         "video_edit", request
-    ).dict()
+    ).model_dump()
 
     assert normalized["task_id"] == "task-video"
     assert normalized["priority"] == 4

@@ -104,7 +104,7 @@ class TaskStatusResponse(BaseModel):
     queue_remaining: Optional[int] = None
     progress: Optional[float] = None
     error: Optional[str] = None
-    result_path: Optional[str] = None  # Added for convenience
+    result_path: Optional[str] = None
     image_url: Optional[str] = None
     task_type: Optional[str] = None
     extra_outputs: Optional[Dict[str, Any]] = None
@@ -168,16 +168,18 @@ class SystemWorkerOutcomesResponse(BaseModel):
 
 class SystemStatusResponse(BaseModel):
     queue_size: int
-    queue_by_type: dict[str, int] = {}
-    queue_by_type_details: dict[str, dict[str, Any]] = {}
-    queue_pressure_by_worker_profile: dict[str, dict[str, Any]] = {}
+    queue_by_type: dict[str, int] = Field(default_factory=dict)
+    queue_by_type_details: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    queue_pressure_by_worker_profile: dict[str, dict[str, Any]] = Field(
+        default_factory=dict
+    )
     active_workers: int
     healthy_workers: int = 0
     accepting_workers: int = 0
     error_workers: int = 0
     quarantined_workers: int = 0
-    workers_by_status: dict[str, int] = {}
-    workers_by_control_state: dict[str, int] = {}
+    workers_by_status: dict[str, int] = Field(default_factory=dict)
+    workers_by_control_state: dict[str, int] = Field(default_factory=dict)
     comfy_online: bool
 
 

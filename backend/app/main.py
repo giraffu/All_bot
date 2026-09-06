@@ -78,7 +78,6 @@ app.include_router(agent.router)
 security = HTTPBearer()
 get_minio_client = build_request_state_getter(attr_name="minio_client")
 _check_zombie_tasks_loop = build_zombie_tasks_loop_runner(
-    settings=settings,
     queue_manager_cls=QueueManager,
     logger=logger,
 )

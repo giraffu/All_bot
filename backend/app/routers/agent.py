@@ -25,6 +25,7 @@ from app.result_storage import ResultPromotionError, get_result_storage_io_metri
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from pydantic import Field
+from src.services.compat_telemetry import record_compat_hit
 from src.services.task_text_stream_store import TextStreamConflictError
 
 logger = logging.getLogger(__name__)
@@ -195,6 +196,10 @@ async def complete_task(
             completion_contract = "asset_contract"
         else:
             completion_contract = "legacy_media"
+            record_compat_hit(
+                "compat.central.legacy_media_completion",
+                entrypoint="Central agent complete legacy media payload",
+            )
         _result_completion_counts[completion_contract] += 1
         _agent_result_completion_counts[(req.agent_id, completion_contract)] += 1
         logger.info(

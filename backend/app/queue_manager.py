@@ -860,6 +860,25 @@ class QueueManager:
         )
         return self._decode_redis_dict(data)
 
+    async def _fetch_task_details(
+        self, task_ids: list[Any]
+    ) -> list[Optional[Dict[str, Any]]]:
+        async def execute_pipeline():
+            pipeline = self.redis.pipeline(transaction=False)
+            for task_id in task_ids:
+                task_id_str = self._decode_redis_value(task_id)
+                pipeline.hgetall(self._task_key(task_id_str))
+            return await pipeline.execute()
+
+        raw_details = await self._retry_redis_call(
+            "fetch_task_details",
+            execute_pipeline,
+        )
+        return [
+            self._decode_redis_dict(details) if details else None
+            for details in raw_details
+        ]
+
     async def peek_pending_tasks(
         self,
         allowed_types: Optional[list[str]] = None,
@@ -894,10 +913,10 @@ class QueueManager:
             )
             if not tasks_with_scores:
                 break
-            for task_id_raw, _score in tasks_with_scores:
-                task_details = await self.get_task_status(
-                    self._decode_redis_value(task_id_raw)
-                )
+            task_details_batch = await self._fetch_task_details(
+                [task_id_raw for task_id_raw, _score in tasks_with_scores]
+            )
+            for task_details in task_details_batch:
                 if not task_details or task_details.get("status") != TaskStatus.PENDING:
                     continue
                 task_type = task_details.get("type")
@@ -936,9 +955,10 @@ class QueueManager:
             if not tasks_with_scores:
                 break
 
-            for task_id_raw, _score in tasks_with_scores:
-                task_id = self._decode_redis_value(task_id_raw)
-                task_details = await self.get_task_status(task_id)
+            task_details_batch = await self._fetch_task_details(
+                [task_id_raw for task_id_raw, _score in tasks_with_scores]
+            )
+            for task_details in task_details_batch:
                 if not task_details:
                     continue
                 if task_details.get("status") != TaskStatus.PENDING:
