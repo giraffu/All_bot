@@ -366,8 +366,6 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
             balance_remaining=100 - cost,
         )
     )
-    monkeypatch.setattr(service, "submit_generation_task", submit)
-
     result = await service.generate_character_view(
         db=db,
         current_user=_user(),
@@ -377,6 +375,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
             prompt="custom side portrait",
             engine=engine,
         ),
+        submit_generation_task_func=submit,
     )
 
     assert result["cost"] == cost
@@ -399,6 +398,20 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         "record_history": False,
     }
     assert kwargs["allow_contribute_override"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_character_view_requires_submitter_before_db_mutation():
+    from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
+
+    with pytest.raises(RuntimeError, match="submitter is not configured"):
+        await service.generate_character_view(
+            db=object(),
+            current_user=_user(),
+            character_id="character-1",
+            view_type="body_front_nude",
+            payload=CharacterViewGenerateRequest(prompt="front view"),
+        )
 
 
 @pytest.mark.asyncio
@@ -520,7 +533,6 @@ async def test_generate_genitals_view_is_template_or_upload_only(
             balance_remaining=97,
         )
     )
-    monkeypatch.setattr(service, "submit_generation_task", submit)
     monkeypatch.setattr(service, "character_explicit_views_enabled", lambda: True)
     monkeypatch.setattr(
         service.storage, "async_object_exists", AsyncMock(return_value=True)

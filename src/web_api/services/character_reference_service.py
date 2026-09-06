@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import uuid
-from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -13,7 +12,6 @@ from sqlalchemy import func, select
 from config import MINIO_BUCKET
 from shared.character_reference_sheet import (
     CHARACTER_ASSET_MOSAIC_VERSION,
-    INGREDIENTS_CHARACTER_PANEL_VERSION,
     compose_character_asset_mosaic,
 )
 from src.media_paths import normalize_owned_user_upload_key
@@ -34,8 +32,10 @@ from src.quota import QuotaManager
 from src.services.storage import storage
 from src.services.task_web_submission_intent import WebSubmissionIntentJournal
 from src.task_application_runtime import get_task_application
-from src.web_api.common.utils import release_read_transaction
 from src.web_api.schemas.task_schema import TaskGenerateRequest
+from src.web_api.services.character_reference_query_service import (
+    resolve_ready_character_sheet,
+)
 from src.web_api.services.character_view_prompt_config_service import (
     BUILTIN_CHARACTER_VIEW_CONFIGS,
     DEFAULT_TAG_OPTIONS,
@@ -48,9 +48,10 @@ from src.web_api.services.character_view_template_service import (
     list_default_character_view_templates,
     list_character_view_templates,
 )
-from src.web_api.services.task_submission_service import submit_generation_task
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["resolve_ready_character_sheet"]
 
 ALLOWED_CHARACTER_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 CHARACTER_IMAGE_CONTENT_TYPES = {
@@ -100,12 +101,6 @@ CHARACTER_VIEW_CATALOG = tuple(
         1,
     )
 )
-
-
-@dataclass(frozen=True, slots=True)
-class ReadyCharacterIngredient:
-    sheet_object_key: str
-    description: str
 
 
 CHARACTER_VIEW_BY_TYPE = {item["type"]: item for item in CHARACTER_VIEW_CATALOG}
@@ -564,7 +559,13 @@ async def confirm_character_identity(
 
 
 async def generate_character_view(
-    *, db, current_user, character_id: str, view_type: str, payload
+    *,
+    db,
+    current_user,
+    character_id: str,
+    view_type: str,
+    payload,
+    submit_generation_task_func=None,
 ) -> dict:
     if view_type not in CHARACTER_VIEW_BY_TYPE:
         raise HTTPException(status_code=404, detail="未知的人物子图类型。")
@@ -573,6 +574,8 @@ async def generate_character_view(
             status_code=405,
             detail="该子图只支持选择模板或上传替换，不能调用提示词生成。",
         )
+    if submit_generation_task_func is None:
+        raise RuntimeError("character view task submitter is not configured")
     character = (
         await db.execute(
             select(CharacterReference).where(
@@ -618,7 +621,7 @@ async def generate_character_view(
     await db.commit()
     try:
         task_type = CHARACTER_VIEW_TASK_TYPES[payload.engine]
-        result = await submit_generation_task(
+        result = await submit_generation_task_func(
             req=TaskGenerateRequest(
                 task_type=task_type,
                 inputs={
@@ -994,40 +997,6 @@ async def save_character(*, db, user_id: int, character_id: str) -> dict:
         db=db,
         character=character,
         views=list(views),
-    )
-
-
-async def resolve_ready_character_sheet(
-    *, db, user_id: int, character_id: str
-) -> ReadyCharacterIngredient:
-    row = (
-        await db.execute(
-            select(CharacterReference).where(
-                CharacterReference.id == character_id,
-                CharacterReference.user_id == user_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if (
-        row is None
-        or row.status != "ready"
-        or getattr(row, "moderation_status", "active") != "active"
-        or not row.sheet_object_key
-    ):
-        raise HTTPException(status_code=400, detail="人物不存在、未就绪或已删除。")
-    # The legacy two-character LTX workflow only accepts its original four-view
-    # panel. New flexible mosaics are intentionally consumed through H3 typed refs.
-    if not row.sheet_object_key.endswith(f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"):
-        raise HTTPException(
-            status_code=400,
-            detail="人物参考图版本已失效，请重新保存人物。",
-        )
-    description = str(row.description or "").strip()
-    sheet = row.sheet_object_key
-    await release_read_transaction(db)
-    return ReadyCharacterIngredient(
-        sheet_object_key=sheet,
-        description=description,
     )
 
 
