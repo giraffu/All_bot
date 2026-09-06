@@ -118,6 +118,7 @@ sequenceDiagram
   做原子校验；重复 sequence 幂等确认，跳号拒绝并返回期望值。终态写入采用 CAS，
   late fail 不得覆盖 done。旧 Worker 不调用此接口时继续只用 `/complete`。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
+- `/api/agent/task/task_heartbeat` 只允许对仍存在且非终态的 task 原子刷新心跳、记录 `worker_id`、确认 delivery 并绑定 agent `current_task_id`。task 已是 `done/error/cancelled` 或已不存在时不得重新绑定、不得用 `HSET` 创建残缺 task；Central 只 compare-and-clear 仍指向该 task 的 agent 残留绑定，并删除残留 task heartbeat。`complete/failed/cancelled` 先提交权威终态、再 compare-and-clear，确保终态提交前已经进入 Redis 的心跳由最终清理收口，终态提交后的迟到心跳则被原子门禁拒绝。
 - `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
 - `/api/agent/task/pop` 的 claim delivery 是 at-least-once。Central 可在领取响应丢失或 `claim_delivery_pending` 尚未被运行态回报确认时向同一 agent 重投同一 task；Worker 以 `backend_task_id` 作为执行幂等键，活跃 task 的重投只确认状态，不再次产生 Comfy prompt 或交付副作用。该约束不改变 pending 出队原子性，也不把进程内 execution 当成跨重启持久账本。
 - Central 会把缺失 task heartbeat 的 zombie 终态归因到任务已绑定的 `worker_id`。同一 Worker 在一小时失联窗口内累计 6 个此类任务时，自动写入 30 分钟 `disabled` control；现有 `pop(agent_id=...)` 门禁随即停止该实例继续领取，但不覆盖人工 `draining/disabled`。该临时隔离只阻止坏实例反复伤害新任务，不替代 provider/LAN 对 Pod、容器、GPU 或 ComfyUI 的根因恢复。
@@ -152,6 +153,7 @@ sequenceDiagram
 - 覆盖同一 task 终态只记录一次 Worker outcome，窗口统计只返回当前有 heartbeat
   的 Worker，并按任务类型聚合失败；遥测异常不能回滚终态
 - 覆盖双槽 worker 下旧任务终态 compare-clear 不会清掉新任务 `current_task_id`
+- 覆盖完成后迟到 task heartbeat 不会恢复 agent 绑定，终态/缺失 task heartbeat 会 compare-and-clear 且不会创建残缺 task hash
 - 覆盖同一 task claim 重投时 Worker 只创建一个 execution、prompt、finalizer 和 complete，reserved prefetch 不缓存或重复执行活跃 task
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete
 

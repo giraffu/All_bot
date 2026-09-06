@@ -80,6 +80,7 @@ from .runpod_prod_worker_canary import (
     RunPodProdWorkerCanaryCaseBuilder,
     RunPodProdWorkerCanaryConfig,
     RunPodProdWorkerCanaryExecutor,
+    TERMINAL_TASK_STATUSES,
 )
 from .runpod_prod_worker_control import (
     RunPodProdWorkerControlClient,
@@ -2364,6 +2365,34 @@ class RunPodProdWorkerRunner:
                     {"worker": _worker_summary(worker) if worker else None},
                 )
                 return worker
+            if str((worker or {}).get("status") or "") == "idle":
+                try:
+                    task_status = self._http_json(
+                        "GET",
+                        _join_url(
+                            self.options.central_url,
+                            "status",
+                            current_task_id,
+                        ),
+                        allow_statuses=(404,),
+                    )
+                except Exception:
+                    task_status = {}
+                terminal_status = str(task_status.get("status") or "")
+                if terminal_status in TERMINAL_TASK_STATUSES:
+                    self._phase(
+                        summary,
+                        "worker_drain",
+                        "ok",
+                        {
+                            "worker": _worker_summary(worker),
+                            "stale_current_task": {
+                                "task_id": current_task_id,
+                                "status": terminal_status,
+                            },
+                        },
+                    )
+                    return worker
             self._sleep(self.options.poll_interval_seconds)
         raise RunPodProdWorkerError(
             "refusing down: prod RunPod worker still has current_task_id="

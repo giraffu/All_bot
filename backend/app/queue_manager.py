@@ -125,6 +125,33 @@ if ARGV[2] == '1' then redis.call('SREM', KEYS[2], ARGV[3]) end
 return 1
 """
 
+_HEARTBEAT_ACTIVE_TASK_SCRIPT = """
+-- terminal_task_heartbeat
+local status = redis.call('HGET', KEYS[1], 'status')
+if not status then
+    if ARGV[2] ~= '' and redis.call('HGET', KEYS[3], 'current_task_id') == ARGV[1] then
+        redis.call('HDEL', KEYS[3], 'current_task_id')
+    end
+    redis.call('DEL', KEYS[2])
+    return -1
+end
+if status == 'done' or status == 'error' or status == 'cancelled' then
+    if ARGV[2] ~= '' and redis.call('HGET', KEYS[3], 'current_task_id') == ARGV[1] then
+        redis.call('HDEL', KEYS[3], 'current_task_id')
+    end
+    redis.call('DEL', KEYS[2])
+    return 0
+end
+
+redis.call('SETEX', KEYS[2], tonumber(ARGV[3]), '1')
+if ARGV[2] ~= '' then
+    redis.call('HSET', KEYS[1], 'worker_id', ARGV[2])
+    redis.call('HSET', KEYS[3], 'current_task_id', ARGV[1])
+    redis.call('HDEL', KEYS[1], 'claim_delivery_pending')
+end
+return 1
+"""
+
 
 class TaskAdmissionConflictError(RuntimeError):
     pass
@@ -1157,6 +1184,32 @@ class QueueManager:
             300,
             "1",
         )  # Expire after 5 mins
+
+    async def heartbeat_agent_task(
+        self,
+        task_id: str,
+        *,
+        agent_id: str | None = None,
+    ) -> str:
+        normalized_agent_id = str(agent_id or "")
+        result = await self._retry_redis_call(
+            "heartbeat_agent_task",
+            self.redis.eval,
+            _HEARTBEAT_ACTIVE_TASK_SCRIPT,
+            3,
+            self._task_key(task_id),
+            self._task_heartbeat_key(task_id),
+            self._agent_heartbeat_key(normalized_agent_id),
+            task_id,
+            normalized_agent_id,
+            "300",
+        )
+        disposition = int(result)
+        if disposition > 0:
+            return "active"
+        if disposition == 0:
+            return "terminal"
+        return "missing"
 
     async def check_zombie_tasks(self):
         """Finds running tasks that haven't sent a heartbeat recently and marks them as failed."""
