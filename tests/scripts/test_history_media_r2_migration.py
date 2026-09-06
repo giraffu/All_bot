@@ -71,6 +71,7 @@ from scripts.history_media_r2_migration import (
     database_route_sha256,
     evaluate_missing_round,
     group_copy_candidates,
+    gallery_switch_verification_join_condition,
     hash_body,
     history_assets_from_record,
     is_transient_copy_failure,
@@ -3012,8 +3013,8 @@ def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_
     verification_source = inspect.getsource(module._verify_switch_plan)
     assert "validate_switch_sample_coverage" in verification_source
     assert "gallery_eligible_counts" in verification_source
-    assert "gp.history_id" in verification_source
-    assert "h.user_id=gp.user_id" in verification_source
+    assert "gallery_switch_verification_join_condition" in verification_source
+    assert "information_schema.columns" in verification_source
     assert "switch verification found an old History reference" in verification_source
 
 
@@ -3030,6 +3031,19 @@ def test_switch_verification_accepts_scoped_plan_without_gallery_candidates():
         "gallery_sample_targets": {"image": 0, "video": 0},
         "gallery_sample_target": 0,
     }
+
+
+def test_switch_verification_join_tracks_deployed_gallery_schema():
+    legacy = gallery_switch_verification_join_condition(has_history_id=False)
+    assert "gp.history_id" not in legacy
+    assert "h2.task_id=gp.task_id" in legacy
+    assert "h2.user_id=gp.user_id" in legacy
+    assert "order by h2.id desc limit 1" in legacy
+
+    current = gallery_switch_verification_join_condition(has_history_id=True)
+    assert "gp.history_id" in current
+    assert "h.user_id=gp.user_id" in current
+    assert "h2.task_id=gp.task_id" in current
 
 
 def test_switch_verification_rejects_missing_available_samples():

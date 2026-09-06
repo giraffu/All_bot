@@ -717,8 +717,7 @@ lane 重复扫描数百万行。每个对象最多做 5 次瞬时错误重试，
 `copied_verified`，不会因一个慢请求等待整组。执行器按最近 1,000 次请求且不超过
 60 秒的窗口控制全局并发：429/SlowDown 立即降档，timeout/reset/5xx 等错误率在至少
 200 个请求或 30 秒观察后超过 0.5% 才降档，低于 0.2% 可升一档。档位改变立即清空观察窗口；
-健康事件在每次请求完成时汇入 supervisor 的跨 lane 全局窗口，不能等单个 lane 收口后
-再用该 lane 的尾部样本代替全局流量。事件记录取得 slot 时的档位；旧 epoch 只用于对象
+请求完成即汇入 supervisor 全局窗口，禁止以单 lane 尾样本替代。事件记录取得 slot 时的档位；旧 epoch 只用于对象
 回执和观测，不得进入新窗口。
 延迟长尾只记录不降档。连续系统性高错误窗口由 circuit breaker 暂停；单个瞬态错误不触发
 全局降速。任一 lane 捕获 429/SlowDown 时无需等待这 100 个资产收口：共享 limiter
@@ -746,7 +745,8 @@ Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute
 暂停。三个计划都绑定创建它们的精确 artifact digest；旧 artifact 不得消费新计划。
 
 最终验收完整核对计划引用、目标 HEAD/size/marker 和旧来源 HEAD；History/owner
-抽查 `min(64, 范围行数)`，Gallery 每种媒体抽查 `min(16, 候选数)`，零候选记零目标；
+抽查 `min(64, 范围行数)`；Gallery 按已部署 schema 关联（无 `history_id` 则取同 owner/task
+最新 History），每类抽查 `min(16, 候选数)`，零候选记零目标；
 `verify-switch` 以新 artifact 只读补验，收据保留执行、复验身份，禁止重放生产写入。
 apply-context 的既有不支持场景继续按契约返回 400。只有这些验收和收据全部通过，才能
 解除 shadow pause guard、清理旧 failed unit 状态并手动跑一次 shadow sync。核心
