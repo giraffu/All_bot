@@ -23,7 +23,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { BarChart } from 'echarts/charts';
@@ -34,6 +34,7 @@ import {
 import VChart from 'vue-echarts';
 import { computed, ref, onMounted } from 'vue';
 import { fetchCumulativeHourlyStats } from '../api/api';
+import type { EChartsOption } from 'echarts';
 
 use([
   CanvasRenderer,
@@ -42,11 +43,10 @@ use([
   GridComponent
 ]);
 
-const props = defineProps({
-  title: {
-    type: String,
-    default: '累计分时生成量'
-  }
+const props = withDefaults(defineProps<{
+  title?: string;
+}>(), {
+  title: '累计分时生成量'
 });
 
 const timeRangeOptions = [
@@ -59,15 +59,15 @@ const timeRangeOptions = [
   { label: '1年', value: 365 }
 ];
 
-const timeRange = ref(7); // Default 7 days
+const timeRange = ref(7);
 const loading = ref(false);
-const chartData = ref({});
+const chartData = ref<Record<string, number>>({});
 
 const fetchData = async () => {
   loading.value = true;
   try {
     const data = await fetchCumulativeHourlyStats(timeRange.value);
-    chartData.value = data;
+    chartData.value = data as Record<string, number>;
   } catch (error) {
     console.error('Failed to fetch cumulative hourly stats:', error);
   } finally {
@@ -83,7 +83,7 @@ onMounted(() => {
   fetchData();
 });
 
-const option = computed(() => {
+const option = computed<EChartsOption>(() => {
   const hours = Object.keys(chartData.value).sort();
   const counts = hours.map(h => chartData.value[h]);
 
@@ -93,8 +93,8 @@ const option = computed(() => {
       axisPointer: {
         type: 'shadow'
       },
-      formatter: (params) => {
-        const item = params[0];
+      formatter: (params: unknown) => {
+        const [item] = params as Array<{ name: string; value: number }>;
         return `${item.name}时: <span style="font-weight: bold; color: #722ed1">${item.value}</span> 次生成`;
       }
     },

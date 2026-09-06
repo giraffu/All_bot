@@ -15,6 +15,16 @@ def test_sidebar_navigation_scrolls_inside_the_viewport():
     assert "flex-shrink: 0;" in styles
 
 
+def test_user_presenters_stay_outside_the_bootstrap_monolith():
+    bootstrap_js = (STATIC_DIR / "js" / "bootstrap.js").read_text(encoding="utf-8")
+    user_views_js = (STATIC_DIR / "js" / "userViews.js").read_text(encoding="utf-8")
+
+    assert len(bootstrap_js.splitlines()) <= 5100
+    assert 'from "./userViews.js?v=20260906-user-presenters-v1"' in bootstrap_js
+    assert "export function renderUserVisualChartsView" in user_views_js
+    assert "export function renderUserGroupsView" in user_views_js
+
+
 def test_generation_history_table_fits_desktop_and_can_copy_prompts():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
@@ -71,7 +81,7 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "/static/vendor/echarts.min.js" in html
     assert "/static/styles.css?v=20260905-compact-sidebar-v1" in html
     assert (
-        'type="module" src="/static/js/bootstrap.js?v=20260905-minimax-h3-v1"'
+        'type="module" src="/static/js/bootstrap.js?v=20260906-user-presenters-v1"'
         in html
     )
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
@@ -84,6 +94,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "buildLineBarOption" in app_js
     assert "buildDonutOption" in app_js
     assert "buildStackedBarOption" in app_js
+    assert 'from "./userViews.js?v=20260906-user-presenters-v1"' in app_js
+    assert "export function renderUserVisualChartsView" in app_js
+    assert "export function renderUserGroupsView" in app_js
     assert 'data-tab="prompt-vectors"' in html
     assert 'data-tab="generation-history"' in html
     assert 'data-panel="generation-history"' in html

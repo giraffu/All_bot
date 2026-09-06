@@ -5,7 +5,7 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
 
 # AllBot 智能知识库自动更新 (KB Auto-Updater)
 
-本技能用于维护 AllBot 的知识体系与代码现状一致。当核心门面、运行时依赖、状态流、接口 I/O、测试策略或技能边界发生变化时，应优先用本技能同步 `docs/`、`.codex/skills/` 与项目记忆。
+维护 AllBot 知识与代码一致。核心门面、运行时依赖、状态流、接口 I/O、测试策略或技能边界变化时，同步 `docs/`、`.codex/skills/` 与项目记忆。
 
 目标不是让每层都“完整”，而是形成低 token 的导航 interface：
 `AGENTS.md → 命中 Skill → 代码/测试事实源 → 一篇命中专题文档`。普通任务不预读
