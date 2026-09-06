@@ -341,7 +341,7 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
     )
     monkeypatch.setattr("src.database.core.AsyncSessionLocal", SessionFactory)
     monkeypatch.setattr(
-        "src.web_api.services.character_reference_service.resolve_ready_character_sheet",
+        "src.web_api.services.character_reference_query_service.resolve_ready_character_sheet",
         resolve,
     )
     submit = AsyncMock(return_value={"task_id": "central-ic", "cost": 1})

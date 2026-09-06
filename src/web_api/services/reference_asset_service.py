@@ -24,6 +24,7 @@ from src.web_api.services.prompt_media_policy import (
     PROMPT_MEDIA_MAX_BYTES,
     normalize_owned_prompt_media_key,
 )
+from src.web_api.services import character_reference_query_service
 from src.domain_config.minimax_h3 import MINIMAX_H3_REFERENCE_VIDEO_MAX_BYTES
 
 
@@ -474,12 +475,8 @@ async def resolve_reference_set(
     descriptions: list[str] = []
     for ref in character_refs:
         if ref["source"] == "private":
-            from src.web_api.services.character_reference_service import (
-                resolve_ready_character_sheet,
-            )
-
             try:
-                ingredient = await resolve_ready_character_sheet(
+                ingredient = await character_reference_query_service.resolve_ready_character_sheet(
                     db=db, user_id=user_id, character_id=ref["id"]
                 )
             except HTTPException as exc:

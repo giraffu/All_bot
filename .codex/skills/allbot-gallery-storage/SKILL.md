@@ -26,6 +26,10 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
   `gallery_core_dependencies.py` 注入。
 - feed SQL 位于 `src/services/gallery_feed_queries.py`，不得回写 core。
 - Web adapter 负责响应与展示转换；对象存储探测不能混在长数据库事务中。
+- 人物参考表 owner/readiness 查询统一走
+  `character_reference_query_service.py`；`reference_asset_service.py` 不反向依赖
+  人物写服务。人物子图生成由 characters router 显式注入 Web task submitter，
+  人物服务不得 import `task_submission_service.py`。
 - `/api/gallery/posts/{post_id}/apply-context` 是 Web 模板应用事实入口，
   必须从 `History` 还原请求语义，而不是只看输出展示字段。
 - QQCC 市集是轻量 Bot adapter，不复制 Web feed/query 规则，也不注册主

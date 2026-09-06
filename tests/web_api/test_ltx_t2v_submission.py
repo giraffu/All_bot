@@ -204,7 +204,7 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
 
     from src.database import core as db_core
     from src.services.storage import storage
-    from src.web_api.services import character_reference_service
+    from src.web_api.services import character_reference_query_service
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
     resolve = AsyncMock(
@@ -220,7 +220,7 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
         ]
     )
     monkeypatch.setattr(
-        character_reference_service, "resolve_ready_character_sheet", resolve
+        character_reference_query_service, "resolve_ready_character_sheet", resolve
     )
     monkeypatch.setattr(storage, "async_object_size", AsyncMock(return_value=2048))
 
@@ -343,11 +343,11 @@ async def test_ltx_t2v_ic_maps_non_ready_character_to_domain_error(monkeypatch):
 
     from src.database import core as db_core
     from src.services.storage import storage
-    from src.web_api.services import character_reference_service
+    from src.web_api.services import character_reference_query_service
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
     monkeypatch.setattr(
-        character_reference_service,
+        character_reference_query_service,
         "resolve_ready_character_sheet",
         AsyncMock(side_effect=HTTPException(status_code=400, detail="人物未就绪。")),
     )

@@ -388,7 +388,7 @@ async def test_mixed_private_official_characters_and_official_environment_resolv
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "src.web_api.services.character_reference_service.resolve_ready_character_sheet",
+        "src.web_api.services.character_reference_query_service.resolve_ready_character_sheet",
         AsyncMock(
             return_value=SimpleNamespace(
                 sheet_object_key="private-panel.png", description="private adult"

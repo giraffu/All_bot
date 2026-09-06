@@ -103,6 +103,11 @@ sequenceDiagram
   History 和媒体归档 outbox。每个 source 只计算一次 SHA-256，copy 写入可信
   metadata，目标只做 HEAD；provider 原生 checksum 可免应用层读取。多输入保持
   原顺序并使用默认 3 的有界并发。复制失败时不提交任务。
+- 人物资产、参考图解析与 Web submission 现在保持单向依赖：
+  `character_reference_query_service.py` 只负责 owner/readiness 读取，
+  `reference_asset_service.py` 通过该 query seam 取得私有人物参考表；人物写服务
+  不再反向依赖 `task_submission_service.py`，characters router 作为 composition
+  root 显式注入子图 task submitter。缺少 submitter 时在数据库写入前 fail closed。
 - `user-data-prod` 的对象过期规则只能匹配 `staging/` 前缀并保留 1 天；
   `history/`、`task-results/`、`task-inputs/`、`web_uploads/`、数字用户目录、
   `template-submissions/` 和兼容期 `temps/` 不在该规则内。新模板投稿只写

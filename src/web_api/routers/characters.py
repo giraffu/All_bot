@@ -40,6 +40,7 @@ from src.web_api.services.character_reference_service import (
     upload_character_view,
     confirm_character_identity,
 )
+from src.web_api.services.task_submission_service import submit_generation_task
 
 
 def _require_character_assets_enabled() -> None:
@@ -124,6 +125,7 @@ async def create_character_view(
             character_id=character_id,
             view_type=view_type,
             payload=payload,
+            submit_generation_task_func=submit_generation_task,
         )
     except QueueCapacityError as exc:
         raise HTTPException(
