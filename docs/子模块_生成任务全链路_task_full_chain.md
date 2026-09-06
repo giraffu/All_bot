@@ -108,6 +108,12 @@ sequenceDiagram
 - 若是 Web 一等任务类型，前端必须提供稳定的 `task_type`
 - 输入图片、LoRA、分辨率、时长等应统一收口到 `inputs`
 - 新任务类型若要在主站展示为独立能力，前端页面、卡片入口、i18n 和历史/投稿/收藏相关展示也要一并补齐
+- `frontend/tsconfig.app.json` 对未使用局部变量和参数执行硬门禁；废弃交互链应连同
+  store wrapper、runtime helper 与只测试该死分支的测试一起删除，不能靠关闭检查保留。
+- `frontend/src/api/index.ts` 只实现 HTTP transport 与错误映射；token、登出和导航由
+  `mountApp.ts` 的 runtime adapter 显式注入，禁止恢复 `api -> auth/router -> api`
+  循环依赖。Ant Design Vue、TON 等页面依赖交给 Vite 按实际引用拆包，不建立覆盖整个
+  包名的宽泛 manual chunk。
 
 ### 4.2 任务提交与前端运行态
 
@@ -128,7 +134,7 @@ sequenceDiagram
    - `tasksStore` 跟踪并展示后端已经接纳的全部非终态任务；新任务到来时可以自动收起
      旧的终态气泡，但不得丢弃仍在 pending/running 的任务
 3. `tasksStore.startStatusPolling(...)` 默认每 15 秒查询 `/tasks/{task_id}/status` 粗状态；pending 可显示队列位置，running 不显示生成百分比
-4. 收到粗状态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 `awaitingResult=true` 并展示“保存结果中”，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况。页面从后台/BFCache 恢复、重新联网或重新打开后必须按持久化任务状态主动续接 result/status polling，并以任务 ID 去重，不能让浏览器冻结的旧 timer 导致“保存中”永远不进入完成态。
+4. 收到粗状态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 `awaitingResult=true` 并展示“保存结果中”，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况。页面从后台/BFCache 恢复、重新联网或重新打开后必须按持久化任务状态主动续接 result/status polling，并以任务 ID 去重，不能让浏览器冻结的旧 timer 导致“保存中”永远不进入完成态。公共 Web 不再保留没有生产调用方的 detached result probe；恢复只复用这套 status/result 状态机。
 5. 若历史已落库，也可能通过最近历史或详情弹层展示结果
 6. pending 悬浮任务的关闭按钮按用户撤销处理，调用 `/tasks/cancel/{registry_task_id}`；非 pending 关闭按钮仅收起本地悬浮任务，不代表后端取消
 
@@ -170,6 +176,9 @@ application 调用与失败清理。
 职责：
 
 - 先执行 Web 入口级禁用任务检查；`i2i_draw` 局部重绘当前在 Web 端关闭，会在生成 `task_id`、扣费和入队前返回领域错误
+- H3 提交先执行不触发 I/O 的请求形状校验，再读取服务端模型 profile、解析人物/音频/
+  视频引用；错误模式或非法引用必须在数据库和对象存储访问前确定拒绝。公开请求不能
+  覆盖内部执行类型、模型或 LoRA，profile 仍由服务端权威注入。
 - 从启动时显式装配的 `TaskApplication` 调用 `submit(command, policy, journal)`
 - 通过 `WebSubmissionIntentJournal` 在派发前持久化完整 intent
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`
@@ -712,8 +721,11 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - `refund_user_cancel` 是账本级幂等副作用。取消 finalizer 会基于 `registry_task_id` 生成 `task_refund:refund_user_cancel:<registry_task_id>`，并写入 `user_logs.extra_info.credit_idempotency_key`；账本层在同一用户行锁事务内先查该 key，命中时跳过加余额和重复日志。用户取消接口、Web monitor、Web finalizer 恢复或 Bot 侧重复收口同一 `cancelled` 任务时，只允许第一次真正退款。
 - 用户侧不展示生成百分比；Central 和 Worker 内部仍可写入完整 progress/status/heartbeat，供 monitor、排障和终态收口使用
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
-- SSE 不能只依赖 Redis Pub/Sub 事件。Pub/Sub 是进度快路径；Web API 订阅、读取或关闭 Pub/Sub 失败时不得让 SSE 冒 ASGI Exception，同一连接应继续通过 Central `/status/{backend_task_id}` 补偿轮询到终态。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。Web API 会对同一 `api_base + backend_task_id` 的 status 拉取做约 2 秒共享缓存，避免多个浏览器连接重复打 Central；同一任务状态/队列位置/进度连续不变时，Web SSE 补偿轮询会从 pending 约 5 秒、running 约 10 秒逐步退避到默认最多约 20 秒，状态变化后恢复初始间隔。
-- Central `/status/{backend_task_id}` 是单任务观测接口，默认约 2 秒 TTL、4 秒 stale 窗口，并有最大条目数上限；过期刷新期间可短暂返回旧快照，真实任务分发、Worker 上报、完成回流和 cancel 仍走实时路径。Central 原始 pending 响应里的 `queue_pos` 是全局队列位置；调用方传 `include_type_position=true` 时会额外返回同任务类型内的 `queue_type_pos`。当前 Bot 任务进度、Web 粗状态和 Web SSE fallback 都请求 `include_type_position=true`，用户态展示优先使用 `queue_type_pos`，缺失时回退全局 `queue_pos`；Web 对外字段名仍保持 `queue_pos` 以兼容前端。排查时若看到前端状态晚几秒进入终态，应结合 Redis 事件、Central `complete` 日志和 Web monitor 落库判断。可用 `TASK_STATUS_CACHE_TTL_SECONDS`、`TASK_STATUS_CACHE_STALE_SECONDS`、`TASK_STATUS_CACHE_MAX_ENTRIES` 调整。
+- SSE 以 Redis Pub/Sub 为快路径，并持续用 Central status 补偿到终态；Redis 失败
+  不得中断 ASGI 连接。相同 backend task 的查询共享短时缓存，状态不变时自适应退避。
+- Central status 是带 TTL/stale 上限的单任务观测接口，不参与分发或回流。用户态
+  队列位置优先取同类型 `queue_type_pos`，缺失才回退全局 `queue_pos`；Web 对外仍使用
+  `queue_pos`。缓存参数与排障步骤见任务调度专项文档。
 - Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。Dashboard 对 active task 的 backend status 聚合默认再做约 5 秒缓存；Bot 用户侧任务进度默认不再订阅 Pub/Sub，而是每 15 秒 HTTP polling 粗状态，pending 同任务类型队列位置变化可编辑消息，running 不按 progress 百分比反复编辑。
 - `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 `awaitingResult` / “保存结果中” 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 

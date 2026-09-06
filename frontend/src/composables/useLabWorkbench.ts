@@ -698,7 +698,6 @@ export function useLabWorkbench() {
     minimaxH3Mode,
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
-    minimaxH3AddonItems,
     minimaxH3ReferenceAudio: h3ReferenceAudio.referenceAudio,
     minimaxH3ReferenceVideo: h3ReferenceVideo.referenceVideo,
     minimaxH3ReferenceVideoClipDuration: h3ReferenceVideo.referenceVideoClipDuration,

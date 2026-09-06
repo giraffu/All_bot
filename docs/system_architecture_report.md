@@ -52,9 +52,14 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
   loop 默认仍开启，只有显式滚动切换后才退出原宿主。
 - `billing-reconciler` 是默认禁用的 TON/USDT-TON 轮询宿主，通道各自监督；
   主 Bot 旧轮询默认保持，只有验证新宿主 health/checkpoint 后才显式关闭。
+- 公共 Web 启动时先获取运行时入口开关，再装配 Pinia、Router 与 API runtime；
+  API transport 通过显式回调读取 token、处理 401 和导航，不反向导入 auth store
+  或 router。路由页面保持动态加载，Ant Design Vue 与 TON 依赖交给构建器按引用
+  拆分，避免宽泛手工 chunk 把支付依赖带入首屏预加载。
 - 公共 Web 的任务提交使用 typed `useTaskSubmission` 与 status/result polling；
-  无生产调用的 SSE client 已删除，后端 stream 路由暂作兼容。Dashboard 新 SFC
-  强制 TypeScript，legacy 清单只能单调缩减。
+  TypeScript 构建强制拒绝未使用局部变量和参数。无生产调用的 SSE client 与 detached
+  result probe 已删除，后端 stream 路由暂作兼容。Dashboard 新 SFC 强制 TypeScript，
+  legacy 清单只能单调缩减。
 - 兼容退出以 `config/compat_registry.json` 为机器事实源；必须有 owner、
   telemetry key、替代入口、连续无命中窗口和历史数据清退条件。
 

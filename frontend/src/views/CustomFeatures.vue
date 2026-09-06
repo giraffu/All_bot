@@ -84,7 +84,6 @@ const {
   minimaxH3Mode,
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
-  minimaxH3ReferenceDescriptions,
   minimaxH3ReferenceAudio,
   minimaxH3ReferenceAudioUploading,
   beforeUploadMinimaxH3ReferenceAudio,

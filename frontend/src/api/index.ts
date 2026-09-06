@@ -1,6 +1,4 @@
 import axios from 'axios'
-import { useAuthStore } from '@/stores/auth'
-import router from '@/router'
 import { message } from 'ant-design-vue'
 import i18n from '@/i18n'
 import { getRuntimeConfig } from '@/config/runtime'
@@ -10,6 +8,24 @@ const api = axios.create({
   baseURL: getRuntimeConfig('api_base_url', '/api'),
   timeout: 30000
 })
+
+type ApiRuntime = {
+  getToken: () => string | null
+  handleUnauthorized: () => void
+  getCurrentPath: () => string
+  navigate: (path: string) => void | Promise<unknown>
+}
+
+let apiRuntime: ApiRuntime = {
+  getToken: () => null,
+  handleUnauthorized: () => undefined,
+  getCurrentPath: () => '',
+  navigate: () => undefined,
+}
+
+export const configureApiRuntime = (runtime: ApiRuntime) => {
+  apiRuntime = runtime
+}
 
 const callerHandledUnauthorizedPaths = [
   '/auth/login',
@@ -72,9 +88,9 @@ function resolveApiErrorMessage(data: ApiErrorPayload | undefined, fallback: str
 }
 
 api.interceptors.request.use((config) => {
-  const authStore = useAuthStore()
-  if (authStore.token) {
-    config.headers.Authorization = `Bearer ${authStore.token}`
+  const token = apiRuntime.getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
@@ -100,9 +116,8 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      const authStore = useAuthStore()
-      authStore.logout()
-      router.push('/login')
+      apiRuntime.handleUnauthorized()
+      void apiRuntime.navigate('/login')
       message.error(t('api.session_expired'))
     } else if (status === 402) {
       message.warning(resolveApiErrorMessage(data, t('api.insufficient_balance')))
@@ -129,8 +144,8 @@ api.interceptors.response.use(
         || data?.intent === 'MAINTENANCE'
         || detailPayload?.intent === 'MAINTENANCE'
       ) {
-        if (router.currentRoute.value.path !== '/maintenance') {
-          router.push('/maintenance')
+        if (apiRuntime.getCurrentPath() !== '/maintenance') {
+          void apiRuntime.navigate('/maintenance')
         }
       } else {
         message.error(t('api.system_error'))

@@ -5,6 +5,8 @@ import '../../shared/web/theme-tokens.css'
 import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
+import { configureApiRuntime } from './api'
+import { useAuthStore } from './stores/auth'
 import { useThemeStore } from './stores/theme'
 
 const CHUNK_RELOAD_MARKER_KEY = '__allbot_chunk_reload_marker__'
@@ -69,7 +71,15 @@ export const mountApp = () => {
 
   const app = createApp(App)
   const pinia = createPinia()
+  const authStore = useAuthStore(pinia)
   const themeStore = useThemeStore(pinia)
+
+  configureApiRuntime({
+    getToken: () => authStore.token,
+    handleUnauthorized: () => authStore.logout(),
+    getCurrentPath: () => router.currentRoute.value.path,
+    navigate: (path) => router.push(path),
+  })
 
   themeStore.initTheme()
 

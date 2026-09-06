@@ -110,6 +110,9 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
         "src.web_api.services.reference_asset_service.resolve_h3_reference_refs",
         resolve,
     )
+    profile_loader = AsyncMock(
+        return_value={"main_model": "10eros_bf16", "addon_items": []}
+    )
 
     await service.submit_generation_task(
         req=TaskGenerateRequest(
@@ -137,6 +140,7 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
         promote_staged_inputs_func=AsyncMock(
             side_effect=lambda **kwargs: list(kwargs["input_refs"])
         ),
+        advanced_video_profile_loader=profile_loader,
     )
 
     submitted = submit.await_args.kwargs["inputs"]
@@ -155,6 +159,9 @@ async def test_h3_ref2v_resolves_typed_character_references_before_submission(
 @pytest.mark.parametrize("task_type", ["minimax_h3_i2v", "minimax_h3_flf2v"])
 async def test_h3_frame_modes_reject_character_reference_refs(monkeypatch, task_type):
     monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
+    profile_loader = AsyncMock(
+        return_value={"main_model": "10eros_bf16", "addon_items": []}
+    )
     with pytest.raises(CoreDomainError, match="仅支持参考图生视频"):
         await service.submit_generation_task(
             req=TaskGenerateRequest(
@@ -172,7 +179,9 @@ async def test_h3_frame_modes_reject_character_reference_refs(monkeypatch, task_
             ),
             current_user=_user(),
             get_balance=AsyncMock(return_value=100),
+            advanced_video_profile_loader=profile_loader,
         )
+    profile_loader.assert_not_awaited()
 
 
 @pytest.mark.asyncio

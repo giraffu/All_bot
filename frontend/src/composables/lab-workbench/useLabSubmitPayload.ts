@@ -15,7 +15,6 @@ import {
   getLtx25VideoUpscaleResolutionOptions,
   type LabModeConfig,
   type LabUploadSlotId,
-  type MiniMaxH3AddonItem,
 } from '@/features/generation/labModeConfig'
 import { isScail2ModeId } from './modeHelpers'
 import type {
@@ -52,7 +51,6 @@ type UseLabSubmitPayloadOptions = {
   minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
   minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
-  minimaxH3AddonItems?: Ref<MiniMaxH3AddonItem[]>
   minimaxH3ReferenceAudio?: Ref<UploadedReferenceAudio | null>
   minimaxH3ReferenceVideo?: Ref<UploadedReferenceVideo | null>
   minimaxH3ReferenceVideoClipDuration?: Ref<H3ReferenceVideoClipDuration>
@@ -92,7 +90,6 @@ export function useLabSubmitPayload({
   minimaxH3Mode,
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
-  minimaxH3AddonItems,
   minimaxH3ReferenceAudio,
   minimaxH3ReferenceVideo,
   minimaxH3ReferenceVideoClipDuration,
