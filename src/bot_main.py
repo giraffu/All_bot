@@ -4,33 +4,12 @@ import os
 
 from config import BOT_TYPE
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CallbackQueryHandler,
-    CommandHandler,
-    MessageHandler,
-    PreCheckoutQueryHandler,
-    TypeHandler,
-    filters,
-)
+from telegram.ext import ApplicationBuilder
 
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
-from src.handlers.callback_handler import handle_callback_query
-from src.handlers.command_handler import (
-    cancel,
-    setup_commands,
-    start,
-    toggle_maintenance,
-)
-from src.handlers.message_handler import (
-    handle_checkin,
-    handle_document,
-    handle_photo,
-    handle_prompt,
-    handle_queue_status,
-    handle_video,
-)
+from src.handlers.command_handler import setup_commands
+from src.handlers.main_bot_handler_registry import register_main_bot_handlers
 from src.logger import setup_logging
 from src.services.payment_validator import build_ton_payment_validator_if_available
 from src.services.usdt_ton_payment_validator import (
@@ -47,6 +26,10 @@ from src.services.telegram_runtime_bootstrap import (
     resolve_telegram_file_base_url,
 )
 from src.services.telegram_update_processor import build_main_bot_update_processor
+from src.services.main_bot_task_supervisor import (
+    spawn_main_bot_task,
+    stop_main_bot_tasks,
+)
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 from src.task_application_runtime import configure_task_application
 
@@ -96,55 +79,55 @@ async def post_init(application):
     await init_db()
     await setup_commands(application)
 
-    # Create a set to hold strong references to background tasks
-    # The event loop only keeps weak references, so tasks can be garbage collected mid-execution if not stored.
-    if "bg_tasks" not in application.bot_data:
-        application.bot_data["bg_tasks"] = set()
-
     if _env_enabled("MAIN_BOT_PAYMENT_POLLING_ENABLED", default=True):
         payment_validator = build_ton_payment_validator_if_available(application)
         if payment_validator is not None:
-            task_payment = asyncio.create_task(payment_validator.poll_transactions())
-            application.bot_data["bg_tasks"].add(task_payment)
-            task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
-
-        usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
-        if usdt_payment_validator is not None:
-            task_usdt_payment = asyncio.create_task(
-                usdt_payment_validator.poll_transactions()
+            spawn_main_bot_task(
+                application,
+                payment_validator.poll_transactions(),
+                name="ton-payment-poller",
             )
-            application.bot_data["bg_tasks"].add(task_usdt_payment)
-            task_usdt_payment.add_done_callback(
-                application.bot_data["bg_tasks"].discard
+
+        usdt_payment_validator = build_usdt_ton_payment_validator_if_available(
+            application
+        )
+        if usdt_payment_validator is not None:
+            spawn_main_bot_task(
+                application,
+                usdt_payment_validator.poll_transactions(),
+                name="usdt-ton-payment-poller",
             )
 
     # Recover tasks from Redis
-    task_recover = asyncio.create_task(
-        recover_active_tasks(application, client_type="bot", include_legacy=True)
+    spawn_main_bot_task(
+        application,
+        recover_active_tasks(application, client_type="bot", include_legacy=True),
+        name="task-recovery",
     )
-    application.bot_data["bg_tasks"].add(task_recover)
-    task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
 
     # Start automated zombie task cleaner
     if _env_enabled("MAIN_BOT_ZOMBIE_SWEEP_ENABLED", default=True):
-        task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
-        application.bot_data["bg_tasks"].add(task_zombies)
-        task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
+        spawn_main_bot_task(
+            application,
+            clean_zombies_loop(application.bot),
+            name="zombie-sweeper",
+        )
 
     from src.services.advanced_video_prompt_task_service import (
         run_advanced_video_prompt_delivery_loop,
     )
 
-    task_prompt_delivery = asyncio.create_task(
-        run_advanced_video_prompt_delivery_loop(application)
+    spawn_main_bot_task(
+        application,
+        run_advanced_video_prompt_delivery_loop(application),
+        name="advanced-video-prompt-delivery",
     )
-    application.bot_data["bg_tasks"].add(task_prompt_delivery)
-    task_prompt_delivery.add_done_callback(application.bot_data["bg_tasks"].discard)
 
 
 async def post_shutdown(application):
     core_logger = logging.getLogger("bot.core")
     core_logger.info("Bot is shutting down. Tasks are persisted in Redis.")
+    await stop_main_bot_tasks(application)
     await TaskRegistry.log_restart_recovery_policy(application.bot)
     from src.services.redis_client import redis_client
 
@@ -169,9 +152,7 @@ def build_advanced_video_compatibility_handlers():
         get_advanced_video_pro_fsm_handler,
     )
 
-    return [
-        get_advanced_video_pro_fsm_handler(include_ltx_compatibility_routes=False)
-    ]
+    return [get_advanced_video_pro_fsm_handler(include_ltx_compatibility_routes=False)]
 
 
 def main():
@@ -217,58 +198,14 @@ def main():
         .build()
     )
 
-    from src.handlers.error_handlers import global_error_handler
-    from src.handlers.fsm.affiliate_redeem_fsm import get_affiliate_redeem_fsm_handler
-    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
-    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
-    from src.handlers.fsm.image_to_video_fsm import get_image_to_video_fsm_handler
-    from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
-    from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
-    from src.handlers.fsm.scail2_video_fsm import get_scail2_video_fsm_handler
-    from src.handlers.fsm.ltx25_video_upscale_fsm import get_ltx25_video_upscale_fsm_handler
-    from src.handlers.fsm.txt2img_fsm import get_txt2img_fsm_handler
-    from src.handlers.fsm.wan22_video_v2_fsm import get_wan22_video_v2_fsm_handler
-    from src.handlers.payment_handler import (
-        precheckout_callback,
-        successful_payment_callback,
+    register_main_bot_handlers(
+        app,
+        middleware=global_middleware,
+        advanced_video_entry_handler=build_advanced_video_entry_handler(),
+        advanced_video_compatibility_handlers=(
+            build_advanced_video_compatibility_handlers()
+        ),
     )
-
-    # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
-    app.add_handler(TypeHandler(Update, global_middleware), group=-1)
-    app.add_handler(get_affiliate_redeem_fsm_handler())
-    app.add_handler(get_scail2_video_fsm_handler())
-    app.add_handler(get_ltx25_video_upscale_fsm_handler())
-    app.add_handler(get_faceswap_fsm_handler())
-    app.add_handler(get_txt2img_fsm_handler())
-    app.add_handler(get_edit_image_fsm_handler())
-    app.add_handler(build_advanced_video_entry_handler())
-    for compatibility_handler in build_advanced_video_compatibility_handlers():
-        app.add_handler(compatibility_handler)
-    app.add_handler(get_image_to_video_fsm_handler())
-    app.add_handler(get_wan22_video_v2_fsm_handler())
-    app.add_handler(get_quick_image_fsm_handler())
-    app.add_handler(get_quick_video_fsm_handler())
-
-    # Register Fallback Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(CommandHandler("maintenance", toggle_maintenance))
-    app.add_handler(CommandHandler("checkin", handle_checkin))
-    app.add_handler(CommandHandler("queue", handle_queue_status))
-    app.add_handler(CallbackQueryHandler(handle_callback_query))
-    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
-    app.add_handler(
-        MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback)
-    )
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    app.add_handler(
-        MessageHandler(filters.Document.IMAGE | filters.Document.VIDEO, handle_document)
-    )
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
-
-    # Register Global Error Handler
-    app.add_error_handler(global_error_handler)
 
     core_logger.info(f"🧪 {bot_type} Telegram Bot started")
     import signal

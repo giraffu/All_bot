@@ -10,7 +10,7 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 
 | 层 | 主要职责 | 代表入口 |
 | --- | --- | --- |
-| 用户入口 | Telegram/Web 交互、认证、输入收集、展示 | `src/bot_main.py`、`src/web_api/main.py`、`qqcc_bot/main.py` |
+| 用户入口 | Telegram/Web 交互、认证、输入收集、展示 | `src/bot_main.py` + `src/handlers/main_bot_handler_registry.py`、`src/web_api/main.py`、`qqcc_bot/main.py` |
 | 业务编排 | 任务、计费、用户、Gallery 的公开 facade | `src/core/`、`src/services/` |
 | 执行控制面 | 队列、Worker 协议、状态和调度 | `backend/app/` |
 | 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | canonical `workers/comfy_agent/`；LAN/RunPod 仅保留运行 adapter/config |
@@ -39,7 +39,8 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 ### 2.2 入口与服务
 
 - Telegram FSM 只负责平台状态、素材、回复和清理，任务计划进入 application
-  service。
+  service；主 Bot 的 handler 顺序由独立 registry 维护，自建后台 task 由 lifecycle
+  supervisor 在 shutdown 时统一 cancel/await。
 - Web router 保持薄，展示转换进入 presenter/service；对象存储探测不能与
   长数据库事务混合。
 - `backend/app` 是 Central/Worker 执行面，不是普通 Web/BFF。用户 API 主入口

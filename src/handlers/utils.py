@@ -1,24 +1,15 @@
-import logging
 from functools import wraps
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from src.context import user_id_ctx
-from src.core.task_core import (
-    ConcurrencyLimitError,
-    CoreDomainError,
-    InsufficientCreditsError,
-)
 from src.services.permission_service import permission_service
-from src.utils import robust_send_message
 from src.utils import (
     create_background_task,
     get_user_channel_status,
     notify_inviter_reward,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def with_db_logging_context(func):
@@ -36,46 +27,6 @@ def with_db_logging_context(func):
         finally:
             if token:
                 user_id_ctx.reset(token)
-
-    return wrapper
-
-
-def with_unified_error_handler(func):
-    @wraps(func)
-    async def wrapper(
-        update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs
-    ):
-        try:
-            return await func(update, context, *args, **kwargs)
-        except ConcurrencyLimitError as e:
-            if update.effective_chat:
-                await robust_send_message(f"⚠️ {e}")
-        except InsufficientCreditsError as e:
-            if update.effective_chat:
-                await robust_send_message(f"⚠️ {e}")
-        except CoreDomainError as e:
-            if update.effective_chat:
-                await robust_send_message(f"❌ {e}")
-        except Exception as e:
-            logger.error(
-                f"Unhandled exception in handler {func.__name__}: {e}", exc_info=True
-            )
-            if update.effective_chat:
-                error_msg = str(e)
-                if any(
-                    kw in error_msg
-                    for kw in [
-                        "Circuit is open",
-                        "All connection attempts failed",
-                        "Connection refused",
-                        "timeout",
-                        "ConnectError",
-                    ]
-                ) or "CircuitBreaker" in str(type(e)):
-                    user_msg = "当前服务器繁忙，请稍后再试"
-                else:
-                    user_msg = f"系统错误：{error_msg}"
-                await robust_send_message(f"❌ {user_msg}")
 
     return wrapper
 

@@ -46,7 +46,7 @@
 | `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路与生成 task type contract | Web/Bot、Central、Worker、History | current | 跨层任务或任务类型改动 |
 | `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性、状态协议与任务类型门禁 | `backend/app`、API client、Worker | current | 队列、worker 协议或 task enum |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
-| `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、返佣兑 USDT | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
+| `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、主 Bot 装配与生命周期、返佣兑 USDT | handler registry、runtime bootstrap/update processor、task supervisor、FSM services | current | Bot 交互 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env、当次节点探测 | runtime-verification-required | Telegram 文件/代理 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | 官方 QQCC 与 Config | QQCC code、config service、focused tests | current | QQCC 功能 |
 | `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md` | 私有 Bot webhook/租户 | schema、credentials、worker、owner/admin API | current | 私有 QQCC |
@@ -124,7 +124,7 @@
 | `.codex/skills/allbot-task-engine/SKILL.md` | 任务生命周期路由 | task core/Central/Worker docs | current | 任务改动 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | 计费鉴权红线 | billing/auth code | current | 金钱/身份 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 路由 | Gallery/storage code | current | 社区/存储 |
-| `.codex/skills/allbot-tg-fsm/SKILL.md` | Telegram FSM 路由 | handlers/runtime services | current | Bot 交互 |
+| `.codex/skills/allbot-tg-fsm/SKILL.md` | Telegram FSM 路由 | handler registry、runtime/update/lifecycle services、FSM services | current | Bot 交互 |
 | `.codex/skills/allbot-observer-bot/SKILL.md` | Observer Bot 路由 | Observer 代码、专项文档与发布契约 | current | 通知、队列告警或群报告 |
 | `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | QQCC 官方/私有 Bot 路由 | QQCC code/docs | current | QQCC |
 | `.codex/skills/allbot-ops-deployment/SKILL.md` | 发布运维路由 | release/compose/docs | current | 运维 |
