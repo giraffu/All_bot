@@ -545,217 +545,229 @@ def _build_qqcc_video_chain_segment(
     )
 
 
-def build_quick_video_submission_plan(
+def _build_legacy_quick_video_submission_plan(
+    *,
+    mode: str,
+    resolution: str,
+    duration: str,
+    allowed_resolutions: list[str] | None,
+    allowed_durations: list[str] | None,
+) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
+    if (allowed_resolutions is not None and resolution not in allowed_resolutions) or (
+        allowed_durations is not None and duration not in allowed_durations
+    ):
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+        )
+    mode_submission = resolve_quick_video_mode_submission(mode)
+    if mode_submission is None:
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.UNSUPPORTED_MODE
+        )
+    default_prompt_key, default_prompt_text = mode_submission
+    return QuickVideoSubmissionPlan(
+        kind=QuickVideoSubmissionKind.LEGACY_VIDEO,
+        mode=mode,
+        resolution=resolution,
+        duration=duration,
+        total_cost=calculate_quick_video_cost(resolution, duration),
+        default_prompt_key=default_prompt_key,
+        default_prompt_text=default_prompt_text,
+    )
+
+
+def _normalize_ai_video_duration(scene: dict[str, Any]) -> str:
+    try:
+        duration_seconds = int(scene.get("duration") or 5)
+    except (TypeError, ValueError):
+        duration_seconds = 5
+    if duration_seconds not in {5, 10, 15}:
+        duration_seconds = 5
+    return f"{duration_seconds}s"
+
+
+def _resolve_ref2v_reference_paths(
     *,
     fsm_data: dict[str, Any],
-    qqcc_config: dict[str, Any] | None,
-    allowed_resolutions: list[str] | None,
-    allowed_durations: list[str] | None = None,
-) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
-    resolution, duration = normalize_quick_video_selection(
-        resolution=str(fsm_data.get("resolution") or ""),
-        duration=str(fsm_data.get("duration") or ""),
-    )
-    mode = str(fsm_data.get("mode") or "")
-
-    if qqcc_config is None:
-        if (
-            allowed_resolutions is not None
-            and resolution not in allowed_resolutions
-        ) or (
-            allowed_durations is not None
-            and duration not in allowed_durations
-        ):
-            return QuickVideoSubmissionReject(
-                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-            )
-        mode_submission = resolve_quick_video_mode_submission(mode)
-        if mode_submission is None:
-            return QuickVideoSubmissionReject(
-                QuickVideoSubmissionRejectReason.UNSUPPORTED_MODE
-            )
-        default_prompt_key, default_prompt_text = mode_submission
-        return QuickVideoSubmissionPlan(
-            kind=QuickVideoSubmissionKind.LEGACY_VIDEO,
-            mode=mode,
-            resolution=resolution,
-            duration=duration,
-            total_cost=calculate_quick_video_cost(resolution, duration),
-            default_prompt_key=default_prompt_key,
-            default_prompt_text=default_prompt_text,
+    selected_reference_image: str,
+    scene_reference_images: list[str],
+) -> list[str | None] | QuickVideoSubmissionReject:
+    replacement_paths = fsm_data.get("reference_image_replacement_paths")
+    if replacement_paths is not None and not isinstance(replacement_paths, dict):
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
         )
 
-    scene_kind = str(fsm_data.get("scene_kind") or "video")
-    if scene_kind == "ai_video":
-        scene = resolve_qqcc_ai_video_scene_from_fsm_data(qqcc_config, fsm_data)
-        if (
-            not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
-            or not has_enabled_qqcc_ai_video_scenes(qqcc_config)
-            or scene is None
-        ):
-            return QuickVideoSubmissionReject(
-                QuickVideoSubmissionRejectReason.FEATURE_DISABLED
-            )
-        chain_config = dict(qqcc_config)
-        chain_config["ai_video_scenes"] = get_enabled_qqcc_ai_video_scenes(qqcc_config)
-        chain_scenes = resolve_qqcc_video_scene_chain(
-            chain_config,
-            scene_kind="ai_video",
-            root_scene_id=str(scene.get("id") or ""),
-        )
-        chain_segments = tuple(
-            _build_qqcc_ai_video_chain_segment(chain_config, chain_scene)
-            for chain_scene in chain_scenes
-        )
+    indexed_replacements: dict[int, str] = {}
+    for raw_index, raw_path in (replacement_paths or {}).items():
         try:
-            duration_seconds = int(scene.get("duration") or 5)
+            replacement_index = int(raw_index)
         except (TypeError, ValueError):
-            duration_seconds = 5
-        if duration_seconds not in {5, 10, 15}:
-            duration_seconds = 5
-        duration = f"{duration_seconds}s"
-        scene_mode = str(scene.get("mode") or "i2v")
-        selected_reference_image = str(
-            fsm_data.get("selected_reference_image") or ""
-        ).strip()
-        selected_reference_name = str(
-            fsm_data.get("selected_reference_name") or ""
-        ).strip()
-        selected_reference_image_path = str(
-            fsm_data.get("selected_reference_image_path") or ""
-        ).strip()
-        scene_reference_images = list(scene.get("reference_images") or [])
+            return QuickVideoSubmissionReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
+        replacement_path = str(raw_path or "").strip()
         if (
-            scene_mode == "ref2v"
-            and selected_reference_image not in scene_reference_images
+            not 0 <= replacement_index < len(scene_reference_images)
+            or not replacement_path
         ):
             return QuickVideoSubmissionReject(
                 QuickVideoSubmissionRejectReason.INVALID_SETTINGS
             )
-        reference_image_paths: list[str | None] = []
-        if scene_mode == "ref2v":
-            replacement_paths = fsm_data.get("reference_image_replacement_paths")
-            indexed_replacements: dict[int, str] = {}
-            if replacement_paths is not None and not isinstance(
-                replacement_paths, dict
-            ):
-                return QuickVideoSubmissionReject(
-                    QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-                )
-            for raw_index, raw_path in (replacement_paths or {}).items():
-                try:
-                    replacement_index = int(raw_index)
-                except (TypeError, ValueError):
-                    return QuickVideoSubmissionReject(
-                        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-                    )
-                replacement_path = str(raw_path or "").strip()
-                if (
-                    not 0 <= replacement_index < len(scene_reference_images)
-                    or not replacement_path
-                ):
-                    return QuickVideoSubmissionReject(
-                        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-                    )
-                indexed_replacements[replacement_index] = replacement_path
+        indexed_replacements[replacement_index] = replacement_path
 
-            # Compatibility for sessions created before per-slot replacement maps.
-            if selected_reference_image_path:
-                selected_index = scene_reference_images.index(selected_reference_image)
-                indexed_replacements.setdefault(
-                    selected_index, selected_reference_image_path
-                )
-            if indexed_replacements:
-                reference_image_paths = [
-                    indexed_replacements.get(index)
-                    for index in range(len(scene_reference_images))
-                ]
-        tail_draw_scene = (
-            None
-            if scene_mode == "ref2v"
-            else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+    selected_reference_image_path = str(
+        fsm_data.get("selected_reference_image_path") or ""
+    ).strip()
+    # Compatibility for sessions created before per-slot replacement maps.
+    if selected_reference_image_path:
+        selected_index = scene_reference_images.index(selected_reference_image)
+        indexed_replacements.setdefault(selected_index, selected_reference_image_path)
+    if not indexed_replacements:
+        return []
+    return [
+        indexed_replacements.get(index) for index in range(len(scene_reference_images))
+    ]
+
+
+def _build_qqcc_ai_video_submission_plan(
+    *,
+    fsm_data: dict[str, Any],
+    qqcc_config: dict[str, Any],
+) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
+    scene = resolve_qqcc_ai_video_scene_from_fsm_data(qqcc_config, fsm_data)
+    if (
+        not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
+        or not has_enabled_qqcc_ai_video_scenes(qqcc_config)
+        or scene is None
+    ):
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.FEATURE_DISABLED
         )
-        tail_draw_chain = (
-            resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
-            if tail_draw_scene is not None
-            else []
+
+    chain_config = dict(qqcc_config)
+    chain_config["ai_video_scenes"] = get_enabled_qqcc_ai_video_scenes(qqcc_config)
+    chain_scenes = resolve_qqcc_video_scene_chain(
+        chain_config,
+        scene_kind="ai_video",
+        root_scene_id=str(scene.get("id") or ""),
+    )
+    chain_segments = tuple(
+        _build_qqcc_ai_video_chain_segment(chain_config, chain_scene)
+        for chain_scene in chain_scenes
+    )
+    duration = _normalize_ai_video_duration(scene)
+    scene_mode = str(scene.get("mode") or "i2v")
+    selected_reference_image = str(
+        fsm_data.get("selected_reference_image") or ""
+    ).strip()
+    selected_reference_name = str(fsm_data.get("selected_reference_name") or "").strip()
+    scene_reference_images = list(scene.get("reference_images") or [])
+    if scene_mode == "ref2v" and selected_reference_image not in scene_reference_images:
+        return QuickVideoSubmissionReject(
+            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
         )
-        prompt = str(scene.get("prompt") or "").strip()
-        display_mode_name = str(scene.get("name") or "")
-        scene_id = str(scene.get("id") or "").strip()
-        fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
-        lora_items = [
-            {"name": item.get("name"), "strength": item.get("strength")}
-            for item in (scene.get("lora_items") or [])
-            if isinstance(item, dict) and item.get("name")
-        ]
-        return QuickVideoSubmissionPlan(
-            kind=(
-                QuickVideoSubmissionKind.H3_REF2V
-                if scene_mode == "ref2v"
-                else QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
-                if tail_draw_chain
-                else QuickVideoSubmissionKind.LTX_VIDEO
-            ),
-            mode=(
-                MINIMAX_H3_REF2V
-                if scene_mode == "ref2v"
-                else MINIMAX_H3_FLF2V
-                if tail_draw_chain
-                else MINIMAX_H3_I2V
-            ),
-            resolution=str(scene.get("resolution") or "preview"),
-            duration=duration,
-            total_cost=(
-                fixed_credit_cost
-                if fixed_credit_cost is not None
-                else sum(segment.cost for segment in chain_segments)
-            ),
-            default_prompt_key=MINIMAX_H3_I2V,
-            default_prompt_text=prompt,
-            allow_contribute=False,
-            prompt_override=prompt,
-            negative_prompt=str(scene.get("negative_prompt") or "").strip(),
-            display_mode_name=display_mode_name,
-            result_meta=build_qqcc_regenerate_result_meta(
-                kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-                mode=(
-                    MINIMAX_H3_REF2V
-                    if scene_mode == "ref2v"
-                    else MINIMAX_H3_FLF2V
-                    if tail_draw_chain
-                    else MINIMAX_H3_I2V
-                ),
-                scene_id=scene_id,
-                scene_kind="ai_video",
-                display_mode_name=display_mode_name,
-                selected_reference_image=(
-                    selected_reference_image if scene_mode == "ref2v" else None
-                ),
-                selected_reference_name=(
-                    selected_reference_name if scene_mode == "ref2v" else None
-                ),
-                selected_reference_source=(
-                    "user_upload"
-                    if scene_mode == "ref2v" and reference_image_paths
-                    else None
-                ),
-            ),
-            lora_items=lora_items,
-            tail_draw_chain=tail_draw_chain,
+
+    reference_image_paths: list[str | None] = []
+    if scene_mode == "ref2v":
+        resolved_paths = _resolve_ref2v_reference_paths(
+            fsm_data=fsm_data,
+            selected_reference_image=selected_reference_image,
+            scene_reference_images=scene_reference_images,
+        )
+        if isinstance(resolved_paths, QuickVideoSubmissionReject):
+            return resolved_paths
+        reference_image_paths = resolved_paths
+
+    tail_draw_scene = (
+        None
+        if scene_mode == "ref2v"
+        else _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+    )
+    tail_draw_chain = (
+        resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
+        if tail_draw_scene is not None
+        else []
+    )
+    prompt = str(scene.get("prompt") or "").strip()
+    display_mode_name = str(scene.get("name") or "")
+    scene_id = str(scene.get("id") or "").strip()
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
+    lora_items = [
+        {"name": item.get("name"), "strength": item.get("strength")}
+        for item in (scene.get("lora_items") or [])
+        if isinstance(item, dict) and item.get("name")
+    ]
+    plan_kind = (
+        QuickVideoSubmissionKind.H3_REF2V
+        if scene_mode == "ref2v"
+        else QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
+        if tail_draw_chain
+        else QuickVideoSubmissionKind.LTX_VIDEO
+    )
+    plan_mode = (
+        MINIMAX_H3_REF2V
+        if scene_mode == "ref2v"
+        else MINIMAX_H3_FLF2V
+        if tail_draw_chain
+        else MINIMAX_H3_I2V
+    )
+    return QuickVideoSubmissionPlan(
+        kind=plan_kind,
+        mode=plan_mode,
+        resolution=str(scene.get("resolution") or "preview"),
+        duration=duration,
+        total_cost=(
+            fixed_credit_cost
+            if fixed_credit_cost is not None
+            else sum(segment.cost for segment in chain_segments)
+        ),
+        default_prompt_key=MINIMAX_H3_I2V,
+        default_prompt_text=prompt,
+        allow_contribute=False,
+        prompt_override=prompt,
+        negative_prompt=str(scene.get("negative_prompt") or "").strip(),
+        display_mode_name=display_mode_name,
+        result_meta=build_qqcc_regenerate_result_meta(
+            kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
+            mode=plan_mode,
+            scene_id=scene_id,
             scene_kind="ai_video",
-            qqcc_chain_segments=chain_segments,
-            fixed_credit_cost=fixed_credit_cost,
-            reference_images=(scene_reference_images if scene_mode == "ref2v" else []),
-            reference_image_paths=reference_image_paths,
-            aspect_ratio=(
-                str(scene.get("aspect_ratio") or "16:9")
-                if scene_mode == "ref2v"
-                else QQCC_VIDEO_ASPECT_SOURCE
+            display_mode_name=display_mode_name,
+            selected_reference_image=(
+                selected_reference_image if scene_mode == "ref2v" else None
             ),
-            main_model=str(scene.get("main_model") or "10eros_bf16"),
-        )
+            selected_reference_name=(
+                selected_reference_name if scene_mode == "ref2v" else None
+            ),
+            selected_reference_source=(
+                "user_upload"
+                if scene_mode == "ref2v" and reference_image_paths
+                else None
+            ),
+        ),
+        lora_items=lora_items,
+        tail_draw_chain=tail_draw_chain,
+        scene_kind="ai_video",
+        qqcc_chain_segments=chain_segments,
+        fixed_credit_cost=fixed_credit_cost,
+        reference_images=(scene_reference_images if scene_mode == "ref2v" else []),
+        reference_image_paths=reference_image_paths,
+        aspect_ratio=(
+            str(scene.get("aspect_ratio") or "16:9")
+            if scene_mode == "ref2v"
+            else QQCC_VIDEO_ASPECT_SOURCE
+        ),
+        main_model=str(scene.get("main_model") or "10eros_bf16"),
+    )
 
+
+def _build_qqcc_video_submission_plan(
+    *,
+    fsm_data: dict[str, Any],
+    qqcc_config: dict[str, Any],
+    duration: str,
+) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
     if (
         not is_qqcc_main_button_enabled(
@@ -867,6 +879,37 @@ def build_quick_video_submission_plan(
         aspect_ratio=normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio")),
         qqcc_chain_segments=chain_segments,
         fixed_credit_cost=fixed_credit_cost,
+    )
+
+
+def build_quick_video_submission_plan(
+    *,
+    fsm_data: dict[str, Any],
+    qqcc_config: dict[str, Any] | None,
+    allowed_resolutions: list[str] | None,
+    allowed_durations: list[str] | None = None,
+) -> QuickVideoSubmissionPlan | QuickVideoSubmissionReject:
+    resolution, duration = normalize_quick_video_selection(
+        resolution=str(fsm_data.get("resolution") or ""),
+        duration=str(fsm_data.get("duration") or ""),
+    )
+    if qqcc_config is None:
+        return _build_legacy_quick_video_submission_plan(
+            mode=str(fsm_data.get("mode") or ""),
+            resolution=resolution,
+            duration=duration,
+            allowed_resolutions=allowed_resolutions,
+            allowed_durations=allowed_durations,
+        )
+    if str(fsm_data.get("scene_kind") or "video") == "ai_video":
+        return _build_qqcc_ai_video_submission_plan(
+            fsm_data=fsm_data,
+            qqcc_config=qqcc_config,
+        )
+    return _build_qqcc_video_submission_plan(
+        fsm_data=fsm_data,
+        qqcc_config=qqcc_config,
+        duration=duration,
     )
 
 

@@ -55,12 +55,14 @@ async def run_task_control_worker(
     enabled = task_control_enabled()
     worker_id = build_task_control_worker_id()
     task_states: dict[str, dict[str, Any]] = {}
+
     def health_payload() -> dict[str, object]:
         return build_task_control_health_payload(
             enabled=enabled,
             worker_id=worker_id,
             task_states=task_states,
         )
+
     server = await asyncio.start_server(
         lambda reader, writer: _handle_health_request(
             reader,
@@ -83,6 +85,9 @@ async def run_task_control_worker(
             from src.services.redis_client import redis_client
             from src.services.task_control_worker import run_task_control_services
             from src.task_application_runtime import configure_task_application
+            from src.task_web_finalizer_provider_setup import (
+                configure_task_web_finalizer_providers,
+            )
             from src.task_core_provider_setup import (
                 ensure_task_core_service_providers_registered,
             )
@@ -91,6 +96,7 @@ async def run_task_control_worker(
             engine_resource = engine
             ensure_task_core_service_providers_registered()
             configure_task_application()
+            configure_task_web_finalizer_providers()
             ensure_billing_core_providers_registered()
             await init_db()
             runner = service_runner or run_task_control_services

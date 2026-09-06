@@ -644,7 +644,8 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - `src/services/task_web_side_effects.py`
 - `src/services/task_web_lifecycle_monitor.py`
 - `src/services/task_web_terminal_finalization.py`
-- `src/services/task_web_finalizer.py`
+- `src/services/task_web_finalizer.py`（只消费显式装配的
+  `TaskWebFinalizerDependencies`）
 
 当前口径是“持久化 finalizer + 恢复循环”：
 

@@ -9,10 +9,14 @@ from src.services import task_web_finalizer
 from src.core import gallery_core
 from src.web_api.services import character_reference_service
 from src.web_api.services import prompt_result_store
+from src.task_web_finalizer_provider_setup import (
+    configure_task_web_finalizer_providers,
+)
 
 
 @pytest.fixture(autouse=True)
 def _mock_finalizer_due_schedule(monkeypatch):
+    configure_task_web_finalizer_providers()
     schedule = AsyncMock()
     monkeypatch.setattr(
         task_web_finalizer.redis_client,
@@ -920,8 +924,6 @@ async def test_process_all_filters_due_records_by_submission_phase(monkeypatch):
     )
 
     process.assert_awaited_once_with("dispatching")
-
-
 
 @pytest.mark.asyncio
 async def test_terminal_event_accelerates_only_matching_registry(

@@ -54,6 +54,9 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - `task-control-worker` 是默认禁用的独立后台宿主；submission reconciliation、
   Web finalizer 和通用 zombie sweep 各自持有 leader lease。旧 Web/Bot/QQCC
   loop 默认仍开启，只有显式滚动切换后才退出原宿主。
+- Web finalizer 的恢复/调度 service 只消费 `TaskWebFinalizerDependencies`；提示词
+  result store、人物参考图和官方资产的 Web adapter 由 Web API 或启用后的
+  task-control-worker 在入口装配，避免任务 service 反向依赖 Web application 层。
 - `billing-reconciler` 是默认禁用的 TON/USDT-TON 轮询宿主，通道各自监督；
   主 Bot 旧轮询默认保持，只有验证新宿主 health/checkpoint 后才显式关闭。
 - 公共 Web 启动时先获取运行时入口开关，再装配 Pinia、Router 与 API runtime；

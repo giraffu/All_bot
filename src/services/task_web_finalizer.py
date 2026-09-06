@@ -29,6 +29,9 @@ from src.services.task_web_terminal_finalization import (
     finalize_monitored_web_task_failure_default,
     finalize_monitored_web_task_success_default,
 )
+from src.services.task_web_finalizer_dependencies import (
+    get_task_web_finalizer_dependencies,
+)
 from src.services.task_lifecycle_runner import route_backend_terminal_snapshot
 
 logger = logging.getLogger(__name__)
@@ -458,9 +461,7 @@ async def _finalize_pending_web_success(
         else None
     )
     if isinstance(optimizer_metadata, dict):
-        from src.web_api.services.prompt_result_store import store_prompt_result
-
-        await store_prompt_result(
+        await get_task_web_finalizer_dependencies().store_prompt_result(
             task_id=registry_task_id,
             user_id=record["internal_user_id"],
             task_type="prompt_optimize",
@@ -527,14 +528,13 @@ async def _finalize_pending_web_failure(
     metadata = submission.get("metadata") or {}
     if isinstance(metadata.get("_prompt_optimizer"), dict):
         from src.services.task_text_stream_store import read_text_stream_snapshot
-        from src.web_api.services.prompt_result_store import store_prompt_failure_result
 
         snapshot = await read_text_stream_snapshot(
             redis_client.redis, record["backend_task_id"]
         )
         fields = (snapshot or {}).get("fields") or {}
         primary_field = metadata["_prompt_optimizer"].get("primary_field")
-        await store_prompt_failure_result(
+        await get_task_web_finalizer_dependencies().store_prompt_failure_result(
             task_id=registry_task_id,
             user_id=record["internal_user_id"],
             partial_result_text=str(fields.get(primary_field) or ""),
@@ -579,21 +579,13 @@ async def _finalize_terminal_record(
     if submission.get("task_type") == "character_reference_build" or isinstance(
         character_view_marker, dict
     ):
-        from src.web_api.services.character_reference_service import (
-            finalize_character_reference,
-        )
-
-        await finalize_character_reference(
+        await get_task_web_finalizer_dependencies().finalize_character_reference(
             task_id=registry_task_id,
             status=final_status,
             result_path=status_data.get("result_path"),
         )
     if isinstance(official_asset_marker, dict):
-        from src.web_api.services.official_asset_finalizer import (
-            finalize_official_asset,
-        )
-
-        await finalize_official_asset(
+        await get_task_web_finalizer_dependencies().finalize_official_asset(
             task_id=registry_task_id,
             status=final_status,
             result_path=status_data.get("result_path"),
