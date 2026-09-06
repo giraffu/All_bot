@@ -21,6 +21,8 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
   验证；日期、IP/邮箱 allowlist、当前部署结果、数量快照和一次性 canary
   进入运行态、evidence 或 archive。
 - **结构一致性维护**：确保 `AGENTS.md`、`.codex/skills/`、`docs/` 与项目记忆在高层路由、入口文件、异常类型、超时值、双 ID 语义等关键点上一致。
+- **治理闭环维护**：架构债务完成后同步删除总览中的“仍存在/下一步”旧结论，并把
+  后续风险改为当前测试门禁可证明的事实，避免 AI 重复处理已关闭事项。
 - **核对矩阵维护**：全量或跨模块校准时，一份活跃文档/Skill 只登记一行
   canonical 事实源和状态；责任域由分节表示，静态复核日期和 archive 入口只
   写一次。archive、已删除 seam 与逐日处理结果不登记为活跃行。
@@ -28,18 +30,10 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
 - **ADR 节制记录**：只有决策难逆、非显然且存在真实取舍时，才基于 `docs/adr/0000-template.md` 新增 ADR。
 - **变更日志输出**：在交付时给出清晰的知识库 Changelog，说明改了哪些文件、为什么改、对应哪类代码变化。
 
-## 2. 输入输出规范
-### 触发条件 (When to invoke)
-- **输入**：
-  - 代码现状扫描需求
-  - 架构重构、接口变化、主入口迁移、provider/capability 重构
-  - 领域术语、共享语言、ADR 或架构决策记录变化
-  - 需要同步 `docs/`、`SKILL.md`、memory 的任务
-- **输出**：
-  - 需更新的 docs / `.codex/skills` / memory 清单
-  - 逐项核对矩阵或矩阵更新说明
-  - 更新后的文档与技能内容
-  - Changelog 与一致性说明
+## 2. 输入输出
+
+代码扫描、架构/接口/provider 变化、术语/ADR 调整或知识同步时触发。交付需包含
+实际更新、矩阵状态说明及列出文件和原因的 Changelog。
 
 ## 3. 更新策略
 1. **局部接口/参数调整**：
@@ -72,9 +66,3 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
 - ADR 必须说明 context、decision、alternatives、consequences；缺少真实替代方案时不要新增 ADR。
 - 最终总结必须包含 Changelog，列出修改文件与原因。
 - 运行 `python3 scripts/doc_quality_checker.py`；不得通过提高预算掩盖新增冗余。
-
-## 5. 使用示例 (最佳实践)
-当开发者完成一轮核心重构后，可直接要求：
-> “根据现在最新的代码，帮我更新一下 docs/ 下的文档、系统 skill 和记忆，保持知识体系最新。”
-
-此时应先扫描代码现状，再落地更新 docs / skills / memory，而不是只机械复制 diff。

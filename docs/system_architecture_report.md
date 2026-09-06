@@ -1,8 +1,7 @@
 # AllBot 系统架构总览
 
-本文只描述稳定拓扑、核心闭环和职责边界。实时 worker/Pod 数量、主机容量、
-某次迁移状态和事故记录不属于架构事实；分别读取资源画像、provider/XDG
-运行态或 `docs/archive/`。
+本文只描述稳定拓扑和边界。实时 worker/Pod、容量、迁移和事故读取 provider/XDG
+运行态、资源画像或 archive，不固化为架构事实。
 
 ## 1. 系统形态
 
@@ -20,9 +19,8 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台。稳定系�
 | 独立平台 | 3D、媒体增强、LAN 管理/图库、分析与媒体归档 | 各平台顶层目录及其专项 Skill |
 | 基础设施 | PostgreSQL、Redis、R2、Cloudflare、不可变 artifact | migrations、service env contract、module catalog |
 
-正式与测试环境都只消费精确、不可变的 artifact，但不要求两者天然使用同一
-digest；目标 artifact 由操作者按模块和环境明确选择。数据库、Redis、token、
-bucket、域名和开关由目标环境逐服务配置投影提供。
+test/prod 只消费操作者为模块明确选择的不可变 artifact；逐服务配置投影提供
+数据库、Redis、token、bucket、域名和开关。
 
 ## 2. 分层边界
 
@@ -57,6 +55,10 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - Web finalizer 的恢复/调度 service 只消费 `TaskWebFinalizerDependencies`；提示词
   result store、人物参考图和官方资产的 Web adapter 由 Web API 或启用后的
   task-control-worker 在入口装配，避免任务 service 反向依赖 Web application 层。
+- 任务 continuation/pipeline 只保留策略，Quick、specialized 与 recovery composition
+  root 显式注入 executor；架构测试将任务执行 import SCC 限制在 10 个模块以下。
+- 人物资产 owner/readiness 查询统一进入 `character_reference_query_service.py`，人物
+  写服务通过入口注入 Web submitter；参考图准备不再反向导入 prompt/task orchestrator。
 - `billing-reconciler` 是默认禁用的 TON/USDT-TON 轮询宿主，通道各自监督；
   主 Bot 旧轮询默认保持，只有验证新宿主 health/checkpoint 后才显式关闭。
 - 公共 Web 启动时先获取运行时入口开关，再装配 Pinia、Router 与 API runtime；
@@ -68,7 +70,8 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
   result probe 已删除，后端 stream 路由暂作兼容。Dashboard 新 SFC 强制 TypeScript，
   legacy 清单只能单调缩减。
 - 兼容退出以 `config/compat_registry.json` 为机器事实源；必须有 owner、
-  telemetry key、替代入口、连续无命中窗口和历史数据清退条件。
+  telemetry key、替代入口、连续无命中窗口和历史数据清退条件。`compat_hit` 的普通
+  文本与结构化字段都必须携带 telemetry key 和入口，确保日志可归属。
 
 完整入口归属见
 [入口职责矩阵](./入口职责矩阵_entry_responsibility_matrix.md)。
@@ -80,6 +83,8 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - ComfyUI Runtime 只加载模型并执行 JSON；workflow 事实源位于
   `workers/comfy_agent/workflows/`。
 - GPU profile、LAN AIO、RunPod 是可替换执行 adapter，不改变用户任务 facade。
+- QQCC Config normalization、Quick Video 执行和 H3 workflow patch 使用独立
+  phase/policy/patcher；registry/router 只负责选择和装配，不回收复杂策略。
 
 ## 3. 核心闭环
 
@@ -143,6 +148,9 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - 操作者从完整 SHA 独立构建明确模块，再把精确 digest 部署到 test 或 prod；
   focused tests 和 test 人工结果不构成发布器资格状态。
 - GPU/LAN/RunPod 当前态来自 provider、Central 和 XDG ledger，不写入本报告。
+- R2 冷媒体删除只使用 `media_archive_r2_cleanup.py plan → probe → execute`；execute
+  必须绑定精确计划/probe SHA、通过新鲜度校验并在删除前重查热引用。旧同进程
+  `--execute` 入口不是受支持契约。
 
 详见
 [不可变发布](./子模块_Git不可变发布_git_immutable_release.md)、

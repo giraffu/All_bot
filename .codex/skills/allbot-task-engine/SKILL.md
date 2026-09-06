@@ -48,6 +48,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
   HTTP 实现。Core 不拼 Redis key；并发计数校准通过 submission outbox 的
   `sync_user_concurrency(...)` capability 执行。
+- continuation/pipeline policy 不得 import 具体 executor；由 composition root 注入。
+  `test_task_execution_import_cycles_stay_below_module_budget` 将任务执行 import SCC
+  锁在 10 个模块以下，新增环必须先解依赖而不是扩大预算。
 
 Web、主 Bot、QQCC（含私有 Worker）和 Dashboard 启动入口显式调用
 `configure_task_application()`；未装配时 `get_task_application()` fail closed。Web

@@ -14,8 +14,8 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/knowledge_base_audit_matrix.md` | 活跃知识索引 | 本矩阵、质量检查器的登记/体积门禁 | current | 仅全量知识校准 |
-| `docs/system_architecture_report.md` | 稳定系统拓扑、当前兼容缺口与边界 | 入口、core/default runtime、Central、Worker、schema migrations、发布契约 | current | 跨模块设计 |
-| `docs/system_module_inventory.md` | 七板块模块、依赖、状态 owner 与扩展纵切导航 | 应用入口、domain registries、Central/Worker、module catalog、专项文档 | current | 全系统梳理或跨层扩展 |
+| `docs/system_architecture_report.md` | 稳定系统拓扑、当前兼容缺口与边界 | 入口、core/default runtime、Central、Worker、schema migrations、发布与冷清理契约 | current | 跨模块设计 |
+| `docs/system_module_inventory.md` | 七板块模块、依赖、状态 owner、SCC/复杂度债务与扩展纵切导航 | 应用入口、domain registries、import graph 门禁、Central/Worker、module catalog、专项文档 | current | 全系统梳理或跨层扩展 |
 | `docs/SAFE_DEPLOY_GUIDE.md` | 发布快速入口 | `scripts/release.py`、不可变发布文档 | current | 只需发布入口 |
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
 | `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |
@@ -61,7 +61,7 @@
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界、生成任务消费口径与分层新鲜度 | local analytics task catalog/routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理与任务/model scope 归并 | prompt rule/materialization code | current | 词元治理 |
-| `docs/子模块_本地媒体归档_local_media_archive.md` | History 媒体目录、NAS MinIO、恢复与冷清理 | archive core/outbox/API/Worker/Compose | runtime-verification-required | 全量媒体归档 |
+| `docs/子模块_本地媒体归档_local_media_archive.md` | History 媒体目录、NAS MinIO、恢复与 plan/probe/execute 冷清理 | archive core/outbox/API/Worker/Compose、cleanup artifact tests | runtime-verification-required | 全量媒体归档 |
 
 ## 模型、GPU 与运行环境
 
