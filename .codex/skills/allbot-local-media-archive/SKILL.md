@@ -40,15 +40,15 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   `r2-persistent-target` 不声称 NAS 已归档，后续 NAS 备份从持久目标另立计划。
 - 最新 8 条先按用户原始 History 排名，再过滤不可见记录；Gallery 保护引用。
 - 确认丢失要求全来源两轮 not-found，间隔至少 24 小时。
-- R2 删除默认关闭；首次生产删除需要只读报告、冻结计划和新精确确认。
-- Worker 使用 0600 配置；R2 Copy 的 7890 路由须冻结指纹，换 artifact/successor 后
-  重新授权并 canary，禁止热改。
-- canary 最多领取 100 个 `history_ids`，禁止改写全局优先级。
+- R2 冷删走 `media_archive_r2_cleanup.py` Plan→Probe→Execute；绑定两份 SHA，
+  复查引用/身份并要求确认。
+- Worker 配置 0600；R2 Copy 路由冻结指纹，换 artifact 后重新授权。
+- canary 最多领取 100 个 `history_ids`，不改全局优先级。
 - 私有配置只输出来源/指纹；仅 `archived_verified` 提供原件。
 - 租约每 5 分钟续期；revision 不匹配不得覆盖。
-- restore/archive outbox 状态不得复用；所有热集触发只幂等 enqueue。
+- restore/archive outbox 状态不得复用；热集触发只幂等 enqueue。
 - TLS 必须验证包含 NAS IP SAN 的内部 CA；禁止 `verify=false`。
-- PiGallery2 与归档隔离；容量、凭据、digest、部署只属运行态。
+- PiGallery2 与归档隔离；容量和部署只属运行态。
 
 ## 最小验证
 
