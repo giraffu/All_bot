@@ -1,9 +1,7 @@
 # AllBot 系统模块、依赖与扩展地图
 
-本文是跨模块设计的 canonical 导航图，按“用户入口、核心业务、任务执行、AI
-能力、管理监控、独立平台、基础设施”七个板块描述稳定职责。具体业务规则仍以
-领域代码、对应 Skill 和专项文档为准；worker 数量、节点占用、部署版本与迁移
-进度属于运行态，不在本文固化。
+本文按七个板块导航职责。业务规则以代码、Skill 和专项文档为准；worker、节点、
+部署与迁移进度属于运行态，不在本文固化。
 
 ## 1. 总体链路与控制边界
 
@@ -29,7 +27,7 @@ Telegram / Public Web / 独立 Bot
                  Web polling / Bot completion
 ```
 
-系统同时存在三条不同的边界，不能按“都是 API”或“都是任务”强行合并：
+三条边界不能因“都是 API/任务”而合并：
 
 - 用户面：认证、权限、展示、输入收集和用户可理解的错误；主入口是 Bot/Web。
 - 业务面：任务、计费、社区、媒体与状态补偿；公开 seam 是 core facade、application
@@ -50,8 +48,8 @@ Telegram / Public Web / 独立 Bot
 | 付费群审核 Bot | 入群资格读取、申请处理与轻量审核 | `paid_group_guard_bot/main.py` | 只读用户/订单资格，不执行支付履约或直接修改资产 |
 | 群管理 Bot | 独立群消息治理与管理命令 | `standalone_group_manage_bot/main.py` | 与主 Bot/FSM 隔离，避免 handler 与 token 串用 |
 
-入口新增能力时，先判断调用者身份、权限、ID、错误语义和副作用。用户功能默认
-进入 Web API 或相应 Bot adapter；只有 Worker/Central 协议进入 `backend/app`。
+新增入口先确定身份、权限、ID、错误和副作用。用户功能进入 Web API/Bot adapter；
+只有 Worker/Central 协议进入 `backend/app`。
 
 ## 3. 核心业务
 
@@ -67,8 +65,7 @@ Telegram / Public Web / 独立 Bot
 | 提示词优化 | `src/prompt_optimizer/`、`src/web_api/services/prompt_optimization_service.py`、`workers/prompt_optimizer/` | profile/template ref、hash、文本结果 TTL | 提交固定 profile/template 版本与 hash；媒体 ownership/大小由 `prompt_media_policy.py` 统一校验 |
 
 Core Isolation 是硬边界：`src/core/` 只依赖内部类型和显式 capability，不接收
-Telegram `Update`、FastAPI `Request/APIRouter` 或 SQLAlchemy/HTTP/R2 实现对象。
-provider 注册由各应用入口完成，core import 不应产生运行时装配副作用。
+平台或基础设施实现对象；provider 由应用入口注册，core import 不装配运行时。
 
 ## 4. 任务执行
 
@@ -92,7 +89,7 @@ provider 注册由各应用入口完成，core import 不应产生运行时装�
 
 ## 5. AI 生成能力
 
-能力目录不是分散在菜单或 worker `if` 分支中的手写列表。跨层 canonical 事实由
+能力目录不是菜单或 worker `if` 中的手写列表。跨层事实由
 `src/domain_config/task_type_registry.py`、`task_pricing_catalog.py`、
 `worker_pool_registry.py`、`workers/comfy_agent/workflows/mappings.json` 和 module
 catalog 共同形成，并由契约测试检查。
@@ -107,9 +104,9 @@ catalog 共同形成，并由契约测试检查。
 | MiniMax H3 | T2V、I2V、FLF2V、REF2V | 四模式、参考图/视频、模型与附加项由 `minimax_h3.py` 约束 |
 | 提示词优化 | `prompt_optimize` | 走独立文本 Worker，结果不是媒体 History 的替代物 |
 
-新增模型能力必须完成一条纵切：领域注册与价格 → Bot/Web schema/输入 → task
-facade → Central allowlist → worker profile/mapping/patcher → 结果资产 → History/Gallery
-策略 → i18n/管理展示 → focused tests。只增加 workflow JSON 不构成完整能力。
+新增模型必须纵切领域注册/价格、入口 schema、task facade、Central allowlist、
+worker profile/mapping/patcher、结果资产、History/Gallery、展示和 focused tests；
+只增加 workflow JSON 不构成完整能力。
 
 ## 6. 管理和监控
 
@@ -134,8 +131,8 @@ facade → Central allowlist → worker profile/mapping/patcher → 结果资产
 | 提示词语义分析 | local analytics prompt routes/materializers | 词元、同义映射和模板候选治理；语义人工决策与刷新运行态分离 |
 | 媒体归档系统 | `src/services/media_archive_*`、`ops/media_archive_*` | History 全量目录、archive/restore outbox、NAS MinIO 与 R2 冷清理门禁 |
 
-独立平台默认拥有自己的入口、状态和部署单元。只有确有共享不变量时复用窄协议
-或领域配置，避免直接导入主 Web router、Telegram handler 或主系统数据库 session。
+独立平台拥有自己的入口、状态和部署单元；共享只经窄协议/领域配置，不直接导入
+主 Web router、Telegram handler 或主系统数据库 session。
 
 ## 8. 基础设施与发布
 
@@ -151,27 +148,23 @@ facade → Central allowlist → worker profile/mapping/patcher → 结果资产
 
 ## 9. 当前治理结论与优先级
 
-本轮全量静态审计确认：Core 直接依赖门禁正常，主链路具备明确 facade 和 provider
-seam；主要风险已经从“入口完全混杂”转为“大型应用服务/Worker 函数复杂、跨层
-导入环、兼容 seam 退出依赖运行态证据、独立平台测试隔离不足”。
+当前扫描确认 Core 门禁正常；任务 15 模块环和 Web 人物资产 4 模块环已消除。
+`src` 仅剩 4 个双模块 SCC，主要风险转为局部复杂度、兼容退出证据和渐进拆分。
 
 | 优先级 | 现状 | 治理策略 |
 | --- | --- | --- |
-| High | Web 人物资产提交仍有 4 模块 import SCC；Worker patcher、视频执行器、本地分析路由复杂度高 | 每次只沿一个公开行为切片提取 policy/phase seam，并用 focused tests 缩小 SCC；禁止机械拆文件 |
 | High | 兼容 registry 中仍有 active/runtime-verification 项 | 只能按 telemetry、历史数据和观测窗口退出，不能凭静态“无调用”删除 |
-| Medium | 根测试曾收集多个独立平台的同名测试模块并隐式连接本地 PostgreSQL | 根 `pytest.ini` 固定 `tests/` 与 importlib；外部服务测试显式标记 integration 并由环境 opt-in |
-| Medium | Dashboard 与本地分析仍有超大 Vue/route 文件 | 按页面 capability、query command 和 presenter seam 纵切，不创建一行转发壳 |
+| Medium | `src` 仍有 QQCC 配置/demo media、频道资格/utils、task finalization/runtime、Quick image/video FSM 四个双模块环 | 只在对应行为变更时以 provider、query 或共享 policy seam 解环；任务执行 SCC 继续受 `<10` 门禁保护 |
+| Medium | Worker 与视频策略仍需控制复杂度 | 新逻辑进入已有 phase/policy seam；用函数行数、分支数和行为测试防回长 |
+| Medium | 独立平台仍需隔离外部服务测试 | 根 `pytest.ini` 固定 `tests/` 与 importlib；integration 由环境 opt-in |
+| Medium | Dashboard 仍有 20 个 legacy JavaScript SFC；本地分析 `bootstrap.js` 仍是装配热点 | 继续按页面 capability、typed adapter 和 presenter seam 纵切；legacy 清单与 5100 行预算只允许下降 |
 | Low | 零散未使用 import、过期 A/B canary 和 stale test whitelist | 静态门禁持续清理；一次性 canary 进 evidence/archive，不留作长期入口 |
 
-本轮已将 prompt 媒体 ownership/大小规则抽为 `prompt_media_policy.py`，消除 Prompt
-Optimization 与 Reference Asset 的直接循环依赖；将 Web 提交输入晋升提取为独立
-phase helper；Web finalizer 改用入口显式装配的窄 dependencies，任务 service 不再
-反向导入 Web application service，Web 资产提交环已与任务大环分离；快速视频计划
-构建按三条业务策略分派，公开 router 保持小于 45 行；删除与当前 LTX 人物一致性
-契约冲突且无外部引用的旧 A/B canary。任务执行链原 15 模块 SCC 已通过 executor
-依赖反转消除：continuation/pipeline 只保留策略，Quick、specialized 与 recovery
-composition root 显式装配实现，并用 `<10` 架构预算测试防止回归。下一步治理 Web
-人物资产、参考图准备与提交之间的 4 模块环。
+已落地的 seam：prompt 媒体 policy、人物 query service 与注入 submitter；任务 executor
+由 composition root 注入；QQCC/Quick Video/H3 拆为 phase/policy/patcher。R2 冷删只保留
+`plan → probe → execute` 及双 SHA/热引用门禁。Dashboard 共用 typed 图表 base（20 个
+legacy SFC），本地分析抽出用户 presenter（bootstrap 上限 5100 行）。兼容日志携带
+`event/key/entrypoint`；是否退出仍由 registry 与运行态证据决定。
 
 ## 10. 后续扩展检查清单
 
