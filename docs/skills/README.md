@@ -27,6 +27,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-local-analytics-prompt-semantics` | 本地分析提示词词元治理 |
 | `allbot-local-media-archive` | History 全量目录、NAS 媒体归档、恢复、丢失确认与 R2 清理门禁 |
 | `allbot-kb-auto-updater` | docs/Skills/术语/矩阵一致性 |
+| `allbot-system-acceptance` | 大更新全量、发布主干和小更新局部的真实用户旅程验收 |
 | `allbot-diagnosing-bugs` | 可复现反馈环、假设、插桩和回归 |
 | `allbot-tdd` | public seam 行为测试和纵切开发 |
 | `allbot-codebase-design` | module/interface/seam/depth 架构设计 |

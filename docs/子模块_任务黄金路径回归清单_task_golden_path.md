@@ -1,203 +1,161 @@
-# 任务黄金路径回归清单
+# 全系统真实用户旅程验收计划
 
-## 1. 目标
+## 1. 目标与模式
 
-本清单用于保护 AllBot 任务主链路在重构期间的外部行为不漂移，覆盖以下高风险区域：
+本计划从真实 Web/Bot 提交任务，检查身份、计费、Central/Worker、媒体、社区和通知闭环。自动化测试不能代替它；它也不是压力、故障注入或迁移演练。
 
-- Bot entrypoint / flow 子模块与公开 task application facade
-- `backend/app/main.py` 与 `backend/app/main_t2i_wiring.py` 的中控任务创建入口
-- `backend/app/queue_manager.py` 的排队、取消、zombie 清理与 worker 视图
-- `src/web_api/routers/tasks.py` 及对应 API service / SSE stream 路径
-- `src/core/task_application.py`、入口 runtime 装配以及 provider / dependencies / submission / web-monitor / runtime 子模块
+| 模式 | 时机 | 范围 |
+| --- | --- | --- |
+| `FULL-LITE` | 大版本或共享契约变化 | 预检、主干和全部适用切片 |
+| `CORE-SPINE` | 发布后快速确认 | 身份、便宜任务、状态/结果、账本、History/媒体 |
+| `LOCAL-SLICE` | 边界明确的小更新 | 受影响切片及其上游身份、下游结果和副作用 |
 
-本清单只关注“任务能否被正确提交、排队、取消、完成、回查与恢复”，不扩展到支付、安全、部署与前端视觉回归。
+改变双 ID、终态、扣退款、对象耐久语义或影响不明时，升级为 `FULL-LITE`。
 
-## 2. 适用时机
+默认在测试环境串行执行。重启、配置、迁移、Cloudflare/GPU/LAN 或真实支付需另行授权。本文不包含可直接执行脚本。
 
-出现以下任一场景时，至少执行一次“最小必跑集”：
+## 2. 数据与资源预算
 
-- 修改 `task_service_flow`、Bot entrypoint
-- 修改 `task_core.py`、`task_core_service_providers.py`、`task_core_default_dependencies.py`、`src/task_core_process_defaults.py`、`task_core_submission.py`、`src/services/task_web_side_effects.py`、`src/services/task_web_lifecycle_monitor.py`、`src/services/task_web_terminal_finalization.py`、`task_core_runtime.py`
-- 修改 `backend/app/main.py`、`backend/app/main_t2i_wiring.py`、`queue_manager.py`
-- 修改 `src/web_api/routers/tasks.py`、`task_submission_service.py`、`task_runtime_api_service.py`、`task_result_service.py`、`task_stream_api_service.py`
-- 修改任务状态字段、not-found fallback、取消语义、排队语义、双 ID 语义
+最多使用访客、普通用户、余额不足用户和管理员。Telegram/Web 统一身份应落到同一 `internal_user_id`。素材用无敏感小图和数秒低清视频；特殊素材按需准备。
 
-出现以下任一场景时，执行“完整黄金路径集”：
+- 并发为一，前一任务终态并留证后再提交。
+- 每种执行契约只做一个最短样本；共享 workflow 别名只验展示和映射。
+- 图片充当主干样本；视频按变化的 profile 选代表。
+- LTX 2.5、SCAIL、长视频和人物多阶段默认 gated；直接变化且获授权才执行。
+- 支付默认只验方案、建单、状态和安全失败；真实履约需沙箱或明确授权。
+- 复用结果验 History、Gallery、应用和通知。
 
-- 调整任务提交 facade 或 provider/dependency 装配结构
-- 调整任务状态机、僵尸任务清理、队列过滤、worker 视图
-- 调整同步 T2I 等待逻辑或 T2I wiring/use-case 分层
-- 调整历史兜底、SSE terminal payload、取消接口异常映射
-- 调整 Bot `run_bot_task_application(...)` 五段式上下文契约
+开始前限定任务数、灵石和能力族；超预算停止新增任务。预算不是通过标准。
 
-## 3. 热点文件
+## 3. 预检与停止条件
 
-- `src/services/task_service_entrypoints_video.py`
-- `src/services/task_service_flow.py`
-- `src/services/task_service_completion.py`
-- `src/services/task_service_message_support.py`
-- `src/services/task_service_entrypoints_generation.py`
-- `src/services/task_service_entrypoints_specialized.py`
-- `src/services/task_service_entrypoints_video.py`
-- `backend/app/main.py`
-- `backend/app/main_t2i_wiring.py`
-- `backend/app/queue_manager.py`
-- `src/web_api/routers/tasks.py`
-- `src/web_api/services/task_submission_service.py`
-- `src/web_api/services/task_runtime_api_service.py`
-- `src/web_api/services/task_result_service.py`
-- `src/web_api/services/task_stream_api_service.py`
-- `src/web_api/services/task_stream_service.py`
-- `src/core/task_core.py`
-- `src/core/task_core_service_providers.py`
-- `src/core/task_core_default_dependencies.py`
-- `src/task_core_process_defaults.py`
-- `src/core/task_core_submission.py`
-- `src/services/task_web_side_effects.py`
-- `src/services/task_web_lifecycle_monitor.py`
-- `src/services/task_web_terminal_finalization.py`
-- `src/core/task_core_runtime.py`
+记录环境、Git SHA、artifact digest、入口、开关、task registry、账号和切片。确认队列、Worker、存储与外部依赖可观测。
 
-## 4. 最小必跑集
+release 不明、test 可能进入正式 Worker、账号指向正式支付/对象桶时记 `blocked`。串号/越权、重复任务/扣退款、success 后原件丢失、意外付款、环境混用、OOM/Xid 或长期无终态时立即停止。
 
-适用于低风险重构后的快速确认，目标是在几分钟内确认黄金路径没有明显漂移。
+## 4. 共享主干 `ACC-SPINE`
 
-```bash
-pytest   tests/backend/test_main_helpers.py   tests/backend/test_queue_manager.py   tests/web_api/test_tasks_action_api_service.py   tests/web_api/test_tasks_generate.py   tests/web_api/test_tasks_stream.py   tests/web_api/test_task_runtime_api_service.py   tests/services/test_task_service_flow.py   tests/services/test_task_service_completion.py   tests/services/test_task_service_message_support.py
-pytest   tests/core/test_task_runtime_cleanup.py
-```
+1. 从真实 Web 或 Bot 进入，确认用户和权限。
+2. 用最便宜图片能力提交一次，记录 `client_request_id`、`registry_task_id` 和可观测的 `backend_task_id`，不得混用。
+3. 确认状态按实际经历进入终态；刷新页面或重入会话仍可找到任务。
+4. success 只在产物耐久后出现；结果和 History 可回查，签名 URL 不充当永久对象身份。
+5. 账本只扣一次；通知与 History 终态一致。
+6. 复用结果完成一个无 GPU 下游读取并记录清理决定。
 
-## 5. 完整黄金路径集
+## 5. 入口与任务切片
 
-适用于修改任务提交、状态机、同步等待、not-found fallback 或补偿逻辑后的完整回归。
+### `ACC-ENTRY` 公共 Web、鉴权和权限
 
-```bash
-pytest   tests/integration/test_saga_and_queue.py   tests/backend/test_main_helpers.py   tests/backend/test_queue_manager.py   tests/web_api/test_tasks_action_api_service.py   tests/web_api/test_tasks_generate.py   tests/web_api/test_tasks_stream.py   tests/web_api/test_task_runtime_api_service.py   tests/services/test_task_service_flow.py   tests/services/test_task_service_completion.py   tests/services/test_task_service_message_support.py
-pytest   tests/core/test_task_runtime_cleanup.py
-```
+- 公共页、运行时配置、导航与能力可见性正确。
+- Telegram/Web 登录、密码绑定/版本失效和 JWT 续用符合契约。
+- 访客、过期凭据和无权资源被安全拒绝。
+- Telegram/Web 身份统一；不同用户不串 `internal_user_id`。
 
-## 6. 检查项
+### `ACC-TG` Telegram 主 Bot/FSM
 
-### 6.1 提交与补偿
+- `/start`、菜单、签到/队列和语言正常。
+- 各类素材进入正确状态；错误输入可恢复。
+- callback 不重复；全局取消退出 FSM 并清临时素材。
+- 提交反馈和终态通知与 Web、History 一致。
 
-- [ ] `TaskApplication` 提交失败时会退款并释放并发锁
-- [ ] 四类生产入口显式装配 application，未装配时 fail closed
-- [ ] 旧兼容 facade 只有显式 `dependencies` 路径
-- [ ] 中控同步任务必须先订阅，再入队，再等待
-- [ ] `registry_task_id` 与 `backend_task_id` 的返回与后续流转不混淆
+### `ACC-QQCC` 官方与私有 Bot
 
-对应测试：
+- 快捷生成、Wan、Gallery 只展示启用能力。
+- 私有 Bot 的 owner、访客任务、计费和 webhook 不串租户。
+- 官方/私有更新入口不重复消费。正式专属 Bot 仅有隔离 token/环境时执行，否则 gated。
 
-- `tests/integration/test_saga_and_queue.py`
-- `tests/backend/test_main_helpers.py`
-- `tests/core/test_task_core_dependencies.py`
+### `ACC-TASK` 状态、取消和恢复
 
-### 6.2 中控同步 T2I 路径
+- 合法响应统一；非法参数、余额不足、并发限制和隐藏能力返回正确错误。
+- 相同 `client_request_id` 重试不重复生成/扣费。
+- 可稳定制造 pending 时验取消、锁释放和一次退款；否则记 blocked。
+- running 取消区分“已请求”和执行端确认，不提前退款。
+- success/failed/cancelled 与 History fallback 在 Web、轮询/SSE、Bot 一致；恢复查看不新建任务。
 
-- [ ] prompt 校验失败仍返回 `400`
-- [ ] body 内 `priority` 继续覆盖 query priority
-- [ ] T2I request prepare / submit / status build 已由 wiring/use-case 层统一收口
-- [ ] 同步模式下若任务已终态，仍能 immediate-return
-- [ ] 同步等待超时仍返回 `504`
+## 6. 执行与 AI 能力切片
 
-对应测试：
+### `ACC-EXEC` Central、Worker、R2
 
-- `tests/backend/test_main_helpers.py`
+从用户侧确认 Central 选对 profile、claim 不重复；Worker 使用快照对应的 workflow/模型，patcher 不伤非目标节点。产物耐久后才 success；失败补偿正确，不留长期任务或孤儿 staging。
 
-### 6.3 QueueManager 状态机
+### `ACC-CAPABILITY` 代表能力
 
-- [ ] `dequeue_task()` 默认取最前任务
-- [ ] `dequeue_task(allowed_types=...)` 只取允许类型
-- [ ] 取出任务后状态改为 `running`，并写 heartbeat
-- [ ] `cancel_task()` 对 `pending` / `running` / 终态任务口径不漂移
-- [ ] zombie 清理不误杀仍活跃的运行任务
-- [ ] worker 视图与 metrics 仍能补齐任务详情
+运行时 task registry、入口可见性和 Worker profile 是当次事实源：
 
-对应测试：
+| 能力族 | `FULL-LITE` 默认代表 | 增加样本条件 |
+| --- | --- | --- |
+| 文生图/单图编辑 | 最便宜模式各一 | workflow 同时变化 |
+| 多图/LoRA/ControlNet | 一个模式 | 素材槽/模型变化 |
+| 换脸 | 主入口一个 | 图片/视频链分别变化 |
+| Wan 视频 | 最短视频 | profile/时长变化 |
+| LTX | I2V 一个 | 其它子图变化 |
+| MiniMax H3 | 改变模式一个 | 独立子图变化 |
+| 多阶段/高清化/SCAIL | gated | 直接变化且获授权 |
 
-- `tests/backend/test_queue_manager.py`
+别名有独立计费、素材、状态或后处理才算独立契约。
 
-### 6.4 Web API 任务入口
+### `ACC-PROMPT` 提示词优化
 
-- [ ] `/tasks/generate` 成功时仍返回统一提交 DTO
-- [ ] `/tasks/generate` 继续映射 `429 / 402 / 400 / 500`
-- [ ] `/tasks/cancel/{task_id}` 继续返回统一 success shape
-- [ ] confirmed pending cancel 会通过 `finalize_task_cancellation` 退款、释放并发锁并清理 active registry
-- [ ] 免扣任务的 active registry 会记录 `credits_deducted=false`，confirmed cancel 只清理不退款
-- [ ] running cancel request 只标记等待执行端确认，不提前退款或清理 active registry
-- [ ] router 仍保持薄壳，只做 service 转发
+文本/媒体能创建任务，profile/template revision 与快照一致；文本结果不误入 History/R2/Gallery，只扣一次。异常有明确终态，应用到生成入口时仍可确认 prompt 和费用。
 
-对应测试：
+## 7. 业务数据切片
 
-- `tests/web_api/test_tasks_action_api_service.py`
-- `tests/web_api/test_tasks_generate.py`
-- `tests/core/test_task_runtime_cleanup.py`
+### `ACC-BILLING` 计费、会员、支付、返佣
 
-### 6.5 SSE 与历史兜底
+- 余额、账本原因、task reference 和价格一致；补偿只发生一次。
+- 余额不足不能提交；重试/回调不重复入账。
+- 签到、会员、affiliate 仅在受影响时用专用关系验证。
+- 真实渠道履约默认 gated。
 
-- [ ] terminal backend 状态仍映射为 Web success/failed payload
-- [ ] 历史存在时，not-found 仍回 success fallback
-- [ ] 历史缺失时，not-found 仍回 failed fallback
-- [ ] 非本人任务仍返回 `404`
-- [ ] stream router 与 api service 继续保持 thin wrapper
+### `ACC-GALLERY` 社区
 
-对应测试：
+复用结果投稿并确认个人页/feed；在测试帖上验证赞踩切换、收藏、评论、举报和本人删除。提示词只解锁扣费一次；一键应用携带正确 context，生成独立任务。审核只操作测试内容。
 
-- `tests/web_api/test_tasks_stream.py`
-- `tests/web_api/test_task_runtime_api_service.py`
+### `ACC-MEDIA` 上传、History、归档
 
-### 6.6 Telegram Bot Task 主链路
+- 预签上传限制用户、类型、大小和 key；他人不能读私有对象。
+- 原件、缩略图和 History 在签名刷新后仍可定位，数据库不保存临时签名 URL。
+- success 时原件已耐久；缺失不能伪装成功。
+- 删除、恢复、迁移和冷清理需授权；默认只读。
 
-- [ ] `run_bot_task_application(...)` 的 request / presentation / billing / failure / cleanup 五段式上下文装配不漂移
-- [ ] 取消态仍通过 `BotTaskCancelled` 收口，不回退为字符串 sentinel
-- [ ] completion 阶段在 metadata 探测失败时仍不破坏成功链路
-- [ ] 结果 reply markup、caption、display mode、status message 清理逻辑不漂移
-- [ ] Bot entrypoint 与 thin compat facade 边界保持稳定
+## 8. 管理与独立平台
 
-对应测试：
+### `ACC-ADMIN`
 
-- `tests/services/test_task_service_flow.py`
-- `tests/services/test_task_service_completion.py`
-- `tests/services/test_task_service_message_support.py`
+Dashboard 能读到测试用户、任务、账本、History、Worker 和 Gallery，权限正确。QQCC 配置用草稿验预览；通知、封禁、改余额、RunPod 和发布默认不执行。
 
-## 7. 手工抽查点
+### `ACC-INDEPENDENT`
 
-当自动化通过，但本轮改动碰到任务入口或状态同步时，建议再手工抽查以下 4 项：
+- 3D Mini App：fixture、预览、CPU 路径；GPU provider gated。
+- 媒体增强：登录、上传、点数、task/attempt、结果和补偿。
+- LAN 资源平台：只读 current/cache/drift；takeover/recover 另授权。
+- LAN 图库：白名单目录、缩略图和原件只读，不扩目录。
+- 本地分析：新鲜度、核心统计、任务/账本口径；写入限测试数据。
+- 媒体归档：目录/恢复状态只读；恢复、迁移、冷清理另授权。
+- Support、付费群、群管理、Observer：有隔离 Bot/群才验，否则 gated。
 
-1. 异步任务创建后能返回正确的 `registry_task_id`
-2. 同步 T2I 路径在成功、失败、超时三种分支下口径正确
-3. 运行中任务取消后，前端或 Bot 侧仍能看到“已请求取消”或明确终态
-4. 任务完成后，历史/结果回查与 SSE terminal payload 一致
+`ACC-INFRA` 只通过用户结果观察 PostgreSQL、Redis、Central、R2/imgproxy 和 Telegram Local API；故障转移、恢复和容量另行演练。
 
-### 7.1 LAN `all` worker 验收
+## 9. 全量顺序与局部选择
 
-- [ ] profile 的 supported/prefetch/pipeline 集合严格等于八池展开后的 19 类型
-- [ ] 19 份真实 workflow 均能加载、patch、提交并保留非目标节点
-- [ ] 多 manifest 相同内容去重；路径冲突、缺对象、空间不足和 marker 不完整
-  均 fail closed
-- [ ] 队列按全局最早 supported task 领取；单 Comfy、深度一预取和交付重叠
-  上限不漂移
-- [ ] 视频换脸与自由 P 图 v3 两条多阶段链保持一次扣费、隐藏中间结果、确定性
-  stage ID、失败补偿和终态一致
-- [ ] takeover 前旧任务自然完成；disabled heartbeat、exact digest、OCI
-  revision、Comfy health、模型 marker 全部通过后才 enable
-- [ ] OOM/status 137/Xid、重启、workflow、上传、重复扣费或终态错误触发
-  `recover --prefer old`
-- [ ] 19 类型 canary 后连续观察至少两小时、十个真实任务且覆盖至少三个 profile
-  family
+`FULL-LITE` 顺序：预检 → 身份/Web → 主干图片 → Telegram/QQCC → 改变的图片/视频 profile → Prompt → 余额不足/幂等/安全取消 → Gallery/媒体/通知复用 → Dashboard/分析/独立平台读取 → 经授权的 gated 项 → 清理核账。
 
-## 8. 执行建议
+| 改动 | 必选切片 | 条件追加 |
+| --- | --- | --- |
+| Web 样式/文案 | `ENTRY` 受影响页 | 契约未变可免 GPU |
+| JWT/权限 | `ENTRY`、`SPINE` | Bot/管理身份 |
+| Task/Central/状态机 | `SPINE`、`TASK`、`EXEC`、`BILLING`、`MEDIA` | 图片及受影响视频 |
+| workflow/model/patcher | `EXEC`、`CAPABILITY`、`MEDIA`、`BILLING` | 每个改变 profile 一个任务 |
+| Telegram/QQCC | 对应 Bot、`TASK` | 通知、文件或租户 |
+| 账本/支付 | `BILLING`、`ENTRY`、`SPINE` | 渠道履约 gated |
+| Gallery/R2/History | `GALLERY`、`MEDIA` | 复用已有结果 |
+| Dashboard/独立平台 | 对应子项 | 共享身份/任务/存储 |
+| schema/env/发布 | 预检、`SPINE`、受影响域 | migration 另授权 |
 
-- 改 Bot flow / entrypoints：先跑最小必跑集，再补 `tests/services/test_task_service_flow.py`
-- 改 `task_core` facade / provider / dependencies / monitor：直接跑完整黄金路径集
-- 改 `queue_manager`、`backend/app/main.py`、`main_t2i_wiring.py`：直接跑完整黄金路径集
-- 改 `tasks.py` router/service：至少跑 Web API 相关 3 组测试，再视影响补全量
-- 回归范围由命中的领域 Skill、实际接口/状态流和本清单共同决定；不再使用已退役
-  的 changed-path/hotspot classifier 推导自动门禁。
+## 10. 判定、证据、清理
 
-## 9. 收口原则
+状态只有 `pass`（入口、状态、副作用和证据均符合）、`fail`（可复现漂移）、`blocked`（依赖/容量/数据/授权缺失）、`not-applicable`（环境无该能力）。跳过不算通过。
 
-- 新增任务功能时，优先把测试并入现有黄金路径集，而不是再散落新的入口测试清单
-- 新增 helper 或 seam 时，优先提供 focused tests 和显式依赖注入契约
-- 文档中的入口函数、fallback 语义、双 ID 口径、Bot 五段式上下文必须与代码保持一致
-- 若本清单中的任一检查项失效，应先补测试或更新清单，再继续重构
+每条记录包含 release/环境、用例、入口、脱敏 actor/双 ID、task type、状态时间、Worker/profile、结果引用、余额、通知、清理和判定。失败补最小复现。总报告汇总任务数、灵石、GPU 能力族和风险；关键项失败、阻塞或 gated 时不得写“全系统通过”。
+
+结束时取消测试任务，删除测试社区数据，核对无意外未终态或 staging。账本不得人工调平；保留证据须标记。新经验修正切片和判定，不追加日期流水或执行脚本。

@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-09-06`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-09-07`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
@@ -46,7 +46,7 @@
 | `docs/子模块_任务调度_task_scheduler.md` | TaskApplication、提交 intent、due finalizer、队列与清理 | `src/core/task_application.py`、`task_core*`、`task_web_finalizer*.py`、QueueManager | current | 任务生命周期 |
 | `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路与生成 task type contract | Web/Bot、Central、Worker、History | current | 跨层任务或任务类型改动 |
 | `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性、状态协议与任务类型门禁 | `backend/app`、API client、Worker | current | 队列、worker 协议或 task enum |
-| `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
+| `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 全量/局部低资源真实用户验收计划 | Web/Bot、任务 registry、Central/Worker、账本、Gallery/媒体入口 | current | 发布后系统或局部验收 |
 | `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、主 Bot 装配与生命周期、返佣兑 USDT | handler registry、runtime bootstrap/update processor、task supervisor、FSM services | current | Bot 交互 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env、当次节点探测 | runtime-verification-required | Telegram 文件/代理 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | 官方 QQCC 与 Config | QQCC code、config service、focused tests | current | QQCC 功能 |
@@ -142,6 +142,7 @@
 | `.codex/skills/allbot-local-analytics-prompt-semantics/SKILL.md` | 词元治理 | analytics code/docs | current | 提示词治理 |
 | `.codex/skills/allbot-local-media-archive/SKILL.md` | 本地媒体归档路由 | archive code、NAS Compose、专项文档 | current | 媒体归档与冷清理 |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 知识同步 | docs/Skills/matrix | current | 知识变更 |
+| `.codex/skills/allbot-system-acceptance/SKILL.md` | 真实用户旅程验收路由 | 系统验收计划、领域 Skills、目标环境证据 | current | 全量或局部系统验收 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | Bug 反馈环 | reproduction/tests/logs | current | 故障 |
 | `.codex/skills/allbot-tdd/SKILL.md` | TDD 纪律 | public seams/tests | current | 行为改动 |
 | `.codex/skills/allbot-codebase-design/SKILL.md` | 架构词汇 | module/interface/seam | current | 设计重构 |
