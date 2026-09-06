@@ -44,8 +44,8 @@ owner、telemetry key、替代入口、无命中观测窗口和历史数据退�
 - 新兼容层先登记 `config/compat_registry.json`，再写代码；门禁会拒绝
   只新增 `compat/legacy/alias` 标记却没更新 registry 的变更。
 - `compat_hit_log` 只记 telemetry key 和入口，不记用户 payload、token、
-  object key 或 callback 原文。运维查询使用 `event=compat_hit` +
-  `telemetry_key`，避免靠搜业务文案猜测是否命中。
+  object key 或 callback 原文。普通文本 formatter 与 structured logger 都必须输出
+  `event=compat_hit`、`telemetry_key` 和入口，避免出现无法归属的命中记录。
 - 已删除代码不留在活跃表；删除证据进入归档或 Git 历史。
 - 只有静态 `rg` 不足以删除数据/协议兼容；必须同时满足 registry
   中的连续无命中窗口和 `historical_data` 条件。

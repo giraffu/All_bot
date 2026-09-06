@@ -16,7 +16,9 @@ def record_compat_hit(telemetry_key: str, *, entrypoint: str) -> None:
     with _hit_counts_lock:
         _hit_counts[telemetry_key] += 1
     logger.info(
-        "compatibility path used",
+        "event=compat_hit telemetry_key=%s entrypoint=%s",
+        telemetry_key,
+        entrypoint,
         extra={
             "event": "compat_hit",
             "telemetry_key": telemetry_key,
