@@ -6825,6 +6825,19 @@ def validate_switch_sample_coverage(
     }
 
 
+def gallery_switch_verification_join_condition(*, has_history_id: bool) -> str:
+    """Mirror the deployed Gallery reader without crossing an owner boundary."""
+    legacy_latest = """h.id=(select h2.id from history h2
+                         where h2.task_id=gp.task_id and h2.user_id=gp.user_id
+                         order by h2.id desc limit 1)"""
+    if not has_history_id:
+        return legacy_latest
+    return f"""h.user_id=gp.user_id and (
+                 (gp.history_id is not null and h.id=gp.history_id)
+                 or (gp.history_id is null and {legacy_latest})
+               )"""
+
+
 def validate_switch_reverification_state(
     *,
     schema: str,
@@ -6893,6 +6906,17 @@ async def _verify_switch_plan(
     owner_samples: list[dict[str, Any]] = []
     gallery_samples: list[dict[str, Any]] = []
     gallery_eligible_counts: Counter[str] = Counter()
+    gallery_has_history_id = bool(
+        await production.fetchval(
+            """select exists(
+                 select 1 from information_schema.columns
+                  where table_schema=current_schema()
+                    and table_name='gallery_posts' and column_name='history_id')"""
+        )
+    )
+    gallery_join = gallery_switch_verification_join_condition(
+        has_history_id=gallery_has_history_id
+    )
     for batch in batches:
         assets = [
             dict(row)
@@ -6941,12 +6965,8 @@ async def _verify_switch_plan(
             for media_type in ("image", "video"):
                 eligible_count = int(
                     await production.fetchval(
-                        """select count(*)
-                             from gallery_posts gp join history h on (
-                               (gp.history_id is not null and h.id=gp.history_id)
-                               or (gp.history_id is null and h.task_id=gp.task_id
-                                   and h.user_id=gp.user_id)
-                             )
+                        f"""select count(*)
+                             from gallery_posts gp join history h on {gallery_join}
                             where gp.is_active is true and gp.media_type=$2
                               and h.id=any($1::integer[])""",
                         history_ids,
@@ -6962,13 +6982,9 @@ async def _verify_switch_plan(
                 if existing >= 16:
                     continue
                 gallery_rows = await production.fetch(
-                    """select gp.id post_id,gp.media_type,h.id history_id,
+                    f"""select gp.id post_id,gp.media_type,h.id history_id,
                               h.user_id,h.task_id
-                         from gallery_posts gp join history h on (
-                           (gp.history_id is not null and h.id=gp.history_id)
-                           or (gp.history_id is null and h.task_id=gp.task_id
-                               and h.user_id=gp.user_id)
-                         )
+                         from gallery_posts gp join history h on {gallery_join}
                         where gp.is_active is true and gp.media_type=$2
                           and h.id=any($1::integer[])
                         order by gp.id,h.id limit $3""",
