@@ -1,7 +1,6 @@
 # 子模块：本地数据分析平台（Local Analytics Platform）
 
-本文件只维护当前边界、事实源和运维入口。字段清单、提示词规则版本、一次刷新
-结果和历史功能演进不在这里重复；分别以代码、专项文档和 archive 为准。
+本文只维护当前边界、事实源和运维入口。
 
 ## 1. 定位与入口
 
@@ -34,9 +33,6 @@ health 回读，不从本文复制历史快照。
 | 登录、公网 hostname、Access/Tunnel | `allbot-cloudflare-ops` |
 | Compose、重启、配置投影、数据库迁移 | `allbot-ops-deployment` |
 | 慢查询、页面 5xx、刷新卡住、定时任务失败 | `ops-log-monitor` + `allbot-diagnosing-bugs` |
-
-不要为了一个词元规则任务加载本平台全部 API，也不要把本文件当成提示词语义规则
-清单。
 
 ## 3. 数据边界
 
@@ -71,11 +67,13 @@ health 回读，不从本文复制历史快照。
 | 归档媒体 | `routes_archive.py` |
 | R2 治理摘要 | `routes_r2_governance.py` |
 | 登录/session | `auth.py` |
+| 前端 | `static/js/bootstrap.js` 装配；`static/js/userViews.js` 承载用户 presenter |
 
 `/api/overview` 只保留状态摘要和旧链接兼容，不是业务首页事实源。已退役的“近似
 代表、近似图、语义场景、语义图谱”不再作为公开 Tab/API；旧派生表只有在
 `scripts/cleanup_local_analytics_prompt_derivatives.py` dry-run 明确命中后，才能
-经新的删除授权执行。
+经新的删除授权执行。前端新增展示策略进入领域 module，`bootstrap.js` 只装配依赖；
+focused test 当前将其上限锁在 5100 行，后续只允许下调。
 
 ## 5. 刷新与新鲜度
 

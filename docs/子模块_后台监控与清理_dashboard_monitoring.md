@@ -127,7 +127,8 @@ sequenceDiagram
 - `QueueStats.vue` 已使用 `<script setup lang="ts">`，系统状态与 RunPod autoscaler
   分别通过 typed API adapter 进入 `useQueueStatsMonitor`/组件；不得重新从组件
   直接拼 HTTP payload。Dashboard 的 legacy JavaScript SFC 由测试中的缩减清单
-  管理，新 SFC 禁止无 TypeScript，迁移一个就必须从清单删除一个。
+  管理，新 SFC 禁止无 TypeScript，迁移一个就必须从清单删除一个。当前剩 20 个；
+  6 个分布柱状图共用 typed `DistributionBarChartBase.vue`。
 - Dashboard Nginx 网关会对 `/api/stats*` 做约 15 秒短缓存，对 `/api/system/status`、`/api/system/workers`、`/api/system/concurrency_stats` 做约 5 秒短缓存；登录、退款、封禁、删除、清理僵尸任务等写操作不得缓存。
 - Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
