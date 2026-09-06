@@ -87,6 +87,9 @@ from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
 from src.services.task_service_entrypoints_video import process_video_task_template
+from src.services.telegram_video_permission_service import (
+    resolve_telegram_video_permissions,
+)
 from src.services.wan22_video_v2_extension_service import (
     download_output_file_to_fsm_temp,
 )
@@ -132,14 +135,6 @@ QUICK_VIDEO_ROUTE_CONFIG_KEYS = {
 }
 
 QUICK_VIDEO_LEGACY_ROUTE_SCENE_IDS = QUICK_VIDEO_ROUTE_CONFIG_KEYS
-
-QUICK_VIDEO_MODE_CONFIG_KEYS = {
-    MODE_PERFECT_VIDEO_INSERT: "missionary",
-    MODE_DOGGY_STYLE: "doggy",
-    MODE_BLOWJOB: "blowjob",
-    MODE_UNDRESS_TONGUE: "undress_tongue",
-    MODE_CLOSEUP_BLOWJOB: "closeup_blowjob",
-}
 
 _t = translate_fsm_text
 H3_EXTENSION_SCENE_CALLBACK_PREFIX = "h3xs:"
@@ -270,27 +265,6 @@ def _resolve_quick_video_file_id(message) -> str | None:
     return None
 
 
-async def _resolve_quick_video_allowed_settings(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    user_id: int,
-    qqcc_config: dict | None,
-) -> tuple[list[str], list[str], str, str]:
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    user_group = await permission_service.get_user_group(internal_user.id)
-    user_identity = await permission_service.get_user_identity(internal_user.id)
-
-    allowed_resolutions, allowed_durations = await permission_service.get_video_permissions(
-        internal_user.id,
-        user_group=user_group,
-        user_identity=user_identity,
-    )
-
-    return allowed_resolutions, allowed_durations, user_group, user_identity
-
-
 def _strip_menu_prefix(text: str) -> str:
     text = (text or "").strip()
     first_token, _, rest = text.partition(" ")
@@ -387,9 +361,7 @@ def _sync_qqcc_scene_to_quick_video_data(
             {
                 "ai_video_mode": str(scene.get("mode") or "i2v"),
                 "reference_images": list(scene.get("reference_images") or []),
-                "reference_image_names": list(
-                    scene.get("reference_image_names") or []
-                ),
+                "reference_image_names": list(scene.get("reference_image_names") or []),
                 "reference_image_telegram_file_ids": list(
                     scene.get("reference_image_telegram_file_ids") or []
                 ),
@@ -451,18 +423,14 @@ def _build_ref2v_scene_prompt(
     scene_name = str(scene.get("name") or "AI视频")
     if replacement_confirmed:
         status = f"✅ 已使用你发送的图片替换【{selected_name}】模板。"
-        action = (
-            "现在请发送女性人物图片（正面、脸部清晰），"
-            "我会使用当前模板生成视频。"
-        )
+        action = "现在请发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。"
         replacement_tip = (
             "其他模板仍然保留；如需继续替换，可点击下方对应的“替换：模板名称”按钮。"
         )
     else:
         status = f"✅ 当前默认模板【{selected_name}】。"
         action = (
-            "你可以直接发送女性人物图片（正面、脸部清晰），"
-            "我会使用当前模板生成视频。"
+            "你可以直接发送女性人物图片（正面、脸部清晰），我会使用当前模板生成视频。"
         )
         replacement_tip = (
             "如需更换参考模板，点击下方“替换：模板名称”按钮，然后发送新的模板图片。"
@@ -505,24 +473,15 @@ async def _build_quick_video_settings_markup(
     qqcc_config: dict | None = None,
 ) -> InlineKeyboardMarkup:
     if qqcc_config is None:
-        (
-            allowed_resolutions,
-            allowed_durations,
-            user_group,
-            user_identity,
-        ) = await _resolve_quick_video_allowed_settings(
-            context=context,
-            user_id=user_id,
-            qqcc_config=None,
-        )
+        permissions = await resolve_telegram_video_permissions(user_id)
         reply_markup = get_video_settings_keyboard(
-            user_group,
-            user_identity,
+            permissions.user_group,
+            permissions.user_identity,
             resolution,
             duration,
             context.lang,
-            allowed_resolutions=allowed_resolutions,
-            allowed_durations=allowed_durations,
+            allowed_resolutions=list(permissions.allowed_resolutions),
+            allowed_durations=list(permissions.allowed_durations),
         )
         keyboard = list(reply_markup.inline_keyboard)
     else:
@@ -697,15 +656,11 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             qqcc_config=qqcc_config,
         )
         if scene_cost is not None:
-            scene_cost_text = _t(
-                context, "fsm.common.estimated_cost", cost=scene_cost
-            )
+            scene_cost_text = _t(context, "fsm.common.estimated_cost", cost=scene_cost)
             msg = f"{msg.rstrip()}\n\n{scene_cost_text}"
         copywriting_override = get_qqcc_copywriting_override(
             qqcc_config,
-            "ai_video_scene_start"
-            if scene_kind == "ai_video"
-            else "video_scene_start",
+            "ai_video_scene_start" if scene_kind == "ai_video" else "video_scene_start",
         )
         msg = (
             render_qqcc_copywriting(
@@ -744,14 +699,16 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 build_quick_draw_v1_scene_callback_data,
             )
 
-            jump_row = [InlineKeyboardButton(
+            jump_row = [
+                InlineKeyboardButton(
                     f"先去 AI绘图{'V1' if is_v1 else 'V2'}生成「{jump_scene['name']}」",
                     callback_data=(
                         build_quick_draw_v1_scene_callback_data(jump_scene["id"])
                         if is_v1
                         else build_quick_draw_scene_callback_data(jump_scene["id"])
                     ),
-                )]
+                )
+            ]
             existing_rows = list(reply_markup.inline_keyboard) if reply_markup else []
             reply_markup = InlineKeyboardMarkup([*existing_rows, jump_row])
     reply_awaitable = robust_reply_text(
@@ -783,7 +740,9 @@ async def start_h3_extension_scene_selection(
     query = update.callback_query
     await safe_answer_query(query)
     if context.user_data.get("in_conversation"):
-        await safe_answer_query(query, text=_t(context, "fsm.common.conflict"), show_alert=True)
+        await safe_answer_query(
+            query, text=_t(context, "fsm.common.conflict"), show_alert=True
+        )
         return ConversationHandler.END
     task_id = resolve_task_id_from_callback_data(
         query.data,
@@ -791,8 +750,14 @@ async def start_h3_extension_scene_selection(
     )
     config = await _load_qqcc_config_for_context(context)
     scenes = _enabled_h3_extension_scenes(config or {})
-    if not task_id or not scenes or not is_qqcc_main_button_enabled(config or {}, "ai_video"):
-        await safe_answer_query(query, text="当前没有可用的 H3 扩展场景", show_alert=True)
+    if (
+        not task_id
+        or not scenes
+        or not is_qqcc_main_button_enabled(config or {}, "ai_video")
+    ):
+        await safe_answer_query(
+            query, text="当前没有可用的 H3 扩展场景", show_alert=True
+        )
         return ConversationHandler.END
     try:
         seed = await prepare_minimax_h3_extension_fsm_data(
@@ -814,9 +779,7 @@ async def start_h3_extension_scene_selection(
         "image_path": seed.fsm_data["images"][0],
         "is_h3_extension": True,
         "extension_prev_task_id": task_id,
-        "minimax_h3_chain_task_ids": list(
-            seed.fsm_data["minimax_h3_chain_task_ids"]
-        ),
+        "minimax_h3_chain_task_ids": list(seed.fsm_data["minimax_h3_chain_task_ids"]),
         "h3_extension_scene_ids": [str(scene["id"]) for scene in scenes],
     }
     context.user_data["in_conversation"] = "QUICK_VIDEO_H3_EXTENSION"
@@ -850,10 +813,14 @@ async def select_h3_extension_scene(
         await safe_answer_query(query, text="扩展选择已失效", show_alert=True)
         return ConversationHandler.END
     try:
-        index = int(str(query.data or "").removeprefix(H3_EXTENSION_SCENE_CALLBACK_PREFIX))
+        index = int(
+            str(query.data or "").removeprefix(H3_EXTENSION_SCENE_CALLBACK_PREFIX)
+        )
         scene_id = list(fsm_data.get("h3_extension_scene_ids") or [])[index]
     except (ValueError, IndexError, TypeError):
-        await safe_answer_query(query, text="扩展场景已更新，请重新选择", show_alert=True)
+        await safe_answer_query(
+            query, text="扩展场景已更新，请重新选择", show_alert=True
+        )
         return QuickVideoState.WAIT_IMAGE
     config = await _load_qqcc_config_for_context(context)
     scenes = _enabled_h3_extension_scenes(config or {})
@@ -876,9 +843,7 @@ async def select_ref2v_template(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     query = update.callback_query
-    parsed = parse_quick_ref2v_template_callback_data(
-        getattr(query, "data", None)
-    )
+    parsed = parse_quick_ref2v_template_callback_data(getattr(query, "data", None))
     if query is None or parsed is None:
         return ConversationHandler.END
     await safe_answer_query(query)
@@ -906,13 +871,13 @@ async def select_ref2v_template(
     references = list(scene.get("reference_images") or [])
     names = list(scene.get("reference_image_names") or [])
     if template_index >= len(references):
-        await safe_answer_query(
-            query, text="模板已更新，请重新选择", show_alert=True
-        )
+        await safe_answer_query(query, text="模板已更新，请重新选择", show_alert=True)
         return QuickVideoState.WAIT_IMAGE
     _sync_qqcc_scene_to_quick_video_data(fsm_data, scene, scene_kind="ai_video")
     selected_name = str(
-        names[template_index] if template_index < len(names) else f"模板 {template_index + 1}"
+        names[template_index]
+        if template_index < len(names)
+        else f"模板 {template_index + 1}"
     )
     fsm_data["pending_reference_template_index"] = template_index
     fsm_data["pending_reference_template_name"] = selected_name
@@ -1092,7 +1057,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if str(context.user_data.get("in_conversation") or "").startswith(
         "QUICK_IMAGE_"
     ) and context.user_data.get("quick_image_data"):
-        from src.handlers.fsm.quick_image_fsm import receive_image as receive_quick_image
+        from src.handlers.fsm.quick_image_fsm import (
+            receive_image as receive_quick_image,
+        )
 
         video_data = context.user_data.pop("quick_video_data", {})
         cleanup_fsm_temp_files(_quick_video_temp_paths(video_data))
@@ -1109,7 +1076,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     qqcc_config = await _load_qqcc_config_for_context(context)
     if qqcc_config is not None:
         qqcc_config = project_qqcc_config_for_scene_version(
-            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+            qqcc_config,
+            family="video",
+            version=str(fsm_data.get("scene_version") or "v2"),
         )
     qqcc_scene = None
     if qqcc_config is not None:
@@ -1204,7 +1173,9 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     qqcc_config = await _load_qqcc_config_for_context(context)
     if qqcc_config is not None:
         qqcc_config = project_qqcc_config_for_scene_version(
-            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+            qqcc_config,
+            family="video",
+            version=str(fsm_data.get("scene_version") or "v2"),
         )
     qqcc_scene = None
     if qqcc_config is not None:
@@ -1222,22 +1193,18 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return ConversationHandler.END
         _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
-    allowed_resolutions = None
-    allowed_durations = None
-    if qqcc_config is None:
-        allowed_resolutions, allowed_durations, _group, _identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=None,
-            )
-        )
-
     if data == "qvid_start_generation":
         await query.answer(
             text=_t(context, "fsm.common.task_initializing"), cache_time=2
         )
         return await start_generation(update, context)
+
+    allowed_resolutions = None
+    allowed_durations = None
+    if qqcc_config is None:
+        permissions = await resolve_telegram_video_permissions(user_id)
+        allowed_resolutions = list(permissions.allowed_resolutions)
+        allowed_durations = list(permissions.allowed_durations)
 
     if qqcc_config is not None:
         await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
@@ -1328,18 +1295,16 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     qqcc_config = await _load_qqcc_config_for_context(context)
     if qqcc_config is not None:
         qqcc_config = project_qqcc_config_for_scene_version(
-            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+            qqcc_config,
+            family="video",
+            version=str(fsm_data.get("scene_version") or "v2"),
         )
     allowed_resolutions = None
     allowed_durations = None
     if qqcc_config is None:
-        allowed_resolutions, allowed_durations, _group, _identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=None,
-            )
-        )
+        permissions = await resolve_telegram_video_permissions(user_id)
+        allowed_resolutions = list(permissions.allowed_resolutions)
+        allowed_durations = list(permissions.allowed_durations)
     plan = build_quick_video_submission_plan(
         fsm_data=fsm_data,
         qqcc_config=qqcc_config,
@@ -1360,17 +1325,13 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 ),
             },
         )
-    selected_reference_image_path = fsm_data.pop(
-        "selected_reference_image_path", None
-    )
+    selected_reference_image_path = fsm_data.pop("selected_reference_image_path", None)
     replacement_paths = fsm_data.pop("reference_image_replacement_paths", {})
     fsm_data.pop("reference_image_replacement_file_ids", None)
     all_replacement_paths = [
         str(path)
         for path in (
-            replacement_paths.values()
-            if isinstance(replacement_paths, dict)
-            else []
+            replacement_paths.values() if isinstance(replacement_paths, dict) else []
         )
         if path
     ]

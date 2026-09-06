@@ -49,6 +49,26 @@ def _build_user():
     )
 
 
+def _patch_main_bot_video_permissions(
+    monkeypatch, *, resolutions=("512p",), durations=("5s",)
+):
+    resolver = AsyncMock(
+        return_value=SimpleNamespace(
+            internal_user_id=99,
+            user_group="foundation",
+            user_identity="normal",
+            allowed_resolutions=tuple(resolutions),
+            allowed_durations=tuple(durations),
+        )
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "resolve_telegram_video_permissions",
+        resolver,
+    )
+    return resolver
+
+
 def _build_message(text: str = "test prompt"):
     return SimpleNamespace(
         text=text,
@@ -1451,7 +1471,7 @@ async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch
                     "engine": "free_edit",
                     "lora_name": "qwen/YARN_1.0.safetensors",
                 }
-            ]
+            ],
         }
     )
 
@@ -1501,9 +1521,9 @@ async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch
             "quick_image_data": {
                 "mode": MODE_IMG2IMG_LORA,
                 "cost": 2,
-                    "image_path": None,
-                    "scene_id": "realistic",
-                    "scene_version": "v1",
+                "image_path": None,
+                "scene_id": "realistic",
+                "scene_version": "v1",
             },
         },
         bot=SimpleNamespace(),
@@ -1716,7 +1736,7 @@ async def test_edit_image_v2_5_accepts_second_reference_and_updates_cost(monkeyp
         message=SimpleNamespace(
             document=None,
             photo=[SimpleNamespace(file_id="second-image")],
-        )
+        ),
     )
     context = SimpleNamespace(
         bot=SimpleNamespace(get_file=get_file_mock),
@@ -3531,6 +3551,7 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(
         AsyncMock(side_effect=InsufficientCreditsError(current=1, cost=6)),
     )
     monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup_mock)
+    permission_resolver = _patch_main_bot_video_permissions(monkeypatch)
 
     update = SimpleNamespace(
         callback_query=query,
@@ -3558,6 +3579,7 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(
     cleanup_mock.assert_any_call(["/tmp/quick-video-input.png"])
     assert "in_conversation" not in context.user_data
     assert "quick_video_data" not in context.user_data
+    permission_resolver.assert_awaited_once_with(12345)
 
 
 @pytest.mark.asyncio
@@ -3701,6 +3723,11 @@ async def test_quick_video_submission_uses_explicit_settings_without_user_data_b
         "create_background_task",
         fake_create_background_task,
     )
+    permission_resolver = _patch_main_bot_video_permissions(
+        monkeypatch,
+        resolutions=("512p", "720p"),
+        durations=("5s", "8s"),
+    )
 
     update = SimpleNamespace(
         callback_query=query,
@@ -3731,3 +3758,4 @@ async def test_quick_video_submission_uses_explicit_settings_without_user_data_b
     assert "custom_video_duration" not in context.user_data
     assert "mode" not in context.user_data
     assert "quick_video_data" not in context.user_data
+    permission_resolver.assert_awaited_once_with(12345)

@@ -14,16 +14,8 @@ def test_build_private_prompt_fallback_supports_bilingual_copy():
     )
 
 
-def test_build_private_prompt_fallback_payload_returns_text_and_keyboard(monkeypatch):
-    monkeypatch.setattr(
-        "src.i18n.keyboards.get_main_menu_keyboard",
-        lambda lang: f"keyboard:{lang}",
-    )
-
-    text, keyboard = message_handler_common.build_private_prompt_fallback_payload("zh")
-
-    assert "不认识的指令" in text
-    assert keyboard == "keyboard:zh"
+def test_static_private_prompt_fallback_payload_is_removed():
+    assert not hasattr(message_handler_common, "build_private_prompt_fallback_payload")
 
 
 def test_extract_prompt_message_text_prefers_edited_message_and_strips_text():

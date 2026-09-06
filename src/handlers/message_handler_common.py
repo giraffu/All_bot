@@ -45,12 +45,6 @@ def build_private_prompt_fallback(lang: str) -> str:
     return "✨ 似乎是不认识的指令呢。\n👇 请使用下方菜单进行操作，或输入 /start 重新唤醒菜单。"
 
 
-def build_private_prompt_fallback_payload(lang: str) -> tuple[str, object]:
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    return build_private_prompt_fallback(lang), get_main_menu_keyboard(lang)
-
-
 def extract_prompt_message_text(update: Update) -> tuple[object | None, str]:
     message = get_reply_message(update)
     if not message:

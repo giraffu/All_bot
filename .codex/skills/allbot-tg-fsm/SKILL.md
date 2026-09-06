@@ -38,9 +38,13 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 - Telegram Local API/Poll/旧 payload 兼容与语言注入集中在
   `src/services/telegram_runtime_bootstrap.py`，主 Bot 与 QQCC 共用 bootstrap，
   但不共用 handler 集。
+- `src/bot_main.py` 只作 composition root；handler 顺序集中在
+  `main_bot_handler_registry.py`，所有 ConversationHandler 先于全局 callback fallback。
 - 主 Bot 更新通过 `PerUserUpdateProcessor` 保证同用户严格串行、不同用户
   有界并发；禁止退回 PTB 全局单通道或无键 `concurrent_updates(True)`。
   QQCC 官方 Bot 的并发边界按其专项技能执行。
+- 主 Bot 后台协程经 `main_bot_task_supervisor.py` 持有；shutdown 先 cancel/await，
+  再关闭 Redis。
 - 语言切换同时更新数据库和 Redis 缓存，不能只替换当前键盘文案。
 
 ## 3. FSM 与 service 分层
@@ -49,46 +53,38 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
   历史和扩展链放 application service，具体入口按专项文档定位。
 - `Update` 不进入 core；FSM 转为内部 request/context 后调用公开 facade。
 - plan 参数显式传给后台 actor/service，不借顶层 `context.user_data` 隐式传递。
+- 视频档位权限由 `telegram_video_permission_service.py` 解析为不可变快照。
 
 ## 4. 对话与文件不变量
 
 - FSM 入口优先使用 `I18nFilter` 或统一菜单路由；FSM-only key、特殊翻译和
-  旧键盘 alias 维护在 `menu_route_registry.py`。
-- 每个状态显式返回下一状态或 `ConversationHandler.END`。当前常用 timeout
-  基线是 300 秒；改变时同步测试和专项文档。
-- 主菜单在任意 FSM 内都能安全打断，并给出明确回复；退出必须清理 `user_data`
-  和已下载文件。
-- callback 即使拒绝、过期或未知也必须快速 answer，避免客户端持续转圈。
-- 文件下载失败、取消或超时时清理已写入的半文件，并保留可安全重试的状态。
-  大文件不得长时间阻塞 update handler。
-- 长时间生成/监视通过受控 background task 脱离 Telegram update；后台失败
-  仍要清理临时文件并通知用户，不能在 media handler 同步等终态。
-- 菜单显隐只影响展示，不能删除仍需兼容的 prompt route、旧消息 callback
-  或安全 fail-closed 入口。
+  旧键盘 alias 维护在 `menu_route_registry.py`；状态显式返回下一态或 END，常用
+  timeout 为 300 秒，变更时同步测试和专项文档。
+- 主菜单可从任意 FSM 打断；结束、失败、取消或超时均清理状态和临时文件，下载
+  失败保留安全重试态，大文件不阻塞 update handler。
+- callback 的正常、拒绝、过期和未知分支都先 answer；长任务进入受控后台 task，
+  后台失败仍清理并通知用户。
+- 菜单显隐只改变新键盘，不删除兼容 route/callback 或 fail-closed 入口。
 
 ## 5. Bot 隔离
 
-- 各 Bot 隔离进程、handler、配置和日志；同 token 不得双 polling。通知 token
-  仅允许客服 outbound，polling 仍归 Observer，并由客服文档、配置和身份测试约束。
-- QQCC handler/webhook、付费群 join request、普通群 `message`、客服工单和
-  Observer 采集边界分别以专项 Skill/文档为准，不互相导入入口。
-- token 不回显、不记录；旧入口只安全跳转/拒绝，兼容由所属 Skill 管理。
+- 各 Bot 隔离进程、handler、配置和日志，同 token 不双 polling；QQCC、审核群、
+  普通群、客服与 Observer 入口以各专项文档为准，不跨入口导入。
+- token 不回显或记录；通知 token 仅作已授权 outbound，旧入口只安全跳转/拒绝。
 
 ## 6. 维护与运行时红线
 
 - Bot 生成入口在维护 marker 生效时停止新提交并提示用户；不自行清除 marker。
-- 主 Bot 频道成员同步必须使用 `REQUIRED_CHANNEL_ID`，展示链接不能替代
-  `getChatMember` 所需 ID；缺配置由发布契约 fail closed。
-- callback/ConversationHandler 顺序是公开契约；新增前缀先检查冲突。
-- 不在 FSM 中复制计费、任务类型、workflow、R2 或数据库事务逻辑；需要新
-  seam 时先用 `allbot-codebase-design` 判断职责位置。
-- 不把历史按钮兼容理解为继续开放产品能力。旧入口应兼容路由或明确拒绝，
-  不能静默提交不同任务。
+- 频道同步使用 `REQUIRED_CHANNEL_ID`，缺失时 fail closed；展示链接不能替代
+  `getChatMember` ID。callback/ConversationHandler 顺序是公开契约，前缀不得冲突。
+- FSM 不复制计费、任务类型、workflow、R2 或数据库事务；新 seam 先做职责判断。
+- 历史按钮只兼容路由或明确拒绝，不代表继续开放能力，也不静默改投其它任务。
 
 ## 7. 最小验证
 
 - 菜单/FSM：任意状态退出、明确回复、END、i18n/旧文本安全路由与文件清理。
 - callback：注册、前缀优先级，正常/拒绝/未知都 answer。
 - 并发：同用户串行、不同用户有界并发，取消后不阻塞后续 update。
+- 装配/生命周期：registry 顺序、后台 task 完成移除、shutdown cancel/await。
 - service/任务：显式 plan seam；成功、额度不足、维护、取消限制和终态展示。
 - Bot 隔离：token、handler、polling/webhook；交付列出 focused tests 和环境状态。

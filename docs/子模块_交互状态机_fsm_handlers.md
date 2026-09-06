@@ -71,7 +71,27 @@ History 归属和 v1/v2 上下文，再下载上一段末尾视频和尾帧到�
   最低 5 USDT，300 秒超时并支持全局菜单打断；冻结统一进入
   `affiliate_usdt_redeem_service`，FSM 不直接写账本。
 
-## 2. 当前架构图
+## 2. 当前架构
+
+### 2.1 主 Bot 模块边界
+
+| Module | Interface / 职责 | 稳定事实源 |
+| --- | --- | --- |
+| composition root | 环境、ApplicationBuilder、provider 初始化、polling | `src/bot_main.py` |
+| handler registry | middleware → FSM → command/callback/payment/media fallback → error 的唯一注册顺序 | `src/handlers/main_bot_handler_registry.py` |
+| Telegram bootstrap | Local API URL、HTTP request、payload patch、语言上下文 | `src/services/telegram_runtime_bootstrap.py` |
+| update processor | 同 user 串行、跨 user 有界并发与 timing log | `src/services/telegram_update_processor.py` |
+| lifecycle supervisor | 主 Bot 后台 task 的命名、强引用、完成移除及 shutdown cancel/await | `src/services/main_bot_task_supervisor.py` |
+| message/callback adapter | 文本/媒体分发、前缀 callback registry、统一应答 | `src/handlers/message_handler*.py`、`callback_handler.py`、`callback_router.py` |
+| FSM adapter | Telegram 状态、素材接收、回复和清理 | `src/handlers/fsm/` |
+| application services | 设置/提交计划、扩展历史、权限快照、临时文件 | `src/services/*_submission_service.py`、`telegram_video_permission_service.py`、`fsm_temp_file_service.py` |
+
+`src/bot_main.py` 不再维护长 handler 清单。新增或移动 FSM 时只修改 registry，并确保
+所有 `ConversationHandler` 仍位于全局 `CallbackQueryHandler` 之前。主 Bot 自建的支付
+poller、恢复、zombie sweep 与历史 prompt delivery 都必须交给 lifecycle supervisor；
+shutdown 先 cancel/await 这些 task，再记录恢复策略并关闭 Redis。
+
+### 2.2 通用会话状态图
 
 ```mermaid
 stateDiagram-v2
@@ -136,6 +156,11 @@ FSM 入口与过程中，当前推荐组合为：
 
 主 Bot `src/bot_main.py` 与 QQCC Bot `qqcc_bot/main.py` 共享 `src/services/telegram_runtime_bootstrap.py`，统一 Local Bot API URL、HTTPXRequest、Telegram File/Poll patch 和语言/i18n middleware。共享 bootstrap 不改变注册边界：主 Bot仍注册完整 FSM/支付/恢复；QQCC 注册 quick image/video、QQCC market、最小 callback，以及结果消息已经公开的 Wan22 扩展/重生成 ConversationHandler 入口，并继续用 `bot:qqcc` 过滤恢复任务。`wan22v2_extend:*` 不能只出现在结果键盘中，官方/私有 QQCC Application 都必须在全局 callback fallback 之前注册该 FSM，否则按钮会被记为 unmatched callback。
 
+主 Bot 的注册事实源是 `src/handlers/main_bot_handler_registry.py`，而不是
+`bot_main.py` 内的 import/add_handler 副作用。高级视频 primary/compatibility handler
+由 composition root 根据运行策略构造后显式传入 registry，既不扩大 QQCC handler 集，
+也不改变既有优先级。
+
 QQCC 不注册主 Bot H3 高级 FSM，但共享 quick video handler 接管 `h3_extend:<task_id>`：
 只列出当前配置中有效的 H3 `mode=i2v` AI 视频场景，选择 callback 使用有长度门禁的
 `h3xs:<index>`，选择时再次读取配置，场景被删除/停用则 fail closed。官方与私有
@@ -151,7 +176,7 @@ Application factory 共用该注册，提交仍分别写精确 client type。
 
 私有 QQCC Application 由 webhook worker 装配，不注册申请入口、不启动 polling，并继续复用 quick image/video 与 Wan22 结果续段 FSM。worker 为每个 private Bot 使用独立顺序队列，防止同一 Bot 的 ConversationHandler update 交错；不同 Bot 才通过全局并发门限并行。详细凭据/worker/Host 契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
 
-Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
+Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。主 Bot 档位校验通过 `src/services/telegram_video_permission_service.py` 将 Telegram 用户映射为不可变的内部权限快照；设置 callback 与提交重新读取当前策略，开始提交时只查询一次。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
 
 Quick Image 的提交阶段已收口到 `src/services/quick_image_submission_service.py`：`quick_image_fsm.py` 和 `random_faceswap_again` callback 只负责 Telegram 状态/按钮、图片路径读取、额度检查、用户回复和上下文清理；service 负责构造提交计划、随机换脸模板过滤、QQCC AI绘图/AI滤镜场景、`draw -> draw...` / `draw -> filter` / 单步 `filter` 链成本与执行 payload，并在重生成 metadata 中写入 `scene_kind=draw|filter`。旧 `WAIT_UNDRESS_METHOD` 选择态和旧脱衣方式 callback 已移除，`i2i_draw` 提交 payload 仅保留 service 兼容。
 
@@ -229,11 +254,26 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 - Redis 缓存同步
 - translator 运行时状态刷新
 
+### 4.4 当前边界债务
+
+- `quick_video_fsm.py`、`advanced_video_pro_fsm.py`、`wan22_video_v2_fsm.py`、
+  `ltx_video_fsm.py` 仍是复杂度热点；后续按入口解析、media acquisition、设置 view、
+  submission ownership 逐个纵切，禁止一次性改写全部 FSM。
+- H3 与 LTX25 的 `ffprobe` 已通过 `asyncio.to_thread` 避免阻塞 update loop，但命令和
+  JSON 解析仍在 FSM 内重复；后续可迁入共享 media probe service。
+- Gallery browse callback 仍直接打开数据库 session。该债务属于 Gallery application
+  service/repository seam，修改时叠加 `allbot-gallery-storage`，不要在 Telegram 重构中
+  顺手跨域移动事务。
+
 ## 5. 测试要求
 
 - 覆盖 FSM 超时与主菜单打断
 - 覆盖完整参数收集后进入对应 Bot entrypoint 或 `run_bot_task_application(...)`
 - 覆盖 callback prefix 路由与统一兜底
+- 覆盖主 Bot registry 中 middleware/FSM/fallback 顺序，以及后台 task 正常完成移除和
+  shutdown cancel/await
 - 覆盖主 Bot 同用户 Update 不重叠、不同用户可并发、全局并发上限、等待任务取消释放，以及 callback 在用户同步前安全应答
+- 覆盖 Telegram user id 到视频权限快照的显式 dependencies seam；handler 测试不得
+  隐式连接真实 PostgreSQL
 - 覆盖 SCAIL-2 入口 task type 映射、40MB 视频拦截、5s/8s 时长按钮、默认负面词和临时文件清理；测试环境还需覆盖 `scail2_face_swap_v2`。
 - 若 PTB 某些配置会触发已知 warning，测试需显式说明它是“预期行为”还是“应修复行为”
