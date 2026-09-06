@@ -64,6 +64,13 @@ jobs:
         with:
           node-version: 24
 
+      - name: Install pinned npm
+        run: |
+          set -euo pipefail
+          npm_version="$(node -p "require('./frontend/package.json').packageManager.replace(/^npm@/, '')")"
+          npm install --global "npm@${npm_version}"
+          test "$(npm --version)" = "$npm_version"
+
       - name: Login to GHCR with ephemeral token
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}

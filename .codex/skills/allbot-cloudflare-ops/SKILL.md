@@ -28,9 +28,8 @@ Pages project/deployment 或 R2 配置。文档中的运行态也必须复核。
   token 值不得进入聊天、Git、文档、日志、shell history 或 compose 展开输出。
 - Token 名称不代表权限。先使用与 token 类型匹配的 verify endpoint，再对目标
   产品 API 做最小只读探测；403 不能被解释为已授权。
-- Pages 成功证据来自 API 中 production deployment、完整 SHA、stage、
-  canonical deployment 和正式域名 runtime revision；CLI 返回的临时 URL
-  不是完整验收。
+- Pages 成功证据含 production `canonical_deployment`、完整 SHA、stage 和正式域名
+  runtime revision；test/prod previous 均取它，不取 preview；临时 URL 不算验收。
 - Tunnel/DNS/Access 的 live API 是当前事实源；systemd、origin 和应用健康还需
   在各自控制面独立验证。
 
@@ -71,7 +70,7 @@ Pages project/deployment 或 R2 配置。文档中的运行态也必须复核。
   hostname 不变。
 - Access：未登录重定向/拒绝、allow/deny 身份、应用层登录、机器入口无登录页。
 - Pages：project branch/自动部署策略、完整 SHA、canonical deployment、正式
-  域名 runtime revision 和可执行 rollback ID。
+  域名 runtime revision 和 rollback ID；测试项目 production branch 为 `test`。
 - R2：目标 bucket/CORS/public policy 与实际客户端权限分别验证，不混用 API
   token 和 S3 credential。
 - 交付说明只读或 mutation、目标资源、授权来源、回读证据、回滚对象及仍需

@@ -33,6 +33,7 @@ DEFAULT_STATE_ROOT = (
 )
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_REF_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+NPM_PACKAGE_MANAGER_RE = re.compile(r"^npm@(\d+\.\d+\.\d+)$")
 PROXY_BUILD_ARGS = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -197,6 +198,32 @@ def _run(command: Sequence[str], **kwargs: Any) -> CommandResult:
         **kwargs,
     )
     return CommandResult(result.returncode, result.stdout, result.stderr)
+
+
+def _require_pinned_npm(
+    frontend_root: Path,
+    *,
+    run: Callable[..., CommandResult],
+) -> str:
+    package_path = frontend_root / "package.json"
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseError("Public Web package.json is unavailable or invalid") from exc
+    package_manager = package.get("packageManager")
+    match = (
+        NPM_PACKAGE_MANAGER_RE.fullmatch(package_manager)
+        if isinstance(package_manager, str)
+        else None
+    )
+    if not match:
+        raise ReleaseError("Public Web packageManager must pin an exact npm version")
+    expected = match.group(1)
+    result = run(["npm", "--version"], cwd=frontend_root)
+    found = result.stdout.strip() if result.returncode == 0 else "unavailable"
+    if found != expected:
+        raise ReleaseError(f"Public Web requires npm {expected}; found {found}")
+    return expected
 
 
 def _ssh_command(host: str, remote_command: str) -> list[str]:
@@ -619,6 +646,10 @@ def _build_pages_or_contract(
         output = checkout / ".module-output" / name
         output.mkdir(parents=True, exist_ok=True)
         if module["kind"] == "pages":
+            _require_pinned_npm(
+                checkout / "frontend",
+                run=dependencies.run,
+            )
             for command in (["npm", "ci"], ["npm", "run", "build"]):
                 result = dependencies.run(command, cwd=checkout / "frontend")
                 if result.returncode:
@@ -1151,41 +1182,31 @@ class SystemAdapters:
                 "https://api.cloudflare.com/client/v4/accounts/"
                 f"{account_id}/pages/projects/{project}"
             )
-            if environment == "prod":
-                value = _cloudflare_request(project_url, token)
-                result = value.get("result")
-                canonical = (
-                    result.get("canonical_deployment")
-                    if isinstance(result, Mapping)
-                    else None
+            value = _cloudflare_request(project_url, token)
+            result = value.get("result")
+            canonical = (
+                result.get("canonical_deployment")
+                if isinstance(result, Mapping)
+                else None
+            )
+            latest_stage = (
+                canonical.get("latest_stage")
+                if isinstance(canonical, Mapping)
+                else None
+            )
+            if (
+                not isinstance(canonical, Mapping)
+                or canonical.get("environment") != "production"
+                or canonical.get("is_skipped") is True
+                or not isinstance(latest_stage, Mapping)
+                or latest_stage.get("name") != "deploy"
+                or latest_stage.get("status") != "success"
+            ):
+                raise ReleaseError(
+                    "Pages canonical deployment is not a successful "
+                    "production deployment"
                 )
-                latest_stage = (
-                    canonical.get("latest_stage")
-                    if isinstance(canonical, Mapping)
-                    else None
-                )
-                if (
-                    not isinstance(canonical, Mapping)
-                    or canonical.get("environment") != "production"
-                    or canonical.get("is_skipped") is True
-                    or not isinstance(latest_stage, Mapping)
-                    or latest_stage.get("name") != "deploy"
-                    or latest_stage.get("status") != "success"
-                ):
-                    raise ReleaseError(
-                        "Pages canonical deployment is not a successful "
-                        "production deployment"
-                    )
-                deployment_id = canonical.get("id")
-            else:
-                value = _cloudflare_request(
-                    f"{project_url}/deployments?env=preview&per_page=1",
-                    token,
-                )
-                try:
-                    deployment_id = value["result"][0]["id"]
-                except (IndexError, KeyError, TypeError):
-                    return None
+            deployment_id = canonical.get("id")
             if not isinstance(deployment_id, str) or not deployment_id:
                 raise ReleaseError("Pages rollback deployment identity is unavailable")
             return f"pages://{project}/{deployment_id}"
@@ -1554,6 +1575,7 @@ mv -Tf {root}/current.new {root}/current
             ).strip()
             if not env["CLOUDFLARE_API_TOKEN"]:
                 raise ReleaseError("Cloudflare Pages token file is empty")
+            _require_pinned_npm(ROOT / "frontend", run=_run)
             installed = _run(["npm", "ci"], cwd=ROOT / "frontend")
             if installed.returncode:
                 raise ReleaseError("unable to install pinned Wrangler")

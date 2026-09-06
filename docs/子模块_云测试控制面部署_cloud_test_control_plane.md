@@ -101,7 +101,8 @@ python3 scripts/release.py rollback --env test --module <module>
 ```
 
 持久 Runner 使用 remote state；本地 CLI 默认使用 XDG state。状态文件只是发布器
-账本，验收还必须核对目标 adapter 的 live identity、健康检查和必要业务行为。
+账本，验收还须核对 live identity 和业务行为。测试 Pages previous 取成功的
+production `canonical_deployment.id`，不取 preview/queued 记录。
 
 ## 4. 配置、数据库与服务顺序
 
