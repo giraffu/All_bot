@@ -74,7 +74,7 @@ async def receive_private_bot_webhook(
         body.extend(chunk)
         if len(body) > PRIVATE_BOT_WEBHOOK_MAX_BYTES:
             raise HTTPException(
-                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="Telegram update is too large",
             )
     try:

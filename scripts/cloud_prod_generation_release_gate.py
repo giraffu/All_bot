@@ -17,11 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.ops.generation_release_refund import (  # noqa: E402
-    PENDING_KEY,
-    RUNNING_KEY,
     build_queue_snapshot,
-    cancel_backend_pending,
-    load_active_tasks,
 )
 
 

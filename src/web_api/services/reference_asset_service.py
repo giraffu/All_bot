@@ -20,7 +20,7 @@ from src.services.gallery_history_link import select_gallery_history_for_post
 from src.database.core import AsyncSessionLocal
 from src.services.gallery_apply_context_service import resolve_history_reference_audio
 from src.services.storage import storage
-from src.web_api.services.prompt_optimization_service import (
+from src.web_api.services.prompt_media_policy import (
     PROMPT_MEDIA_MAX_BYTES,
     normalize_owned_prompt_media_key,
 )

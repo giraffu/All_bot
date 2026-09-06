@@ -31,6 +31,11 @@ description: "AllBot 代码库架构设计词汇与 seam 选择指南。设计/�
 - Seam 检查：只有一个 adapter 时不要急着抽象；至少有测试 fake、环境差异或可替换实现时 seam 才更有价值。
 - 测试检查：如果测试必须 mock 私有函数或查内部表才能验证行为，module interface 可能放错了。
 - AI 可导航性检查：未来 Codex 是否能从技能/文档/入口函数快速找到真实事实源。
+- 系统级审查先读 `docs/system_module_inventory.md`，沿“入口 → core/application →
+  Central → Worker → 媒体/History → 返回”验证状态 owner 和依赖方向；不要按顶层
+  目录数量推断微服务边界。
+- 新能力按领域注册/价格、入口 schema、任务 facade、Central、worker profile/
+  workflow、结果、History/Gallery、i18n/管理展示的纵切检查，避免只完成一层。
 
 ## 4. 与其它技能配合
 - `allbot-tdd` 使用本技能选择测试 seam。

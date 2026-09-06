@@ -18,10 +18,13 @@ from src.services import gallery_repository
 
 
 POSTGRES_URL = os.getenv("GALLERY_POSTGRES_TEST_URL")
-pytestmark = pytest.mark.skipif(
-    not POSTGRES_URL,
-    reason="GALLERY_POSTGRES_TEST_URL is required for real PostgreSQL concurrency tests",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not POSTGRES_URL,
+        reason="GALLERY_POSTGRES_TEST_URL is required for real PostgreSQL concurrency tests",
+    ),
+]
 
 
 def _async_url(url: str) -> str:

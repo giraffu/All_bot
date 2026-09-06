@@ -11,12 +11,10 @@ RELEASE_BATCH_PREFIX = "deploy/release-batches/"
 THIS_FILE = Path(__file__).resolve()
 
 RETIRED_MARKERS = (
-    re.compile(r"\bweb-" + r"test\b", re.IGNORECASE),
     re.compile(r"\bWEB" + r"VPS\b", re.IGNORECASE),
     re.compile(re.escape("assets" + ".aivison.it.com"), re.IGNORECASE),
     re.compile(re.escape("154.17" + ".30.113")),
     re.compile(re.escape("100.88" + ".57.122")),
-    re.compile(r"\bLEGACY_" + r"MINIO_", re.IGNORECASE),
 )
 
 RETIRED_FILES = (

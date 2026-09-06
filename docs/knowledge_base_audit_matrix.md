@@ -15,6 +15,7 @@
 | --- | --- | --- | --- | --- |
 | `docs/knowledge_base_audit_matrix.md` | 活跃知识索引 | 本矩阵、质量检查器的登记/体积门禁 | current | 仅全量知识校准 |
 | `docs/system_architecture_report.md` | 稳定系统拓扑、当前兼容缺口与边界 | 入口、core/default runtime、Central、Worker、schema migrations、发布契约 | current | 跨模块设计 |
+| `docs/system_module_inventory.md` | 七板块模块、依赖、状态 owner 与扩展纵切导航 | 应用入口、domain registries、Central/Worker、module catalog、专项文档 | current | 全系统梳理或跨层扩展 |
 | `docs/SAFE_DEPLOY_GUIDE.md` | 发布快速入口 | `scripts/release.py`、不可变发布文档 | current | 只需发布入口 |
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
 | `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |

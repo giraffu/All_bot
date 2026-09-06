@@ -6,7 +6,9 @@
 
 ## 1. 系统形态
 
-AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由五类模块组成：
+AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台。稳定系统边界按七类模块
+组织；逐模块入口、状态 owner、下游和扩展清单见
+[系统模块、依赖与扩展地图](./system_module_inventory.md)。
 
 | 层 | 主要职责 | 代表入口 |
 | --- | --- | --- |
@@ -15,6 +17,8 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 | 执行控制面 | 队列、Worker 协议、状态和调度 | `backend/app/` |
 | 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | canonical `workers/comfy_agent/`；LAN/RunPod 仅保留运行 adapter/config |
 | 管理与运维 | Dashboard、独立模块发布、GPU/LAN/RunPod operator | `dashboard/`、`scripts/release.py`、`deploy/module-catalog.json`、`ops/` |
+| 独立平台 | 3D、媒体增强、LAN 管理/图库、分析与媒体归档 | 各平台顶层目录及其专项 Skill |
+| 基础设施 | PostgreSQL、Redis、R2、Cloudflare、不可变 artifact | migrations、service env contract、module catalog |
 
 正式与测试环境都只消费精确、不可变的 artifact，但不要求两者天然使用同一
 digest；目标 artifact 由操作者按模块和环境明确选择。数据库、Redis、token、
@@ -106,9 +110,9 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 ### 3.3 社区与媒体
 
 - 生成 History 是 Gallery 投稿和 apply-context 的来源。
-- 投稿、互动、评论、举报、提示词解锁以数据库幂等与原子计数为目标；当前
-  Gallery 投稿/like-dislike 的仓库迁移约束仍有缺口，不能只依据 ORM
-  `UniqueConstraint` 假定所有环境已强制不变量。
+- 投稿、互动、评论、举报、提示词解锁以数据库幂等与原子计数为目标；当前代码与
+  migration 已提供 `history_id` 外键、互动 partial unique index、advisory lock 和
+  计数重算。真实环境是否已执行迁移仍需运行态核验，不能从仓库状态推断。
 - 正式用户可见媒体使用当前 R2；legacy 对象存储只用于迁移、回滚和旧外链取证。
 - 列表媒体解析在释放 DB 事务后执行，并复用 cache/singleflight。
 
@@ -150,6 +154,8 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - 专项文档描述当前契约/SOP；历史、canary、迁移和事故进入 archive/evidence。
 - 共享术语进入 `docs/domain/CONTEXT.md`，难逆决策进入 ADR。
 - 审计矩阵一份活跃资料一行，不追加变更流水。
+- 跨系统设计先读模块地图；领域开发仍由命中的最少 Skill 路由到专项文档，避免
+  把模块地图当作所有任务的预读上下文。
 
 任何入口、异常、超时、双 ID、provider、workflow、配置或发布语义变化，都要
 同步对应 Skill/专项文档并运行：

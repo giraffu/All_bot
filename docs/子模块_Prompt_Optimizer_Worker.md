@@ -25,6 +25,8 @@ Web capability/submit
 
 - `src/prompt_optimizer/registry.py`
 - `src/web_api/services/prompt_optimization_service.py`
+- `src/web_api/services/prompt_media_policy.py`：统一 ownership、格式、桶内 key 与
+  大小限制，供提示词提交和 reference asset 单向复用。
 - `src/web_api/services/prompt_result_store.py`
 - `workers/prompt_optimizer/`
 - `backend/app/routers/agent.py` 与 `backend/app/queue_manager_flow_helpers.py`

@@ -15,7 +15,6 @@ LEGACY_JAVASCRIPT_SFCS = {
     "components/CumulativeHourlyChart.vue",
     "components/DashboardHeaderBar.vue",
     "components/DashboardSidebar.vue",
-    "components/FinanceDashboard.vue",
     "components/GalleryCommentsTable.vue",
     "components/GalleryTable.vue",
     "components/GenerationDistributionChart.vue",

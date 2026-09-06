@@ -1,11 +1,25 @@
+import os
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
+from config import DATABASE_URL
 from src.core.exceptions import InsufficientCreditsError
 from src.database.core import AsyncSessionLocal
 from src.database.models import UserLog
 from src.quota import QuotaManager
+
+
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.getenv("ALLBOT_RUN_DATABASE_INTEGRATION_TESTS") != "1"
+        or not DATABASE_URL.startswith("postgresql"),
+        reason="requires ALLBOT_RUN_DATABASE_INTEGRATION_TESTS=1 and PostgreSQL",
+    ),
+]
 
 
 @pytest_asyncio.fixture

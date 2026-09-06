@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -8,7 +7,6 @@ from fastapi.testclient import TestClient
 from lan_resource_manager.backend.config import Settings
 from lan_resource_manager.backend.main import create_app
 from lan_resource_manager.backend.operator import (
-    CliLanAioOperator,
     parse_last_json,
     redact_error,
 )

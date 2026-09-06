@@ -156,7 +156,7 @@ async def test_prepare_qqcc_regeneration_reloads_latest_ai_video_scene(monkeypat
                     "name": "电影运镜新版",
                     "prompt": "latest prompt",
                     "negative_prompt": "latest blur",
-                    "duration": 20,
+                    "duration": 15,
                 }
             ],
         }
@@ -198,7 +198,7 @@ async def test_prepare_qqcc_regeneration_reloads_latest_ai_video_scene(monkeypat
     assert submission.plan.kind == QuickVideoSubmissionKind.LTX_VIDEO
     assert submission.plan.default_prompt_text == "latest prompt"
     assert submission.plan.negative_prompt == "latest blur"
-    assert submission.plan.duration == "20s"
+    assert submission.plan.duration == "15s"
 
 
 @pytest.mark.asyncio

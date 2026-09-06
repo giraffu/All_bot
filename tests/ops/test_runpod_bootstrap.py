@@ -1,9 +1,7 @@
 from pathlib import Path
 import json
 import os
-import shutil
 import subprocess
-import sys
 
 
 BOOTSTRAP_SCRIPT = Path("workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh")

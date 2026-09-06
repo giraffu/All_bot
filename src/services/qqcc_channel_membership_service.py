@@ -10,6 +10,7 @@ from typing import Any
 from telegram import Bot
 
 from config import REDIS_PREFIX, REQUIRED_CHANNEL_ID
+from src.log_redaction import install_log_redaction
 from src.services.private_qqcc_bot_telegram_transport import (
     build_private_telegram_bot_base_url,
     resolve_private_telegram_file_base_url,
@@ -151,11 +152,7 @@ def build_official_qqcc_channel_membership_checker(
 
     # Every httpx/httpcore logger (including descendants) must redact Bot API
     # paths because Telegram embeds the credential in the URL.
-    from src.services.private_qqcc_bot_telegram_gateway import (
-        _install_http_client_token_log_guard,
-    )
-
-    _install_http_client_token_log_guard()
+    install_log_redaction()
     request = build_telegram_httpx_request(connection_pool_size=8)
     bot = Bot(
         token=token,

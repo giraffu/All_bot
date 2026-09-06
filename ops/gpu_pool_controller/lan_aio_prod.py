@@ -609,14 +609,20 @@ class LanAioProdOps:
             )
         if physical_slot_key(target) == physical_slot_key(candidate):
             if (
-                candidate.legacy_worker_id != target.agent_id
-                or candidate.old_runtime_container != target.container_name
+                candidate.legacy_worker_id == target.agent_id
+                and candidate.old_runtime_container == target.container_name
             ):
-                raise RuntimeError(
-                    "same-slot candidate must explicitly identify the current "
-                    "worker and container it replaces"
-                )
-            return candidate
+                return candidate
+            return replace(
+                candidate,
+                legacy_worker_id=target.agent_id,
+                old_runtime_container=target.container_name,
+                old_local_agent_container="",
+                notes=(
+                    f"Retargeted {candidate.target_profile_id} candidate from "
+                    f"{candidate.id} to replace ledger current {target.id}."
+                ),
+            )
         if target.node_id != candidate.node_id:
             raise RuntimeError(
                 "replacement target must be on the same GPU node: "

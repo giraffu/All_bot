@@ -51,6 +51,8 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
   `docs/compat_seam_exit_table.md` 只保留人工导航和运维查询口径。
 - 事故、上线记录、迁移证据、canary、一次性 ID 和运行态进入
   `docs/archive/`、`docs/release_evidence/` 或 `logs/`。
+- `docs/system_module_inventory.md` 是跨系统七板块模块/依赖导航；普通领域开发仍
+  从最少 Skill 进入，不能默认预读整张系统地图。
 
 ## 触发与运维命中
 
@@ -63,6 +65,9 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
   确定技术域后再叠加部署、任务、Cloudflare、SSH、GPU 或存储 Skill。
 - “能读状态”不等于“能修复”。日志/health/metrics 不授权 restart、scale、
   retry、cancel、迁移、清理或发布。
+- “全系统梳理、死代码、架构优化并更新知识库”先以 `allbot-code-analyzer` 做
+  只读基线，再组合 `allbot-codebase-design` 与 `allbot-kb-auto-updater`；用户同时
+  要求整改时才进入领域 Skill/TDD 的写入阶段。
 
 ## 维护门禁
 

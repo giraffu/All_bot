@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.history_media_r2_migration import (
+from scripts.history_media_r2_migration import (  # noqa: E402
     AdaptiveCopyController,
     AdaptiveConcurrencyLimiter,
     _bounded_copy_concurrency,

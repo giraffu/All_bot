@@ -49,7 +49,9 @@ def test_enabled_rollout_still_requires_the_complete_security_contract():
 
 
 def test_cli_can_validate_a_production_env_without_persisting_bot_type(tmp_path):
-    encode = lambda value: base64.urlsafe_b64encode(value * 32).decode()
+    def encode(value):
+        return base64.urlsafe_b64encode(value * 32).decode()
+
     env_file = tmp_path / ".env.cloud.prod"
     env_file.write_text(
         "\n".join(
