@@ -3,6 +3,7 @@ from sqlalchemy import desc, exists, func, select
 from src.database.models import GalleryPost, GalleryPromptUnlock, History, UserInteraction
 from src.services.gallery_feed_queries import resolve_gallery_task_type_filter_values
 from src.services.gallery_apply_context_service import fetch_gallery_apply_context_entities
+from src.services.gallery_history_link import gallery_history_join_condition
 
 __all__ = [
     "fetch_gallery_apply_context_entities",
@@ -23,7 +24,7 @@ def _apply_history_task_type_filter(query, task_type: str | None):
 
 def _build_history_task_type_exists_condition(task_type: str | None):
     task_type_values = resolve_gallery_task_type_filter_values(task_type)
-    conditions = [History.task_id == GalleryPost.task_id]
+    conditions = [gallery_history_join_condition()]
     if task_type_values:
         if len(task_type_values) == 1:
             conditions.append(History.type == task_type_values[0])
@@ -42,7 +43,7 @@ async def fetch_my_gallery_posts_page(
 ):
     query = (
         select(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .outerjoin(History, gallery_history_join_condition())
         .where(GalleryPost.user_id == current_user_id, History.is_visible.is_not(False))
         .distinct()
     )
@@ -77,7 +78,7 @@ async def fetch_my_favorite_posts_page(
     query = (
         select(GalleryPost)
         .join(UserInteraction, GalleryPost.id == UserInteraction.post_id)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .outerjoin(History, gallery_history_join_condition())
         .where(
             UserInteraction.user_id == current_user_id,
             UserInteraction.action_type.in_(action_types),

@@ -1436,6 +1436,12 @@ class GalleryPost(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(String(64), index=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True)  # internal_user_id
+    history_id = Column(
+        Integer,
+        ForeignKey("history.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # 元数据
     media_type = Column(String(20))  # 'image' 或 'video'
@@ -1459,6 +1465,7 @@ class GalleryPost(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", backref="gallery_posts")
+    history = relationship("History", foreign_keys=[history_id])
     comments = relationship(
         "GalleryComment",
         back_populates="post",
@@ -1468,9 +1475,12 @@ class GalleryPost(Base):
     reports = relationship("GalleryReport", back_populates="post", passive_deletes=True)
     histories = relationship(
         "History",
-        primaryjoin="foreign(GalleryPost.task_id) == History.task_id",
+        primaryjoin=(
+            "and_(foreign(GalleryPost.task_id) == History.task_id, "
+            "foreign(GalleryPost.user_id) == History.user_id)"
+        ),
         uselist=True,
-        backref="gallery_post",
+        viewonly=True,
     )
 
 

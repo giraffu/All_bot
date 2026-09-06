@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy import select
 
 from src.database.models import GalleryPost, History
+from src.services.gallery_history_link import select_gallery_history_for_post
 from src.utils import (
     robust_send_message,
     robust_send_photo,
@@ -24,7 +25,7 @@ class GalleryBrowseMediaSource:
 
 
 async def get_history_for_gallery_post(*, post, session) -> History | None:
-    result = await session.execute(select(History).where(History.task_id == post.task_id))
+    result = await session.execute(select_gallery_history_for_post(post))
     return result.scalars().first()
 
 

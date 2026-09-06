@@ -406,7 +406,7 @@ async def test_minimax_h3_legacy_post_stays_interactive_but_marks_apply_disabled
     post = GalleryPost(
         id=28,
         task_id="task-old-h3",
-        user_id=None,
+        user_id=123,
         media_type="video",
         tags="[]",
         likes_count=3,
@@ -415,7 +415,7 @@ async def test_minimax_h3_legacy_post_stays_interactive_but_marks_apply_disabled
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -452,6 +452,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
     post = GalleryPost(
         id=2,
         task_id="task-1",
+        user_id=123,
         media_type="video",
         width=None,
         height=None,
@@ -463,7 +464,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -497,6 +498,7 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
     post = GalleryPost(
         id=2,
         task_id="task-stitched",
+        user_id=123,
         media_type="video",
         width=720,
         height=1280,
@@ -508,7 +510,7 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -544,6 +546,7 @@ async def test_build_post_responses_allows_h3_stitched_post_but_disables_apply()
     post = GalleryPost(
         id=3,
         task_id="h3-stitched",
+        user_id=123,
         media_type="video",
         width=1280,
         height=720,
@@ -555,7 +558,7 @@ async def test_build_post_responses_allows_h3_stitched_post_but_disables_apply()
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -585,6 +588,7 @@ async def test_build_post_responses_marks_i2i_draw_template_apply_disabled():
     post = GalleryPost(
         id=2,
         task_id="task-i2i-draw",
+        user_id=123,
         media_type="image",
         width=512,
         height=512,
@@ -595,7 +599,7 @@ async def test_build_post_responses_marks_i2i_draw_template_apply_disabled():
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -630,6 +634,7 @@ async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(
     post = GalleryPost(
         id=2,
         task_id="task-ltx-flf2v",
+        user_id=123,
         media_type="video",
         width=1280,
         height=704,
@@ -641,7 +646,7 @@ async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     monkeypatch.setattr(
         gallery_response_builder,
@@ -742,6 +747,7 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
     post = GalleryPost(
         id=2,
         task_id="task-1",
+        user_id=123,
         media_type="video",
         width=None,
         height=None,
@@ -782,6 +788,7 @@ async def test_get_apply_context_clears_non_video_billing_resolution():
     post = GalleryPost(
         id=2,
         task_id="task-1",
+        user_id=123,
         media_type="image",
         width=1024,
         height=1024,
@@ -1381,6 +1388,7 @@ async def test_get_apply_context_restores_lora_strength_from_new_prompt_format()
     post = GalleryPost(
         id=2,
         task_id="task-1",
+        user_id=123,
         media_type="image",
         width=1024,
         height=1024,
@@ -1671,6 +1679,7 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     post = GalleryPost(
         id=2,
         task_id="task-1",
+        user_id=123,
         media_type="image",
         width=1024,
         height=1024,
@@ -1682,7 +1691,7 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
         is_active=True,
         created_at=datetime.now(),
     )
-    session = _FakeSession([_FakeResult(many=[history])])
+    session = _FakeSession([_FakeResult(many=[history]), _FakeResult(many=[])])
 
     monkeypatch.setattr(
         storage_module.storage,
@@ -1743,6 +1752,7 @@ async def test_build_post_responses_preserves_post_order_with_concurrent_url_tas
         GalleryPost(
             id=2,
             task_id="task-1",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1754,6 +1764,7 @@ async def test_build_post_responses_preserves_post_order_with_concurrent_url_tas
         GalleryPost(
             id=3,
             task_id="task-2",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1763,7 +1774,9 @@ async def test_build_post_responses_preserves_post_order_with_concurrent_url_tas
             created_at=datetime.now(),
         ),
     ]
-    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+    session = _FakeSession(
+        [_FakeResult(many=[history_1, history_2]), _FakeResult(many=[])]
+    )
 
     async def fake_pick_gallery_media_urls(*, task_id, output_file, media_type):
         assert output_file is not None
@@ -1808,6 +1821,7 @@ async def test_build_post_responses_degrades_single_url_task_exception():
         GalleryPost(
             id=2,
             task_id="task-1",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1819,6 +1833,7 @@ async def test_build_post_responses_degrades_single_url_task_exception():
         GalleryPost(
             id=3,
             task_id="task-2",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1828,7 +1843,9 @@ async def test_build_post_responses_degrades_single_url_task_exception():
             created_at=datetime.now(),
         ),
     ]
-    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+    session = _FakeSession(
+        [_FakeResult(many=[history_1, history_2]), _FakeResult(many=[])]
+    )
 
     async def fake_pick_gallery_media_urls(*, task_id, output_file, media_type):
         assert output_file is not None
@@ -1873,6 +1890,7 @@ async def test_build_post_responses_runs_url_tasks_concurrently():
         GalleryPost(
             id=2,
             task_id="task-1",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1884,6 +1902,7 @@ async def test_build_post_responses_runs_url_tasks_concurrently():
         GalleryPost(
             id=3,
             task_id="task-2",
+            user_id=123,
             media_type="image",
             tags="[]",
             likes_count=0,
@@ -1893,7 +1912,9 @@ async def test_build_post_responses_runs_url_tasks_concurrently():
             created_at=datetime.now(),
         ),
     ]
-    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+    session = _FakeSession(
+        [_FakeResult(many=[history_1, history_2]), _FakeResult(many=[])]
+    )
     first_started = asyncio.Event()
     second_started = asyncio.Event()
     first_finished = False

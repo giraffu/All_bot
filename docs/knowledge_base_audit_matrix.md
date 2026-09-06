@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-08-29`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-09-06`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一

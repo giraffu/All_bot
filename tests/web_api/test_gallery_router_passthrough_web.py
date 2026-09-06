@@ -10,6 +10,14 @@ from src.web_api.services.gallery_service_support import (
     build_gallery_config_payload,
     submit_gallery_post_payload,
 )
+from src.core.gallery_core_errors import GalleryCoreError
+
+
+def test_gallery_core_error_exposes_stable_reason_code():
+    error = GalleryCoreError("cannot submit", reason="submission_rejected")
+
+    assert error.reason == "submission_rejected"
+    assert str(error) == "cannot submit"
 
 
 def _build_current_user():
@@ -117,9 +125,6 @@ async def test_submit_gallery_post_payload_schedules_side_effects_from_outcome()
 
 @pytest.mark.asyncio
 async def test_submit_gallery_post_payload_maps_gallery_core_error_to_400():
-    class GalleryCoreError(Exception):
-        pass
-
     process_submit = AsyncMock(side_effect=GalleryCoreError("cannot submit"))
 
     with pytest.raises(HTTPException) as exc_info:

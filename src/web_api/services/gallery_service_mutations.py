@@ -294,7 +294,7 @@ async def interact_with_gallery_post(
     except duplicate_interaction_error_cls as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except gallery_core_error_cls as exc:
-        if "不存在" in str(exc):
+        if getattr(exc, "reason", None) == "post_not_found":
             raise HTTPException(status_code=404, detail=str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception:

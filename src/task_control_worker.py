@@ -55,11 +55,12 @@ async def run_task_control_worker(
     enabled = task_control_enabled()
     worker_id = build_task_control_worker_id()
     task_states: dict[str, dict[str, Any]] = {}
-    health_payload = lambda: build_task_control_health_payload(
-        enabled=enabled,
-        worker_id=worker_id,
-        task_states=task_states,
-    )
+    def health_payload() -> dict[str, object]:
+        return build_task_control_health_payload(
+            enabled=enabled,
+            worker_id=worker_id,
+            task_states=task_states,
+        )
     server = await asyncio.start_server(
         lambda reader, writer: _handle_health_request(
             reader,

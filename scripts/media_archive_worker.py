@@ -35,13 +35,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.core.media_archive import (  # noqa: E402
+    ARCHIVE_BUCKET,
+    archive_blob_key,
     get_archive_media_type,
     plan_archive_asset_restore_keys,
     plan_archive_thumbnail_restore_keys,
 )
 
 
-ARCHIVE_BUCKET = "allbot-media-archive-v1"
 PROXY_KEYS = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -204,10 +205,6 @@ def _extension(source_ref: str, content_type: str | None) -> str:
         return "jpg" if suffix == "jpeg" else suffix
     guessed = mimetypes.guess_extension(content_type or "") or ".bin"
     return guessed.lstrip(".")
-
-
-def _blob_key(digest: str, extension: str) -> str:
-    return f"blobs/sha256/{digest[:2]}/{digest[2:4]}/{digest}.{extension}"
 
 
 class RateLimiter:
@@ -475,7 +472,10 @@ def archive_one_asset(
             raise FileNotFoundError(last_error)
 
         _source, _key, digest, size, content_type = found
-        blob_key = _blob_key(digest, _extension(asset["source_ref"], content_type))
+        blob_key = archive_blob_key(
+            digest,
+            _extension(asset["source_ref"], content_type),
+        )
         existing_verified = False
         try:
             existing = nas_client.head_object(Bucket=ARCHIVE_BUCKET, Key=blob_key)

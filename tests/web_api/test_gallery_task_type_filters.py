@@ -97,6 +97,23 @@ def _statement_contains_task_type_values(stmt, expected_task_types: set[str]) ->
     return expected_task_types.issubset(values)
 
 
+def test_gallery_feed_history_join_includes_owner_identity():
+    stmt = build_gallery_feed_query(
+        media_type=None,
+        task_type="edit",
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    sql = str(stmt.compile()).lower()
+    assert "gallery_posts.task_id = history.task_id" in sql
+    assert "gallery_posts.user_id = history.user_id" in sql
+
+
 @pytest.mark.asyncio
 async def test_get_my_gallery_posts_applies_task_type_filter():
     session = _AsyncSessionContext(

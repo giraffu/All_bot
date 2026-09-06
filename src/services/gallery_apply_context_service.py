@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from sqlalchemy import select
 
 from src.database.models import GalleryPost, History
+from src.services.gallery_history_link import select_gallery_history_for_post
 from src.domain_config.scail2_video import is_scail2_task_type
 from src.domain_config.task_type_registry import apply_input_reuse_task_types
 from src.domain_config.minimax_h3 import MINIMAX_H3_REF2V, MINIMAX_H3_TASK_TYPES
@@ -137,7 +138,7 @@ async def fetch_gallery_apply_context_entities(*, db, post_id: int):
         return None, None
 
     history = (
-        (await db.execute(select(History).where(History.task_id == post.task_id)))
+        (await db.execute(select_gallery_history_for_post(post)))
         .scalars()
         .first()
     )

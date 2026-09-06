@@ -18,7 +18,6 @@ from sqlalchemy import select
 
 from src.constants import MODE_WAN22_VIDEO_V2
 from src.media_paths import resolve_storage_object
-from src.core import user_core
 from src.core.video_billing import resolve_apply_prompt_and_requested_duration
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
@@ -26,6 +25,9 @@ from src.lora_mapping import extract_prompt_lora_context
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
 from src.services.user_visible_generation_presenter import present_user_prompt
+from src.services.telegram_identity_service import (
+    resolve_internal_user_id_for_telegram as resolve_internal_user_id_from_telegram,
+)
 from src.domain_config.wan22_aio_video import normalize_wan22_video_v2_chain_task_ids
 from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
@@ -91,17 +93,6 @@ class Wan22StitchPlan:
 LoadOwnedWan22HistoryFunc = Callable[..., Awaitable[History]]
 DownloadLastFrameFunc = Callable[..., Awaitable[str]]
 DownloadHistoryInputFileFunc = Callable[..., Awaitable[str]]
-
-
-async def resolve_internal_user_id_from_telegram(
-    telegram_user_id: int,
-    username: str | None,
-) -> int:
-    internal_user, _ = await user_core.get_or_create_user_by_telegram(
-        telegram_user_id,
-        username,
-    )
-    return internal_user.id
 
 
 async def load_owned_wan22_history(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
 from src.services.affiliate_redeem_service import (
     query_affiliate_available_balance,
@@ -10,6 +9,7 @@ from src.services.affiliate_redeem_service import (
     redeem_affiliate_balance_to_membership,
 )
 from src.services.affiliate_usdt_redeem_service import create_affiliate_usdt_redeem
+from src.services.telegram_identity_service import resolve_internal_user_id_for_telegram
 
 
 async def resolve_internal_user_id_for_telegram_user(
@@ -19,13 +19,12 @@ async def resolve_internal_user_id_for_telegram_user(
     full_name: str | None = None,
     language_code: str | None = None,
 ) -> int:
-    internal_user, _ = await get_or_create_user_by_telegram(
+    return await resolve_internal_user_id_for_telegram(
         telegram_user_id,
         username,
         full_name,
         language_code,
     )
-    return int(internal_user.id)
 
 
 async def query_affiliate_available_balance_for_telegram_user(

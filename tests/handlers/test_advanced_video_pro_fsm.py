@@ -661,9 +661,7 @@ async def test_pro_non_t2v_settings_prompt_explains_image_and_cancel_commands(
 
 
 def test_pro_handler_has_no_prompt_confirmation_state():
-    handler = fsm.get_advanced_video_pro_fsm_handler()
-
-    assert AdvancedVideoProState.WAIT_CONFIRMATION not in handler.states
+    assert not hasattr(AdvancedVideoProState, "WAIT_CONFIRMATION")
 
 
 @pytest.mark.asyncio

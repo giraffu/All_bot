@@ -31,6 +31,11 @@ owner、telemetry key、替代入口、无命中观测窗口和历史数据退�
 | `ORDER:` / `ORDER_V2:` 双载荷 | active-compat | Billing | `order_v2_service`、`payment_validator` | 解析旧支付 callback | 旧通道和展示调用方完全退出 | 2026-07-27 |
 | legacy user adopt 分支 | runtime-verification-required | Identity | `user_persistence_service` | 收口早期内部 ID/TG ID 混用记录 | 数据审计确认无可收养历史用户 | 2026-07-27 |
 | Gallery `free_edit_v2_group` 查询别名 | active-compat | Gallery | `gallery_feed_queries`、前端展示映射 | 服务升级前客户端 | 支持中的客户端只发送 v3 group 且日志清零 | 2026-07-27 |
+| Gallery History owner fallback | runtime-verification-required | Gallery | `gallery_history_link` | 为 `history_id=NULL` 的旧帖子按 `(task_id,user_id)` 安全读取 | 活跃帖子外键补齐、歧义行处理完且遥测连续 30 天为零 | 2026-09-06 |
+| `process_and_submit_task` callback facade | runtime-verification-required | Task engine | 兼容测试/集成调用 | 旧宽签名适配到 `TaskApplication` | 测试迁移且生产调用点持续为空 | 2026-09-06 |
+| 宽成功持久化 facade | active-compat | Task engine | `task_service_completion`、兼容测试 | 适配 `TaskSuccessPersistenceCommand` | 生产调用和测试迁移到 command seam | 2026-09-06 |
+| Web finalizer legacy Hash index | active-compat | Task engine | task-control-worker | 将旧 Hash 记录补入 due-time ZSET | 存量记录耗尽且 indexed metric 连续 30 天为零 | 2026-09-06 |
+| presign hours 字段接收秒值 | runtime-verification-required | Gallery/Storage | 历史调用点 | 兼容大于 24 的秒数参数 | 调用点改为显式单位且旧签名 URL 全部过期 | 2026-09-06 |
 | QQCC `buttons_per_row=null` | active-compat | QQCC | config normalization、Bot 菜单渲染 | 旧 checkpoint 固定分行 | 官方/私有配置迁移为显式列数 | 2026-07-27 |
 | provider/dependencies fake | test-seam | Architecture/Test | public facade focused tests、环境 adapter | 替换外部行为而不改调用点 | 有价值的测试 seam，不进入兼容退出 | 2026-07-27 |
 

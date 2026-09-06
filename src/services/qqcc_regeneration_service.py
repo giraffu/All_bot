@@ -9,7 +9,6 @@ from sqlalchemy import select
 from src.constants import (
     MODE_RANDOM_FACESWAP,
 )
-from src.core import user_core
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
 from src.domain_config.minimax_h3 import MINIMAX_H3_REF2V
@@ -37,6 +36,9 @@ from src.services.quick_video_submission_service import (
     QuickVideoSubmissionReject,
     build_quick_video_submission_plan,
 )
+from src.services.telegram_identity_service import (
+    resolve_internal_user_id_for_telegram as resolve_internal_user_id_from_telegram,
+)
 from src.services.wan22_video_v2_extension_service import (
     download_output_file_to_fsm_temp,
     resolve_history_input_files,
@@ -61,17 +63,6 @@ class QQCCRegenerationSubmission:
 
 
 LoadOwnedHistoryFunc = Callable[..., Awaitable[History]]
-
-
-async def resolve_internal_user_id_from_telegram(
-    telegram_user_id: int,
-    username: str | None,
-) -> int:
-    internal_user, _ = await user_core.get_or_create_user_by_telegram(
-        telegram_user_id,
-        username,
-    )
-    return internal_user.id
 
 
 async def load_owned_qqcc_regenerable_history(

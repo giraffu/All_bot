@@ -30,6 +30,7 @@ async def get_minimax_h3_history_chain_payload(
     active_task_ids = await fetch_active_public_gallery_task_ids(
         db=db,
         task_ids=[str(history.task_id or "") for history in histories],
+        current_user_id=current_user.id,
     )
     items = await build_user_history_payload(
         histories=histories,

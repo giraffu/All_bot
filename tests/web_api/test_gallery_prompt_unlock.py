@@ -37,10 +37,12 @@ class _Session:
         self._results = iter(results)
         self.flush_error = flush_error
         self.added = []
+        self.statements = []
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
 
     async def execute(self, _stmt):
+        self.statements.append(_stmt)
         return next(self._results)
 
     def add(self, obj):
@@ -125,6 +127,9 @@ async def test_unlock_gallery_prompt_creates_unlock_and_transfers_credit():
     }
     session.commit.assert_awaited_once()
     session.rollback.assert_not_awaited()
+    history_sql = str(session.statements[1].compile()).lower()
+    assert "history.user_id" in history_sql
+    assert "gallery_posts" not in history_sql
 
 
 @pytest.mark.asyncio

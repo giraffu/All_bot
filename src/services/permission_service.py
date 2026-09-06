@@ -124,9 +124,6 @@ class PermissionService:
             task_type=task_type,
         )
 
-    async def is_user_exists(self, user_id: int) -> bool:
-        return await self.quota.is_user_exists(user_id)
-
     async def sync_channel_status(
         self, tg_id: int, username: str, full_name: str, is_member: bool
     ) -> int:

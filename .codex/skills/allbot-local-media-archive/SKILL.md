@@ -20,6 +20,8 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   `task-inputs/`、`task-results/` 精确键及相邻缩略图；旧引用兼容回填，HEAD
   验证后提交 revision。
 - 永久原件按 SHA-256 寻址；History/原 key 映射保存在回执。
+- 归档 bucket 与 blob key 统一复用 `src/core/media_archive.py` 的
+  `ARCHIVE_BUCKET` / `archive_blob_key(...)`，Worker 不复制寻址规则。
 - 迁移使用冻结账本和父计划限定的 Probe→Copy→Switch；并发默认值和批次参数从
   当前脚本 `--help`/代码读取，不写成 Skill 快照。禁止正文下载式探测和无界全桶扫描。
 - History R2 全量链路只接受精确 PROBE/COPY/SWITCH SHA；Probe 只 HEAD，Copy 写

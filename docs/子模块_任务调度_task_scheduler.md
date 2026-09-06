@@ -193,6 +193,10 @@ sequenceDiagram
 
 成功历史持久化的对象入口为 `persist_successful_task_result_command(TaskSuccessPersistenceCommand(...))`；旧 `persist_successful_task_result(...)` 签名保留为兼容层。新增代码和测试优先构造 command 与 `TaskCorePersistenceDependencies`，不要扩大模块级 monkeypatch。
 
+旧 `process_and_submit_task(...)`、宽成功持久化 facade、Web finalizer legacy Hash
+索引均登记在 `config/compat_registry.json`。新调用方不得接入这些入口；移除前分别核对
+调用点、未完成任务/Hash 记录和对应观测窗口，不能因当前测试通过直接删除。
+
 ### 4.3 Bot 主链路
 
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：

@@ -27,6 +27,9 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 
 - Web 入口负责 Telegram 验签、密码登录与 JWT；`password_version` 和黑名单使旧
   会话失效。支付会话仍校验验签、JWT、版本和订单归属，不能访问普通 Web 路由。
+- 密码限流只消费 ASGI/可信代理层解析后的 client host，不在业务 service 内直接
+  信任 `X-Real-IP` 或 `X-Forwarded-For`。Telegram 外部 ID 经统一 resolver 转换为
+  `internal_user_id`，领域服务禁止双 namespace 猜测。
 - RMB、TON、USDT-TON、Stars 收口到
   `payment_fulfillment_service.fulfill_payment_command(...)`；adapter 只解析通道。
   Webhook/主动查单共用该入口；无稳定查单 API 时关闭，禁止抓商户后台补发。

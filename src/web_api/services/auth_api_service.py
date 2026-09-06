@@ -31,12 +31,10 @@ WEB_ACCESS_DENIED_MESSAGE = (
 
 
 def extract_client_ip(request) -> str:
-    return (
-        request.headers.get("X-Real-IP")
-        or request.headers.get("X-Forwarded-For")
-        or request.client.host
-        or "unknown"
-    )
+    # Proxy headers must be interpreted by the trusted ASGI server/proxy layer.
+    # Reading them here lets a direct client choose its own rate-limit identity.
+    client = getattr(request, "client", None)
+    return getattr(client, "host", None) or "unknown"
 
 
 def build_auth_token_payload(*, user, stats, channel: str = "telegram") -> dict:

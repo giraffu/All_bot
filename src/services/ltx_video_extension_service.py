@@ -8,13 +8,15 @@ from sqlalchemy import select
 
 from src.constants import MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V
 from src.media_paths import resolve_storage_object
-from src.core import user_core
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
 from src.lora_catalog import build_ltx_video_lora_item, normalize_ltx_video_lora_items
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
 from src.services.user_visible_generation_presenter import present_user_prompt
+from src.services.telegram_identity_service import (
+    resolve_internal_user_id_for_telegram as resolve_internal_user_id_from_telegram,
+)
 from src.services.wan22_video_v2_extension_service import (
     build_full_chain_task_ids,
     stitch_history_videos,
@@ -64,17 +66,6 @@ class LtxStitchPlan:
 
 def is_ltx_video_history_task_type(task_type: str | None) -> bool:
     return str(task_type or "").strip() in LTX_VIDEO_HISTORY_TASK_TYPES
-
-
-async def resolve_internal_user_id_from_telegram(
-    telegram_user_id: int,
-    username: str | None,
-) -> int:
-    internal_user, _ = await user_core.get_or_create_user_by_telegram(
-        telegram_user_id,
-        username,
-    )
-    return internal_user.id
 
 
 async def load_owned_ltx_history(

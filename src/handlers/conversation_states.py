@@ -41,10 +41,7 @@ class LtxVideoState(IntEnum):
 class AdvancedVideoProState(IntEnum):
     WAIT_SETTINGS = auto()
     WAIT_MEDIA = auto()
-    WAIT_REFERENCE_DESCRIPTION = auto()
-    WAIT_REFERENCE_AUDIO = auto()
     WAIT_PROMPT = auto()
-    WAIT_CONFIRMATION = auto()
 
 
 class ImageToVideoState(IntEnum):

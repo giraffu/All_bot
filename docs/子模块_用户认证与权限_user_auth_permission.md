@@ -76,6 +76,13 @@ sequenceDiagram
   检查保持不变。Telegram 验签入口在 Token 缺失时仍 fail-closed。
 - 密码不是明文 bcrypt，而是先 `SHA256` 再 `bcrypt`。
 - 登录与绑定密码都接入 Redis Lua 限流脚本，按 IP 和用户双维度限制爆破。
+- 限流使用 ASGI server 已解析的 `request.client.host`，业务 service 不直接信任
+  客户端可写的 `X-Real-IP` / `X-Forwarded-For`。需要代理透传时必须在 Uvicorn 或
+  可信反向代理层限制允许的 immediate peer，并由该层覆盖、规范化客户端地址。
+- Telegram 外部身份统一通过
+  `src/services/telegram_identity_service.py::resolve_internal_user_id_for_telegram`
+  转为 `internal_user_id`；领域 service 不得用同一个整数同时尝试 `users.id` 与
+  `users.telegram_id`。
 - 改密成功后会：
   - `password_version += 1`
   - 把旧版本加入 Redis 黑名单 7 天

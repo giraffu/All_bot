@@ -41,6 +41,7 @@ from src.web_api.services.history_input_presenter import (
     build_history_input_file_payload,
 )
 from src.services.user_visible_generation_presenter import present_user_prompt
+from src.services.gallery_history_link import load_gallery_history_map
 
 logger = logging.getLogger(__name__)
 PROMPT_UNLOCK_PRICE_CREDITS = 1
@@ -216,13 +217,12 @@ async def load_gallery_post_bulk_context(
     pick_gallery_media_urls_func,
 ) -> GalleryPostBulkContext:
     post_ids = [p.id for p in posts]
-    task_ids = [p.task_id for p in posts if p.task_id]
     user_likes, user_dislikes = await _load_user_reactions(
         session=session,
         current_user=current_user,
         post_ids=post_ids,
     )
-    history_map = await _load_history_map(session=session, task_ids=task_ids)
+    history_map = await load_gallery_history_map(session=session, posts=posts)
     user_ids = list({p.user_id for p in posts if p.user_id})
     user_map = await _load_user_map(session=session, user_ids=user_ids)
     following_user_ids = await _load_following_user_ids(
@@ -277,7 +277,7 @@ async def build_post_responses(
 
     response_items = []
     for index, post in enumerate(posts):
-        history = bulk_context.history_map.get(post.task_id)
+        history = bulk_context.history_map.get(post.id)
         response_items.append(
             _build_single_post_response(
                 post=post,
@@ -309,7 +309,7 @@ def _build_gallery_media_url_tasks(
 ) -> list:
     tasks = []
     for post in posts:
-        history = history_map.get(post.task_id)
+        history = history_map.get(post.id)
         output_file = history.output_file if history else None
         tasks.append(
             pick_gallery_media_urls_func(
@@ -495,17 +495,6 @@ async def _load_user_reactions(*, session, current_user, post_ids: list[int]) ->
         elif interaction.action_type == "dislike":
             user_dislikes.add(interaction.post_id)
     return user_likes, user_dislikes
-
-
-async def _load_history_map(*, session, task_ids: list[str]) -> dict[str, History]:
-    if not task_ids:
-        return {}
-    histories = (
-        (await session.execute(select(History).where(History.task_id.in_(task_ids))))
-        .scalars()
-        .all()
-    )
-    return {history.task_id: history for history in histories}
 
 
 async def _load_user_map(*, session, user_ids: list[int]) -> dict[int, User]:

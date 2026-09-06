@@ -21,6 +21,7 @@ from src.database.models import GalleryPost, History, User
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 from src.services.compat_telemetry import record_compat_hit
+from src.services.gallery_history_link import gallery_history_join_condition
 
 GALLERY_LORA_MODEL_NONE = "__none__"
 GALLERY_LTX_VIDEO_TASK_TYPES = (MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V)
@@ -282,7 +283,7 @@ def build_gallery_feed_query(
         prompt_max_length=prompt_max_length,
     )
     if history_join_required:
-        query = query.join(History, GalleryPost.task_id == History.task_id)
+        query = query.join(History, gallery_history_join_condition())
     query = _apply_task_type_or_category_filter(
         query,
         task_type=task_type,
@@ -352,7 +353,7 @@ async def fetch_gallery_feed_page(
     offset = (page - 1) * size if page > 0 else 0
     paged_query = (
         query.options(
-            selectinload(GalleryPost.user), selectinload(GalleryPost.histories)
+            selectinload(GalleryPost.user)
         )
         .offset(offset)
         .limit(size)

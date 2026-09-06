@@ -96,8 +96,9 @@ async def test_get_user_history_payload_resolves_media_urls_with_keyword_argumen
         assert limit == 8
         return [history], ["task-1"]
 
-    async def _fake_fetch_active_public_gallery_task_ids(*, db, task_ids):
+    async def _fake_fetch_active_public_gallery_task_ids(*, db, task_ids, current_user_id):
         assert task_ids == ["task-1"]
+        assert current_user_id == 123
         return {"task-1"}
 
     async def _fake_resolve_history_media_urls(
@@ -159,7 +160,8 @@ async def test_default_history_uses_combined_rank_and_effective_identity_limit(m
         assert limit == 15
         return [], []
 
-    async def _fake_gallery(*, db, task_ids):
+    async def _fake_gallery(*, db, task_ids, current_user_id):
+        assert current_user_id == 123
         return set()
 
     monkeypatch.setattr(users_history_service, "load_user_tier_policy_config", _load_policy)
@@ -317,8 +319,9 @@ async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
         assert task_type == "txt2img"
         return [history], 1
 
-    async def _fake_fetch_gallery_posts_for_task_ids(*, db, task_ids):
+    async def _fake_fetch_gallery_posts_for_task_ids(*, db, task_ids, current_user_id):
         assert task_ids == ["task-txt2img-1"]
+        assert current_user_id == 123
         return {}
 
     async def _fake_resolve_history_media_urls(
