@@ -51,6 +51,7 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 - handler/FSM 只负责 Telegram 状态、素材、消息与清理；归一、提交计划、payload、
   历史和扩展链放 application service，具体入口按专项文档定位。
+- Quick Video：entry service 管入口规则，entry view 管展示，FSM 传 I/O。
 - `Update` 不进入 core；FSM 转为内部 request/context 后调用公开 facade。
 - plan 参数显式传给后台 actor/service，不借顶层 `context.user_data` 隐式传递。
 - 视频档位权限由 `telegram_video_permission_service.py` 解析为不可变快照。

@@ -247,11 +247,12 @@ YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，focused image smo
 - `qqcc_bot/regeneration_callback.py`：QQCC `qqcc_regenerate:<task_id>` callback，负责从本人 History 准备同功能重生成、额度检查、后台启动和失败临时文件清理；不要把重生成逻辑写回 FSM。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、QQCC 市集等必要 callback 注册模块，并在导入后校验 QQCC 必需 callback prefix manifest；旧投稿/公开分享 callback 在这里直接拒绝，不进入共享 Gallery 投稿或公开处理。
 - `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` / `qfilter_scene:<id>` 进入 AI绘图或 AI滤镜单图提交流程；FSM 只负责 Telegram 状态、图片接收、额度检查和回复。主 Bot 的旧 `快速脱衣` / `快速自慰` / `快速换脸` / `AI滤镜` 文本入口只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
-- `src/handlers/fsm/quick_video_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qvid_scene:<id>`，按场景 engine 提交旧图生视频或 `wan22_video_v2`；配置 `end_frame_draw_scene_id` 时先复用对应 AI绘图场景的完整后处理链生成隐藏尾帧，再提交首尾帧视频。主 Bot 的旧 `menu.video_edit_*` 文本入口和 `qvid_*` callback 只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
+- `src/handlers/fsm/quick_video_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qvid_scene:<id>` 并编排状态、素材、额度与清理；主 Bot 的旧 `menu.video_edit_*` 文本入口和 `qvid_*` callback 只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
+- `src/services/quick_video_entry_service.py` / `src/handlers/fsm/quick_video_entry_view.py`：前者按运行时配置解析版本化场景、能力拒绝和 FSM seed，后者展示示范媒体、REF2V 模板、费用文案与跳转绘图按钮；Telegram I/O 依赖由 FSM 显式传入。
 - `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图/AI滤镜链共享 helper，负责解析 `draw -> draw...`、`draw -> filter` 和直接 `filter` 链、计算链路费用、串行执行绘图/滤镜/原图换脸并复用中间产物；直接 AI绘图、直接 AI滤镜和 AI动图尾帧共用这里的 `original_face_swap_enabled` 语义，并在真实子任务维度标记首任务可取消、后续 continuation 不可取消且 `base_priority=100`。
 - `src/services/quick_image_submission_service.py`：Quick Image / QQCC AI绘图/AI滤镜提交计划事实源，负责随机换脸模板过滤、QQCC draw/filter scene engine 分支、后处理链成本合计、`scene_kind` metadata 和最终 image payload；旧 `WAIT_UNDRESS_METHOD` 选择态已清理，`i2i_draw` payload 仅保留兼容。
 - `src/services/qqcc_demo_media_service.py`：示范媒体上传校验、R2 确定性 key、配置预览短签、Telegram 图片/视频 media group 发送、file_id 优先与失效回退的事实源；当 Telegram 拒绝 R2 短签 URL 时，在同一媒体大小和文件签名校验内从 R2 读取并直接上传，再缓存新的 file_id。file_id checkpoint 更新由 `qqcc_config_service.py` 完成。
-- `src/services/quick_video_submission_service.py`：Quick Video / QQCC AI动图提交计划事实源，负责 QQCC video scene engine 分支、尾帧绘图链成本合计和最终 video payload；FSM 只保留 Telegram 状态和额度/回复 orchestration。
+- `src/services/quick_video_submission_service.py`：Quick Video / QQCC AI动图提交计划事实源，负责 QQCC video scene engine 分支、尾帧绘图链成本合计和最终 video payload；配置 `end_frame_draw_scene_id` 时先复用 AI绘图完整后处理链生成隐藏尾帧，再提交首尾帧视频。
 - `src/services/qqcc_regenerate_metadata.py`：QQCC 结果重生成 metadata 与 callback prefix 事实源，统一 `_qqcc_regenerate` 结构，供 History 持久化和结果按钮展示层共用。
 - `src/services/qqcc_regeneration_service.py`：QQCC 结果重生成准备 service，负责校验本人 History、下载原始用户输入、按当前 QQCC 配置重建 quick image/video 提交计划和复用原结果展示名。
 - `src/services/qqcc_config_service.py`：QQCC 配置默认值、normalize、runtime checkpoint 读写与 QQCC prompt override 解析。
