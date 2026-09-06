@@ -7,29 +7,23 @@ import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from app.models import TaskStatus, TaskType
+from app.queue_selector import RedisQueueSelector
 from app.queue_manager_flow_helpers import (
     build_cancel_result,
     build_enqueued_task_payload,
-    build_worker_info_flow,
     cancel_pending_task_flow,
     cancel_running_task_flow,
     cancel_task_flow,
     check_zombie_tasks_flow,
     complete_task_flow,
-    dequeue_task_flow,
     fail_task_flow,
     fail_zombie_task_if_needed_flow,
-    find_next_allowed_task_flow,
-    get_active_workers_count_flow,
-    get_all_workers_flow,
-    get_queue_metrics_by_type_flow,
     has_task_heartbeat_flow,
     iter_running_task_ids_flow,
     request_running_task_cancellation_flow,
-    scan_agent_heartbeat_keys_flow,
-    update_agent_heartbeat_flow,
     update_progress_flow,
 )
+from app.worker_registry import RedisWorkerRegistry, WorkerRegistryConfig
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -70,45 +64,6 @@ end
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
 redis.call('ZADD', KEYS[2], tonumber(ARGV[4]), ARGV[5])
 return 1
-"""
-
-_POP_PREFERRED_TASK_SCRIPT = """
-local allowed_count = tonumber(ARGV[1])
-local preferred_count = tonumber(ARGV[2])
-local allowed = {}
-local preferred = {}
-for index = 1, allowed_count do
-    allowed[ARGV[2 + index]] = true
-end
-for index = 1, preferred_count do
-    preferred[ARGV[2 + allowed_count + index]] = true
-end
-
-local fallback_id = nil
-local fallback_score = nil
-local pending = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
-for index = 1, #pending, 2 do
-    local task_id = pending[index]
-    local score = pending[index + 1]
-    local task_type = redis.call('HGET', KEYS[2] .. task_id, 'type')
-    if task_type and allowed[task_type] then
-        if not fallback_id then
-            fallback_id = task_id
-            fallback_score = score
-        end
-        if preferred[task_type] then
-            if redis.call('ZREM', KEYS[1], task_id) == 1 then
-                return {task_id, score}
-            end
-            return {}
-        end
-    end
-end
-
-if fallback_id and redis.call('ZREM', KEYS[1], fallback_id) == 1 then
-    return {fallback_id, fallback_score}
-end
-return {}
 """
 
 _TRANSITION_TASK_TERMINAL_SCRIPT = """
@@ -163,15 +118,34 @@ class QueueManager:
         self.pending_key = "comfy:queue:pending"
         self.running_key = "comfy:queue:running"
         self.task_prefix = "comfy:task:"
-        self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
-        self.agent_control_prefix = "comfy:agent:control:"
-        self.agent_heartbeat_loss_prefix = "comfy:agent:heartbeat_losses:"
-        self.agent_heartbeat_loss_quarantine_threshold = 6
-        self.agent_heartbeat_loss_window_seconds = 3600
-        self.agent_heartbeat_loss_quarantine_seconds = 1800
-        self.worker_outcome_prefix = "comfy:worker:outcomes:"
-        self.worker_outcome_retention_seconds = 7 * 24 * 60 * 60
+        worker_config = WorkerRegistryConfig(task_prefix=self.task_prefix)
+        self.agent_heartbeat_prefix = worker_config.heartbeat_prefix
+        self.agent_control_prefix = worker_config.control_prefix
+        self.agent_heartbeat_loss_prefix = worker_config.heartbeat_loss_prefix
+        self.agent_heartbeat_loss_quarantine_threshold = (
+            worker_config.heartbeat_loss_quarantine_threshold
+        )
+        self.agent_heartbeat_loss_window_seconds = (
+            worker_config.heartbeat_loss_window_seconds
+        )
+        self.agent_heartbeat_loss_quarantine_seconds = (
+            worker_config.heartbeat_loss_quarantine_seconds
+        )
+        self.worker_outcome_prefix = worker_config.outcome_prefix
+        self.worker_outcome_retention_seconds = worker_config.outcome_retention_seconds
         self.ttl = 86400  # 24 hours
+        self._queue_selector = RedisQueueSelector(
+            redis,
+            pending_key=self.pending_key,
+            task_prefix=self.task_prefix,
+            safe_call=self._retry_redis_call,
+            claim_call=self._single_redis_call,
+        )
+        self._worker_registry = RedisWorkerRegistry(
+            redis,
+            safe_call=self._retry_redis_call,
+            config=worker_config,
+        )
 
     @staticmethod
     def _decode_redis_value(value: Any) -> Any:
@@ -215,21 +189,11 @@ class QueueManager:
     def _task_heartbeat_key(self, task_id: str) -> str:
         return f"comfy:task_heartbeat:{task_id}"
 
-    def _agent_heartbeat_pattern(self) -> str:
-        return f"{self.agent_heartbeat_prefix}*"
-
     def _agent_heartbeat_key(self, agent_id: str) -> str:
-        return f"{self.agent_heartbeat_prefix}{agent_id}"
+        return self._worker_registry.heartbeat_key(agent_id)
 
     def _agent_control_key(self, agent_id: str) -> str:
-        return f"{self.agent_control_prefix}{agent_id}"
-
-    def _agent_heartbeat_loss_key(self, agent_id: str) -> str:
-        return f"{self.agent_heartbeat_loss_prefix}{agent_id}"
-
-    def _worker_outcome_key(self, agent_id: str) -> str:
-        digest = hashlib.sha256(agent_id.encode("utf-8")).hexdigest()
-        return f"{self.worker_outcome_prefix}{digest}"
+        return self._worker_registry.control_key(agent_id)
 
     async def _record_worker_outcome(
         self,
@@ -237,53 +201,10 @@ class QueueManager:
         task_id: str,
         event_payload: dict[str, Any],
     ) -> None:
-        worker_id = str(event_payload.get("worker_id") or "").strip()
-        status = str(event_payload.get("status") or "").strip()
-        if not worker_id or status not in {"done", "error"}:
-            return
-
-        observed_at = time.time()
-        key = self._worker_outcome_key(worker_id)
-        raw_task_type = event_payload.get("task_type") or "unknown"
-        task_type = str(getattr(raw_task_type, "value", raw_task_type))
-        member = json.dumps(
-            {
-                "task_id": task_id,
-                "status": status,
-                "task_type": task_type,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
+        await self._worker_registry.record_outcome(
+            task_id=task_id,
+            event_payload=event_payload,
         )
-        try:
-            await self._retry_redis_call(
-                "record_worker_outcome_zadd",
-                self.redis.zadd,
-                key,
-                {member: observed_at},
-            )
-            await self._retry_redis_call(
-                "record_worker_outcome_prune",
-                self.redis.zremrangebyscore,
-                key,
-                "-inf",
-                observed_at - self.worker_outcome_retention_seconds,
-            )
-            await self._retry_redis_call(
-                "record_worker_outcome_expire",
-                self.redis.expire,
-                key,
-                self.worker_outcome_retention_seconds,
-            )
-        except Exception:
-            # Outcome telemetry must never turn an already-committed terminal task
-            # into a failed Worker acknowledgement.
-            logger.exception(
-                "Failed to record worker outcome telemetry task_id=%s worker_id=%s",
-                task_id,
-                worker_id,
-            )
 
     async def get_active_worker_outcome_stats(
         self,
@@ -291,62 +212,10 @@ class QueueManager:
         window_seconds: int,
         now: float | None = None,
     ) -> list[dict[str, Any]]:
-        window_seconds = max(300, min(int(window_seconds), 24 * 60 * 60))
-        observed_at = time.time() if now is None else float(now)
-        cutoff = observed_at - window_seconds
-        workers = await self.get_all_workers()
-        stats: list[dict[str, Any]] = []
-
-        for worker in workers:
-            worker_id = str(worker.get("agent_id") or "").strip()
-            if not worker_id:
-                continue
-            rows = await self._retry_redis_call(
-                "get_worker_outcomes",
-                self.redis.zrangebyscore,
-                self._worker_outcome_key(worker_id),
-                cutoff,
-                observed_at,
-                withscores=True,
-            )
-            failed_tasks = 0
-            failures_by_type: dict[str, int] = {}
-            last_failure_at: float | None = None
-            valid_rows = 0
-            for raw_member, raw_score in rows:
-                try:
-                    payload = json.loads(str(self._decode_redis_value(raw_member)))
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                valid_rows += 1
-                if payload.get("status") != "error":
-                    continue
-                failed_tasks += 1
-                task_type = str(payload.get("task_type") or "unknown")
-                failures_by_type[task_type] = failures_by_type.get(task_type, 0) + 1
-                score = float(raw_score)
-                if last_failure_at is None or score > last_failure_at:
-                    last_failure_at = score
-
-            stats.append(
-                {
-                    "worker_id": worker_id,
-                    "status": str(worker.get("status") or "unknown"),
-                    "total_tasks": valid_rows,
-                    "failed_tasks": failed_tasks,
-                    "failure_rate": failed_tasks / valid_rows if valid_rows else 0.0,
-                    "failures_by_type": dict(
-                        sorted(
-                            failures_by_type.items(),
-                            key=lambda item: (-item[1], item[0]),
-                        )
-                    ),
-                    "last_failure_at": last_failure_at,
-                }
-            )
-        return stats
+        return await self._worker_registry.active_outcome_stats(
+            window_seconds=window_seconds,
+            now=now,
+        )
 
     async def _retry_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
         for attempt in range(1, REDIS_TRANSIENT_RETRY_ATTEMPTS + 1):
@@ -544,53 +413,6 @@ class QueueManager:
             cancelled_status=TaskStatus.CANCELLED,
         )
 
-    async def _pop_next_pending_task(self) -> Optional[Tuple[str, float]]:
-        result = await self._single_redis_call(
-            "pop_next_pending_task",
-            self.redis.zpopmin,
-            self.pending_key,
-        )
-        if not result:
-            return None
-        task_id, score = result[0]
-        return self._decode_redis_value(task_id), score
-
-    async def _find_next_allowed_task(
-        self, allowed_types: list[str], *, batch_size: int = 50
-    ) -> Optional[Tuple[str, float]]:
-        return await find_next_allowed_task_flow(
-            allowed_types=allowed_types,
-            zrange_func=self.redis.zrange,
-            pending_key=self.pending_key,
-            decode_redis_value_func=self._decode_redis_value,
-            get_task_type_func=self._get_task_type,
-            zrem_func=self.redis.zrem,
-            batch_size=batch_size,
-        )
-
-    async def _pop_preferred_or_fallback_task(
-        self,
-        *,
-        allowed_types: list[str],
-        preferred_types: list[str],
-    ) -> Optional[Tuple[str, float]]:
-        result = await self._single_redis_call(
-            "pop_preferred_or_fallback_task",
-            self.redis.eval,
-            _POP_PREFERRED_TASK_SCRIPT,
-            2,
-            self.pending_key,
-            self.task_prefix,
-            len(allowed_types),
-            len(preferred_types),
-            *allowed_types,
-            *preferred_types,
-        )
-        if not result:
-            return None
-        task_id, score = result
-        return self._decode_redis_value(task_id), float(score)
-
     async def _activate_dequeued_task(
         self,
         next_task: Optional[Tuple[str, float]],
@@ -602,16 +424,6 @@ class QueueManager:
         task_id, score = next_task
         await self._mark_task_running(task_id, cancel_lock=cancel_lock)
         return task_id, score
-
-    async def _build_worker_info(
-        self, agent_id: str, raw_data: Dict[Any, Any]
-    ) -> Dict[str, Any] | None:
-        return await build_worker_info_flow(
-            agent_id=agent_id,
-            raw_data=raw_data,
-            decode_redis_dict_func=self._decode_redis_dict,
-            get_task_status_func=self.get_task_status,
-        )
 
     async def _iter_running_task_ids(self) -> list[str]:
         return await iter_running_task_ids_flow(
@@ -642,114 +454,8 @@ class QueueManager:
             fail_task_func=self.fail_task,
         )
         if failed and worker_id:
-            await self._record_agent_heartbeat_loss(str(worker_id))
+            await self._worker_registry.record_heartbeat_loss(str(worker_id))
         return failed
-
-    async def _record_agent_heartbeat_loss(self, agent_id: str) -> int:
-        loss_key = self._agent_heartbeat_loss_key(agent_id)
-        count = int(
-            await self._retry_redis_call(
-                "record_agent_heartbeat_loss",
-                self.redis.incr,
-                loss_key,
-            )
-        )
-        await self._retry_redis_call(
-            "expire_agent_heartbeat_losses",
-            self.redis.expire,
-            loss_key,
-            self.agent_heartbeat_loss_window_seconds,
-        )
-        if count < self.agent_heartbeat_loss_quarantine_threshold:
-            return count
-
-        control = await self.get_agent_control_state(agent_id)
-        if control.get("state") == "enabled":
-            await self.set_agent_control_state(
-                agent_id,
-                "disabled",
-                reason="automatic quarantine after repeated task heartbeat loss",
-                ttl_seconds=self.agent_heartbeat_loss_quarantine_seconds,
-            )
-            logger.error(
-                "Automatically quarantined agent %s after %s task heartbeat losses",
-                agent_id,
-                count,
-            )
-        return count
-
-    def _initialize_type_counts(self) -> Dict[str, int]:
-        return {t.value: 0 for t in TaskType}
-
-    async def _fetch_pending_task_types(self, task_ids: list[Any]) -> list[Any]:
-        async def execute_pipeline():
-            pipeline = self.redis.pipeline()
-            for task_id in task_ids:
-                task_id_str = self._decode_redis_value(task_id)
-                pipeline.hget(self._task_key(task_id_str), "type")
-            return await pipeline.execute()
-
-        return await self._retry_redis_call(
-            "fetch_pending_task_types",
-            execute_pipeline,
-        )
-
-    def _accumulate_type_counts(
-        self, counts: Dict[str, int], task_types: list[Any]
-    ) -> Dict[str, int]:
-        for task_type in task_types:
-            if not task_type:
-                continue
-            type_str = self._decode_redis_value(task_type)
-            if type_str in counts:
-                counts[type_str] += 1
-            else:
-                counts[type_str] = counts.get(type_str, 0) + 1
-        return counts
-
-    @staticmethod
-    def _safe_int(value: Any) -> int | None:
-        if value in (None, ""):
-            return None
-        try:
-            return int(float(value))
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _task_type_key(value: Any) -> str:
-        value = QueueManager._decode_redis_value(value)
-        if isinstance(value, TaskType):
-            return value.value
-        return str(value or "").strip()
-
-    @staticmethod
-    def _empty_queue_metrics_detail() -> dict[str, Any]:
-        return {
-            "pending_count": 0,
-            "max_pending_wait_seconds": None,
-        }
-
-    @staticmethod
-    def _update_wait_max(
-        detail: dict[str, Any],
-        field: str,
-        wait_seconds: int,
-    ) -> None:
-        current = detail.get(field)
-        if current is None or wait_seconds > current:
-            detail[field] = wait_seconds
-
-    async def _scan_agent_heartbeat_keys(self) -> list[Any]:
-        return await scan_agent_heartbeat_keys_flow(
-            scan_func=lambda *args, **kwargs: self._retry_redis_call(
-                "scan_agent_heartbeat_keys",
-                self.redis.scan,
-                *args,
-                **kwargs,
-            ),
-            agent_heartbeat_pattern_func=self._agent_heartbeat_pattern,
-        )
 
     def _build_enqueued_task_data(
         self,
@@ -860,25 +566,6 @@ class QueueManager:
         )
         return self._decode_redis_dict(data)
 
-    async def _fetch_task_details(
-        self, task_ids: list[Any]
-    ) -> list[Optional[Dict[str, Any]]]:
-        async def execute_pipeline():
-            pipeline = self.redis.pipeline(transaction=False)
-            for task_id in task_ids:
-                task_id_str = self._decode_redis_value(task_id)
-                pipeline.hgetall(self._task_key(task_id_str))
-            return await pipeline.execute()
-
-        raw_details = await self._retry_redis_call(
-            "fetch_task_details",
-            execute_pipeline,
-        )
-        return [
-            self._decode_redis_dict(details) if details else None
-            for details in raw_details
-        ]
-
     async def peek_pending_tasks(
         self,
         allowed_types: Optional[list[str]] = None,
@@ -887,93 +574,12 @@ class QueueManager:
         limit: int = 1,
         batch_size: int = 50,
     ) -> list[Dict[str, Any]]:
-        if limit <= 0:
-            return []
-
-        if not preferred_types:
-            return await self._peek_pending_tasks_in_score_order(
-                allowed_types=allowed_types,
-                limit=limit,
-                batch_size=batch_size,
-            )
-
-        preferred_set = set(preferred_types)
-        preferred_matches: list[Dict[str, Any]] = []
-        fallback_matches: list[Dict[str, Any]] = []
-        offset = 0
-        allowed_type_set = set(allowed_types or [])
-        while len(preferred_matches) < limit:
-            tasks_with_scores = await self._retry_redis_call(
-                "peek_pending_tasks_zrange",
-                self.redis.zrange,
-                self.pending_key,
-                offset,
-                offset + batch_size - 1,
-                withscores=True,
-            )
-            if not tasks_with_scores:
-                break
-            task_details_batch = await self._fetch_task_details(
-                [task_id_raw for task_id_raw, _score in tasks_with_scores]
-            )
-            for task_details in task_details_batch:
-                if not task_details or task_details.get("status") != TaskStatus.PENDING:
-                    continue
-                task_type = task_details.get("type")
-                if allowed_type_set and task_type not in allowed_type_set:
-                    continue
-                target = (
-                    preferred_matches
-                    if task_type in preferred_set
-                    else fallback_matches
-                )
-                if len(target) < limit:
-                    target.append(task_details)
-            offset += batch_size
-        return (preferred_matches + fallback_matches)[:limit]
-
-    async def _peek_pending_tasks_in_score_order(
-        self,
-        *,
-        allowed_types: Optional[list[str]],
-        limit: int,
-        batch_size: int,
-    ) -> list[Dict[str, Any]]:
-        matched_tasks: list[Dict[str, Any]] = []
-        offset = 0
-        allowed_type_set = set(allowed_types or [])
-
-        while len(matched_tasks) < limit:
-            tasks_with_scores = await self._retry_redis_call(
-                "peek_pending_tasks_zrange",
-                self.redis.zrange,
-                self.pending_key,
-                offset,
-                offset + batch_size - 1,
-                withscores=True,
-            )
-            if not tasks_with_scores:
-                break
-
-            task_details_batch = await self._fetch_task_details(
-                [task_id_raw for task_id_raw, _score in tasks_with_scores]
-            )
-            for task_details in task_details_batch:
-                if not task_details:
-                    continue
-                if task_details.get("status") != TaskStatus.PENDING:
-                    continue
-                task_type = task_details.get("type")
-                if allowed_type_set and task_type not in allowed_type_set:
-                    continue
-
-                matched_tasks.append(task_details)
-                if len(matched_tasks) >= limit:
-                    break
-
-            offset += batch_size
-
-        return matched_tasks
+        return await self._queue_selector.peek(
+            allowed_types=allowed_types,
+            preferred_types=preferred_types,
+            limit=limit,
+            batch_size=batch_size,
+        )
 
     async def dequeue_task(
         self,
@@ -982,20 +588,12 @@ class QueueManager:
         *,
         cancel_lock: bool = False,
     ) -> Optional[Tuple[str, float]]:
-        if preferred_types:
-            next_task = await self._pop_preferred_or_fallback_task(
-                allowed_types=list(allowed_types or []),
-                preferred_types=preferred_types,
-            )
-            return await self._activate_dequeued_task(
-                next_task,
-                cancel_lock=cancel_lock,
-            )
-        return await dequeue_task_flow(
+        next_task = await self._queue_selector.select_next(
             allowed_types=allowed_types,
-            pop_next_pending_task_func=self._pop_next_pending_task,
-            find_next_allowed_task_func=self._find_next_allowed_task,
-            activate_dequeued_task_func=self._activate_dequeued_task,
+            preferred_types=preferred_types,
+        )
+        return await self._activate_dequeued_task(
+            next_task,
             cancel_lock=cancel_lock,
         )
 
@@ -1131,70 +729,19 @@ class QueueManager:
         return await self._cancel_running_task(task_id)
 
     async def get_queue_position(self, task_id: str) -> Optional[int]:
-        return await self._retry_redis_call(
-            "get_queue_position",
-            self.redis.zrank,
-            self.pending_key,
-            task_id,
-        )
+        return await self._queue_selector.position(task_id)
 
     async def get_queue_position_by_type(self, task_id: str) -> Optional[int]:
-        global_pos = await self.get_queue_position(task_id)
-        if global_pos is None:
-            return None
-
-        target_task_type = await self._get_task_type(task_id)
-        if not target_task_type:
-            return None
-
-        pending_task_ids = await self._retry_redis_call(
-            "get_queue_position_by_type_zrange",
-            self.redis.zrange,
-            self.pending_key,
-            0,
-            global_pos,
-        )
-        pending_task_types = await self._fetch_pending_task_types(pending_task_ids)
-
-        type_position = 0
-        for pending_task_id, pending_task_type in zip(
-            pending_task_ids, pending_task_types
-        ):
-            pending_task_id = self._decode_redis_value(pending_task_id)
-            if pending_task_id == task_id:
-                return type_position
-            if (
-                pending_task_type
-                and self._decode_redis_value(pending_task_type) == target_task_type
-            ):
-                type_position += 1
-        return None
+        return await self._queue_selector.position_by_type(task_id)
 
     async def get_queue_size(self) -> int:
-        return await self._retry_redis_call(
-            "get_queue_size",
-            self.redis.zcard,
-            self.pending_key,
-        )
+        return await self._queue_selector.size()
 
     async def get_active_workers_count(self) -> int:
-        return await get_active_workers_count_flow(
-            scan_agent_heartbeat_keys_func=self._scan_agent_heartbeat_keys,
-        )
+        return await self._worker_registry.active_count()
 
     async def get_all_workers(self) -> list[Dict[str, Any]]:
-        return await get_all_workers_flow(
-            scan_agent_heartbeat_keys_func=self._scan_agent_heartbeat_keys,
-            decode_redis_value_func=self._decode_redis_value,
-            agent_heartbeat_prefix=self.agent_heartbeat_prefix,
-            hgetall_func=lambda *args, **kwargs: self._retry_redis_call(
-                "get_all_workers_hgetall",
-                self.redis.hgetall,
-                *args,
-                **kwargs,
-            ),
-            build_worker_info_func=self._build_worker_info,
-        )
+        return await self._worker_registry.all_workers()
 
     async def update_task_heartbeat(self, task_id: str):
         await self._retry_redis_call(
@@ -1251,7 +798,7 @@ class QueueManager:
         quarantined_until: float | str | None = None,
         metadata: dict[str, Any] | None = None,
     ):
-        await update_agent_heartbeat_flow(
+        await self._worker_registry.update_heartbeat(
             agent_id=agent_id,
             types=types,
             status=status,
@@ -1261,34 +808,10 @@ class QueueManager:
             consecutive_failures=consecutive_failures,
             quarantined_until=quarantined_until,
             metadata=metadata,
-            agent_heartbeat_key_func=self._agent_heartbeat_key,
-            hset_func=lambda *args, **kwargs: self._retry_redis_call(
-                "update_agent_heartbeat_hset",
-                self.redis.hset,
-                *args,
-                **kwargs,
-            ),
-            expire_func=lambda *args, **kwargs: self._retry_redis_call(
-                "update_agent_heartbeat_expire",
-                self.redis.expire,
-                *args,
-                **kwargs,
-            ),
         )
 
     async def get_agent_control_state(self, agent_id: str) -> dict[str, Any]:
-        data = self._decode_redis_dict(
-            await self._retry_redis_call(
-                "get_agent_control_state",
-                self.redis.hgetall,
-                self._agent_control_key(agent_id),
-            )
-        )
-        state = str(data.get("state") or "enabled").strip().lower()
-        if state not in {"enabled", "draining", "disabled"}:
-            state = "enabled"
-        data["state"] = state
-        return data
+        return await self._worker_registry.get_control(agent_id)
 
     async def set_agent_control_state(
         self,
@@ -1298,113 +821,30 @@ class QueueManager:
         reason: str = "",
         ttl_seconds: int | None = None,
     ) -> dict[str, Any]:
-        normalized_state = state.strip().lower()
-        if normalized_state not in {"enabled", "draining", "disabled"}:
-            raise ValueError(
-                "agent control state must be enabled, draining, or disabled"
-            )
-        key = self._agent_control_key(agent_id)
-        if normalized_state == "enabled":
-            await self._retry_redis_call(
-                "set_agent_control_enabled",
-                self.redis.hdel,
-                key,
-                "state",
-                "reason",
-                "updated_at",
-            )
-            return {"agent_id": agent_id, "state": "enabled", "reason": ""}
-        payload = {
-            "state": normalized_state,
-            "reason": reason,
-            "updated_at": time.time(),
-        }
-        await self._retry_redis_call(
-            "set_agent_control_hset",
-            self.redis.hset,
-            key,
-            mapping=payload,
+        return await self._worker_registry.set_control(
+            agent_id,
+            state,
+            reason=reason,
+            ttl_seconds=ttl_seconds,
         )
-        if ttl_seconds:
-            await self._retry_redis_call(
-                "set_agent_control_expire",
-                self.redis.expire,
-                key,
-                ttl_seconds,
-            )
-        return {"agent_id": agent_id, **payload}
 
     async def is_agent_pop_enabled(self, agent_id: str) -> tuple[bool, str]:
-        control = await self.get_agent_control_state(agent_id)
-        state = control.get("state")
-        if state in {"draining", "disabled"}:
-            return False, str(control.get("reason") or state)
-        return True, ""
+        return await self._worker_registry.pop_enabled(agent_id)
 
     async def bind_agent_task(self, task_id: str, agent_id: str):
-        await self.record_task_worker(task_id, agent_id)
-        await self._retry_redis_call(
-            "bind_agent_task",
-            self.redis.hset,
-            self._agent_heartbeat_key(agent_id),
-            "current_task_id",
-            task_id,
-        )
-        await self._retry_redis_call(
-            "confirm_agent_task_delivery",
-            self.redis.hdel,
-            self._task_key(task_id),
-            "claim_delivery_pending",
-        )
+        await self._worker_registry.bind_task(task_id, agent_id)
 
     async def reserve_agent_task_delivery(self, task_id: str, agent_id: str):
-        await self.record_task_worker(task_id, agent_id)
-        await self._retry_redis_call(
-            "reserve_agent_task_delivery",
-            self.redis.hset,
-            self._agent_heartbeat_key(agent_id),
-            "current_task_id",
-            task_id,
-        )
-        await self._retry_redis_call(
-            "mark_agent_task_delivery_pending",
-            self.redis.hset,
-            self._task_key(task_id),
-            "claim_delivery_pending",
-            1,
-        )
+        await self._worker_registry.reserve_task_delivery(task_id, agent_id)
 
     async def get_agent_current_task_id(self, agent_id: str) -> str | None:
-        current_task_id = await self._retry_redis_call(
-            "get_agent_current_task_id",
-            self.redis.hget,
-            self._agent_heartbeat_key(agent_id),
-            "current_task_id",
-        )
-        if current_task_id in (None, "", b""):
-            return None
-        return str(self._decode_redis_value(current_task_id))
+        return await self._worker_registry.current_task_id(agent_id)
 
     async def get_pending_agent_task_claim(self, agent_id: str) -> str | None:
-        current_task_id = await self.get_agent_current_task_id(agent_id)
-        if not current_task_id:
-            return None
-        delivery_pending = await self._retry_redis_call(
-            "get_pending_agent_task_claim",
-            self.redis.hget,
-            self._task_key(current_task_id),
-            "claim_delivery_pending",
-        )
-        return current_task_id if self._as_bool(delivery_pending) else None
+        return await self._worker_registry.pending_task_claim(agent_id)
 
     async def record_task_worker(self, task_id: str, agent_id: str):
-        await self._retry_redis_call(
-            "record_task_worker",
-            self.redis.hset,
-            self._task_key(task_id),
-            "worker_id",
-            agent_id,
-        )
+        await self._worker_registry.record_task_worker(task_id, agent_id)
 
     async def clear_agent_current_task(
         self,
@@ -1412,71 +852,13 @@ class QueueManager:
         *,
         task_id: str | None = None,
     ):
-        key = self._agent_heartbeat_key(agent_id)
-        if task_id is not None:
-            current_task_id = self._decode_redis_value(
-                await self._retry_redis_call(
-                    "clear_agent_current_task_hget",
-                    self.redis.hget,
-                    key,
-                    "current_task_id",
-                )
-            )
-            if current_task_id != task_id:
-                return
-        await self._retry_redis_call(
-            "clear_agent_current_task_hdel",
-            self.redis.hdel,
-            key,
-            "current_task_id",
+        await self._worker_registry.clear_current_task(
+            agent_id,
+            task_id=task_id,
         )
 
     async def get_queue_metrics_by_type(self) -> Dict[str, int]:
-        return await get_queue_metrics_by_type_flow(
-            zrange_func=lambda *args, **kwargs: self._retry_redis_call(
-                "get_queue_metrics_by_type_zrange",
-                self.redis.zrange,
-                *args,
-                **kwargs,
-            ),
-            pending_key=self.pending_key,
-            initialize_type_counts_func=self._initialize_type_counts,
-            fetch_pending_task_types_func=self._fetch_pending_task_types,
-            accumulate_type_counts_func=self._accumulate_type_counts,
-        )
+        return await self._queue_selector.metrics_by_type()
 
     async def get_queue_metrics_by_type_details(self) -> dict[str, dict[str, Any]]:
-        async def fetch_pending_task_details():
-            task_ids = await self.redis.zrange(self.pending_key, 0, -1)
-            if not task_ids:
-                return [], []
-
-            pipeline = self.redis.pipeline()
-            for task_id in task_ids:
-                task_id_str = self._decode_redis_value(task_id)
-                task_key = self._task_key(task_id_str)
-                pipeline.hget(task_key, "type")
-                pipeline.hget(task_key, "created_at")
-            return task_ids, await pipeline.execute()
-
-        task_ids, values = await self._retry_redis_call(
-            "get_queue_metrics_by_type_details",
-            fetch_pending_task_details,
-        )
-        if not task_ids:
-            return {}
-
-        now = time.time()
-        details: dict[str, dict[str, Any]] = {}
-        for index, _task_id in enumerate(task_ids):
-            task_type = self._task_type_key(values[index * 2])
-            created_at = self._safe_int(self._decode_redis_value(values[index * 2 + 1]))
-            if not task_type or created_at is None:
-                continue
-
-            wait_seconds = max(0, int(now - created_at))
-            detail = details.setdefault(task_type, self._empty_queue_metrics_detail())
-            detail["pending_count"] += 1
-            self._update_wait_max(detail, "max_pending_wait_seconds", wait_seconds)
-
-        return details
+        return await self._queue_selector.metrics_by_type_details()
