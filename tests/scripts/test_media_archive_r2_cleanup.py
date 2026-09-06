@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
+import stat
 
 import pytest
 
@@ -12,6 +14,9 @@ from scripts.media_archive_r2_cleanup import (
     load_frozen_artifact,
     validate_execute_artifacts,
 )
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_cleanup_artifact_rejects_tampered_plan(tmp_path):
@@ -102,3 +107,9 @@ def test_cli_exposes_only_plan_probe_execute_phases():
     assert parser.parse_args(["plan", "--output", "plan.json"]).command == "plan"
     with pytest.raises(SystemExit):
         parser.parse_args(["--execute", "--output", "receipt.json"])
+
+
+def test_cleanup_script_remains_directly_executable():
+    mode = (ROOT / "scripts/media_archive_r2_cleanup.py").stat().st_mode
+
+    assert mode & stat.S_IXUSR
