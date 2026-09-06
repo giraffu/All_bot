@@ -210,7 +210,11 @@ async def process_submit_to_gallery_result_impl(
             user_id=user_id,
             task_id=task_id,
         )
-        existing = await dependencies.get_gallery_post_by_task_id_func(session, task_id)
+        existing = await dependencies.get_gallery_post_by_task_id_func(
+            session,
+            task_id,
+            user_id=user_id,
+        )
 
         if existing:
             return await _reactivate_existing_gallery_post(

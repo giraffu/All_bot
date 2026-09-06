@@ -65,6 +65,7 @@ async def get_wan22_history_chain_payload(
     active_task_ids = await fetch_active_public_gallery_task_ids(
         db=db,
         task_ids=chain_task_ids,
+        current_user_id=current_user.id,
     )
     items = await build_user_history_payload(
         histories=ordered_histories,

@@ -33,14 +33,14 @@ def _build_user(**overrides):
     return SimpleNamespace(**defaults)
 
 
-def test_extract_client_ip_prefers_x_real_ip():
+def test_extract_client_ip_ignores_spoofable_forwarding_headers():
     request = _build_request(real_ip="1.1.1.1", forwarded_for="2.2.2.2", client_host="3.3.3.3")
-    assert auth_api_service.extract_client_ip(request) == "1.1.1.1"
+    assert auth_api_service.extract_client_ip(request) == "3.3.3.3"
 
 
-def test_extract_client_ip_falls_back_in_order():
+def test_extract_client_ip_uses_asgi_resolved_peer():
     request = _build_request(forwarded_for="2.2.2.2", client_host="3.3.3.3")
-    assert auth_api_service.extract_client_ip(request) == "2.2.2.2"
+    assert auth_api_service.extract_client_ip(request) == "3.3.3.3"
 
     request = _build_request(client_host="3.3.3.3")
     assert auth_api_service.extract_client_ip(request) == "3.3.3.3"
@@ -129,7 +129,7 @@ async def test_login_telegram_payment_payload_skips_web_access_gate():
 @pytest.mark.asyncio
 async def test_login_with_password_payload_extracts_ip_and_schedules_notification():
     req = SimpleNamespace(username="tester", password="secret")
-    request = _build_request(real_ip="8.8.8.8")
+    request = _build_request(real_ip="8.8.8.8", client_host="9.9.9.9")
     user = _build_user()
 
     with patch(
@@ -147,8 +147,8 @@ async def test_login_with_password_payload_extracts_ip_and_schedules_notificatio
         )
 
     assert response == {"access_token": "token"}
-    mock_auth.assert_awaited_once_with("tester", "secret", "8.8.8.8")
-    mock_notify.assert_called_once_with(456, "8.8.8.8")
+    mock_auth.assert_awaited_once_with("tester", "secret", "9.9.9.9")
+    mock_notify.assert_called_once_with(456, "9.9.9.9")
     mock_build_payload.assert_called_once_with(
         user=user,
         stats={"credits": 66},

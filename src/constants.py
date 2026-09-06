@@ -192,7 +192,6 @@ MAX_CONCURRENT_TASKS = CONCURRENT_TASK_LIMITS_BY_IDENTITY["外门弟子"]
 # TON Payment Constants
 TON_TO_NANOTON = 1_000_000_000
 TON_SLIPPAGE_NANOTON = 10_000_000  # 0.01 TON allowed slippage
-TON_RECEIVER_ADDRESS = "UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b"
 
 # Commission Settings
 COMMISSION_RATE = 0.10
@@ -228,8 +227,6 @@ FAVORITE_LIMITS_BY_IDENTITY = {
     "真传弟子": 1000,
 }
 
-DEFAULT_FAVORITE_LIMIT = FAVORITE_LIMITS_BY_IDENTITY["外门弟子"]
-
 # Forbidden words for public sharing
 FORBIDDEN_WORDS = [
     "小男孩",
@@ -263,9 +260,6 @@ LTX_RESOLUTION_COST = {"1280x704": 10}
 DURATION_MULTIPLIER = {"5s": 1.0, "8s": 2.0, "10s": 3.0}
 
 LTX_DURATION_MULTIPLIER = {"5s": 1.0, "10s": 2.0, "15s": 3.0, "20s": 4.0}
-
-DURATION_FRAMES = {"5s": 81, "8s": 129, "10s": 161}
-
 
 def get_video_settings_keyboard(
     user_group: str,

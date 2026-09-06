@@ -164,7 +164,9 @@ def test_disabled_entrypoint_imports_without_runtime_configuration():
 
 
 def test_task_control_health_payload_does_not_expose_lease_tokens():
-    payload = task_control_worker.build_task_control_health_payload(
+    from src.control_worker_health import build_task_control_health_payload
+
+    payload = build_task_control_health_payload(
         enabled=True,
         worker_id="worker-1",
         task_states={"web-finalizer": {"outcome": "not_acquired"}},

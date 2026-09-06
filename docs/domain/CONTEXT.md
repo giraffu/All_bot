@@ -6,6 +6,8 @@
 
 - **internal_user_id**：AllBot 内部统一用户标识。核心层只使用该标识流转，不直接依赖 Telegram、Web 或第三方平台对象。
 - **Telegram user id**：Telegram 平台用户标识，只在 Bot 表示层、登录验签、付费群审核等适配层出现。
+- **Telegram identity resolver**：把 Telegram user id 解析为 `internal_user_id` 的
+  单一适配层 seam；领域服务不能把一个整数同时解释为两个 ID namespace。
 - **QQCC 私有 Bot owner**：拥有一条 QQCC 私有 Telegram Bot 绑定的 AllBot 用户；owner 身份不等于私有 Bot 的每个访客，也不替访客承担生成费用。
 - **QQCC 私有 Bot**：用户自备 Telegram Bot token、复用 QQCC 能力但拥有独立配置和运行状态的多租户实例；每个 owner 同时只能有一条绑定。
 - **password_version**：用户密码会话版本。改密后用于让旧 token 失效。
@@ -61,6 +63,9 @@
 ## 媒体与社区
 
 - **Gallery 投稿**：用户把可公开的 History 结果发布到社区广场的行为。
+- **Gallery History link**：Gallery 帖子到内容来源 History 的实体关系。新记录使用
+  `history_id`；旧空外键仅按 `(task_id, internal_user_id)` 组合回退，`task_id` 单独
+  不是所有权键。
 - **关注关系**：用户对其他创作者建立的社交连接；“我的关注”按 follower 方向查询，“我的粉丝”按 followee 方向查询，粉丝列表中的已关注状态表示当前用户是否回关。
 - **apply-context**：从 Gallery 帖子还原可复用生成上下文的服务端入口。
 - **提示词解锁**：用户消耗灵石查看完整 prompt，并给作者入账的幂等交易。

@@ -27,8 +27,8 @@ async def test_query_affiliate_available_balance_for_telegram_user_uses_internal
 
     monkeypatch.setattr(
         telegram_affiliate_service,
-        "get_or_create_user_by_telegram",
-        AsyncMock(return_value=(SimpleNamespace(id=42), False)),
+        "resolve_internal_user_id_for_telegram",
+        AsyncMock(return_value=42),
     )
     monkeypatch.setattr(
         telegram_affiliate_service, "AsyncSessionLocal", lambda: _SessionContext(session)
@@ -55,8 +55,8 @@ async def test_redeem_affiliate_credits_for_telegram_user_wraps_session_call(mon
 
     monkeypatch.setattr(
         telegram_affiliate_service,
-        "get_or_create_user_by_telegram",
-        AsyncMock(return_value=(SimpleNamespace(id=42), False)),
+        "resolve_internal_user_id_for_telegram",
+        AsyncMock(return_value=42),
     )
     monkeypatch.setattr(
         telegram_affiliate_service, "AsyncSessionLocal", lambda: _SessionContext(session)

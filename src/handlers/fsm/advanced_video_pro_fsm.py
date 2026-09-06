@@ -818,28 +818,6 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return AdvancedVideoProState.WAIT_PROMPT
 
 
-async def reference_audio_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    query = update.callback_query
-    await query.answer()
-    data = context.user_data.get(DATA_KEY)
-    if not data:
-        return ConversationHandler.END
-    if not data.get("images") and not data.get("reference_video"):
-        await robust_edit_text(query.message, _reference_mode_request_text(context))
-        return AdvancedVideoProState.WAIT_MEDIA
-    await robust_edit_text(
-        query.message,
-        _with_cancel_hint(
-            context,
-            f"{_reference_prompt_guidance(context, data)}\n\n"
-            + _text(context, "请输入视频提示词。", "Send the video prompt."),
-        ),
-    )
-    return AdvancedVideoProState.WAIT_PROMPT
-
-
 async def receive_reference_audio(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1337,32 +1315,6 @@ def get_advanced_video_pro_fsm_handler(
                     filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
                     receive_reference_audio,
                 ),
-                MessageHandler(
-                    filters.VIDEO | filters.Document.VIDEO,
-                    receive_reference_video,
-                ),
-            ],
-            AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION: [
-                CallbackQueryHandler(reference_callback, pattern=r"^avp_refs_"),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
-                MessageHandler(
-                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
-                    receive_reference_audio,
-                ),
-                MessageHandler(
-                    filters.VIDEO | filters.Document.VIDEO,
-                    receive_reference_video,
-                ),
-            ],
-            AdvancedVideoProState.WAIT_REFERENCE_AUDIO: [
-                CallbackQueryHandler(
-                    reference_audio_callback, pattern=r"^avp_audio_skip$"
-                ),
-                MessageHandler(
-                    filters.VOICE | filters.AUDIO | filters.Document.AUDIO,
-                    receive_reference_audio,
-                ),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(
                     filters.VIDEO | filters.Document.VIDEO,
                     receive_reference_video,

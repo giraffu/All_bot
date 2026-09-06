@@ -19,7 +19,8 @@
 ## 2. 当前数据模型
 
 - `gallery_posts`
-  - 核心帖子实体；`(task_id, user_id)` unique 防止并发重复投稿。
+  - 核心帖子实体；`(task_id, user_id)` unique 防止并发重复投稿；新投稿同时写入
+    `history_id` 外键，作为帖子内容来源的实体关系。
 - `user_interactions`
   - 记录 `like / dislike / apply`。reaction 与 apply 分别使用
     `(user_id, post_id)` partial unique index，ORM 与 migration 同名同条件；旧的
@@ -32,6 +33,9 @@
   - 提示词解锁表，`user_id + post_id` 唯一，记录买家、帖子、作者与解锁灵石成本，是提示词解锁的幂等锚点。
 - `history`
   - 仍是帖子内容来源与 apply-context 的事实源，包含 `prompt / input_file / requested_duration / billing_resolution / allow_contribute` 等字段。
+  - Gallery 读取优先通过 `gallery_posts.history_id`；迁移前的空外键只允许通过
+    `(task_id, user_id)` 所有权组合回退，禁止任何仅按 `task_id` 的关联、统计、
+    媒体解析或提示词解锁。
 - `users`
   - `is_submission_banned / submission_banned_at / submission_ban_reason` 控制用户是否仍可投稿，不能用身份或修为字段模拟。
 - `user_follows`
@@ -83,6 +87,12 @@ sequenceDiagram
 - 投稿事务先取 `(user_id, task_id)` advisory transaction lock，insert 使用
   显式 conflict target 和 `RETURNING`。只有真实创建/重新上架才更新
   History、`total_contributions`、日限额和媒体 side effect。
+- `src/services/gallery_history_link.py` 是 Gallery → History 查询的 canonical seam。
+  新查询不得自行拼接 `GalleryPost.task_id == History.task_id`。迁移只回填唯一的
+  owner/task 匹配；零匹配或多匹配记录保持 `history_id=NULL`，进入兼容审计，不能
+  猜测来源行。
+- Core 拒绝结果使用 `GalleryCoreError.reason` 等稳定 reason code；Web/Telegram
+  presenter 决定状态码和展示文本，不得再通过异常类名或中文文案片段判断错误类型。
 
 ### 4.2 用户输入 staging 与持久化
 

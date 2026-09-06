@@ -13,10 +13,10 @@ from src.database.models import (
     CharacterReference,
     CharacterReferenceView,
     GalleryPost,
-    History,
     OfficialCharacterAsset,
     OfficialEnvironmentAsset,
 )
+from src.services.gallery_history_link import select_gallery_history_for_post
 from src.database.core import AsyncSessionLocal
 from src.services.gallery_apply_context_service import resolve_history_reference_audio
 from src.services.storage import storage
@@ -136,7 +136,7 @@ async def _load_gallery_reference_audio(post_id: int) -> str | None:
         if post is None or post.is_active is False:
             return None
         history = (
-            (await db.execute(select(History).where(History.task_id == post.task_id)))
+            (await db.execute(select_gallery_history_for_post(post)))
             .scalars()
             .first()
         )

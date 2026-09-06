@@ -73,17 +73,6 @@ class QuotaManager:
             result = await session.execute(stmt)
             return result.scalar() or 0
 
-    async def is_user_exists(self, telegram_id: int) -> bool:
-        """Check if user exists without creating"""
-        from sqlalchemy import or_
-
-        async with AsyncSessionLocal() as session:
-            stmt = select(User).where(
-                or_(User.telegram_id == telegram_id, User.id == telegram_id)
-            )
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none() is not None
-
     async def ensure_user(
         self, internal_user_id: int, username: str = None, full_name: str = None
     ) -> User:

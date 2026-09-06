@@ -74,6 +74,18 @@
       "historical_data": "not_applicable"
     },
     {
+      "id": "gallery-history-owner-fallback",
+      "status": "runtime-verification-required",
+      "entrypoint": "src/services/gallery_history_link.py:gallery_history_condition_for_post",
+      "owner": "gallery-storage",
+      "telemetry_key": "compat.gallery.history_owner_fallback",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "gallery_posts.history_id foreign key",
+      "exit_condition": "All active gallery_posts rows have an ownership-valid history_id, ambiguous legacy rows are resolved, and telemetry is zero for the full observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "legacy_gallery_posts_with_null_history_id_must_be_audited_and_backfilled"
+    },
+    {
       "id": "r2-history-media-prefix",
       "status": "active-compat",
       "entrypoint": "src/core/media_urls.py:build_r2_media_key_candidates",
@@ -96,6 +108,54 @@
       "exit_condition": "Queue, registry and retained History contain no literal image_to_video values during the observation window.",
       "minimum_zero_hit_days": 30,
       "historical_data": "history_task_types_must_be_migrated_or_retained_reader_supported"
+    },
+    {
+      "id": "task-process-callback-facade",
+      "status": "runtime-verification-required",
+      "entrypoint": "src/core/task_core.py:process_and_submit_task",
+      "owner": "task-engine",
+      "telemetry_key": "compat.task.process_callback_facade",
+      "telemetry_source": "call_site_inventory",
+      "replacement": "TaskApplication.submit(TaskSubmissionCommand, TaskSubmissionPolicy, SubmissionJournal)",
+      "exit_condition": "Compatibility tests and integrations use TaskApplication directly and the production call-site inventory remains empty.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "not_applicable"
+    },
+    {
+      "id": "task-success-persistence-wide-facade",
+      "status": "active-compat",
+      "entrypoint": "src/core/task_core_persistence.py:persist_successful_task_result",
+      "owner": "task-engine",
+      "telemetry_key": "compat.task.success_persistence_wide_facade",
+      "telemetry_source": "call_site_inventory",
+      "replacement": "TaskSuccessPersistenceCommand through the canonical persistence seam",
+      "exit_condition": "task_service_completion and compatibility tests use the command seam and no production imports remain.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "inflight_task_completion_payloads_must_remain_readable"
+    },
+    {
+      "id": "web-finalizer-legacy-hash-index",
+      "status": "active-compat",
+      "entrypoint": "src/services/task_web_finalizer.py:process_all_pending_web_finalizers",
+      "owner": "task-engine",
+      "telemetry_key": "compat.web.finalizer_legacy_hash_index",
+      "telemetry_source": "task_control_worker_metrics",
+      "replacement": "due-time ZSET index written atomically with each finalizer record",
+      "exit_condition": "Legacy Hash records are fully indexed or terminal and finalizer_legacy_indexed_records stays zero for the observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "pending_legacy_finalizer_hash_records_must_be_drained"
+    },
+    {
+      "id": "storage-presign-seconds-in-hours-field",
+      "status": "runtime-verification-required",
+      "entrypoint": "src/services/storage_presign.py:resolve_download_expiry",
+      "owner": "gallery-storage",
+      "telemetry_key": "compat.storage.presign_seconds_in_hours_field",
+      "telemetry_source": "call_site_inventory",
+      "replacement": "explicit expiry_seconds or expiry_hours parameter with unit-safe types",
+      "exit_condition": "All call sites pass canonical hour values or explicit-unit APIs and retained callbacks using seconds have expired.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "issued_presigned_urls_must_expire"
     },
     {
       "id": "qqcc-wan22-legacy-config",

@@ -38,7 +38,7 @@ async def test_gallery_post_insert_has_explicit_conflict_target_and_returning(
     monkeypatch,
 ):
     session = _Session(insert_result=1)
-    history = SimpleNamespace(is_public=False)
+    history = SimpleNamespace(id=77, is_public=False)
     user = SimpleNamespace(total_contributions=2)
     enqueue_restore = AsyncMock()
     monkeypatch.setattr(
@@ -68,6 +68,8 @@ async def test_gallery_post_insert_has_explicit_conflict_target_and_returning(
     ).lower()
     assert "on conflict (task_id, user_id) do nothing" in sql
     assert "returning gallery_posts.id" in sql
+    assert "history_id" in sql
+    assert "77" in sql
     assert state == "created"
     assert user.total_contributions == 3
     assert history.is_public is True
@@ -80,7 +82,7 @@ async def test_gallery_post_conflict_has_no_contribution_or_media_side_effect(
     monkeypatch,
 ):
     session = _Session(insert_result=None)
-    history = SimpleNamespace(is_public=False)
+    history = SimpleNamespace(id=77, is_public=False)
     user = SimpleNamespace(total_contributions=2)
     enqueue_restore = AsyncMock()
     monkeypatch.setattr(

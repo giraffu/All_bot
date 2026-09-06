@@ -6,7 +6,11 @@ from src.gallery_core_dependencies import (
     get_gallery_feed_query_func,
     get_gallery_session_factory,
 )
-from src.core.gallery_core_errors import DuplicateInteractionError, GalleryCoreError
+from src.core.gallery_core_errors import (
+    DuplicateInteractionError,
+    GalleryCoreError,
+    GalleryPostNotFoundError,
+)
 from src.core.gallery_interactions_core import (
     record_apply_interaction_impl,
     toggle_like_impl,
@@ -21,6 +25,7 @@ __all__ = [
     "ALLOWED_WEB_SUBMIT_TYPES",
     "DuplicateInteractionError",
     "GalleryCoreError",
+    "GalleryPostNotFoundError",
     "GallerySubmitOutcome",
     "get_gallery_feed",
     "process_submit_to_gallery_result",

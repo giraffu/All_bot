@@ -5,7 +5,11 @@ from src.gallery_core_dependencies import (
     GalleryInteractionDependencies,
     get_default_gallery_interaction_dependencies,
 )
-from src.core.gallery_core_errors import DuplicateInteractionError, GalleryCoreError
+from src.core.gallery_core_errors import (
+    DuplicateInteractionError,
+    GalleryCoreError,
+    GalleryPostNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ async def toggle_like_impl(
         )
         post = await dependencies.get_gallery_post_by_id_func(session, post_id)
         if not post:
-            raise GalleryCoreError("帖子不存在")
+            raise GalleryPostNotFoundError("帖子不存在")
 
         inter = await dependencies.get_gallery_reaction_interaction_func(
             session,

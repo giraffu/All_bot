@@ -43,10 +43,15 @@ async def acquire_gallery_submission_lock(
     )
 
 
-async def get_gallery_post_by_task_id(session, task_id: str):
+async def get_gallery_post_by_task_id(session, task_id: str, *, user_id: int):
     return (
         (
-            await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
+            await session.execute(
+                select(GalleryPost).where(
+                    GalleryPost.task_id == task_id,
+                    GalleryPost.user_id == user_id,
+                )
+            )
         )
         .scalars()
         .first()
@@ -103,6 +108,7 @@ async def create_gallery_post_from_history(
         .values(
             task_id=task_id,
             user_id=user_id,
+            history_id=history.id,
             media_type=media_type,
             width=width,
             height=height,

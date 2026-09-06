@@ -78,9 +78,6 @@ class PermissionQuotaService:
             task_type=task_type,
         )
 
-    async def is_user_exists(self, user_id: int) -> bool:
-        return await self.quota_manager.is_user_exists(user_id)
-
     async def get_user_credits(self, tg_id: int, username: str, full_name: str) -> int:
         from src.core.user_core import get_or_create_user_by_telegram
 

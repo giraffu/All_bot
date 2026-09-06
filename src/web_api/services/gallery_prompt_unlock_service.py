@@ -2,11 +2,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from src.database.models import GalleryPost, GalleryPromptUnlock, History, User
+from src.database.models import GalleryPost, GalleryPromptUnlock, User
 from src.quota import QuotaManager
 from src.web_api.schemas.gallery_schema import PromptUnlockResponse
 from src.web_api.services.gallery_response_builder import PROMPT_UNLOCK_PRICE_CREDITS
 from src.services.user_visible_generation_presenter import present_user_prompt
+from src.services.gallery_history_link import select_gallery_history_for_post
 
 
 async def _fetch_current_credits(*, db, user_id: int) -> int:
@@ -22,7 +23,7 @@ async def _fetch_prompt_unlock_entities(*, db, post_id: int):
         raise HTTPException(status_code=404, detail="帖子不存在或已失效")
 
     history = (
-        await db.execute(select(History).where(History.task_id == post.task_id))
+        await db.execute(select_gallery_history_for_post(post))
     ).scalars().first()
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -12,7 +11,6 @@ from typing import Any, Protocol
 
 from config import REDIS_PREFIX
 from src.control_worker_health import (
-    build_task_control_health_payload,
     build_task_control_worker_id,
 )
 from src.services.redis_client import redis_client

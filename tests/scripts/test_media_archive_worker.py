@@ -8,11 +8,13 @@ from pathlib import Path
 import pytest
 
 from scripts.media_archive_worker import (
+    ARCHIVE_BUCKET,
     AdaptiveConcurrencyController,
     CatalogRecorder,
     RateLimiter,
     SpoolBudget,
     archive_job_claim_params,
+    archive_blob_key,
     capacity_claim_priority,
     clear_proxy_environment,
     load_secure_config,
@@ -20,6 +22,15 @@ from scripts.media_archive_worker import (
     validate_direct_route,
     validate_source_routes,
 )
+
+
+def test_worker_reuses_canonical_archive_bucket_and_blob_key_contract():
+    digest = "ab" * 32
+
+    assert ARCHIVE_BUCKET == "allbot-media-archive-v1"
+    assert archive_blob_key(digest, ".JPEG") == (
+        f"blobs/sha256/ab/ab/{digest}.jpg"
+    )
 
 
 def test_worker_cli_bootstraps_repository_imports_from_any_working_directory(tmp_path):

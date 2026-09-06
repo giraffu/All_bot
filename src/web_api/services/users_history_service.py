@@ -53,7 +53,11 @@ async def get_user_history_payload(
         current_user_id=current_user.id,
         limit=limit,
     )
-    active_task_ids = await fetch_active_public_gallery_task_ids(db=db, task_ids=task_ids)
+    active_task_ids = await fetch_active_public_gallery_task_ids(
+        db=db,
+        task_ids=task_ids,
+        current_user_id=current_user.id,
+    )
     await release_read_transaction(db)
     response_items = await build_user_history_payload(
         histories=histories,
@@ -152,6 +156,7 @@ async def get_my_favorites_payload(
     gallery_post_map = await fetch_gallery_posts_for_task_ids(
         db=db,
         task_ids=[history.task_id for history in histories if history.task_id],
+        current_user_id=current_user.id,
     )
     await release_read_transaction(db)
     response_items = await build_favorite_gallery_payload(

@@ -5,9 +5,8 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 # AllBot Gallery 与对象存储
 
-修改 Gallery、R2、媒体 URL、apply-context、提示词解锁或社区治理时必须加载
-本技能。异常排查叠加 `allbot-diagnosing-bugs`，新增行为叠加 `allbot-tdd`，
-涉及扣费叠加 `allbot-billing-auth`。
+异常排查叠加 `allbot-diagnosing-bugs`，新增行为叠加 `allbot-tdd`，涉及扣费
+叠加 `allbot-billing-auth`。
 
 ## 1. 按需阅读
 
@@ -25,9 +24,8 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 - 投稿、互动和错误 facade 位于 `src/core/gallery_*`；默认依赖通过
   `gallery_core_dependencies.py` 注入。
-- feed SQL 拼装位于 `src/services/gallery_feed_queries.py`，不得回写 core。
-- Web Gallery router/service/presenter 负责用户响应和展示转换；对象存储
-  探测不能混在长数据库事务中。
+- feed SQL 位于 `src/services/gallery_feed_queries.py`，不得回写 core。
+- Web adapter 负责响应与展示转换；对象存储探测不能混在长数据库事务中。
 - `/api/gallery/posts/{post_id}/apply-context` 是 Web 模板应用事实入口，
   必须从 `History` 还原请求语义，而不是只看输出展示字段。
 - QQCC 市集是轻量 Bot adapter，不复制 Web feed/query 规则，也不注册主
@@ -43,8 +41,10 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 - 投稿使用 `(task_id, user_id)` unique、同粒度 advisory lock 和显式
   conflict target/`RETURNING`；只有 created/reactivated 才更新 History、贡献数、
   限额和媒体 side effect。
-- migration 前先运行 `scripts/audit_gallery_consistency.py`；默认 dry-run。
-  修复与在线索引 migration 分开，残留冲突必须 fail closed。
+- 新投稿写 `gallery_posts.history_id`；读取统一走 `gallery_history_link.py`。旧空
+  外键只能以 `(task_id, user_id)` 回退，严禁仅按 `task_id` 连接 History。
+- migration 前先 dry-run `scripts/audit_gallery_consistency.py`；修复与索引
+  migration 分开，残留冲突必须 fail closed。
 - 评论创建、分页和计数保持限频与原子更新；帖子并发下架时整笔回滚，不能
   留下脏评论。
 - 未解锁 prompt 在列表和详情必须由服务端遮罩。提示词解锁以
@@ -56,14 +56,13 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 - 用户级封禁下架同样同步全部帖子、History 与 pending 举报。用户硬删除投稿
   时，必须先把该作品 pending 举报以 `user_deleted` 收口为 resolved，保留
   举报快照供 Dashboard 已处理列表查看，再清理互动、提示词解锁和评论。
-- `my-favorites` 和 `my-prompt-unlocks` 是现有互动/解锁记录的视图，不新增
-  重复收藏或解锁表。
+- `my-favorites`、`my-prompt-unlocks` 复用现有记录，不新增重复表。
 - 关注/粉丝方向必须保持清楚：我的关注按 follower 查询，我的粉丝按
   followee 查询；粉丝项的 `is_following` 表示当前用户是否回关。
 
 ## 4. apply-context
 
-- 列表/详情遮罩未解锁 prompt；Web apply-context 不因展示锁禁用应用，并返回执行上下文。
+- 列表/详情遮罩未解锁 prompt；apply-context 仍返回执行上下文。
 - 每类任务的支持范围、必要重新上传素材和历史兼容映射以 Gallery 专项文档
   和 focused tests 为准。
 - Wan22 拼接记录和当前关闭的 `i2i_draw` 必须由服务端拒绝 apply-context，
@@ -98,18 +97,10 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 - R2 审计、backfill、缩略图补齐和 shadow 同步默认 dry-run。执行前明确
   env、bucket、范围、cursor、方向和授权，不得把生产 env 或预签 URL输出。
 
-## 6. 公开接口重点
+## 6. 公开接口
 
-- `POST /api/gallery/posts/{post_id}/interact`
-- `POST /api/gallery/posts/{post_id}/comments`
-- `POST /api/gallery/posts/{post_id}/reports`
-- `POST /api/gallery/posts/{post_id}/prompt-unlock`
-- `GET /api/gallery/posts/{post_id}/apply-context`
-- `GET /api/gallery/my-prompt-unlocks`
-- `GET /api/users/search`、`/api/users/me/follows`、`/api/users/me/followers`
-- Dashboard 举报查询/处理与用户级封禁下架接口
-
-变更字段、状态码或幂等语义时先检查调用方和类型定义，避免只改 router。
+互动、评论、举报、解锁、apply-context、个人视图、关注与 Dashboard 治理均为
+公开契约；变更字段、状态码或幂等语义必须同步调用方和 schema。
 
 ## 7. 最小验证
 

@@ -71,12 +71,15 @@ async def fetch_recent_user_history(*, db, current_user_id: int, limit: int):
     return histories, task_ids
 
 
-async def fetch_active_public_gallery_task_ids(*, db, task_ids: list[str]):
+async def fetch_active_public_gallery_task_ids(
+    *, db, task_ids: list[str], current_user_id: int
+):
     if not task_ids:
         return set()
     gallery_post_result = await db.execute(
         select(GalleryPost.task_id).where(
             GalleryPost.task_id.in_(task_ids),
+            GalleryPost.user_id == current_user_id,
             GalleryPost.is_active.is_(True),
         )
     )
@@ -103,7 +106,10 @@ async def fetch_history_apply_context_entities(*, db, task_id: str, current_user
         return None, None
 
     gallery_post_result = await db.execute(
-        select(GalleryPost).where(GalleryPost.task_id == task_id)
+        select(GalleryPost).where(
+            GalleryPost.task_id == task_id,
+            GalleryPost.user_id == current_user_id,
+        )
     )
     posts = gallery_post_result.scalars().all()
     gallery_post = pick_preferred_gallery_post(posts)
@@ -144,10 +150,17 @@ async def fetch_favorite_gallery_histories(
     return histories, total
 
 
-async def fetch_gallery_posts_for_task_ids(*, db, task_ids: list[str]):
+async def fetch_gallery_posts_for_task_ids(
+    *, db, task_ids: list[str], current_user_id: int
+):
     if not task_ids:
         return {}
-    result = await db.execute(select(GalleryPost).where(GalleryPost.task_id.in_(task_ids)))
+    result = await db.execute(
+        select(GalleryPost).where(
+            GalleryPost.task_id.in_(task_ids),
+            GalleryPost.user_id == current_user_id,
+        )
+    )
     return build_gallery_post_map(result.scalars().all())
 
 

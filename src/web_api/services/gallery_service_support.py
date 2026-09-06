@@ -3,6 +3,7 @@ import logging
 from fastapi import HTTPException
 
 from src.domain_config.task_type_registry import gallery_display_type_configs
+from src.core.gallery_core_errors import GalleryCoreError
 from src.services.gallery_apply_context_service import (
     APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
     default_should_return_gallery_apply_input_file,
@@ -100,9 +101,9 @@ async def submit_gallery_post_payload(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HTTPException:
         raise
+    except GalleryCoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        if exc.__class__.__name__ == "GalleryCoreError":
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.error(
             "Unexpected error submitting to gallery for user_id=%s task_id=%s: %s",
             getattr(current_user, "id", None),
@@ -110,4 +111,3 @@ async def submit_gallery_post_payload(
             exc,
         )
         raise HTTPException(status_code=500, detail="Internal server error") from exc
-

@@ -11,6 +11,7 @@ from src.web_api.schemas.user_social_schema import (
 )
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.services.gallery_pagination import build_paginated_gallery_response
+from src.services.gallery_history_link import gallery_history_join_condition
 
 
 def _resolve_author_name(user: User) -> str:
@@ -21,7 +22,7 @@ def _public_post_count_subquery():
     return (
         select(func.count(func.distinct(GalleryPost.id)))
         .select_from(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .outerjoin(History, gallery_history_join_condition())
         .where(
             GalleryPost.user_id == User.id,
             GalleryPost.is_active.is_(True),
@@ -103,13 +104,13 @@ async def _fetch_public_posts_page(*, db, user_id: int, page: int, size: int):
     total_query = (
         select(func.count(func.distinct(GalleryPost.id)))
         .select_from(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .outerjoin(History, gallery_history_join_condition())
         .where(*filters)
     )
     total = (await db.execute(total_query)).scalar() or 0
     query = (
         select(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .outerjoin(History, gallery_history_join_condition())
         .where(*filters)
         .distinct()
         .order_by(GalleryPost.id.desc())
