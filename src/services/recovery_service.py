@@ -17,6 +17,7 @@ from src.quota import QuotaManager
 from src.services.private_qqcc_bot_service import parse_private_bot_client_type
 from src.services.private_qqcc_continuation_service import (
     PrivateQqccContinuationError,
+    execute_private_qqcc_continuation_stage_default,
     list_private_qqcc_continuations_for_recovery,
     normalize_private_qqcc_continuation_task_ref,
     resume_private_qqcc_continuation,
@@ -266,10 +267,38 @@ async def _recover_private_bot_submission_orphan_candidate(
 
 
 async def _resume_private_continuation(chain_id: str, application) -> None:
+    from src.services.task_service_entrypoints_specialized import (
+        process_ltx_video_task_for_actor,
+    )
+    from src.services.task_service_entrypoints_video import (
+        process_video_task_template,
+    )
+    from src.services.task_service_generation_image import (
+        process_standard_generation_task,
+    )
+    from src.services.wan22_video_v2_extension_service import (
+        download_output_file_to_fsm_temp,
+    )
+
+    async def execute_stage(checkpoint, stage, ref, context):
+        return await execute_private_qqcc_continuation_stage_default(
+            checkpoint,
+            stage,
+            ref,
+            context,
+            process_generation_task_func=process_standard_generation_task,
+            process_video_task_template_func=process_video_task_template,
+            process_ltx_video_task_func=process_ltx_video_task_for_actor,
+            download_video_frame_to_fsm_temp_func=(
+                download_output_file_to_fsm_temp
+            ),
+        )
+
     context = TelegramBotContextAdapter(application)
     await resume_private_qqcc_continuation(
         chain_id=chain_id,
         context=context,
+        execute_stage_func=execute_stage,
     )
 
 

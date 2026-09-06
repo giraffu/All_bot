@@ -20,6 +20,7 @@
 - `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态；通过 `TaskWebFinalizerDependencies` 调用 Web 结果存储与资产收口，不反向 import Web service
 - `src/services/task_web_finalizer_dependencies.py`、`src/task_web_finalizer_provider_setup.py`：finalizer 的窄依赖契约与 runtime adapter 装配；Web API 和启用后的 Task Control Worker 是 composition root
+- `src/services/private_qqcc_continuation_service.py`、`src/services/scail2_face_swap_pipeline_service.py`：只编排阶段策略，不解析具体 task executor；Quick 入口、specialized entrypoint 与 recovery service 负责显式装配，缺少依赖时在产生副作用前失败
 - `src/services/task_control_worker.py`、`src/task_control_worker.py`：默认禁用的独立控制进程，把 submission reconciliation、Web finalizer 与通用 zombie sweep 放在三个独立 leader lease 下运行
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`

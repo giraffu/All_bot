@@ -14,9 +14,6 @@ from config import MINIO_BUCKET
 from src.constants import MODE_FACE_SWAP_V2, MODE_SCAIL2_FACE_SWAP_V2
 from src.core.billing_core import refund_credits
 from src.core.task_core_finalization import build_task_refund_idempotency_key
-from src.services.task_service_generation_image import (
-    process_standard_generation_task,
-)
 from src.services.task_service_types import BotTaskRuntimeState
 from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
@@ -163,13 +160,15 @@ async def process_bot_scail2_face_swap_pipeline(
     normal_priority: int,
     cost: int,
     prepare_first_frame_func=prepare_scail2_face_swap_first_frame,
-    process_generation_task_func=process_standard_generation_task,
+    process_generation_task_func=None,
     download_output_file_func=download_output_file_to_fsm_temp,
     process_scail2_stage_func: Callable[..., Awaitable[Any]],
     runtime_state: BotTaskRuntimeState | Any | None = None,
     cleanup_first_frame_func=cleanup_scail2_face_swap_first_frame,
     refund_root_func=None,
 ) -> Any:
+    if process_generation_task_func is None:
+        raise RuntimeError("SCAIL-2 pipeline generation executor is not configured")
     refund_root_func = refund_root_func or _refund_bot_pipeline_root
     pipeline_id = str(uuid.uuid4())
     first_frame = await prepare_first_frame_func(

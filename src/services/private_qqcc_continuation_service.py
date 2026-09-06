@@ -1221,31 +1221,6 @@ async def execute_private_qqcc_continuation_stage_default(
     adapt_video_frame_file_func=adapt_qqcc_video_frame_file,
     cleanup_temp_files_func=cleanup_fsm_temp_files,
 ) -> tuple[bytes | None, str | None]:
-    if process_generation_task_func is None:
-        from src.services.task_service_generation_image import (
-            process_standard_generation_task,
-        )
-
-        process_generation_task_func = process_standard_generation_task
-    if process_video_task_template_func is None:
-        from src.services.task_service_entrypoints_video import (
-            process_video_task_template,
-        )
-
-        process_video_task_template_func = process_video_task_template
-    if process_ltx_video_task_func is None:
-        from src.services.task_service_entrypoints_specialized import (
-            process_ltx_video_task_for_actor,
-        )
-
-        process_ltx_video_task_func = process_ltx_video_task_for_actor
-    if download_video_frame_to_fsm_temp_func is None:
-        from src.services.wan22_video_v2_extension_service import (
-            download_output_file_to_fsm_temp,
-        )
-
-        download_video_frame_to_fsm_temp_func = download_output_file_to_fsm_temp
-
     executor = str(stage.get("executor") or "")
     task_kwargs = dict(stage.get("task_kwargs") or {})
     task_kwargs.pop("_qqcc_chain_delivery", None)
@@ -1257,6 +1232,10 @@ async def execute_private_qqcc_continuation_stage_default(
         "generation",
         "legacy_video",
     }:
+        if download_video_frame_to_fsm_temp_func is None:
+            raise RuntimeError(
+                "private QQCC video frame downloader is not configured"
+            )
         prepared_video_images = await _prepare_private_video_stage_images(
             _resolve_stage_images(checkpoint, stage),
             aspect_ratio=aspect_ratio,
@@ -1273,6 +1252,10 @@ async def execute_private_qqcc_continuation_stage_default(
         task_kwargs["task_type"] = "face_swap_v2"
     with activate_private_qqcc_continuation_task(ref):
         if executor == "generation":
+            if process_generation_task_func is None:
+                raise RuntimeError(
+                    "private QQCC generation executor is not configured"
+                )
             result = await process_generation_task_func(
                 context=context,
                 chat_id=checkpoint.chat_id,
@@ -1285,6 +1268,10 @@ async def execute_private_qqcc_continuation_stage_default(
             )
             return result
         if executor == "legacy_video":
+            if process_video_task_template_func is None:
+                raise RuntimeError(
+                    "private QQCC legacy video executor is not configured"
+                )
             images = prepared_video_images or _resolve_stage_images(checkpoint, stage)
             if len(images) not in {1, 2}:
                 raise PrivateQqccContinuationConflict(
@@ -1304,6 +1291,8 @@ async def execute_private_qqcc_continuation_stage_default(
                 return result
             return None, None
         if executor == "ltx_video":
+            if process_ltx_video_task_func is None:
+                raise RuntimeError("private QQCC LTX executor is not configured")
             images = _resolve_stage_images(checkpoint, stage)
             if len(images) not in {1, 2}:
                 raise PrivateQqccContinuationConflict(

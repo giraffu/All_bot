@@ -45,6 +45,9 @@ from src.services.task_service_message_support import (
 )
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_generation_common import resolve_internal_user_id
+from src.services.task_service_generation_image import (
+    process_standard_generation_task,
+)
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
 from src.services.ltx_video_extension_service import normalize_ltx_video_chain_task_ids
@@ -325,6 +328,7 @@ async def process_scail2_video_task(
             source_post_id=source_post_id,
             normal_priority=base_priority,
             cost=cost,
+            process_generation_task_func=process_standard_generation_task,
             process_scail2_stage_func=process_scail2_video_task,
         )
     resolution = f"{SCAIL2_FIXED_WIDTH}x{SCAIL2_FIXED_HEIGHT}"

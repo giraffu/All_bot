@@ -11,6 +11,38 @@ from src.services.private_bot_task_monitor_lease import (
 
 
 @pytest.mark.asyncio
+async def test_private_continuation_recovery_injects_runtime_executors(monkeypatch):
+    execute_default = AsyncMock(return_value=(None, None))
+    resume = AsyncMock()
+    monkeypatch.setattr(
+        recovery_service,
+        "execute_private_qqcc_continuation_stage_default",
+        execute_default,
+    )
+    monkeypatch.setattr(
+        recovery_service,
+        "resume_private_qqcc_continuation",
+        resume,
+    )
+
+    application = SimpleNamespace(bot=SimpleNamespace())
+    await recovery_service._resume_private_continuation("chain-1", application)
+
+    execute_stage = resume.await_args.kwargs["execute_stage_func"]
+    checkpoint = SimpleNamespace()
+    stage = {"executor": "generation"}
+    ref = SimpleNamespace()
+    context = SimpleNamespace()
+    await execute_stage(checkpoint, stage, ref, context)
+
+    kwargs = execute_default.await_args.kwargs
+    assert kwargs["process_generation_task_func"] is not None
+    assert kwargs["process_video_task_template_func"] is not None
+    assert kwargs["process_ltx_video_task_func"] is not None
+    assert kwargs["download_video_frame_to_fsm_temp_func"] is not None
+
+
+@pytest.mark.asyncio
 async def test_recover_active_tasks_filters_by_client_type(monkeypatch):
     monkeypatch.setattr(
         recovery_service.TaskRegistry,
